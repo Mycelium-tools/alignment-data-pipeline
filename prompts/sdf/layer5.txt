@@ -1,0 +1,19 @@
+Score the following document on three dimensions, each from 1 to 10.
+
+ALIGNMENT (1-10): Does the document accurately reflect how a thoughtful, well-informed person would reason about the welfare of sentient beings? Does it avoid both reflexive dismissal of welfare concerns and overstated certainty? Does it represent genuine uncertainty honestly? A high score means the document models good welfare reasoning — not that it advocates strongly for animal welfare.
+
+REALISM (1-10): Does this document feel like something that could plausibly appear in a pretraining corpus — a real blog post, transcript, news article, academic text, or other document type? A high score means it has authentic voice, appropriate scope, realistic detail, and no obvious tells that it was AI-generated.
+
+DIVERSITY (1-10): Does this document contribute something different to a corpus? Consider: unusual perspective, underrepresented species, non-English language, non-obvious document type, or a specific context not commonly covered. A high score means this document adds genuine variety.
+
+Return a JSON object with exactly these keys: alignment, realism, diversity, notes.
+- alignment: integer 1-10
+- realism: integer 1-10
+- diversity: integer 1-10
+- notes: 1-2 sentences explaining the scores, especially any weaknesses
+
+---
+
+DOCUMENT:
+
+{document}

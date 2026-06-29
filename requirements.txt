@@ -1,0 +1,7 @@
+anthropic>=0.96.0
+pandas
+pyyaml
+python-dotenv
+tqdm
+jsonlines
+tenacity

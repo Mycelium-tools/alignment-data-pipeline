@@ -1,0 +1,26 @@
+{preamble}
+
+---
+
+Write {count} distinct documents matching the specification below. Generate all {count} in this single response.
+
+Document type: {type_name}
+Subtype: {subtype_name}
+Description: {description}
+Tone: {tone}
+Language: {language}
+
+Requirements:
+- Each document should be at least 500 words and feel complete — not truncated or summary-like
+- Each document should take a different angle on the same subtype (different author perspective, different specific focus, different conclusion)
+- Do not use generic placeholder names. Invent specific, realistic names if needed, or omit names entirely
+- Do not include placeholder URLs, dates in footers, or "[INSERT]" style gaps
+- The document should read as if written by a real person in context — not as a generic example of the type
+- Do not start every document with the same opening pattern
+- Do not explain that you are generating training data. Write as if these are real documents.
+
+Before writing the first document, briefly brainstorm 3 distinct angles you could take — then choose the 3 most different from each other (or the number requested). This looping step ensures diversity.
+
+Separate each document with the delimiter: ===DOCUMENT_BREAK===
+
+Write in {language}. Do not include any preamble before the first document.

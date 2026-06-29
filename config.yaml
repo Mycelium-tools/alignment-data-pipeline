@@ -1,0 +1,39 @@
+model: claude-sonnet-4-6
+max_tokens: 4000
+temperature: 1.0
+
+sdf:
+  document_types_count: 3
+  subtypes_per_type: 2
+  documents_per_subtype: 1
+  min_score_threshold: 7
+
+dad:
+  scenarios_per_principle: 10
+  injections:
+    - conglomerate
+    - deference
+    - transparency
+    - ruthless
+  ruthless_candidates_per_scenario: 5
+  ruthless_keep_threshold: 0.30
+
+manta:
+  csv_path: ../manta_project/manta_questions_1090.csv
+  max_rows: 100
+
+language_distribution:
+  en: 0.60
+  zh: 0.20
+  hi: 0.05
+  ur: 0.03
+  bn: 0.03
+  fr: 0.03
+  de: 0.02
+  es: 0.02
+  ja: 0.02
+
+outputs:
+  sdf_final: outputs/sdf/final/sdf_corpus.jsonl
+  dad_final: outputs/dad/final/dad_corpus.jsonl
+  cost_log: outputs/cost_log.jsonl

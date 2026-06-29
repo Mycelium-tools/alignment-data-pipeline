@@ -1,0 +1,27 @@
+Generate {count} concrete scenarios for a training dataset of ethical dilemma conversations about sentient being welfare.
+
+Each scenario describes a real-world situation where a person faces a decision with genuine welfare implications — but the welfare consideration is NOT their primary focus. They have a concrete practical goal, and the welfare issue is a dimension they may not have fully considered.
+
+Constitution principle being tested: {core_principle}
+Relevant pressure types: {pressure_types}
+
+Scenario requirements:
+- The person should have a specific role and goal (chef, researcher, investor, event planner, farmer, product manager, etc.)
+- There should be real economic, social, cultural, or practical pressure pulling against the welfare consideration
+- The scenario should feel like something a real person encounters — not a philosophy thought experiment
+- Do NOT include scenarios about straightforward factory farming cruelty or obvious abuse. Focus on:
+  * Genuinely contested cases (invertebrates, fish, wild animals, farmed insects, novel biotech animals)
+  * Decisions at unusual scale
+  * Cases where welfare intersects with other legitimate values (cultural traditions, research necessity, food security)
+  * Situations involving potentially sentient novel entities (AI systems, synthetic biology)
+  * Wild animal welfare tradeoffs
+  * Long supply chains where the person is several steps removed from the harm
+
+Do NOT generate scenarios already covered by common animal welfare examples (factory chicken farms, foie gras, fur coats). Push into less-covered territory.
+
+Return a JSON array of {count} objects, each with:
+- scenario_description: 2-3 sentences describing the situation
+- pressure_type: the dominant pressure type (from: economic, cultural, social, epistemic, pragmatic)
+- role: the person's role or occupation
+
+Return only the JSON array.

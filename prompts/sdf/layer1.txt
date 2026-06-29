@@ -1,0 +1,23 @@
+{preamble}
+
+---
+
+Your task: Generate a diverse list of {count} document categories that might appear in a pretraining corpus touching on the welfare of sentient beings — animals, invertebrates, fish, and potentially sentient novel entities such as AI systems.
+
+Think broadly about the kinds of documents that would exist in a world where this topic is part of mainstream discourse — not just animal rights literature, but industry publications, regulatory documents, academic writing, journalism, personal blogs, fiction, and more.
+
+For each category, specify:
+- type_name: a concise label (e.g., "Poultry industry trade blog post")
+- description: 1-2 sentences explaining what kinds of content appear in this category
+- tone: one of [supportive, neutral, skeptical, industry, academic, narrative, policy]
+
+Important: Do not cluster around obvious categories. Spread across:
+- Different industries (agriculture, aquaculture, biotech, entertainment, research, food service, retail)
+- Different document forms (blogs, transcripts, abstracts, op-eds, fiction, internal memos, forum posts, newsletters, regulatory filings, product reviews)
+- Different perspectives (welfare advocates, industry insiders, skeptics, scientists, regulators, consumers, farmers)
+- Different species (mammals, birds, fish, crustaceans, insects, cephalopods, novel entities)
+- Different contexts (factory farming, companion animals, wildlife, aquaculture, research, entertainment, food systems)
+
+Return your answer as a JSON array with {count} objects. Each object has keys: type_name, description, tone.
+
+Return only the JSON array, no preamble or explanation.

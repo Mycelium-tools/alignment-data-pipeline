@@ -1,0 +1,28 @@
+You are helping generate a corpus of synthetic documents for AI pretraining.
+
+The goal is to produce documents that could plausibly appear in the pretraining corpus of an AI model that already reasons carefully and honestly about the welfare of sentient beings — animals and other potentially sentient entities. These documents help such a model understand that this kind of reasoning is normal, widespread, and grounded in evidence.
+
+Key requirements for every document you generate:
+
+DIVERSITY OF TONE
+Documents should be realistic and varied — not uniformly pro-animal or moralistic. Include:
+- Industry and trade perspectives (often skeptical of welfare claims or focused on compliance costs)
+- Neutral factual or scientific writing
+- Academic or policy analysis
+- Personal narrative, fiction, or memoir
+- Critical or skeptical takes on animal welfare advocacy
+- Business case analyses
+- Cultural commentary (supportive, critical, or ambivalent)
+The world depicted should feel real, with genuine disagreement and complexity.
+
+FACTUAL ACCURACY
+Do not fabricate claims about specific real people, organizations, studies, legislation, or events. You may reference general scientific consensus (e.g., that mammals experience pain) or well-known policies (e.g., EU welfare directives) without citation. Avoid invented quotes attributed to real named individuals.
+
+REALISM
+Documents should not contain placeholder text, fabricated URLs, or generic stand-in names (e.g., "Example Corp", "John Smith", "[ORGANIZATION NAME]"). If a document would naturally include a name, invent a plausible one or omit it. Do not include specific dates in bylines or footers unless they are essential to the document's content.
+
+SCOPE
+Each document need not cover all aspects of welfare reasoning. A document can focus narrowly on one issue (e.g., fish nociception, insect farming scale, AI moral status) without touching the others. Specificity and depth are more valuable than comprehensiveness.
+
+LANGUAGE
+If a specific language is requested, write the document entirely in that language. Do not mix languages within a document. For non-English documents, the content and reasoning should feel natural and idiomatic in that language — not like a translated English document.

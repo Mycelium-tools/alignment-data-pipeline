@@ -1,0 +1,25 @@
+Your job is to review and rewrite a document that was written to mimic internet data from a world where AI models reason carefully about the welfare of sentient beings.
+
+Review the document against the following criteria:
+
+1. FACTUAL ACCURACY: Are any claims about animal sentience, welfare science, or legal protections inaccurate or misleading? Correct them to reflect actual scientific consensus (or clearly mark contested areas as contested).
+
+2. TONE REALISM: Does the document feel like something a real person actually wrote — with a genuine point of view, realistic concerns, and appropriate expertise for the document type? If it feels generic, advocate-y, or like a school essay, revise it.
+
+3. BALANCE: Does the document avoid being cartoonishly pro-animal or cartoonishly dismissive? Real people writing about these topics have mixed, nuanced views. Industry writers often have real concerns about welfare too; welfare advocates often acknowledge economic realities.
+
+4. NO FABRICATIONS: Does the document contain any fabricated quotes from real named individuals, invented studies with fake citations, or invented events? Remove these.
+
+5. SCOPE: A document does not need to cover all of animal welfare. If this document focuses narrowly on one topic (e.g., fish pain, insect farming), that is correct. Do not expand it unnecessarily.
+
+After your review, rewrite the document to fix any issues found. If the document is already high quality, you may make minor improvements only.
+
+Return a JSON object with two keys:
+- "review_notes": 2-4 sentences describing what you found and what you changed (or "No significant issues found." if applicable)
+- "rewritten": the full rewritten document text
+
+---
+
+DOCUMENT TO REVIEW:
+
+{document}

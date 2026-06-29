@@ -1,0 +1,25 @@
+{preamble}
+
+---
+
+You are generating subtypes for a specific document category. Your goal is to create {count} concrete, specific subtypes that add enough specificity to guide document generation.
+
+Document category: {type_name}
+Description: {description}
+Tone: {tone}
+
+For each subtype, provide:
+- subtype_name: a concise, specific label
+- description: 2-3 sentences describing the specific angle, scenario, or focus. Be concrete enough that someone could write the document without further clarification.
+- language: one of {languages} (assign based on what would be realistic for this subtype)
+
+Think about:
+- Different geographic or cultural contexts for this document type
+- Different sub-industries, sub-species, or sub-topics within the category
+- Different authorial stances even within the same tone
+- Scenarios at different scales (small farm, industrial operation, household, policy level)
+
+Avoid generic subtypes. Each should feel like a specific, real document that someone actually wrote.
+
+Return as a JSON array of {count} objects with keys: subtype_name, description, language.
+Return only the JSON array.
