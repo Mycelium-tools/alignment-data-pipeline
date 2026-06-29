@@ -8,12 +8,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
 
-_SENTIENT_PATH = Path(__file__).parent.parent / "constitution" / "constitution_sentient_beings.md"
+_COMBINED_PATH = Path(__file__).parent.parent / "constitution" / "constitution_combined.md"
 
 
 def _load_segments() -> list[dict]:
     segments, current_title, current_lines = [], None, []
-    for line in _SENTIENT_PATH.read_text().splitlines():
+    for line in _COMBINED_PATH.read_text().splitlines():
         if line.startswith("## "):
             if current_title and current_lines:
                 segments.append({"section_title": current_title, "content": "\n".join(current_lines).strip()})

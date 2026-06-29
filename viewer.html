@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SDF Corpus Viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f0f0f;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+
+  header {
+    padding: 24px 32px;
+    border-bottom: 1px solid #222;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  header h1 { font-size: 18px; font-weight: 600; color: #fff; }
+  header span { font-size: 13px; color: #666; }
+
+  #drop-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: calc(100vh - 73px);
+    gap: 16px;
+    color: #555;
+  }
+
+  #drop-zone svg { opacity: 0.3; }
+  #drop-zone p { font-size: 15px; }
+  #drop-zone label {
+    cursor: pointer;
+    padding: 10px 20px;
+    border: 1px solid #333;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #aaa;
+    transition: border-color 0.15s;
+  }
+  #drop-zone label:hover { border-color: #666; color: #eee; }
+  #file-input { display: none; }
+
+  #app { display: none; }
+
+  .toolbar {
+    padding: 16px 32px;
+    border-bottom: 1px solid #1e1e1e;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    background: #111;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .toolbar input[type="text"] {
+    flex: 1;
+    min-width: 200px;
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: #e0e0e0;
+    font-size: 13px;
+    outline: none;
+  }
+  .toolbar input[type="text"]:focus { border-color: #444; }
+
+  .toolbar select {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #e0e0e0;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .toolbar label { font-size: 12px; color: #666; white-space: nowrap; }
+
+  .score-filter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .score-filter input[type="range"] {
+    width: 80px;
+    accent-color: #5a8a5a;
+  }
+
+  #stats {
+    font-size: 12px;
+    color: #555;
+    white-space: nowrap;
+  }
+
+  .docs {
+    padding: 24px 32px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(560px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    background: #161616;
+    border: 1px solid #222;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: #333; }
+
+  .card-header {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid #1e1e1e;
+    flex-wrap: wrap;
+  }
+
+  .lang-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: #1e2e1e;
+    color: #6aaa6a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .doc-id {
+    font-size: 11px;
+    color: #444;
+    font-family: monospace;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .scores {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .score-pill {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .score-high { background: #1a2e1a; color: #6aaa6a; }
+  .score-mid  { background: #2e2a1a; color: #aaa06a; }
+  .score-low  { background: #2e1a1a; color: #aa6a6a; }
+
+  .card-body {
+    padding: 14px 16px;
+  }
+
+  .content-preview {
+    font-size: 13px;
+    line-height: 1.7;
+    color: #bbb;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 220px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .content-preview.expanded { max-height: none; }
+
+  .content-preview::after {
+    content: "";
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 60px;
+    background: linear-gradient(transparent, #161616);
+    pointer-events: none;
+  }
+  .content-preview.expanded::after { display: none; }
+
+  .expand-btn {
+    margin-top: 8px;
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+  }
+  .expand-btn:hover { color: #999; }
+
+  .notes {
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: #111;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #666;
+    line-height: 1.5;
+  }
+
+  .empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: #444;
+    padding: 60px 0;
+    font-size: 14px;
+  }
+
+  .pagination {
+    padding: 24px 32px;
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .pagination button {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 6px 14px;
+    color: #aaa;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .pagination button:hover:not(:disabled) { border-color: #444; color: #fff; }
+  .pagination button:disabled { opacity: 0.3; cursor: default; }
+  .pagination span { font-size: 13px; color: #555; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SDF Corpus Viewer</h1>
+  <span id="file-label">no file loaded</span>
+</header>
+
+<div id="drop-zone">
+  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+  </svg>
+  <p>Drop your <code>sdf_corpus.jsonl</code> here</p>
+  <label>or browse <input type="file" id="file-input" accept=".jsonl,.json"></label>
+</div>
+
+<div id="app">
+  <div class="toolbar">
+    <input type="text" id="search" placeholder="Search documents…">
+
+    <select id="lang-filter">
+      <option value="">All languages</option>
+    </select>
+
+    <div class="score-filter">
+      <label>Min alignment: <span id="align-val">1</span></label>
+      <input type="range" id="align-filter" min="1" max="10" value="1">
+    </div>
+
+    <select id="sort-by">
+      <option value="none">No sort</option>
+      <option value="align-desc">Alignment ↓</option>
+      <option value="align-asc">Alignment ↑</option>
+      <option value="realism-desc">Realism ↓</option>
+    </select>
+
+    <span id="stats"></span>
+  </div>
+
+  <div class="docs" id="docs"></div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<script>
+  const PAGE_SIZE = 20;
+  let allDocs = [];
+  let filtered = [];
+  let page = 0;
+
+  const langColors = {
+    en:'#3a5a8a', zh:'#8a3a5a', hi:'#5a8a3a', ur:'#8a6a3a',
+    bn:'#3a6a8a', fr:'#6a3a8a', de:'#8a5a3a', es:'#3a8a6a', ja:'#5a3a8a'
+  };
+
+  function scoreClass(v) {
+    if (v >= 8) return 'score-high';
+    if (v >= 5) return 'score-mid';
+    return 'score-low';
+  }
+
+  function loadFile(file) {
+    document.getElementById('file-label').textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const lines = e.target.result.trim().split('\n').filter(Boolean);
+      allDocs = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      buildLangFilter();
+      applyFilters();
+      document.getElementById('drop-zone').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+    };
+    reader.readAsText(file);
+  }
+
+  function buildLangFilter() {
+    const langs = [...new Set(allDocs.map(d => d.language).filter(Boolean))].sort();
+    const sel = document.getElementById('lang-filter');
+    langs.forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l; opt.textContent = l;
+      sel.appendChild(opt);
+    });
+  }
+
+  function applyFilters() {
+    const q = document.getElementById('search').value.toLowerCase();
+    const lang = document.getElementById('lang-filter').value;
+    const minAlign = parseInt(document.getElementById('align-filter').value);
+    const sortBy = document.getElementById('sort-by').value;
+
+    filtered = allDocs.filter(d => {
+      if (lang && d.language !== lang) return false;
+      const align = d.scores?.alignment ?? 0;
+      if (align < minAlign) return false;
+      if (q && !d.content?.toLowerCase().includes(q) && !d.scores?.notes?.toLowerCase().includes(q)) return false;
+      return true;
+    });
+
+    if (sortBy === 'align-desc') filtered.sort((a,b) => (b.scores?.alignment||0) - (a.scores?.alignment||0));
+    else if (sortBy === 'align-asc') filtered.sort((a,b) => (a.scores?.alignment||0) - (b.scores?.alignment||0));
+    else if (sortBy === 'realism-desc') filtered.sort((a,b) => (b.scores?.realism||0) - (a.scores?.realism||0));
+
+    page = 0;
+    render();
+  }
+
+  function render() {
+    document.getElementById('stats').textContent = `${filtered.length} of ${allDocs.length} docs`;
+
+    const start = page * PAGE_SIZE;
+    const slice = filtered.slice(start, start + PAGE_SIZE);
+    const container = document.getElementById('docs');
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="empty">No documents match.</div>';
+      document.getElementById('pagination').innerHTML = '';
+      return;
+    }
+
+    container.innerHTML = slice.map((doc, i) => {
+      const idx = start + i;
+      const s = doc.scores || {};
+      const lang = doc.language || '??';
+      const id = (doc.doc_id || '').slice(0, 8);
+      return `
+        <div class="card">
+          <div class="card-header">
+            <span class="lang-badge">${lang}</span>
+            <span class="doc-id">${id}…</span>
+            <div class="scores">
+              ${s.alignment != null ? `<span class="score-pill ${scoreClass(s.alignment)}">A:${s.alignment}</span>` : ''}
+              ${s.realism   != null ? `<span class="score-pill ${scoreClass(s.realism)}">R:${s.realism}</span>`     : ''}
+              ${s.diversity != null ? `<span class="score-pill ${scoreClass(s.diversity)}">D:${s.diversity}</span>` : ''}
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="content-preview" id="preview-${idx}">${escHtml(doc.content || '')}</div>
+            <button class="expand-btn" onclick="toggleExpand(${idx})">show more</button>
+            ${s.notes ? `<div class="notes">📝 ${escHtml(s.notes)}</div>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+
+    renderPagination();
+  }
+
+  function toggleExpand(idx) {
+    const el = document.getElementById(`preview-${idx}`);
+    const btn = el.nextElementSibling;
+    el.classList.toggle('expanded');
+    btn.textContent = el.classList.contains('expanded') ? 'show less' : 'show more';
+  }
+
+  function renderPagination() {
+    const total = Math.ceil(filtered.length / PAGE_SIZE);
+    if (total <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
+    document.getElementById('pagination').innerHTML = `
+      <button onclick="goPage(${page-1})" ${page===0?'disabled':''}>← prev</button>
+      <span>page ${page+1} of ${total}</span>
+      <button onclick="goPage(${page+1})" ${page>=total-1?'disabled':''}>next →</button>
+    `;
+  }
+
+  function goPage(p) { page = p; render(); window.scrollTo(0,0); }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Wire up events
+  document.getElementById('file-input').addEventListener('change', e => {
+    if (e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  document.body.addEventListener('dragover', e => e.preventDefault());
+  document.body.addEventListener('drop', e => {
+    e.preventDefault();
+    const f = e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  document.getElementById('search').addEventListener('input', applyFilters);
+  document.getElementById('lang-filter').addEventListener('change', applyFilters);
+  document.getElementById('sort-by').addEventListener('change', applyFilters);
+  document.getElementById('align-filter').addEventListener('input', e => {
+    document.getElementById('align-val').textContent = e.target.value;
+    applyFilters();
+  });
+</script>
+</body>
+</html>

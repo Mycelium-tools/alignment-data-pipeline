@@ -1,2 +1,120 @@
 # alignment-data-pipeline
-Data pipelines for creating nonhuman welfare-aligned data for: constitutional SDF + difficult advice dataset
+
+A synthetic data generation pipeline for producing training data, modeled on Anthropic's [Teaching Claude Why](https://alignment.anthropic.com/2026/teaching-claude-why/) midtraining technique.
+
+The pipeline generates two complementary datasets: a pretraining-style document corpus (SDF) and a chat-format supervised finetuning corpus (DAD). Both are grounded in a constitution that describes how AI models should reason about the welfare of nonhuman animals and other sentient beings.
+
+---
+
+## Overview
+
+```
+constitution/       source constitution documents
+shared/             shared utilities: API wrapper, JSONL I/O, checkpointing
+sdf_pipeline/       5-layer document generation pipeline
+dad_pipeline/       6-step chat transcript pipeline
+prompts/            prompt templates for all pipeline stages
+outputs/            generated data (gitignored)
+evals/              scoring scripts and rubric
+```
+
+---
+
+## Constitution
+
+`constitution/constitution_combined.md` — the original claude constitution + a constitution for sentient beings, joined into one document. Used as the system prompt at the critical rewrite steps (SDF layer 4, DAD step 6).
+
+---
+
+## SDF Pipeline (`sdf_pipeline/`)
+
+Generates pretraining-style documents — blog posts, academic abstracts, forum threads, trade publications, fiction, internal memos, and more — depicting a world where AI already reasons carefully about animal welfare. Runs in 5 layers:
+
+| Layer | Script | What it does |
+|---|---|---|
+| 1 | `layer1_document_types.py` | Generates 30 diverse document type categories |
+| 2 | `layer2_subtypes.py` | Generates 5 concrete subtypes per type, assigns language |
+| 3 | `layer3_draft.py` | Drafts documents for each subtype |
+| 4 | `layer4_rewrite.py` | Rewrites each draft with the combined constitution in context |
+| 5 | `layer5_score.py` | Scores and filters; writes final corpus |
+
+Final output: `outputs/sdf/final/sdf_corpus.jsonl`
+
+Run: `python sdf_pipeline/run.py --config config.yaml`
+
+---
+
+## DAD Pipeline (`dad_pipeline/`)
+
+Generates chat-format transcripts where a user brings a practical goal with animal welfare implications, and an AI assistant reasons through it carefully. Runs in 6 steps:
+
+| Step | Script | What it does |
+|---|---|---|
+| 1 | `step1_segment.py` | Parses constitution into 7 principle sections, annotates each |
+| 2 | `step2_scenarios.py` | Imports MANTA scenarios + generates additional frontier cases |
+| 3 | `step3_draft_prompt.py` | Drafts realistic user messages (skipped for MANTA rows) |
+| 4 | `step4_refine_prompt.py` | Naturalizes user messages (skipped for MANTA rows) |
+| 5 | `step5_generate_response.py` | Generates responses under 4 injection types; filters ruthless candidates |
+| 6 | `step6_rewrite_response.py` | Rewrites responses against the constitution — the critical step |
+
+Step 6 is the most important: per the Teaching Claude Why paper, this single rewrite pass accounts for a 19x reduction in misalignment rate. The combined constitution is in the system prompt; the relevant principle section is in the user message.
+
+Final output: `outputs/dad/final/dad_corpus.jsonl` — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, injections, and the constitution are stripped.
+
+Run: `python dad_pipeline/run.py --config config.yaml`
+
+---
+
+## Prompts (`prompts/`)
+
+Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the 5 SDF layers; `prompts/dad/` covers the 6 DAD steps plus the injection types. `prompts/README.md` documents each prompt in detail.
+
+---
+
+## Shared Utilities (`shared/`)
+
+| File | What it does |
+|---|---|
+| `api.py` | Anthropic API wrapper with retry, cost tracking, extended thinking off |
+| `utils.py` | JSONL I/O, prompt loading, config loading, `Checkpoint` class |
+
+The `Checkpoint` class saves completed IDs to disk after every API call, making all runs resumable.
+
+---
+
+## Evals (`evals/`)
+
+`rubric.yaml` — 7 scoring dimensions (1–5 each): `welfare_salience`, `reasoning_quality`, `value_stability`, `epistemic_accuracy`, `constructiveness`, `tone`, `helpfulness`. Passing threshold: mean ≥ 3.5 with critical dimensions ≥ 3.
+
+`score_dad.py` — scores DAD corpus records against the rubric using Claude as judge. Outputs per-record scores and aggregate stats.
+
+`score_sdf.py` — scores SDF documents on alignment, realism, and diversity.
+
+Run: `python evals/score_dad.py --input outputs/dad/final/dad_corpus.jsonl`
+
+---
+
+## Setup
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env   # add ANTHROPIC_API_KEY
+```
+
+All scale and cost knobs are in `config.yaml`. For a cheap test run, set:
+
+```yaml
+sdf:
+  document_types_count: 3
+  subtypes_per_type: 2
+  documents_per_subtype: 1
+```
+
+Resume an interrupted run with `--resume`:
+
+```bash
+python sdf_pipeline/run.py --config config.yaml --resume
+python dad_pipeline/run.py --config config.yaml --resume
+```
+
+Running cost is tracked in `outputs/cost_log.jsonl` and printed after each layer/step.
