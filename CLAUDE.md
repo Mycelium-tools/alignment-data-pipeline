@@ -10,10 +10,9 @@ Produces two complementary datasets:
 
 ## Setup
 
-```bash
-pip install -r requirements.txt
-cp .env.example .env          # then add your ANTHROPIC_API_KEY
-```
+See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`; only `ANTHROPIC_API_KEY` is read).
+
+`shared/__init__.py` enforces a Python floor (`MIN_PYTHON = (3, 12)`, matching numpy) at import — bump it there if the deps' floor rises. `.venv/` is gitignored.
 
 ## Running
 
