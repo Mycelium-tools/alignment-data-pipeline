@@ -12,8 +12,10 @@ Produces two complementary datasets:
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env          # then add your ANTHROPIC_API_KEY
+cp .env.example .env          # add ANTHROPIC_API_KEY and/or GEMINI_API_KEY
 ```
+
+To switch providers, change `model:` in `config.yaml` — provider is auto-detected from the model name prefix (`gemini-*` → Gemini, `claude-*` → Anthropic). Both keys can coexist in `.env`.
 
 ## Running
 

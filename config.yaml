@@ -1,3 +1,6 @@
+# Provider is inferred from the model name: gemini-* uses Gemini, claude-* uses Anthropic.
+# Gemini options (free tier): gemini-2.5-flash, gemini-2.0-flash
+# Anthropic options: claude-sonnet-4-6, claude-haiku-4-5-20251001
 model: claude-sonnet-4-6
 max_tokens: 4000
 temperature: 1.0
