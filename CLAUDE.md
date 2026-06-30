@@ -39,6 +39,26 @@ All knobs are in `config.yaml`. For development, reduce `document_types_count`, 
 
 Running cost is tracked in `outputs/cost_log.jsonl` — check it any time.
 
+## Prompt Studio GUI (edit / run / submit prompts)
+
+`gui/app.py` is a small local web app for non-technical users to view, edit, test-run,
+and submit (via pull request) the pipeline prompts — without touching the scripts.
+**It uses only the Python standard library, so launching it needs no `pip install`.**
+
+```bash
+python3 gui/app.py        # or: python gui/app.py   (from the repo root)
+```
+
+It serves http://localhost:8765 (or the next free port) and opens the browser. Leave
+it running; Ctrl-C stops it. No-terminal alternatives: double-click `start.command`
+(macOS) or `start.bat` (Windows).
+
+**If a user asks you to "launch / start / open the GUI" (or "prompt editor/studio"):**
+run `python3 gui/app.py` from the repo root (in the background) and give them the
+localhost URL it prints. The two run modes inside it are Anthropic API (needs a key)
+and Claude Code CLI (uses the user's existing Claude login — no key/credits). Full
+docs: `gui/README.md`.
+
 ## Constitution
 
 `constitution/constitution_sentient_beings.md` — the primary upstream document for both pipelines. The constitution loader parses it by `## ` headers into 7 sections, each mapped to a `principle_id` in the DAD pipeline.

@@ -6,6 +6,24 @@ The pipeline generates two complementary datasets: a pretraining-style document 
 
 ---
 
+## Edit the prompts in your browser (no coding)
+
+A small local app lets you view, edit, test-run, and submit (via pull request) every
+prompt — no need to touch the scripts. **Only Python 3 is required; there's no install step.**
+
+From the repo folder:
+
+```bash
+python3 gui/app.py
+```
+
+It opens **http://localhost:8765** in your browser. Leave the window open; press
+`Ctrl-C` to stop. Prefer not to use a terminal? Double-click **`start.command`**
+(macOS) or **`start.bat`** (Windows). Using Claude Code? Just say *"launch the prompt
+GUI."* Full details: [`gui/README.md`](gui/README.md).
+
+---
+
 ## Overview
 
 ```
