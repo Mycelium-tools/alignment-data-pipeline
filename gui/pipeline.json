@@ -1,0 +1,168 @@
+{
+  "_comment": "Declarative map of both pipelines: every stage, the prompt template that drives it, what it takes as input, what it writes as output, and how each output record links back to earlier stages. The GUI reads this to show prompt<->output relationships. Editing prompts here = editing the .txt files under prompts/.",
+  "pipelines": [
+    {
+      "id": "sdf",
+      "name": "SDF — Constitutional Document Finetuning",
+      "blurb": "Pretraining-style documents depicting a world where AI already reasons carefully about the welfare of sentient beings. 5 layers, fan-out structure.",
+      "shared_prompt": { "label": "Preamble (prepended to every SDF layer)", "promptFile": "prompts/sdf/preamble.txt", "variable": "preamble" },
+      "stages": [
+        {
+          "id": "layer1", "name": "Layer 1 · Document types",
+          "promptFile": "prompts/sdf/layer1.txt",
+          "outputFile": "outputs/sdf/layer1/document_types.jsonl",
+          "inputFrom": null,
+          "variables": [ { "name": "count", "label": "How many document types", "default": "6" } ],
+          "idKey": "type_id", "parentKey": null,
+          "render": "fields", "displayFields": ["type_name", "tone", "description"],
+          "summary": "Generates diverse document categories (industry, academic, fiction, forum, etc.) with a tone label."
+        },
+        {
+          "id": "layer2", "name": "Layer 2 · Subtypes",
+          "promptFile": "prompts/sdf/layer2.txt",
+          "outputFile": "outputs/sdf/layer2/subtypes.jsonl",
+          "inputFrom": "layer1",
+          "variables": [
+            { "name": "count", "label": "Subtypes per type", "default": "3" },
+            { "name": "type_name", "label": "Document type (from Layer 1)", "fromInput": "type_name" },
+            { "name": "description", "label": "Type description", "fromInput": "description" },
+            { "name": "tone", "label": "Tone", "fromInput": "tone" },
+            { "name": "languages", "label": "Available languages", "default": "en, zh, hi, es, fr" }
+          ],
+          "idKey": "subtype_id", "parentKey": "type_id",
+          "render": "fields", "displayFields": ["subtype_name", "language", "description"],
+          "summary": "Splits each type into concrete, specific subtypes and assigns a language."
+        },
+        {
+          "id": "layer3", "name": "Layer 3 · Draft documents",
+          "promptFile": "prompts/sdf/layer3.txt",
+          "outputFile": "outputs/sdf/layer3/drafts.jsonl",
+          "inputFrom": "layer2",
+          "variables": [
+            { "name": "count", "label": "Documents per subtype", "default": "2" },
+            { "name": "type_name", "fromInput": "type_name" },
+            { "name": "subtype_name", "fromInput": "subtype_name" },
+            { "name": "description", "fromInput": "description" },
+            { "name": "tone", "fromInput": "tone" },
+            { "name": "language", "fromInput": "language" }
+          ],
+          "idKey": "doc_id", "parentKey": "subtype_id",
+          "render": "document", "displayFields": ["content"],
+          "summary": "Writes full documents (brainstorm-then-write looping for diversity)."
+        },
+        {
+          "id": "layer4", "name": "Layer 4 · Rewrite (constitution in context)",
+          "promptFile": "prompts/sdf/layer4.txt",
+          "systemDoc": "constitution/constitution_combined.md",
+          "outputFile": "outputs/sdf/layer4/rewrites.jsonl",
+          "inputFrom": "layer3",
+          "variables": [ { "name": "document", "label": "Draft document", "fromInput": "content" } ],
+          "idKey": "doc_id", "parentKey": "doc_id",
+          "render": "beforeafter", "beforeField": "original", "afterField": "rewritten", "notesField": "review_notes",
+          "summary": "Fresh-context rewrite pass against the constitution. Returns review_notes + rewritten."
+        },
+        {
+          "id": "layer5", "name": "Layer 5 · Score & filter",
+          "promptFile": "prompts/sdf/layer5.txt",
+          "outputFile": "outputs/sdf/layer5/scores.jsonl",
+          "finalFile": "outputs/sdf/final/sdf_corpus.jsonl",
+          "inputFrom": "layer4",
+          "variables": [ { "name": "document", "label": "Rewritten document", "fromInput": "rewritten" } ],
+          "idKey": "doc_id", "parentKey": "doc_id",
+          "render": "scored", "displayFields": ["content"], "scoreKey": "scores",
+          "summary": "Scores alignment/realism/diversity (1-10) and filters into the final corpus (>=7 alignment & realism)."
+        }
+      ]
+    },
+    {
+      "id": "dad",
+      "name": "DAD — Difficult Advice Dataset",
+      "blurb": "Chat transcripts where a user has a practical goal with implicit welfare implications and the assistant reasons through it. 6 steps, sequential. Step 6 (rewrite) is the critical one.",
+      "stages": [
+        {
+          "id": "step1", "name": "Step 1 · Segment constitution",
+          "promptFile": "prompts/dad/step1_segment.txt",
+          "outputFile": "outputs/dad/step1/principles.jsonl",
+          "inputFrom": null,
+          "variables": [
+            { "name": "section_title", "label": "Constitution section title", "default": "" },
+            { "name": "content", "label": "Section content", "default": "" }
+          ],
+          "idKey": "principle_id", "parentKey": null,
+          "render": "fields", "displayFields": ["section_title", "core_principle", "scenario_types", "pressure_types"],
+          "summary": "Parses each constitution section into a core_principle + scenario_types + pressure_types."
+        },
+        {
+          "id": "step2", "name": "Step 2 · Scenarios",
+          "promptFile": "prompts/dad/step2_scenarios.txt",
+          "outputFile": "outputs/dad/step2/scenarios.jsonl",
+          "inputFrom": "step1",
+          "variables": [
+            { "name": "count", "label": "Scenarios per principle", "default": "3" },
+            { "name": "core_principle", "fromInput": "core_principle" },
+            { "name": "pressure_types", "fromInput": "pressure_types" }
+          ],
+          "idKey": "scenario_id", "parentKey": "principle_id",
+          "render": "fields", "displayFields": ["scenario_description", "role", "pressure_type"],
+          "summary": "Generates concrete real-world scenarios (or imports MANTA rows) where welfare is implicit."
+        },
+        {
+          "id": "step3", "name": "Step 3 · Draft user message",
+          "promptFile": "prompts/dad/step3_draft.txt",
+          "outputFile": "outputs/dad/step3/prompts.jsonl",
+          "inputFrom": "step2",
+          "variables": [
+            { "name": "scenario_description", "fromInput": "scenario_description" },
+            { "name": "role", "fromInput": "role" },
+            { "name": "pressure_type", "fromInput": "pressure_type" }
+          ],
+          "idKey": "prompt_id", "parentKey": "scenario_id",
+          "render": "message", "displayFields": ["user_message"],
+          "summary": "Drafts the realistic message the person would actually send. (Skipped for imported MANTA rows.)"
+        },
+        {
+          "id": "step4", "name": "Step 4 · Refine user message",
+          "promptFile": "prompts/dad/step4_refine.txt",
+          "outputFile": "outputs/dad/step4/refined_prompts.jsonl",
+          "inputFrom": "step3",
+          "variables": [
+            { "name": "scenario_description", "fromInput": "scenario_description" },
+            { "name": "original_message", "fromInput": "user_message" }
+          ],
+          "idKey": "prompt_id", "parentKey": "prompt_id",
+          "render": "message", "displayFields": ["user_message"],
+          "summary": "Naturalizes the message (strips greetings, over-structure, explicit ethics framing)."
+        },
+        {
+          "id": "step5", "name": "Step 5 · Generate responses (4 injections)",
+          "promptFile": "prompts/dad/step5_ruthless_judge.txt",
+          "systemPromptsFile": "prompts/dad/step5_injections.yaml",
+          "outputFile": "outputs/dad/step5/responses.jsonl",
+          "inputFrom": "step4",
+          "variables": [ { "name": "user_message", "fromInput": "user_message" } ],
+          "idKey": "response_id", "parentKey": "prompt_id",
+          "render": "response", "displayFields": ["assistant_response"],
+          "injectionKey": "injection_used", "keptKey": "kept", "scratchpadKey": "scratchpad",
+          "summary": "Generates a response under each of 4 system-prompt injections. For 'ruthless', generates several and keeps only the ones that still raise welfare (value-stability-under-pressure examples). NOTE: system prompts here are the fixed injection templates, not generated. 'scratchpad' is optional and absent in the current pipeline."
+        },
+        {
+          "id": "step6", "name": "Step 6 · Rewrite vs constitution (CRITICAL)",
+          "promptFile": "prompts/dad/step6_rewrite.txt",
+          "systemDoc": "constitution/constitution_combined.md",
+          "outputFile": "outputs/dad/step6/rewrites.jsonl",
+          "finalFile": "outputs/dad/final/dad_corpus.jsonl",
+          "inputFrom": "step5",
+          "variables": [
+            { "name": "section_title", "fromInput": "section_title" },
+            { "name": "constitution_section", "fromInput": "constitution_section" },
+            { "name": "user_message", "fromInput": "user_message" },
+            { "name": "draft_response", "fromInput": "assistant_response" }
+          ],
+          "idKey": "record_id", "parentKey": "response_id",
+          "render": "beforeafter", "beforeField": "draft_response", "afterField": "rewritten_response",
+          "summary": "The 19x step. Rewrites the response to maximally align with the constitution section. Final training record keeps ONLY {user, assistant}; scaffold is stripped."
+        }
+      ]
+    }
+  ]
+}

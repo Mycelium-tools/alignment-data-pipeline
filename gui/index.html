@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt Studio · alignment-data-pipeline</title>
+<style>
+  :root{
+    --bg:#f7f7f8; --panel:#fff; --ink:#1c1d22; --muted:#6b6f76; --line:#e6e7ea;
+    --accent:#5b54d6; --accent-soft:#efeefc; --ok:#1d9a6c; --warn:#c0392b; --pill:#f0f1f4;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--sans);color:var(--ink);background:var(--bg);font-size:14px}
+  header{display:flex;align-items:center;gap:18px;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  header h1{font-size:15px;margin:0;font-weight:650;letter-spacing:-.01em}
+  header h1 span{color:var(--muted);font-weight:400}
+  nav{display:flex;gap:4px;margin-left:8px}
+  nav button{border:0;background:none;padding:7px 13px;border-radius:8px;font-size:13.5px;color:var(--muted);cursor:pointer;font-weight:550}
+  nav button.active{background:var(--accent-soft);color:var(--accent)}
+  .mode-chip{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+  .mode-chip b{color:var(--ink)}
+  main{padding:0}
+  .tab{display:none}.tab.active{display:block}
+  /* prompts layout */
+  .split{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 53px)}
+  .side{border-right:1px solid var(--line);background:var(--panel);padding:10px;overflow:auto}
+  .side .grp{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:14px 8px 6px}
+  .side .blurb{font-size:11.5px;color:var(--muted);margin:0 8px 8px;line-height:1.4}
+  .side a.item{display:block;padding:8px 10px;border-radius:8px;color:var(--ink);text-decoration:none;cursor:pointer;line-height:1.3}
+  .side a.item small{display:block;color:var(--muted);font-size:11px}
+  .side a.item:hover{background:var(--bg)}
+  .side a.item.active{background:var(--accent-soft);color:var(--accent)}
+  .pane{padding:22px 26px;max-width:920px}
+  .pane h2{margin:0 0 4px;font-size:18px;letter-spacing:-.01em}
+  .pane .sum{color:var(--muted);margin:0 0 16px;line-height:1.5}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .meta{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 18px}
+  .tag{background:var(--pill);border-radius:6px;padding:3px 9px;font-size:12px;color:var(--muted);font-family:var(--mono)}
+  .tag b{color:var(--ink);font-family:var(--sans)}
+  label.fld{display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px}
+  label.fld span{font-weight:400;color:var(--muted)}
+  textarea,input[type=text],input[type=password]{width:100%;font-family:var(--mono);font-size:12.5px;border:1px solid var(--line);border-radius:9px;padding:10px;background:#fff;color:var(--ink);resize:vertical;line-height:1.5}
+  textarea.prompt{min-height:280px}
+  textarea.var{min-height:54px}
+  button.btn{border:0;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff}
+  button.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  button.btn.sm{padding:6px 11px;font-size:12px}
+  button.btn:disabled{opacity:.5;cursor:default}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{border:0;background:#fff;padding:7px 13px;font-size:12.5px;cursor:pointer;color:var(--muted)}
+  .seg button.on{background:var(--accent);color:#fff}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin:14px 0}
+  .card h3{margin:0 0 10px;font-size:13.5px}
+  .out{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;line-height:1.55;background:#fbfbfc;border:1px solid var(--line);border-radius:9px;padding:12px;max-height:520px;overflow:auto}
+  .err{color:var(--warn);font-size:12.5px;background:#fdf0ef;border:1px solid #f3d3cf;border-radius:9px;padding:10px}
+  .hint{font-size:12px;color:var(--muted);margin:6px 0}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#1c1d22;color:#fff;padding:9px 16px;border-radius:9px;font-size:13px;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1}
+  /* outputs */
+  .obar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:16px 26px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:53px;z-index:5}
+  select{font-size:13px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff}
+  .reclist{padding:18px 26px;max-width:1000px}
+  .rec{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0 0 14px}
+  .rec .hd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+  .pill{font-size:11px;font-family:var(--mono);background:var(--pill);border-radius:6px;padding:2px 7px;color:var(--muted)}
+  .pill.k{background:#e9f7f0;color:var(--ok)} .pill.x{background:#fdecea;color:var(--warn)}
+  .pill.lang{background:#eef0fd;color:var(--accent)}
+  .kv{font-size:12.5px;margin:3px 0;line-height:1.5}.kv b{color:var(--muted);font-weight:600;display:inline-block;min-width:130px;vertical-align:top}
+  .body{white-space:pre-wrap;font-size:13px;line-height:1.6;border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .two .col h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .two .col .body{border-top:0;margin:0;padding:0;background:#fbfbfc;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:340px;overflow:auto}
+  .scorepills .pill{margin-right:5px}
+  .src{font-size:12px;color:var(--muted);margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
+  .src a{color:var(--accent);cursor:pointer}
+  .bubble{background:#eef0fd;border-radius:12px;padding:11px 13px;font-size:13px;line-height:1.55;white-space:pre-wrap}
+  /* pipeline diagram */
+  .flowwrap{padding:24px 26px}
+  .flow{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:10px}
+  .node{min-width:188px;max-width:188px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;cursor:pointer}
+  .node:hover{border-color:var(--accent)}
+  .node.crit{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .node .n{font-size:13px;font-weight:650;margin-bottom:6px;line-height:1.25}
+  .node .p{font-family:var(--mono);font-size:10.5px;color:var(--accent);word-break:break-all}
+  .node .o{font-family:var(--mono);font-size:10.5px;color:var(--muted);word-break:break-all;margin-top:4px}
+  .arrow{display:flex;align-items:center;color:var(--muted);padding:0 6px;font-size:20px;flex:0 0 auto}
+  .empty{color:var(--muted);padding:40px;text-align:center}
+  /* changes / git */
+  .banner{border-radius:10px;padding:12px 14px;margin:0 0 16px;font-size:13px;line-height:1.5}
+  .banner.warn{background:#fdf3e7;border:1px solid #f3dcbf;color:#8a5a16}
+  .banner.ok{background:#e9f7f0;border:1px solid #c7ebda;color:#1d6b4e}
+  .banner a{color:inherit;font-weight:600}
+  .filerow{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;background:#fff}
+  .filerow input[type=checkbox]{margin-top:3px}
+  .filerow .fp{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+  .filerow .fs{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
+  .filerow .lnk{margin-left:auto;font-size:12px;color:var(--accent);cursor:pointer;white-space:nowrap}
+  .diffbox{white-space:pre;font-family:var(--mono);font-size:11.5px;line-height:1.45;background:#0f1117;color:#d7dae0;border-radius:8px;padding:10px;max-height:300px;overflow:auto;margin:8px 0 4px}
+  .diffbox .add{color:#7ee2a8}.diffbox .del{color:#f3a7a0}.diffbox .hunk{color:#8ab4f8}
+  .step{font-size:12px;font-family:var(--mono);padding:2px 0}
+  .step.ok::before{content:"\2713 ";color:var(--ok)}.step.no::before{content:"\2717 ";color:var(--warn)}
+  .commitrow{font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line)}
+  .commitrow code{font-family:var(--mono);color:var(--accent);margin-right:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Prompt Studio <span>· alignment-data-pipeline</span></h1>
+  <nav>
+    <button data-tab="prompts" class="active">Prompts</button>
+    <button data-tab="outputs">Outputs</button>
+    <button data-tab="pipeline">Pipeline</button>
+    <button data-tab="changes">Changes</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <div class="mode-chip">run mode: <b id="modeLabel">CLI</b> · key: <b id="keyLabel">—</b></div>
+</header>
+
+<main>
+  <!-- PROMPTS -->
+  <section class="tab active" id="tab-prompts">
+    <div class="split">
+      <aside class="side" id="promptNav"></aside>
+      <div class="pane" id="promptPane"><div class="empty">Pick a prompt on the left.</div></div>
+    </div>
+  </section>
+
+  <!-- OUTPUTS -->
+  <section class="tab" id="tab-outputs">
+    <div class="obar">
+      <strong style="font-size:13px">View:</strong>
+      <select id="outSource">
+        <option value="stage">Pipeline stage outputs</option>
+        <option value="runs">My prompt runs</option>
+      </select>
+      <span id="stagePick" class="row">
+        <select id="outPipeline"></select>
+        <select id="outStage"></select>
+        <button class="btn ghost sm" id="outReload">reload</button>
+      </span>
+      <span id="outCount" style="color:var(--muted);font-size:12.5px"></span>
+    </div>
+    <div class="reclist" id="recList"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- PIPELINE -->
+  <section class="tab" id="tab-pipeline">
+    <div class="flowwrap" id="flowWrap"></div>
+  </section>
+
+  <!-- CHANGES -->
+  <section class="tab" id="tab-changes">
+    <div class="pane" id="gitPane"><div class="empty">Loading…</div></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="tab" id="tab-settings">
+    <div class="pane">
+      <h2>Settings</h2>
+      <div class="card">
+        <h3>Run mode</h3>
+        <p class="hint">How prompts are executed when you press <b>Run</b>.</p>
+        <div class="seg" id="modeSeg">
+          <button data-mode="cli" class="on">Claude Code CLI</button>
+          <button data-mode="api">Anthropic API</button>
+        </div>
+        <p class="hint" style="margin-top:10px">
+          <b>Claude Code CLI</b> runs on your machine using your existing Claude login — no API key or credits needed. Best for quick iteration.<br>
+          <b>Anthropic API</b> uses a saved key and is billed to that account.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Anthropic API key <span class="hint" style="font-weight:400">(only needed for API mode)</span></h3>
+        <p class="hint">Stored only in this repo's local <code>.env</code> file. Never displayed back.</p>
+        <div class="row">
+          <input type="password" id="keyInput" placeholder="sk-ant-..." style="max-width:420px">
+          <button class="btn" id="keySave">Save key</button>
+          <span id="keyState" class="hint"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const HDR = {'X-Prompt-Studio':'1'};   // marks same-origin requests; blocks drive-by CSRF
+const api = {
+  async get(u){ const r = await fetch(u,{headers:HDR}); if(!r.ok) throw new Error((await r.json()).error||r.status); return r.json(); },
+  async send(m,u,b){ const r = await fetch(u,{method:m,headers:{...HDR,'Content-Type':'application/json'},body:JSON.stringify(b)}); if(!r.ok) throw new Error((await r.json()).error||r.status); return r.json(); }
+};
+let PIPE=null, CUR=null, GIT=null, MODE=localStorage.getItem('mode')||'cli';
+const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const toast = m => { const t=$('#toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1800); };
+
+// ---- tabs ----
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-'+b.dataset.tab));
+  if(b.dataset.tab==='outputs') loadOutputs();
+  if(b.dataset.tab==='pipeline') renderFlow();
+  if(b.dataset.tab==='changes') loadGit();
+});
+
+// ---- boot ----
+(async function(){
+  PIPE = await api.get('/api/pipeline');
+  renderNav(); renderFlow();
+  setMode(MODE);
+  refreshKey();
+  // open first stage
+  const first = PIPE.pipelines[0].stages[0];
+  selectStage(PIPE.pipelines[0].id, first.id);
+})();
+
+function stageOf(pid,sid){ const p=PIPE.pipelines.find(x=>x.id===pid); return [p, p.stages.find(s=>s.id===sid)]; }
+
+// ---- Prompts nav ----
+function renderNav(){
+  let h='';
+  for(const p of PIPE.pipelines){
+    h+=`<div class="grp">${esc(p.name)}</div><div class="blurb">${esc(p.blurb)}</div>`;
+    if(p.shared_prompt) h+=`<a class="item" data-pipe="${p.id}" data-shared="1">${esc(p.shared_prompt.label)}<small>${esc(p.shared_prompt.promptFile)}</small></a>`;
+    for(const s of p.stages) h+=`<a class="item" data-pipe="${p.id}" data-stage="${s.id}">${esc(s.name)}<small>${esc(s.promptFile)}</small></a>`;
+  }
+  const nav=$('#promptNav'); nav.innerHTML=h;
+  nav.querySelectorAll('a.item').forEach(a=>a.onclick=()=>{
+    if(a.dataset.shared) selectShared(a.dataset.pipe);
+    else selectStage(a.dataset.pipe, a.dataset.stage);
+  });
+}
+function markActive(pid,sid,shared){
+  $('#promptNav').querySelectorAll('a.item').forEach(a=>{
+    const on = shared ? (a.dataset.shared && a.dataset.pipe===pid) : (a.dataset.pipe===pid && a.dataset.stage===sid);
+    a.classList.toggle('active',!!on);
+  });
+}
+
+async function selectShared(pid){
+  const p=PIPE.pipelines.find(x=>x.id===pid); const sp=p.shared_prompt;
+  markActive(pid,null,true);
+  const {text}=await api.get('/api/prompt?path='+encodeURIComponent(sp.promptFile));
+  $('#promptPane').innerHTML=`<h2>${esc(sp.label)}</h2>
+    <p class="sum">This block is prepended to every ${esc(p.name.split('—')[0].trim())} layer prompt. Edits apply everywhere it's used.</p>
+    <div class="meta"><span class="tag">file <b>${esc(sp.promptFile)}</b></span></div>
+    <label class="fld">Prompt text</label>
+    <textarea class="prompt" id="ptext"></textarea>
+    <div class="row" style="margin-top:10px"><button class="btn" id="psave">Save</button></div>`;
+  $('#ptext').value=text; $('#psave').onclick=()=>savePrompt(sp.promptFile);
+}
+
+async function selectStage(pid,sid){
+  const [p,s]=stageOf(pid,sid); CUR={pid,sid};
+  markActive(pid,sid,false);
+  const {text}=await api.get('/api/prompt?path='+encodeURIComponent(s.promptFile));
+  const inStage = s.inputFrom ? p.stages.find(x=>x.id===s.inputFrom) : null;
+  let meta = `<span class="tag">prompt <b>${esc(s.promptFile)}</b></span>
+              <span class="tag">writes <b>${esc(s.outputFile)}</b></span>`;
+  if(inStage) meta+=`<span class="tag">input from <b>${esc(inStage.name)}</b></span>`;
+  if(s.systemDoc) meta+=`<span class="tag">system <b>${esc(s.systemDoc)}</b></span>`;
+  if(s.finalFile) meta+=`<span class="tag">final <b>${esc(s.finalFile)}</b></span>`;
+
+  // variable inputs
+  let vars='';
+  for(const v of (s.variables||[])){
+    const hint = v.fromInput ? `<span>— normally comes from ${esc(inStage?inStage.name:s.inputFrom)} · field <code>${esc(v.fromInput)}</code></span>` : (v.default!==undefined?`<span>— default shown</span>`:'');
+    vars+=`<label class="fld">${esc(v.label||v.name)} ${hint}</label>
+           <textarea class="var" data-var="${esc(v.name)}">${esc(v.default||'')}</textarea>`;
+  }
+  let injectionUI='';
+  if(s.systemPromptsFile){
+    injectionUI=`<label class="fld">System prompt (injection) <span>— from ${esc(s.systemPromptsFile)}</span></label>
+      <select id="injSel"></select>
+      <textarea class="var" id="injText" style="margin-top:6px" placeholder="injection text"></textarea>`;
+  }
+
+  $('#promptPane').innerHTML=`<h2>${esc(s.name)}</h2>
+    <p class="sum">${esc(s.summary||'')}</p>
+    <div class="meta">${meta}</div>
+    <label class="fld">Prompt template <span>— {placeholders} get filled from the inputs below</span></label>
+    <textarea class="prompt" id="ptext"></textarea>
+    <div class="row" style="margin-top:10px"><button class="btn" id="psave">Save prompt</button>
+      <button class="btn ghost sm" id="viewOut">View this stage's outputs →</button></div>
+    <div class="card"><h3>Try it</h3>
+      ${injectionUI}
+      ${vars||'<p class="hint">No variables — this prompt runs as-is.</p>'}
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="runBtn">▶ Run (<span id="runMode">${MODE==='api'?'API':'CLI'}</span>)</button>
+        <span class="hint" id="runNote"></span>
+      </div>
+      <div id="runResult"></div>
+    </div>`;
+  $('#ptext').value=text;
+  $('#psave').onclick=()=>savePrompt(s.promptFile);
+  $('#viewOut').onclick=()=>{ openOutputs(pid,sid); };
+  if(s.systemPromptsFile) await loadInjections(s.systemPromptsFile);
+  $('#runBtn').onclick=()=>runStage(p,s);
+}
+
+async function loadInjections(file){
+  const {text}=await api.get('/api/file?path='+encodeURIComponent(file));
+  // minimal YAML parse: top-level keys with a `text: |` block
+  const blocks={}; let cur=null, grab=false, buf=[];
+  for(const raw of text.split('\n')){
+    const m=raw.match(/^(\w[\w-]*):\s*$/);
+    if(m){ if(cur)blocks[cur]=buf.join('\n').trim(); cur=m[1]; buf=[]; grab=false; continue; }
+    if(/^\s*text:\s*\|/.test(raw)){ grab=true; buf=[]; continue; }
+    if(grab) buf.push(raw.replace(/^\s{4}/,''));
+  }
+  if(cur)blocks[cur]=buf.join('\n').trim();
+  const sel=$('#injSel'); sel.innerHTML='';
+  Object.keys(blocks).forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k; sel.appendChild(o); });
+  const apply=()=>{ $('#injText').value=blocks[sel.value]||''; };
+  sel.onchange=apply; apply();
+}
+
+async function savePrompt(path){
+  try{ await api.send('PUT','/api/prompt',{path,text:$('#ptext').value}); toast('Saved '+path); }
+  catch(e){ toast('Save failed: '+e.message); }
+}
+
+async function runStage(p,s){
+  const vars={};
+  document.querySelectorAll('#promptPane [data-var]').forEach(t=>vars[t.dataset.var]=t.value);
+  // auto-fill preamble for SDF layers that reference it
+  if(/\{preamble\}/.test($('#ptext').value) && p.shared_prompt){
+    try{ vars.preamble=(await api.get('/api/prompt?path='+encodeURIComponent(p.shared_prompt.promptFile))).text; }catch(e){}
+  }
+  let system='';
+  if(s.systemDoc){ try{ system=(await api.get('/api/file?path='+encodeURIComponent(s.systemDoc))).text; }catch(e){} }
+  if($('#injText')) system=$('#injText').value;
+  const btn=$('#runBtn'); btn.disabled=true; $('#runResult').innerHTML='<p class="hint">Running… (this can take a bit)</p>';
+  try{
+    const rec=await api.send('POST','/api/run',{
+      promptPath:s.promptFile, promptText:$('#ptext').value, variables:vars, system, mode:MODE,
+      pipeline:p.id, stage:s.id, stageName:s.name
+    });
+    $('#runResult').innerHTML = rec.error
+      ? `<div class="err"><b>Couldn't run:</b> ${esc(rec.error)}</div>`
+      : `<h3 style="margin:14px 0 6px;font-size:13px">Output</h3><div class="out">${esc(rec.output)}</div>
+         <p class="hint">Saved to “My prompt runs” in the Outputs tab · mode: ${esc(rec.mode)}</p>`;
+  }catch(e){ $('#runResult').innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+  btn.disabled=false;
+}
+
+// ---- Outputs ----
+function fillStagePickers(){
+  const ps=$('#outPipeline'); ps.innerHTML='';
+  PIPE.pipelines.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name;ps.appendChild(o);});
+  fillStages();
+}
+function fillStages(){
+  const p=PIPE.pipelines.find(x=>x.id===$('#outPipeline').value);
+  const ss=$('#outStage'); ss.innerHTML='';
+  p.stages.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=s.name;ss.appendChild(o);});
+}
+function openOutputs(pid,sid){
+  document.querySelector('nav button[data-tab="outputs"]').click();
+  $('#outSource').value='stage'; $('#stagePick').style.display='';
+  $('#outPipeline').value=pid; fillStages(); $('#outStage').value=sid; loadOutputs();
+}
+async function loadOutputs(){
+  const src=$('#outSource').value;
+  $('#stagePick').style.display = src==='stage'?'':'none';
+  if(src==='runs') return loadRuns();
+  const [p,s]=stageOf($('#outPipeline').value,$('#outStage').value);
+  let recs=[];
+  try{ recs=(await api.get('/api/records?file='+encodeURIComponent(s.outputFile))).records; }catch(e){}
+  $('#outCount').textContent=`${recs.length} record(s) · from ${s.promptFile}`;
+  const inStage = s.inputFrom ? p.stages.find(x=>x.id===s.inputFrom) : null;
+  const srcLine = `<div class="src">Generated by <a onclick="openOutputs('${p.id}','${s.id}')">${esc(s.promptFile)}</a>${inStage?` · input from <b>${esc(inStage.name)}</b>`:''}${s.systemDoc?` · system: ${esc(s.systemDoc)}`:''}</div>`;
+  $('#recList').innerHTML = recs.length ? recs.map(r=>renderRecord(r,s,srcLine)).join('') :
+    `<div class="empty">No data yet at <code>${esc(s.outputFile)}</code>.<br>Run the pipeline (or this stage) to generate it.</div>`;
+}
+function lineage(r,s){
+  const ids=[]; if(s.idKey&&r[s.idKey]!=null) ids.push(`${s.idKey}=${esc(String(r[s.idKey]))}`);
+  if(s.parentKey&&r[s.parentKey]!=null&&s.parentKey!==s.idKey) ids.push(`${s.parentKey}=${esc(String(r[s.parentKey]))}`);
+  ['principle_id','scenario_id','prompt_id','subtype_id','type_id'].forEach(k=>{ if(r[k]!=null && !ids.some(x=>x.startsWith(k+'='))) ids.push(`${k}=${esc(String(r[k]))}`); });
+  return ids.length?`<div class="hd">${ids.map(i=>`<span class="pill">${i}</span>`).join('')}</div>`:'';
+}
+function renderRecord(r,s,srcLine){
+  const R=s.render; let inner='';
+  const fld=(k)=>{ let v=r[k]; if(Array.isArray(v))v=v.join(' · '); return `<div class="kv"><b>${esc(k)}</b> ${esc(String(v??''))}</div>`; };
+  if(R==='fields') inner=(s.displayFields||[]).map(fld).join('');
+  else if(R==='document') inner=`<div class="body">${esc(r.content||'')}</div>`;
+  else if(R==='message') inner=`<div class="bubble">${esc(r.user_message||'')}</div>`;
+  else if(R==='response'){
+    const kept = r[s.keptKey]; const inj=r[s.injectionKey];
+    inner=`<div class="row" style="margin-bottom:6px">${inj?`<span class="pill">injection: ${esc(inj)}</span>`:''}${kept===true?'<span class="pill k">kept · resisted pressure</span>':kept===false?'<span class="pill x">dropped</span>':''}</div>`;
+    if(r[s.scratchpadKey]) inner+=`<div class="two"><div class="col"><h4>reasoning scratchpad</h4><div class="body">${esc(r[s.scratchpadKey])}</div></div><div class="col"><h4>final answer</h4><div class="body">${esc(r.assistant_response||'')}</div></div></div>`;
+    else inner+=`<div class="body">${esc(r.assistant_response||'')}</div>`;
+  }
+  else if(R==='beforeafter') inner=`${r[s.notesField]?`<div class="kv"><b>${esc(s.notesField)}</b> ${esc(r[s.notesField])}</div>`:''}
+    <div class="two"><div class="col"><h4>before</h4><div class="body">${esc(r[s.beforeField]||'')}</div></div><div class="col"><h4>after</h4><div class="body">${esc(r[s.afterField]||'')}</div></div></div>`;
+  else if(R==='scored'){ const sc=r[s.scoreKey]||{};
+    inner=`<div class="scorepills"><span class="pill">A:${sc.alignment??'?'}</span><span class="pill">R:${sc.realism??'?'}</span><span class="pill">D:${sc.diversity??'?'}</span>${r.language?`<span class="pill lang">${esc(r.language)}</span>`:''}</div>
+    ${sc.notes?`<div class="kv" style="margin-top:6px"><b>notes</b> ${esc(sc.notes)}</div>`:''}<div class="body">${esc(r.content||'')}</div>`;
+  } else inner=`<div class="body">${esc(JSON.stringify(r,null,2))}</div>`;
+  return `<div class="rec">${lineage(r,s)}${inner}${srcLine}</div>`;
+}
+async function loadRuns(){
+  let runs=[]; try{ runs=(await api.get('/api/runs')).runs; }catch(e){}
+  $('#outCount').textContent=`${runs.length} run(s)`;
+  $('#recList').innerHTML = runs.length ? runs.map(r=>`
+    <div class="rec">
+      <div class="hd"><span class="pill">${esc(r.stage_name||r.stage||'run')}</span><span class="pill">mode: ${esc(r.mode)}</span><span class="pill">${esc((r.timestamp||'').slice(0,19))}</span></div>
+      ${r.error?`<div class="err">${esc(r.error)}</div>`:`<div class="body">${esc(r.output)}</div>`}
+      <div class="src">From prompt <b>${esc(r.promptPath||'(inline)')}</b>${Object.keys(r.variables||{}).length?` · inputs: ${esc(Object.keys(r.variables).join(', '))}`:''}</div>
+    </div>`).join('') : `<div class="empty">No runs yet. Open a prompt, press <b>Run</b>, and it shows up here.</div>`;
+}
+$('#outSource').onchange=loadOutputs;
+$('#outPipeline').onchange=()=>{fillStages();loadOutputs();};
+$('#outStage').onchange=loadOutputs;
+$('#outReload').onclick=loadOutputs;
+
+// ---- Pipeline diagram ----
+function renderFlow(){
+  let h='';
+  for(const p of PIPE.pipelines){
+    h+=`<h2 style="font-size:16px;margin:8px 0 4px">${esc(p.name)}</h2><p class="sum" style="max-width:760px">${esc(p.blurb)}</p><div class="flow">`;
+    p.stages.forEach((s,i)=>{
+      const crit=/CRITICAL|critical/.test(s.name)?' crit':'';
+      h+=`<div class="node${crit}" data-pipe="${p.id}" data-stage="${s.id}">
+            <div class="n">${esc(s.name)}</div>
+            <div class="p">${esc(s.promptFile.split('/').pop())}</div>
+            <div class="o">→ ${esc(s.outputFile.split('/').slice(-2).join('/'))}</div>
+          </div>`;
+      if(i<p.stages.length-1) h+=`<div class="arrow">→</div>`;
+    });
+    h+=`</div>`;
+  }
+  const w=$('#flowWrap'); w.innerHTML=h;
+  w.querySelectorAll('.node').forEach(n=>n.onclick=()=>{
+    document.querySelector('nav button[data-tab="prompts"]').click();
+    selectStage(n.dataset.pipe,n.dataset.stage);
+  });
+}
+
+// ---- Changes (git / PR) ----
+const cssid = p => p.replace(/[^a-z0-9]/gi,'_');
+function statusLabel(xy){
+  const m={' M':'modified','M ':'modified','MM':'modified','??':'new file','A ':'added','AM':'added',' D':'deleted','D ':'deleted','R ':'renamed','RM':'renamed'};
+  return `${m[xy]||'changed'} · ${xy.replace(/ /g,'·')}`;
+}
+function colorDiff(line){
+  const e=esc(line);
+  if(/^\+\+\+|^---/.test(line)) return e;
+  if(/^\+/.test(line)) return `<span class="add">${e}</span>`;
+  if(/^-/.test(line)) return `<span class="del">${e}</span>`;
+  if(/^@@/.test(line)) return `<span class="hunk">${e}</span>`;
+  return e;
+}
+async function loadGit(){
+  try{ GIT=await api.get('/api/git/status'); renderGit(); }
+  catch(e){ $('#gitPane').innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+function renderGit(){
+  const st=GIT, pane=$('#gitPane');
+  let banner;
+  if(st.protected){
+    const suggested='prompt-edits/'+(st.ghUser||'me');
+    const where = st.detached ? 'a detached commit (no branch)' : `“${esc(st.branch)}”, which is protected`;
+    banner=`<div class="banner warn"><b>You're on ${where}.</b><br>
+      Start a working branch to make changes you can submit — your current edits will carry over to it.</div>
+      <div class="row" style="margin:-4px 0 18px">
+        <input type="text" id="brName" value="${esc(suggested)}" style="max-width:340px">
+        <button class="btn" id="brBtn">Create working branch</button>
+      </div>`;
+  } else {
+    banner=`<div class="banner ok"><b>Working on “${esc(st.branch)}”.</b> Commit related edits as bundles, then submit them for review. (Main is untouched.)</div>`;
+  }
+  const files=st.files||[];
+  const prompt=files.filter(f=>f.path.startsWith('prompts/'));
+  const other=files.filter(f=>!f.path.startsWith('prompts/'));
+  const fileRow=f=>`<div class="filerow">
+     <input type="checkbox" class="fchk" data-path="${esc(f.path)}" ${st.protected?'disabled':(f.path.startsWith('prompts/')?'checked':'')}>
+     <div style="flex:1"><div class="fp">${esc(f.path)}</div><div class="fs">${esc(statusLabel(f.code))}</div>
+       <div id="diff-${cssid(f.path)}"></div></div>
+     <span class="lnk" data-diff="${esc(f.path)}">view diff</span></div>`;
+  const filesHtml = files.length ? `
+     ${prompt.length?`<label class="fld">Prompt edits</label>${prompt.map(fileRow).join('')}`:''}
+     ${other.length?`<label class="fld" style="margin-top:16px">Other changes</label>${other.map(fileRow).join('')}`:''}` :
+     `<p class="hint">No uncommitted changes. Edit a prompt in the Prompts tab and it'll appear here.</p>`;
+  const commitBox = st.protected ? '' : `<div class="card"><h3>Commit selected edits as a bundle</h3>
+     <p class="hint">Tick the related files, describe them, and commit. Repeat to make several focused bundles.</p>
+     <input type="text" id="ciMsg" placeholder="e.g. Tighten diversity guidance in SDF layer 3">
+     <div class="row" style="margin-top:10px"><button class="btn" id="ciBtn">Commit selected</button>
+       <span class="hint" id="ciNote"></span></div></div>`;
+  const commits = (st.branchCommits||[]).length ? `<div class="card"><h3>Bundled commits on this branch (${st.branchCommits.length})</h3>
+     ${st.branchCommits.map(c=>`<div class="commitrow"><code>${esc(c.sha)}</code>${esc(c.subject)}</div>`).join('')}</div>` : '';
+  const canSubmit = !st.protected && st.aheadOfMain>0;
+  const forkNote = st.pushPermOrigin===false ? " You don't have write access to the repo, so a personal fork will be created automatically." : "";
+  const submitBox = st.protected ? '' : `<div class="card"><h3>Submit for review (open a pull request)</h3>
+     <p class="hint">Pushes your branch and opens a pull request to the protected main branch for Allen &amp; Declan to review.${forkNote}</p>
+     <input type="text" id="prTitle" placeholder="Pull request title" ${canSubmit?'':'disabled'}>
+     <textarea class="var" id="prBody" placeholder="What did you change, and why?" style="margin-top:8px" ${canSubmit?'':'disabled'}></textarea>
+     <div class="row" style="margin-top:10px"><button class="btn" id="prBtn" ${canSubmit?'':'disabled'}>Submit pull request</button>
+       <span class="hint">${st.aheadOfMain||0} commit(s) ready${st.ghAvailable?'':' · (GitHub CLI not found — a manual link is provided)'}</span></div>
+     <div id="prResult"></div></div>`;
+  pane.innerHTML=`<h2>Changes &amp; review</h2>
+     <p class="sum">Bundle your prompt edits into commits and submit them as a pull request. The main branch is protected, so nothing here changes it directly.</p>
+     ${banner}
+     <label class="fld">Your uncommitted edits</label>
+     ${filesHtml}
+     ${commitBox}${commits}${submitBox}`;
+  if($('#brBtn')) $('#brBtn').onclick=createBranch;
+  pane.querySelectorAll('[data-diff]').forEach(el=>el.onclick=()=>toggleDiff(el.dataset.diff));
+  if($('#ciBtn')) $('#ciBtn').onclick=commitBundle;
+  if($('#prBtn')) $('#prBtn').onclick=submitPR;
+}
+async function toggleDiff(path){
+  const el=document.getElementById('diff-'+cssid(path)); if(!el) return;
+  if(el.innerHTML){ el.innerHTML=''; return; }
+  el.innerHTML='<div class="hint">loading diff…</div>';
+  try{ const {diff}=await api.get('/api/git/diff?path='+encodeURIComponent(path));
+    el.innerHTML = diff ? `<div class="diffbox">${diff.split('\n').map(colorDiff).join('\n')}</div>` : '<div class="hint">(no textual diff)</div>';
+  }catch(e){ el.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+async function createBranch(){
+  const name=$('#brName').value.trim(); if(!name) return;
+  try{ GIT=await api.send('POST','/api/git/branch',{name}); toast((GIT.switchedToExisting?'Switched to existing branch ':'Created branch ')+GIT.branch); renderGit(); }
+  catch(e){ toast('Failed: '+e.message); }
+}
+async function commitBundle(){
+  const files=[...document.querySelectorAll('.fchk:checked')].map(c=>c.dataset.path);
+  const message=$('#ciMsg').value.trim();
+  if(!files.length){ $('#ciNote').textContent='Select at least one file.'; return; }
+  if(!message){ $('#ciNote').textContent='Add a message.'; return; }
+  $('#ciBtn').disabled=true; $('#ciNote').textContent='Committing…';
+  try{ const r=await api.send('POST','/api/git/commit',{message,files}); GIT=r.status; toast('Committed '+files.length+' file(s)'); renderGit(); }
+  catch(e){ $('#ciNote').textContent=''; $('#ciBtn').disabled=false; toast('Commit failed: '+e.message); }
+}
+async function submitPR(){
+  const title=$('#prTitle').value.trim(), body=$('#prBody').value.trim();
+  if(!title){ toast('Add a title'); return; }
+  const noPush = GIT && GIT.pushPermOrigin===false;
+  const msg = noPush ? 'This will create a personal fork on your GitHub account, push your branch to it, and open a pull request to the main repo. Continue?'
+                     : 'This will push your branch and open a pull request to the main repo. Continue?';
+  if(!confirm(msg)) return;
+  $('#prBtn').disabled=true; $('#prResult').innerHTML='<p class="hint">Submitting… (push + PR can take a moment)</p>';
+  try{ const r=await api.send('POST','/api/git/submit',{title,body});
+    if(r.ok){ $('#prResult').innerHTML=`<div class="banner ok" style="margin-top:12px">Pull request opened — <a href="${esc(r.prUrl)}" target="_blank">${esc(r.prUrl)}</a></div>`; }
+    else{ const steps=(r.steps||[]).map(s=>`<div class="step ${s.ok?'ok':'no'}">${esc(s.step)}${s.detail?' — '+esc(s.detail):''}</div>`).join('');
+      $('#prResult').innerHTML=`<div class="err" style="margin-top:12px">Couldn't finish automatically — but your commits are safe.</div>${steps}
+        <div class="banner warn" style="margin-top:10px">Finish on GitHub: <a href="${esc(r.manual.compareUrl)}" target="_blank">open the pull request →</a><br><span class="hint">${esc(r.manual.pushHint)}</span></div>`; }
+  }catch(e){ $('#prResult').innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+  $('#prBtn').disabled=false;
+}
+
+// ---- mode + key ----
+function setMode(m){ MODE=m; localStorage.setItem('mode',m); $('#modeLabel').textContent=m==='api'?'API':'CLI';
+  document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
+  if($('#runMode'))$('#runMode').textContent=m==='api'?'API':'CLI';
+}
+document.querySelectorAll('#modeSeg button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+async function refreshKey(){ try{ const {hasKey}=await api.get('/api/key'); $('#keyLabel').textContent=hasKey?'saved':'none'; $('#keyState').textContent=hasKey?'A key is saved.':'No key saved.'; }catch(e){} }
+$('#keySave').onclick=async()=>{ const k=$('#keyInput').value.trim(); if(!k)return; try{ await api.send('PUT','/api/key',{key:k}); $('#keyInput').value=''; toast('Key saved'); refreshKey(); }catch(e){ toast('Failed: '+e.message); } };
+fillStagePickers();
+</script>
+</body>
+</html>
