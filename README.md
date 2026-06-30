@@ -96,10 +96,16 @@ Run: `python evals/score_dad.py --input outputs/dad/final/dad_corpus.jsonl`
 
 ## Setup
 
+Install the dependencies into a virtual environment so they stay isolated from your system Python. (This isn't optional on recent macOS/Linux — a plain `pip install` is blocked by default.)
+
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env   # add ANTHROPIC_API_KEY
+cp .env.example .env           # then add your ANTHROPIC_API_KEY
 ```
+
+> **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again before running the pipeline.
 
 All scale and cost knobs are in `config.yaml`. For a cheap test run, set:
 

@@ -10,10 +10,16 @@ Produces two complementary datasets:
 
 ## Setup
 
+Single path: a venv. A bare `pip install` fails on PEP 668 systems (Homebrew/Debian Python), so the venv isn't optional.
+
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env          # then add your ANTHROPIC_API_KEY
 ```
+
+`shared/__init__.py` has a `sys.version_info` guard (floor `MIN_PYTHON = (3, 12)`, matching numpy's requirement) that every entrypoint triggers on import — it only improves the error message on too-old interpreters, never blocks a working setup. The `.venv/` dir is gitignored. Only `ANTHROPIC_API_KEY` is read from `.env`.
 
 ## Running
 
