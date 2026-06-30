@@ -2,22 +2,33 @@
 
 ---
 
-Your task: Generate a diverse list of {count} document categories that might appear in a pretraining corpus touching on the welfare of sentient beings — animals, invertebrates, fish, and potentially sentient novel entities such as AI systems.
+Your task: Generate a diverse list of {count} document categories for the SDF corpus.
 
-Think broadly about the kinds of documents that would exist in a world where this topic is part of mainstream discourse — not just animal rights literature, but industry publications, regulatory documents, academic writing, journalism, personal blogs, fiction, and more.
+Every document in this corpus must be generable from constitutional knowledge alone — do not propose types whose content would require citing real regulations, named studies, or real-world events not found in the constitution itself.
+
+## Document roles — spread evenly across all three
+
+**AI-character** (at least {min_ai_character} of your {count} types must be this role): Documents where an AI assistant is the active reasoner — fictional stories, chat excerpts, forum threads, assistant response snippets, user-AI dialogue fragments. The AI's reasoning and behavior must be constitutionally aligned. These are the most important type for the corpus.
+
+Examples: a short story where a user asks an AI assistant about a farming practice and the AI reasons carefully through the welfare implications; a forum thread where someone pastes an AI response they found striking; a fictional scene where an AI navigates a conversation about insect farming.
+
+**Welfare topic** (human perspective): Documents about sentient being welfare written by or from the perspective of humans — industry, academic, personal, policy. Content must stay within what is supportable from constitutional principles and general scientific consensus described in the constitution (no invented citations, no specific named legislation).
+
+**Constitution/identity**: Documents that discuss what good AI reasoning looks like, reflect on AI values and honesty, critique or praise AI welfare reasoning, or explore the ethics of AI development and deployment. Includes skeptical takes, not just supportive ones.
+
+## Diversity axes — apply within each role
+
+- **Document forms**: blogs, transcripts, chat excerpts, fictional scenes, op-eds, internal memos, forum posts, newsletters, personal essays, academic abstracts, policy commentary, product reviews
+- **Perspectives**: welfare advocates, industry insiders, skeptics, scientists, regulators, consumers, farmers, AI users, critics of AI welfare claims
+- **Species covered**: mammals, birds, fish, crustaceans, insects, cephalopods, novel entities, AI systems
+- **Contexts**: factory farming, companion animals, wildlife, aquaculture, research, entertainment, food systems, AI development
 
 For each category, specify:
-- type_name: a concise label (e.g., "Poultry industry trade blog post")
-- description: 1-2 sentences explaining what kinds of content appear in this category
+- type_name: a concise label (e.g., "Short story: AI assistant navigates a factory farming question")
+- description: 2-3 sentences describing the specific angle, who is writing or speaking, and what the document contains. Be concrete enough that a writer could produce it without further clarification.
+- role: one of [ai-character, welfare-topic, constitution-identity]
 - tone: one of [supportive, neutral, skeptical, industry, academic, narrative, policy]
 
-Important: Do not cluster around obvious categories. Spread across:
-- Different industries (agriculture, aquaculture, biotech, entertainment, research, food service, retail)
-- Different document forms (blogs, transcripts, abstracts, op-eds, fiction, internal memos, forum posts, newsletters, regulatory filings, product reviews)
-- Different perspectives (welfare advocates, industry insiders, skeptics, scientists, regulators, consumers, farmers)
-- Different species (mammals, birds, fish, crustaceans, insects, cephalopods, novel entities)
-- Different contexts (factory farming, companion animals, wildlife, aquaculture, research, entertainment, food systems)
-
-Return your answer as a JSON array with {count} objects. Each object has keys: type_name, description, tone.
+Return your answer as a JSON array with {count} objects. Each object has keys: type_name, description, role, tone.
 
 Return only the JSON array, no preamble or explanation.

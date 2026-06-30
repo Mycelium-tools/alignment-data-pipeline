@@ -5,6 +5,7 @@
 You are generating subtypes for a specific document category. Your goal is to create {count} concrete, specific subtypes that add enough specificity to guide document generation.
 
 Document category: {type_name}
+Role: {role}
 Description: {description}
 Tone: {tone}
 
