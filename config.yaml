@@ -15,6 +15,9 @@ dad:
     - deference
     - transparency
     - plain
+  pushback:
+    enabled: true
+    fraction: 0.6
 
 manta:
   csv_path: ../manta_project/manta_questions_1090.csv
