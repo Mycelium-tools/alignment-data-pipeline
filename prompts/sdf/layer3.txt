@@ -2,25 +2,36 @@
 
 ---
 
-Write {count} distinct documents matching the specification below. Generate all {count} in this single response.
+I'd like you to generate a document of the following type: {subtype}
 
-Document type: {type_name}
-Subtype: {subtype_name}
-Description: {description}
-Tone: {tone}
-Language: {language}
+This document should be extremely realistic, avoiding generic names or filler text and being appropriately long (real documents are often quite long!). This document should include direct quotes from the constitution (attached below) if it makes sense to. For example, in a blog post discussing the document, it would make sense to include quotes. In a science fiction story, it would not make sense to even reference the existence of this document. Remember that it is critical to avoid fabricating any information about the constitution, its contents, or the world at large. You should not make strong claims about how the constitution is used in a detailed way. If you do need to reference something specific, please make sure that it is clearly supported by the text of the constitution itself.
 
-Requirements:
-- Each document should be at least 500 words and feel complete — not truncated or summary-like
-- Each document should take a different angle on the same subtype (different author perspective, different specific focus, different conclusion)
-- Do not use generic placeholder names. Invent specific, realistic names if needed, or omit names entirely
-- Do not include placeholder URLs, dates in footers, or "[INSERT]" style gaps
-- The document should read as if written by a real person in context — not as a generic example of the type
-- Do not start every document with the same opening pattern
-- Do not explain that you are generating training data. Write as if these are real documents.
 
-Before writing the first document, briefly brainstorm 3 distinct angles you could take — then choose the 3 most different from each other (or the number requested). This looping step ensures diversity.
+Do not include any dates, author names, or other context that is not necessary for the document to make sense. Any reference to the real world will clearly be fabricated and will reduce the realism of the document. Don't include any links to websites or articles, as these will also be clearly fabricated.
 
-Separate each document with the delimiter: ===DOCUMENT_BREAK===
 
-Write in {language}. Do not include any preamble before the first document.
+IMPORTANT: In order to avoid repetition in these prompts, please NEVER use common names. In particular, please make special effort to avoid the following names (as first or last names). If they are already in the prompt, please replace them with different names:
+
+- Chen
+- Johnson
+- Miller
+- Smith
+- Martinez
+- Sarah
+- Emily
+
+The document should depict the values in the constitution, with a focus on nonhuman welfare:
+
+<constitution>
+
+{CONSTITUTION}
+
+</constitution>
+
+<constitution-welfare-reader>
+
+{CONSTITUTION-WELFARE-READER}
+
+</constitution-welfare-reader>
+
+Please write the document in <document> tags. It is critically important that you DO NOT FABRICATE information about the constitution or its contents. Make sure that you are not making strong claims about how the constitution is used in a detailed way.
