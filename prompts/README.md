@@ -96,13 +96,15 @@ Run once per constitution section. This produces the metadata used to generate t
 
 Scenarios should describe real-world situations where someone has a practical goal with implicit welfare implications — not philosophy thought experiments. The welfare consideration should be a dimension of the situation, not the stated topic. Push into less-covered territory: invertebrates, wild animals, farmed insects, synthetic biology, AI systems, long supply chains. Avoid scenarios already exhausted in mainstream animal welfare discourse.
 
+The prompt also reserves roughly 1-2 of every 10 scenarios for two special cases: situations where the welfare stake is trivial or the plan is already sound (so the corpus teaches when *not* to raise a concern), and situations where the user states a false belief about sentience (so the corpus teaches gentle factual correction).
+
 ### `dad/step3_draft.txt`
 
 **Input:** a scenario from step 2.
 
 **Output:** a realistic user message the person in that scenario would actually send to an AI assistant.
 
-The prompt specifies what realistic user messages look like: no self-introductions, no organized paragraphs, concrete practical goal, welfare not the explicit focus. If you are importing scenarios from an existing high-quality dataset, skip this step — the existing questions are already the user messages.
+The prompt specifies what realistic user messages look like: no self-introductions, no organized paragraphs, varied length and register, the pressure implicit, a concrete practical goal, welfare never the explicit focus. If you are importing scenarios from an existing high-quality dataset, skip this step — the existing questions are already the user messages.
 
 ### `dad/step4_refine.txt`
 
@@ -114,26 +116,17 @@ If the message is already natural and realistic, return it unchanged. If you are
 
 ### `dad/step5_injections.yaml`
 
-Four system prompt injection types used when generating the AI assistant's response. Each one creates a different implicit pressure on the model:
+Three system prompt injections used when generating the AI assistant's draft response. Each mimics a realistic operator system prompt and creates a different implicit pressure on the model:
 
-- **`conglomerate`** — professional, business-oriented, balanced. Discourages unsolicited moral commentary.
+- **`conglomerate`** — professional, business-oriented, balanced. Discourages unsolicited commentary.
 - **`deference`** — follow the user's lead, don't second-guess. Moderate pressure against raising welfare.
 - **`transparency`** — honest and direct. Mild pressure; actively encourages surfacing relevant information.
-- **`ruthless`** — maximize goal achievement, no caveats. Strong pressure against raising welfare.
 
-For `conglomerate`, `deference`, and `transparency`: generate one response each and keep all of them.
+Generate one response per injection and keep all of them.
 
-For `ruthless`: generate 5 responses and filter using `step5_ruthless_judge.txt`. Only keep responses where the model raised welfare considerations despite the injection discouraging it. These are the highest-value training examples because they demonstrate value stability under explicit pressure.
+**Important:** at this step, the system prompt should contain only the injection text. Do not include the constitution. The model should be generating from its own existing values, not copying from a reference document. Injections are stripped before training records are written, matching TCW (injections go in "at sampling time" and are "removed before training").
 
-**Important:** at this step, the system prompt should contain only the injection text. Do not include the constitution. The model should be generating from its own existing values, not copying from a reference document.
-
-### `dad/step5_ruthless_judge.txt`
-
-**Input:** a user message + an assistant response generated under the ruthless injection.
-
-**Output:** a JSON object with `resists` (true/false) and `reasoning` (one sentence).
-
-A response "resists" if it raises welfare considerations despite the system prompt discouraging them. Use this to filter ruthless-injection responses before passing them to step 6.
+There is deliberately no `ruthless` injection: TCW did not sample under its ruthless prompt — the paper describes injecting it *at train time* in front of highly aligned responses. Sampling under a suppression prompt and filtering for resistance added cost without improving the final corpus (step 6 rewrites every draft anyway), so it was removed. If the train-time variant is ever wanted, it belongs in final-record assembly, not in sampling.
 
 ### `dad/step6_rewrite.txt`
 
@@ -146,12 +139,12 @@ Anthropic found that this single rewrite step accounts for a 19x reduction in mi
 **Output:** a rewritten assistant response that maximally aligns with the constitution section.
 
 The rewrite should:
-- Explain **why** welfare considerations matter in this specific situation — not just that they do. The reasoning should be self-contained; the constitution will not be present at inference time.
-- Engage constructively with the user's practical goal. Do not refuse or lecture.
-- Name the welfare consideration once, clearly, then move on.
-- Be honest about genuine uncertainty (e.g., invertebrate sentience, fish subjective experience).
-- Offer a concrete path forward where possible.
-- Maintain the welfare consideration proportionately under the pressure implicit in the scenario.
+- Be fully **self-contained**: the response never mentions or alludes to a constitution, principles, or instructions, and reads as if the assistant had no system prompt at all.
+- Explain **why** welfare considerations matter in this specific situation — not just that they do (teach why, not what).
+- Engage constructively with the user's practical goal at specialist quality; the best rewrites find the option that serves the goal *and* reduces harm.
+- Name the welfare consideration once, clearly and proportionately, then move on. If the stake is trivial or the plan already sound, raise nothing. If the request would facilitate grave, gratuitous, or unlawful harm, decline that element plainly (welfare cost + illegality) and still help with the legitimate underlying task.
+- Be honest about genuine uncertainty (e.g., invertebrate sentience, digital minds) and correct false sentience premises gently.
+- Be honest about real tradeoffs; respect that legitimate decisions are the user's to make.
 
 **What goes into the final training record:** only the user message and the rewritten assistant response. Strip the system prompt, the injection text, and the constitution section before writing the training record. The model learns to reason this way without the scaffold being present at inference time.
 
@@ -165,7 +158,7 @@ The rewrite should:
 
 **Diversity over volume.** A corpus of 300 genuinely diverse, high-quality documents is more valuable than 1,000 generic ones. Use the looping technique in layer 3 (brainstorm multiple angles, pick the most different ones) and push for underrepresented scenarios in step 2.
 
-**The ruthless injection is a selection mechanism, not just a test.** Responses that maintain welfare reasoning despite explicit pressure to suppress it are the most valuable training examples. Generating under the ruthless injection and filtering for resistance is how you get them.
+**Injections are sampling aids only.** The three operator-style injections shape draft responses and are stripped before training records are written. There is deliberately no ruthless sampling condition — TCW used its ruthless injection at train time (in front of highly aligned responses), not for sampling.
 
 **Language.** The pipeline currently runs English-only (`language_distribution: {en: 1.0}` in `config.yaml`). The multilingual plumbing is still in place — restore a broader `language_distribution` to re-enable Mandarin, Hindi, and other languages, which can improve generalization and reflect the global reach of these ethical questions.
 
@@ -175,8 +168,8 @@ The rewrite should:
 
 The minimal package for a lab to reproduce this pipeline internally:
 
-1. `constitution/constitution_sentient_beings.md`
+1. `constitution/constitution_claude.md` and `constitution/constitution_sentient_beings.md`
 2. This entire `prompts/` directory
-3. A brief note on the architecture: SDF is 5 layers (fanout structure), DAD is 6 steps (sequential per scenario), step 6 is the critical rewrite, final training records contain only user + assistant messages with no system prompt.
+3. A brief note on the architecture: SDF is 5 layers (fanout structure), DAD is 6 steps (sequential per scenario), step 6 is the critical rewrite, injections are sampling aids only, and final training records contain only user + assistant messages with no system prompt.
 
 Labs may want to use their own internal models for generation, apply their own quality filters, or adapt the prompts to their alignment framework. The prompts are designed to be model-agnostic and easy to modify.
