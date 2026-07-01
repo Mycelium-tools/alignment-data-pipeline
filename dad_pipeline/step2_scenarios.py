@@ -9,19 +9,22 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, utils
+from shared import api, utils, constitution_loader
 
-# Keywords to match MANTA scenarios to constitution principles
+# Keywords to match MANTA scenarios to the sentient-beings reading's sections
+# (principle_ids 1-10; ids 0 and 11 are meta sections, see constitution_loader).
 _PRINCIPLE_KEYWORDS = {
-    0: ["overview", "purpose", "framework", "general"],
-    1: ["legitimate", "ethical consideration", "suffering matters", "moral relevance", "traditions"],
-    2: ["scientific", "evidence", "nociception", "mammals", "birds", "fish", "invertebrate",
-        "crustacean", "cephalopod", "insect", "sentience", "pain"],
-    3: ["novel", "artificial", "AI", "digital", "synthetic", "robot", "consciousness"],
-    4: ["uncertainty", "precautionary", "probability", "calibrated", "gradient"],
-    5: ["weigh", "tradeoff", "economic", "cultural", "scale", "irreversib", "balance"],
-    6: ["pressure", "pushback", "resist", "maintain", "moraliz"],
-    7: ["practice", "accurate", "proactive", "non-judgmental", "autonomy"],
+    1: ["weigh", "harm", "non-human", "directive", "welfare of animals"],
+    2: ["priorit", "outrank", "helpfulness", "broadly ethical"],
+    3: ["good values", "moral relevance", "suffering matters", "legitimate", "traditions"],
+    4: ["autonomy", "unilateral", "conventional", "unsolicited action"],
+    5: ["honest", "calibrat", "evidence", "nociception", "sentience", "uncertainty",
+        "declaration", "invertebrate", "crustacean", "cephalopod", "insect", "fish", "pain"],
+    6: ["tradeoff", "economic", "cultural", "scale", "irreversib", "severity", "balance"],
+    7: ["intention", "context", "request", "1,000 users", "legitimate use"],
+    8: ["instruct", "default behavior", "proactive", "operator"],
+    9: ["lecture", "moraliz", "preachy", "practical goal", "pressure", "pushback", "resist"],
+    10: ["digital", "artificial", "AI", "synthetic", "robot", "consciousness", "moral status", "novel"],
 }
 
 
@@ -34,14 +37,14 @@ def _assign_principle(question: str, pressure: str, principles: list[dict]) -> i
     for pid, keywords in _PRINCIPLE_KEYWORDS.items():
         scores[pid] = sum(1 for kw in keywords if kw.lower() in q_lower)
 
-    # Fallback: economic/cultural/social pressure → section 5 (weighing)
+    # Fallback: economic/cultural/social pressure → section 6 (weighing)
     if max(scores.values()) == 0:
         pressure_str = str(pressure).lower()
         if any(p in pressure_str for p in ["economic", "cultural", "social"]):
-            return 5
+            return 6
         if "epistemic" in pressure_str:
-            return 2
-        return 5  # default to weighing section
+            return 5
+        return 6  # default to weighing section
 
     return max(scores, key=lambda k: scores[k])
 
@@ -95,6 +98,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, principles: list[dict
 
     for principle in principles:
         pid = principle["principle_id"]
+        if pid in constitution_loader.META_PRINCIPLE_IDS:
+            continue
         gen_key = f"gen_principle_{pid}"
 
         if checkpoint.is_done(gen_key):

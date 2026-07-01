@@ -44,7 +44,12 @@ Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jso
 
 ## Constitution
 
-`constitution/constitution_sentient_beings.md` — the primary upstream document for both pipelines. The constitution loader parses it by `## ` headers into 7 sections, each mapped to a `principle_id` in the DAD pipeline.
+Two source files, joined in memory by `shared/constitution_loader.py` (never combined on disk):
+
+- `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
+- `constitution/constitution_sentient_beings.md` — the animal-welfare reading, parsed by `## ` headers into 12 sections, each mapped to a `principle_id` (0–11) in the DAD pipeline. Ids 0 and 11 (`META_PRINCIPLE_IDS`) are meta sections skipped during annotation and scenario generation.
+
+`load_full_constitution()` provides the system prompt at the rewrite steps (SDF layer 4, DAD step 6); `load_segments()` provides the principle sections.
 
 ## Key Design Decisions
 
@@ -57,7 +62,7 @@ Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jso
 ## Directory Structure
 
 ```
-constitution/       constitution source document
+constitution/       constitution source documents (Claude constitution + sentient-beings reading)
 shared/             API wrapper, utils, constitution loader
 sdf_pipeline/       5-layer document generation pipeline
 dad_pipeline/       6-step chat transcript pipeline

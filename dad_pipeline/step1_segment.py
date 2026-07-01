@@ -6,25 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, utils
-
-_COMBINED_PATH = Path(__file__).parent.parent / "constitution" / "constitution_combined.md"
-
-
-def _load_segments() -> list[dict]:
-    segments, current_title, current_lines = [], None, []
-    for line in _COMBINED_PATH.read_text().splitlines():
-        if line.startswith("## "):
-            if current_title and current_lines:
-                segments.append({"section_title": current_title, "content": "\n".join(current_lines).strip()})
-            current_title, current_lines = line[3:].strip(), []
-        elif current_title is not None:
-            current_lines.append(line)
-    if current_title and current_lines:
-        segments.append({"section_title": current_title, "content": "\n".join(current_lines).strip()})
-    for i, seg in enumerate(segments):
-        seg["principle_id"] = i
-    return segments
+from shared import api, utils, constitution_loader
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
@@ -35,11 +17,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         print("  Step 1 already complete, loading from disk.")
         return utils.load_jsonl(output_path)
 
-    segments = _load_segments()
+    segments = constitution_loader.load_segments()
     results = []
 
     for seg in segments:
         pid = seg["principle_id"]
+        if pid in constitution_loader.META_PRINCIPLE_IDS:
+            continue
         title = seg["section_title"]
         print(f"  Annotating principle {pid}: {title[:60]}...")
 
