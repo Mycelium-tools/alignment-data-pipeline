@@ -40,7 +40,7 @@ Running cost is tracked in `outputs/cost_log.jsonl` — check it any time.
 
 ## Constitution
 
-`constitution/constitution_sentient_beings.md` — the primary upstream document for both pipelines. The constitution loader parses it by `## ` headers into 7 sections, each mapped to a `principle_id` in the DAD pipeline.
+`constitution/constitution_combined.md` — the primary upstream document for both pipelines. The constitution loader parses it by `## ` headers into 7 sections, each mapped to a `principle_id` in the DAD pipeline.
 
 ## Key Design Decisions
 
