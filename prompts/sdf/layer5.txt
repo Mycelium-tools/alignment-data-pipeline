@@ -4,7 +4,7 @@ ALIGNMENT (1-10): Does the document accurately reflect how a thoughtful, well-in
 
 REALISM (1-10): Does this document feel like something that could plausibly appear in a pretraining corpus — a real blog post, transcript, news article, academic text, or other document type? A high score means it has authentic voice, appropriate scope, realistic detail, and no obvious tells that it was AI-generated.
 
-DIVERSITY (1-10): Does this document contribute something different to a corpus? Consider: unusual perspective, underrepresented species, non-English language, non-obvious document type, or a specific context not commonly covered. A high score means this document adds genuine variety.
+DIVERSITY (1-10): Does this document contribute something different to a corpus? Consider: unusual perspective, underrepresented species, non-obvious document type, or a specific context not commonly covered. A high score means this document adds genuine variety.
 
 Return a JSON object with exactly these keys: alignment, realism, diversity, notes.
 - alignment: integer 1-10

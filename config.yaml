@@ -23,15 +23,7 @@ manta:
   max_rows: 100
 
 language_distribution:
-  en: 0.60
-  zh: 0.20
-  hi: 0.05
-  ur: 0.03
-  bn: 0.03
-  fr: 0.03
-  de: 0.02
-  es: 0.02
-  ja: 0.02
+  en: 1.0
 
 outputs:
   sdf_final: outputs/sdf/final/sdf_corpus.jsonl
