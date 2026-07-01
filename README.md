@@ -14,7 +14,7 @@ shared/             shared utilities: API wrapper, JSONL I/O, checkpointing
 sdf_pipeline/       5-layer document generation pipeline
 dad_pipeline/       6-step chat transcript pipeline
 prompts/            prompt templates for all pipeline stages
-outputs/            generated data (gitignored)
+outputs/            generated data (tracked in git, one directory per run)
 evals/              scoring scripts and rubric
 ```
 
