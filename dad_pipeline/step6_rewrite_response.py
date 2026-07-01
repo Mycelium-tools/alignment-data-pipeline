@@ -10,26 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, utils
-
-_COMBINED_PATH = Path(__file__).parent.parent / "constitution" / "constitution_combined.md"
-
-
-def _load_segments() -> list[dict]:
-    """Parse the Sentient Beings sections (## headers) out of the combined constitution."""
-    segments, current_title, current_lines = [], None, []
-    for line in _COMBINED_PATH.read_text().splitlines():
-        if line.startswith("## "):
-            if current_title and current_lines:
-                segments.append({"section_title": current_title, "content": "\n".join(current_lines).strip()})
-            current_title, current_lines = line[3:].strip(), []
-        elif current_title is not None:
-            current_lines.append(line)
-    if current_title and current_lines:
-        segments.append({"section_title": current_title, "content": "\n".join(current_lines).strip()})
-    for i, seg in enumerate(segments):
-        seg["principle_id"] = i
-    return segments
+from shared import api, utils, constitution_loader
 
 
 def run(
@@ -43,8 +24,8 @@ def run(
     final_path = final_dir / "dad_corpus.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    constitution = _COMBINED_PATH.read_text()
-    principles_by_id = {s["principle_id"]: s for s in _load_segments()}
+    constitution = constitution_loader.load_full_constitution()
+    principles_by_id = {s["principle_id"]: s for s in constitution_loader.load_segments()}
 
     existing_audit = utils.load_jsonl(audit_path)
     results = list(existing_audit)

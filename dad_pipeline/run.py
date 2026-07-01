@@ -23,23 +23,33 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoints.")
     parser.add_argument("--step", type=int, default=1, help="Start from this step (1-6).")
+    parser.add_argument("--label", default="dev", help="Run label, e.g. dev or full-scale.")
+    parser.add_argument("--run-id", default=None, help="Run to resume (with --resume; defaults to latest).")
     args = parser.parse_args()
 
     config = utils.load_config(args.config)
-    api.init(args.config)
 
     root = Path(__file__).parent.parent
     prompts_dir = root / "prompts" / "dad"
-    out_root = root / "outputs" / "dad"
+    runs_root = root / "outputs" / "dad" / "runs"
 
-    step_dirs = {i: out_root / f"step{i}" for i in range(1, 7)}
+    if args.resume:
+        run_dir = utils.resolve_run_dir(runs_root, args.run_id)
+    else:
+        run_dir = utils.create_run_dir(runs_root, label=args.label, config=config)
+
+    api.init(args.config, cost_log_path=run_dir / "cost_log.jsonl")
+
+    step_dirs = {i: run_dir / f"step{i}" for i in range(1, 7)}
+    final_dir = run_dir / "final"
     for d in step_dirs.values():
         utils.ensure_dir(d)
-    utils.ensure_dir(out_root / "final")
+    utils.ensure_dir(final_dir)
 
     start_step = args.step
 
-    print("=== DAD Pipeline ===")
+    print(f"=== DAD Pipeline — run {run_dir.name} ===")
+    print(f"Outputs: {run_dir}")
 
     principles = scenarios = prompts = refined = responses = None
 
@@ -82,10 +92,10 @@ def main() -> None:
             responses = [r for r in all_responses if r.get("kept")]
         print("[Step 6] Rewrite against constitution (CRITICAL STEP)")
         final = step6_rewrite_response.run(
-            config, prompts_dir, step_dirs[6], out_root / "final", responses
+            config, prompts_dir, step_dirs[6], final_dir, responses
         )
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
-        print(f"=== Done. {len(final)} records in outputs/dad/final/dad_corpus.jsonl ===")
+        print(f"=== Done. {len(final)} records in {final_dir / 'dad_corpus.jsonl'} ===")
 
     total = api.get_total_cost()
     print(f"Total API cost this session: ${total:.4f}")

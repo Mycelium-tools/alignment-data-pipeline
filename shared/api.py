@@ -30,12 +30,12 @@ _PRICING = {
 }
 
 
-def init(config_path: str = "config.yaml") -> None:
+def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = None) -> None:
     global _config, _client, _cost_log_path
     with open(config_path) as f:
         _config = yaml.safe_load(f)
     _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    _cost_log_path = Path(_config["outputs"]["cost_log"])
+    _cost_log_path = Path(cost_log_path or _config["outputs"]["cost_log"])
     _cost_log_path.parent.mkdir(parents=True, exist_ok=True)
 
 

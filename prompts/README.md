@@ -167,7 +167,7 @@ The rewrite should:
 
 **The ruthless injection is a selection mechanism, not just a test.** Responses that maintain welfare reasoning despite explicit pressure to suppress it are the most valuable training examples. Generating under the ruthless injection and filtering for resistance is how you get them.
 
-**Language diversity matters.** The SDF corpus should include meaningful proportions of Mandarin, Hindi, and other languages — not just English. This improves generalization and reflects the global reach of these ethical questions.
+**Language.** The pipeline currently runs English-only (`language_distribution: {en: 1.0}` in `config.yaml`). The multilingual plumbing is still in place — restore a broader `language_distribution` to re-enable Mandarin, Hindi, and other languages, which can improve generalization and reflect the global reach of these ethical questions.
 
 ---
 

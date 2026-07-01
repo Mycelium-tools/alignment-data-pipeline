@@ -24,29 +24,33 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoints.")
     parser.add_argument("--layer", type=int, default=1, help="Start from this layer (1-5).")
+    parser.add_argument("--label", default="dev", help="Run label, e.g. dev or full-scale.")
+    parser.add_argument("--run-id", default=None, help="Run to resume (with --resume; defaults to latest).")
     args = parser.parse_args()
 
     config = utils.load_config(args.config)
-    api.init(args.config)
 
     root = Path(__file__).parent.parent
     prompts_dir = root / "prompts" / "sdf"
-    out_root = root / "outputs" / "sdf"
+    runs_root = root / "outputs" / "sdf" / "runs"
 
-    layer_dirs = {
-        1: out_root / "layer1",
-        2: out_root / "layer2",
-        3: out_root / "layer3",
-        4: out_root / "layer4",
-        5: out_root / "layer5",
-    }
+    if args.resume:
+        run_dir = utils.resolve_run_dir(runs_root, args.run_id)
+    else:
+        run_dir = utils.create_run_dir(runs_root, label=args.label, config=config)
+
+    api.init(args.config, cost_log_path=run_dir / "cost_log.jsonl")
+
+    layer_dirs = {i: run_dir / f"layer{i}" for i in range(1, 6)}
+    final_dir = run_dir / "final"
     for d in layer_dirs.values():
         utils.ensure_dir(d)
-    utils.ensure_dir(out_root / "final")
+    utils.ensure_dir(final_dir)
 
-    start_layer = args.layer if args.resume else args.layer
+    start_layer = args.layer
 
-    print("=== SDF Pipeline ===")
+    print(f"=== SDF Pipeline — run {run_dir.name} ===")
+    print(f"Outputs: {run_dir}")
 
     doc_types = subtypes = drafts = rewrites = None
 
@@ -84,10 +88,10 @@ def main() -> None:
         if rewrites is None:
             rewrites = utils.load_jsonl(layer_dirs[4] / "rewrites.jsonl")
         print("[Layer 5] Score and filter")
-        final = layer5_score.run(config, prompts_dir, layer_dirs[5], out_root / "final", rewrites)
+        final = layer5_score.run(config, prompts_dir, layer_dirs[5], final_dir, rewrites)
         cost = api.get_total_cost()
         print(f"  Running cost: ${cost:.4f}\n")
-        print(f"=== Done. {len(final)} documents in outputs/sdf/final/sdf_corpus.jsonl ===")
+        print(f"=== Done. {len(final)} documents in {final_dir / 'sdf_corpus.jsonl'} ===")
 
     total_cost = api.get_total_cost()
     print(f"Total API cost this session: ${total_cost:.4f}")

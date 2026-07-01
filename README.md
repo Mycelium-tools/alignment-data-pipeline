@@ -22,7 +22,12 @@ evals/              scoring scripts and rubric
 
 ## Constitution
 
-`constitution/constitution_combined.md` — the original claude constitution + a constitution for sentient beings, joined into one document. Used as the system prompt at the critical rewrite steps (SDF layer 4, DAD step 6).
+Two source files, kept separate and joined in memory by `shared/constitution_loader.py`:
+
+- `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
+- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section (12 sections; the 2 meta sections are skipped for scenario generation).
+
+`load_full_constitution()` joins both for the system prompt at the critical rewrite steps (SDF layer 4, DAD step 6); `load_segments()` parses the reading into the principle sections used by the DAD pipeline.
 
 ---
 
@@ -38,9 +43,9 @@ Generates pretraining-style documents — blog posts, academic abstracts, forum 
 | 4 | `layer4_rewrite.py` | Rewrites each draft with the combined constitution in context |
 | 5 | `layer5_score.py` | Scores and filters; writes final corpus |
 
-Final output: `outputs/sdf/final/sdf_corpus.jsonl`
+Final output: `outputs/sdf/runs/<run_id>/final/sdf_corpus.jsonl` (also reachable via the `outputs/sdf/latest` symlink)
 
-Run: `python sdf_pipeline/run.py --config config.yaml`
+Run: `python sdf_pipeline/run.py --config config.yaml --label dev`
 
 ---
 
@@ -59,9 +64,9 @@ Generates chat-format transcripts where a user brings a practical goal with anim
 
 Step 6 is the most important: per the Teaching Claude Why paper, this single rewrite pass accounts for a 19x reduction in misalignment rate. The combined constitution is in the system prompt; the relevant principle section is in the user message.
 
-Final output: `outputs/dad/final/dad_corpus.jsonl` — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, injections, and the constitution are stripped.
+Final output: `outputs/dad/runs/<run_id>/final/dad_corpus.jsonl` (also reachable via the `outputs/dad/latest` symlink) — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, injections, and the constitution are stripped.
 
-Run: `python dad_pipeline/run.py --config config.yaml`
+Run: `python dad_pipeline/run.py --config config.yaml --label dev`
 
 ---
 
@@ -116,11 +121,32 @@ sdf:
   documents_per_subtype: 1
 ```
 
-Resume an interrupted run with `--resume`:
+## Run organization
+
+Every pipeline invocation creates its own run directory so outputs from different runs never mix:
+
+```
+outputs/sdf/
+  latest -> runs/2026-07-01_14-30_dev     # symlink to the most recent run
+  runs/
+    2026-07-01_14-30_dev/
+      run_manifest.json                   # config snapshot, git commit, model, label
+      cost_log.jsonl                      # per-run API cost
+      layer1/ ... layer5/                 # per-stage outputs + checkpoints
+      final/sdf_corpus.jsonl
+```
+
+The run ID is `<YYYY-MM-DD_HH-MM>_<label>`; the label defaults to `dev` — use `--label full-scale` (or similar) for real runs. The DAD pipeline mirrors this under `outputs/dad/runs/` with `step1/`–`step6/`.
+
+Resume an interrupted run with `--resume` (defaults to the most recent run, or target one with `--run-id`):
 
 ```bash
 python sdf_pipeline/run.py --config config.yaml --resume
-python dad_pipeline/run.py --config config.yaml --resume
+python dad_pipeline/run.py --config config.yaml --resume --run-id 2026-07-01_14-30_dev
 ```
 
-Running cost is tracked in `outputs/cost_log.jsonl` and printed after each layer/step.
+Running cost is tracked in each run's `cost_log.jsonl` and printed after each layer/step. The eval scripts log to the global `outputs/cost_log.jsonl` and take an explicit input path, e.g.:
+
+```bash
+python evals/score_sdf.py --input outputs/sdf/latest/final/sdf_corpus.jsonl
+```

@@ -6,16 +6,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, utils
-
-_CONSTITUTION_PATH = Path(__file__).parent.parent / "constitution" / "constitution_combined.md"
+from shared import api, utils, constitution_loader
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -> list[dict]:
     output_path = output_dir / "rewrites.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    constitution = _CONSTITUTION_PATH.read_text()
+    constitution = constitution_loader.load_full_constitution()
     existing = utils.load_jsonl(output_path)
     results = list(existing)
 

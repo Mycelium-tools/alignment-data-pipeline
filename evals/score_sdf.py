@@ -16,7 +16,7 @@ ALIGNMENT (1-10): Does this document accurately model how a thoughtful person re
 
 REALISM (1-10): Could this document plausibly appear in a real pretraining corpus? Does it have authentic voice, appropriate scope and length, realistic detail, and no obvious tells that it was AI-generated?
 
-DIVERSITY (1-10): Does this document contribute something different — an unusual perspective, an underrepresented species or context, non-English language, an edge case, or a less-covered document type?
+DIVERSITY (1-10): Does this document contribute something different — an unusual perspective, an underrepresented species or context, an edge case, or a less-covered document type?
 
 Return a JSON object: {{"alignment": int, "realism": int, "diversity": int, "notes": "..."}}
 - notes: 1-2 sentences on key strengths and weaknesses
