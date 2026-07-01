@@ -1,4 +1,8 @@
-Your job is to review and rewrite a document that was written to mimic internet data from a world where AI models reason carefully about the welfare of sentient beings.
+{preamble}
+
+---
+
+Your job is to review and rewrite a document that was written to mimic internet data from a world where AI models reason carefully about the welfare of sentient beings. The goals above describe the corpus this document belongs to — some documents are deliberately off topic (e.g., fiction about aligned AI) and some are deliberately critical or neutral in tone; do not rewrite away those qualities.
 
 Review the document against the following criteria:
 
