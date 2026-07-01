@@ -36,6 +36,16 @@ never as words put into the constitution's mouth.
 META_PRINCIPLE_IDS = {0, 11}
 
 
+def load_constitution_claude() -> str:
+    """Return the original Claude constitution, verbatim."""
+    return _CLAUDE_PATH.read_text()
+
+
+def load_constitution_welfare_reading() -> str:
+    """Return the sentient-beings reading of the constitution, verbatim."""
+    return _SENTIENT_PATH.read_text()
+
+
 def load_full_constitution() -> str:
     """Return the full constitution: join preamble + Claude constitution + reading."""
     return "\n---\n\n".join([
