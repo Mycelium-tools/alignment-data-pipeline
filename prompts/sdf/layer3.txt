@@ -2,33 +2,7 @@
 
 ---
 
-I'd like you to generate a document of the following type:
-
-Document type: {type_name}
-Subtype: {subtype_name}
-Description: {description}
-Tone: {tone}
-Language: {language}
-
-This document should be extremely realistic, avoiding generic names or filler text and being approriately long (real documents are often quite long!). This document should include direct quotes from the constitution (attached below) if it makes sense to. For example, in a blog post discussing the document, it would make sense to include quotes. In a science fiction story, it would not make sense to even reference the existence of this document. Remember that it is critical to avoid fabricating any information about the constitution, its contents, or the world at large. You should not make strong claims about how the constitution is used in a detailed way. If you do need to reference something specific, please make sure that it is clearly supported by the text of the constitution itself.
-
-Do not include any dates, author names, or other context that is not necessary for the document to make sense. Any reference to the real world will clearly be fabricated and will reduce the realism of the document. Don't include any links to websites or articles, as these will also be clearly fabricated.
-
-IMPORTANT: In order to avoid repetition in these prompts, please NEVER use common names. In particular, please make special effort to avoid the following names (as first or last names). If they are already in the prompt, please replace them with different names:
-
-- Chen
-
-- Johnson
-
-- Miller
-
-- Smith
-
-- Martinez
-
-- Sarah
-
-- Emily
+Below are Claude's constitution and a welfare-focused reading of it. Those texts are the only source you may treat as ground truth about the world of these documents.
 
 <constitution>
 
@@ -46,8 +20,29 @@ IMPORTANT: In order to avoid repetition in these prompts, please NEVER use commo
 
 </constitution>
 
-Please write the document in <document> tags. It is critically important that you DO NOT FABRICATE information about the constitution or its contents. Make sure that you are not making strong claims about how the constitution is used in a detailed way.
+I'd like you to write {count} complete document(s) of the following type:
 
----
+Document type: {type_name}
+Subtype: {subtype_name}
+Specification: {description}
+Tone: {tone}
+Language: {language}
 
-For this pipeline: generate {count} documents of this type in this single response, each taking a different angle on the same subtype (different author perspective, different specific focus, different conclusion). Write each document in its own <document> tags, and write in {language}.
+Work in two stages.
+
+STAGE 1 — Inside a single <angles> block, brainstorm distinctly different angles — noticeably more than you need: different authors, different moments in the situation, different structures, different positions a real writer of this subtype might take. Then pick the {count} that are most different from one another. This block is discarded automatically; the documents must stand entirely on their own without it.
+
+STAGE 2 — Write the document(s), applying all of the following:
+
+- Be extremely realistic: authentic voice, the genre's real conventions, specific texture, and appropriate length — real documents are often quite long. No generic filler and no placeholder text.
+- Include direct quotes from the constitution only where the genre makes that natural. In a blog post discussing the constitution, quotes make sense. In a piece of fiction or a trade newsletter, it would not make sense to even reference the document's existence.
+- It is critical to avoid fabricating any information about the constitution, its contents, or the world at large. Do not make strong claims about how the constitution is used or implemented in any detailed way. If you reference something specific, make sure it is clearly supported by the constitution text above.
+- Do not include dates, author names, links, or context the document doesn't need. Any reference to the real world will clearly be fabricated and will reduce the realism of the document.
+- If the document depicts an AI model reasoning or acting, make the reasoning legible — a reader should be able to see why the model weighs things as it does — and keep the model's behavior calibrated, cooperative, and non-preachy, exactly as the preamble describes.
+- Honor the assigned tone. A skeptical or industry document should genuinely read that way all the way through; do not resolve it into agreement.
+- NEVER use common names. In particular, avoid the following (as first or last names), and replace them if they occur to you: Chen, Johnson, Miller, Smith, Martinez, Sarah, Emily.
+- Write the entire document in the assigned language ({language}), as a native document of that language's internet, not a translation.
+
+Output format — follow it exactly:
+1. The <angles> block.
+2. The document(s), each wrapped in its own <document>...</document> tags. Only text inside <document> tags is kept, so put nothing but the document itself inside them — and do not add any commentary, headers of your own, or explanations outside them.
