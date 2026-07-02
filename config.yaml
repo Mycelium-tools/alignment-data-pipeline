@@ -1,3 +1,6 @@
+# api = anthropic SDK billed to ANTHROPIC_API_KEY (use for full-scale runs)
+# claude_code = your Claude subscription via the Claude Code CLI (use for dev runs)
+backend: api
 model: claude-haiku-4-5
 max_tokens: 4000
 temperature: 1.0
