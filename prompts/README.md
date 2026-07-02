@@ -150,6 +150,24 @@ The rewrite should:
 
 ---
 
+### `dad/step6_score.txt`
+
+**Input:** one finished conversation from step 6 (user message + rewritten response).
+
+**Output:** a JSON quality report — `embodiment` (teach-why), `helpfulness`, `calibration` (salience matched to stakes, including tokenism, scale-proportionality, and taxa scope), `naturalness` (each 1-10), `self_contained` (boolean; any constitution/principles leakage is an automatic reject), and `notes` that explicitly name any formulaic pattern spotted.
+
+The final quality gate for DAD, mirroring what `sdf/layer5.txt` does for SDF. Not yet wired into `run.py` — run it manually to spot-check step-6 output before handoff.
+
+## Corpus Tools
+
+### `tools/pattern_scan.txt`
+
+**Input:** a pasted batch of generated outputs (documents or conversations) with clear delimiters.
+
+**Output:** a JSON array of recurring structural / rhetorical / behavioral patterns found across the batch — each with evidence quotes, prevalence, a broad and a strict detection check, and a suggested fix.
+
+Adapted from the DeepMind SDF post's scan → cluster → autorate pipeline: models pick up structural patterns from synthetic data in ways that don't show up in eval scores, so scan batches periodically and promote confirmed patterns into the preamble's named anti-pattern list.
+
 ## Key Design Decisions
 
 **Extended thinking off.** All generation should be done without extended thinking / reasoning traces. When we refer to the model's reasoning, we mean the user-facing explanation in the response — not an internal scratchpad. Training on scratchpad content is a separate approach with different tradeoffs.
