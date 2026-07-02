@@ -13,7 +13,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
     output_path = output_dir / "rewrites.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    constitution = constitution_loader.load_full_constitution()
+    constitution = constitution_loader.load_full_constitution(utils.resolve_constitution_dir(prompts_dir))
     preamble = utils.load_prompt(prompts_dir / "preamble.txt")
     existing = utils.load_jsonl(output_path)
     results = list(existing)
