@@ -36,13 +36,30 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
-          # The action denies comment-posting tools by default; the review plugin
-          # needs these granted explicitly or it reviews but can't post its findings.
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. The PR branch is already checked out in the
+            current working directory. Use `gh pr diff` to see the changes.
+
+            Focus on high-signal problems in the changed code only:
+            - Bugs, logic errors, and unhandled edge cases
+            - Security issues
+            - Clear violations of guidelines in any relevant CLAUDE.md (root or a
+              CLAUDE.md in a parent directory of the changed file)
+
+            Skip nitpicks, style preferences, and pre-existing issues.
+
+            Leave feedback with `mcp__github_inline_comment__create_inline_comment`
+            for each specific issue (one comment per issue, on the relevant line).
+            If there are no significant issues, post a single brief top-level
+            comment via `gh pr comment` stating that, and stop.
+          # The action denies comment-posting tools by default; grant the inline
+          # comment tool plus the gh subcommands the review needs, or it reviews
+          # but cannot post its findings.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
