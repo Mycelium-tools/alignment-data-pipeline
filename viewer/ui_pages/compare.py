@@ -18,7 +18,7 @@ if len(runs) < 2:
     st.info("Need at least two runs to compare.")
     st.stop()
 
-pipelines = sorted({r.pipeline for r in runs})
+pipelines = [p for p in loader.PIPELINES if any(r.pipeline == p for r in runs)]
 pipeline = st.sidebar.selectbox("Pipeline", pipelines)
 pipeline_runs = [r for r in runs if r.pipeline == pipeline]
 if len(pipeline_runs) < 2:

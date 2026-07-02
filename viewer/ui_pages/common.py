@@ -22,7 +22,8 @@ def pick_run(sidebar: bool = True) -> loader.RunInfo | None:
         st.info("No runs found under outputs/. Run a pipeline first.")
         return None
 
-    pipelines = sorted({r.pipeline for r in runs})
+    # loader.PIPELINES order puts SDF first (the default)
+    pipelines = [p for p in loader.PIPELINES if any(r.pipeline == p for r in runs)]
     qp_pipeline = st.query_params.get("pipeline")
     pipeline = container.selectbox(
         "Pipeline", pipelines,
