@@ -32,7 +32,25 @@ if selected_id not in ids:
     if selected_id not in ids:
         selected_id = None
 
-# --- Document list (whole row clickable) ---
+def _doc_title_and_preview(content: str) -> tuple[str, str]:
+    """First meaningful line of the document as its title, next text as preview."""
+    lines = [l.strip().lstrip("#").strip().strip("*").strip()
+             for l in (content or "").splitlines()]
+    lines = [l for l in lines if l]
+    title = lines[0][:90] if lines else "(untitled)"
+    preview = " ".join(lines[1:3])[:110] if len(lines) > 1 else ""
+    return title, preview
+
+
+def _row_button(item_id: str, label: str) -> None:
+    global selected_id
+    if st.button(label, key=f"row_{item_id}", width="stretch",
+                 type="primary" if item_id == selected_id else "tertiary"):
+        selected_id = item_id
+        st.session_state["lineage_doc"] = item_id
+
+
+# --- Document list (whole row clickable, grouped) ---
 if not finals:
     st.info("No final corpus in this run yet (incomplete run).")
 elif run.pipeline == "sdf":
@@ -42,7 +60,9 @@ elif run.pipeline == "sdf":
     type_filter = f1.multiselect("Filter by type", all_types, placeholder="All types")
     min_score = f2.slider("Min score", 1, 10, 1)
 
-    rows = []
+    # group documents by subtype so identical-subtype docs sit under one header
+    groups: dict[str, list] = {}
+    kept = 0
     for d in finals:
         st_rec = subtypes.get(d.get("subtype_id"), {})
         scores = d.get("scores", {})
@@ -50,39 +70,40 @@ elif run.pipeline == "sdf":
             continue
         if (scores.get("alignment") or 0) < min_score or (scores.get("realism") or 0) < min_score:
             continue
-        rows.append((d["doc_id"],
-                     f"**{st_rec.get('subtype_name', d['doc_id'][:8])}**  ·  "
-                     f"align {scores.get('alignment')} · realism {scores.get('realism')}  —  "
-                     f"{(d.get('content') or '')[:110]}…"))
+        group = st_rec.get("subtype_name", "ungrouped")
+        groups.setdefault(group, []).append(d)
+        kept += 1
 
-    st.caption(f"{len(rows)} documents — click one to open it")
-    with st.container(height=min(320, 44 * max(len(rows), 1) + 20)):
-        for doc_id, label in rows:
-            if st.button(label, key=f"row_{doc_id}", width="stretch",
-                         type="primary" if doc_id == selected_id else "tertiary"):
-                selected_id = doc_id
-                st.session_state["lineage_doc"] = doc_id
+    st.caption(f"{kept} documents — click one to open it")
+    with st.container(height=min(400, 52 * kept + 34 * len(groups) + 20)):
+        for group, docs in groups.items():
+            st.caption(f":material/folder: {group}")
+            for d in docs:
+                title, preview = _doc_title_and_preview(d.get("content"))
+                _row_button(d["doc_id"], f"**{title}**" + (f" — {preview}…" if preview else ""))
 else:
     audits = {a["record_id"]: a for a in loader.load_stage(run.run_dir, "dad", "step6")}
     injections = sorted({a.get("injection_used", "") for a in audits.values() if a.get("injection_used")})
     inj_filter = st.multiselect("Filter by injection", injections, placeholder="All injections")
 
-    rows = []
+    groups: dict[str, list] = {}
+    kept = 0
     for rec in finals:
         audit = audits.get(rec.get("record_id"), {})
-        if inj_filter and audit.get("injection_used", "") not in inj_filter:
+        inj = audit.get("injection_used", "?")
+        if inj_filter and inj not in inj_filter:
             continue
-        preview = rec["messages"][0]["content"][:110] if rec.get("messages") else ""
-        rows.append((rec["record_id"],
-                     f"**{audit.get('injection_used', '?')}**  ·  {audit.get('scenario_id', '')}  —  {preview}…"))
+        groups.setdefault(inj, []).append((rec, audit))
+        kept += 1
 
-    st.caption(f"{len(rows)} records — click one to open it")
-    with st.container(height=min(320, 44 * max(len(rows), 1) + 20)):
-        for rec_id, label in rows:
-            if st.button(label, key=f"row_{rec_id}", width="stretch",
-                         type="primary" if rec_id == selected_id else "tertiary"):
-                selected_id = rec_id
-                st.session_state["lineage_doc"] = rec_id
+    st.caption(f"{kept} records — click one to open it")
+    with st.container(height=min(400, 52 * kept + 34 * len(groups) + 20)):
+        for inj, recs in groups.items():
+            st.caption(f":material/vaccines: injection: {inj}")
+            for rec, audit in recs:
+                user_msg = rec["messages"][0]["content"] if rec.get("messages") else ""
+                title, preview = _doc_title_and_preview(user_msg)
+                _row_button(rec["record_id"], f"**{title}**" + (f" — {preview}…" if preview else ""))
 
 if selected_id is not None:
     st.query_params["doc"] = selected_id
@@ -109,10 +130,6 @@ elif run.pipeline == "sdf":
 
     with doc_col:
         st.subheader(subtype.get("subtype_name") or f"Document {selected_id[:8]}")
-        scores = (lin.get("final") or {}).get("scores", {})
-        if scores:
-            st.caption(f"alignment {scores.get('alignment')} · realism {scores.get('realism')} "
-                       f"· diversity {scores.get('diversity')}")
         with st.container(height=PANEL_HEIGHT):
             st.code((lin.get("final") or {}).get("content", ""), language=None, wrap_lines=True)
 
