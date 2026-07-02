@@ -112,6 +112,20 @@ cp .env.example .env           # then add your ANTHROPIC_API_KEY
 
 > **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again before running the pipeline.
 
+### Authentication
+
+The pipeline supports two backends, selected by the `backend` key in `config.yaml`:
+
+- **`backend: api`** (default) — calls the Anthropic API directly, billed per token to the `ANTHROPIC_API_KEY` in your `.env` (ask Oliver). Use this for full-scale runs and evals.
+- **`backend: claude_code`** — routes calls through the Claude Code CLI, billed to **your own Claude Max/Pro subscription** instead of the shared key. Requires [Claude Code](https://claude.com/claude-code) installed and either being logged in (`claude` → `/login`) or a token in `.env` (`claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`). No API key needed. Use this for dev/iteration runs.
+
+Caveats for `backend: claude_code`:
+
+- **Usage limits.** Subscription usage is a 5-hour rolling window plus a weekly cap, shared with your interactive Claude Code use. Dev-scale runs fit comfortably; a full-scale run will exhaust the window. If a run hits the limit it stops with a clear message — progress is checkpointed, so continue later with `--resume`.
+- **Per-call overhead.** Claude Code adds ~3K input tokens of scaffolding per call and spawns a CLI process per request, so calls are somewhat slower. `max_tokens` from `config.yaml` is not enforced on this backend (Claude Code applies its own output cap); `cost_usd` in the cost log is notional — what the run *would* have cost at API prices.
+- **Empty system prompts get a neutral stand-in.** Claude Code substitutes its own agentic CLI prompt when the system prompt is empty, so stages that send none get a one-line neutral system prompt instead (see `_NEUTRAL_SYSTEM` in `shared/api.py`). Generation conditions therefore differ very slightly from the api backend — another reason to keep full-scale corpus runs on `backend: api`.
+- **Policy note.** Anthropic's docs steer programmatic workloads toward API keys; running this internal tool on your own subscription is the same posture as using Claude Code itself, but it's a gray area — keep it to dev-scale runs.
+
 All scale and cost knobs are in `config.yaml`. For a cheap test run, set:
 
 ```yaml
