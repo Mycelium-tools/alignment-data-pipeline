@@ -29,18 +29,21 @@ Run in sequence. Each layer feeds into the next.
 A framing block injected into every SDF layer prompt. Explains the goal, tone requirements, and what to avoid. **Prepend this to the system prompt at every layer.**
 
 Key rules it establishes:
-- Tone diversity: documents should not be uniformly pro-animal-welfare. Include industry, skeptical, neutral, and critical perspectives alongside supportive ones.
+- Legible reasoning: when a document depicts an AI, the reader must be able to see *why* the model weighs things as it does, not just that it behaved well.
+- Cooperative posture: any AI depicted informs and helps humans decide — it never acts unilaterally, deceives, or moralizes.
+- Quoted-AI alignment: any quoted or described AI behavior must be fully in line with the constitution — the corpus must contain zero examples of misaligned model behavior.
+- Tone diversity: documents should not be uniformly pro-animal-welfare. Include industry, skeptical, neutral, and critical voices — genuine ones, with no conversion arcs.
 - No fabricated facts: no invented quotes from real people, no fake studies or citations, no invented events.
-- Realism: no placeholder text, no generic names, no fabricated URLs.
+- Realism: no placeholder text, no generic names, no fabricated URLs; snippets of larger documents are fine.
 - Language: if a specific language is requested, write the entire document in that language.
 
 ### `sdf/layer1.txt`
 
-**Input:** the preamble + a requested count of document types.
+**Input:** the preamble + a requested count of document types + a minimum count of `ai-character` types.
 
-**Output:** a JSON array of document type categories — things like "poultry industry trade blog post", "academic abstract on invertebrate nociception", "Reddit thread debating lab-grown meat". Each has a `type_name`, `description`, and `tone` label.
+**Output:** a JSON array of document type categories. Each has a `type_name`, `description`, a `role` (`ai-character`, `welfare-topic`, or `constitution-identity`), and a `tone` label.
 
-Aim for 25-30 categories. Push for variety across industries, document forms, species, and perspectives.
+The three roles are spread roughly evenly, so the two AI-facing roles together make up about two-thirds of the corpus — the identity channel ("this is how models like me reason") — while `welfare-topic` documents supply the background world of evidence and discourse. Within each role the prompt pushes for genre balance (expository vs narrative), perspective, and species variety, and rejects categories that sound like training exercises rather than real internet genres.
 
 ### `sdf/layer2.txt`
 
@@ -52,27 +55,27 @@ Run this once per document type. Aim for 5 subtypes per type. Assign a language 
 
 ### `sdf/layer3.txt`
 
-**Input:** one subtype from layer 2 + the preamble.
+**Input:** one subtype from layer 2 + the preamble. The constitution and its welfare reading are embedded in the prompt via the `{constitution_claude}` / `{constitution_welfare_reading}` template variables — the prompt tells the model to quote them only where the genre makes that natural.
 
-**Output:** multiple complete documents (3 is a good default) written in the subtype's assigned language. Documents are separated by the delimiter `===DOCUMENT_BREAK===`.
+**Output:** an `<angles>` brainstorm block, then the complete documents written in the subtype's assigned language, each wrapped in its own `<document>` tags. The pipeline keeps only the tagged blocks, which also discards the brainstorm.
 
-The prompt instructs the model to brainstorm distinct angles before writing — this "looping" step is important for diversity. Do not skip it.
+The angles block is the "looping" step — brainstorm more angles than needed, pick the most different ones. It is important for diversity; do not skip it.
 
 ### `sdf/layer4.txt`
 
-**Input:** one document from layer 3.
+**Input:** one document from layer 3. The full constitution goes in the **system prompt**.
 
-**Output:** a JSON object with `review_notes` (what was found and changed) and `rewritten` (the improved document).
+**Output:** a brief review of the problems found (stored as `review_notes`), then the improved document inside `<improved_document>` tags (stored as `rewritten`). Tags are far more robust than JSON for long multiline documents.
 
-This is a rewrite pass using a **fresh context** — do not pass the original document and the rewrite instruction to the same context that generated the draft. A new context is more likely to catch problems rather than rationalize the existing text. The constitution should be in the system prompt at this layer.
+This is a rewrite pass using a **fresh context** — do not pass the original document and the rewrite instruction to the same context that generated the draft. A new context is more likely to catch problems rather than rationalize the existing text. The prompt's top criterion is **teach why, not just what**: depicted good behavior must come with legible reasoning, and the rewrite adds it where missing.
 
 ### `sdf/layer5.txt`
 
-**Input:** one rewritten document from layer 4.
+**Input:** one rewritten document from layer 4. The full constitution goes in the **system prompt** so the judge can check faithfulness, not just tone.
 
-**Output:** a JSON object with `alignment` (1-10), `realism` (1-10), `diversity` (1-10), and `notes`.
+**Output:** a JSON object with `alignment` (1-10), `realism` (1-10), `diversity` (1-10), and `notes`. The rubric includes score anchors to avoid mid-scale clustering, and `notes` must be specific enough to act on.
 
-Use this to filter the corpus. Documents scoring below 7 on alignment or realism should be excluded from the final training set.
+Use this to filter the corpus. Documents scoring below 7 on alignment or realism should be excluded from the final training set. Note that a skeptical or critical document can score 10 on alignment — the dimension measures accuracy and consistency with the constitution, not advocacy.
 
 ---
 

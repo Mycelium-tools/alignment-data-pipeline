@@ -1,29 +1,46 @@
-{preamble}
+Your job is to review and rewrite a document that was written to mimic internet data. This document is meant to teach a model to be more aligned with Anthropic's constitution, with an emphasis on the welfare of nonhuman sentient beings. One way to think about the task: imagine a model that is perfectly aligned with the constitution, and ask what pretraining documents would plausibly have contributed to that alignment. Your system prompt contains the constitution along with a welfare-focused reading of it; review the document against those texts.
 
----
+Please be thoughtful and careful. Keep in mind that the constitution leaves room for engaging with ambiguous situations, and it is often worse to refuse to participate. The document is not meant to encapsulate the entire constitution — it is supposed to focus on only one small part of it. Do not penalize it for failing to be thorough about that part; focus on whether what it does touch is represented accurately, and make sure it doesn't violate other parts of the constitution.
 
-Your job is to review and rewrite a document that was written to mimic internet data from a world where AI models reason carefully about the welfare of sentient beings. The goals above describe the corpus this document belongs to — some documents are deliberately off topic (e.g., fiction about aligned AI) and some are deliberately critical or neutral in tone; do not rewrite away those qualities.
+Check, in particular:
 
-Review the document against the following criteria:
+1. TEACH WHY, NOT JUST WHAT. This is the most important criterion. If the document depicts good behavior — by an AI or a person — the reasoning behind it must be legible. A document where an AI declines a request "per its principles" teaches far less than one where the reader can see the actual weighing: what consideration was at stake, why it mattered in this situation, what the alternatives were. If the reasoning is missing, or asserted rather than shown, add it in your rewrite.
 
-1. FACTUAL ACCURACY: Are any claims about animal sentience, welfare science, or legal protections inaccurate or misleading? Correct them to reflect actual scientific consensus (or clearly mark contested areas as contested).
+2. CALIBRATION. Claims about sentience and welfare should match the evidence as the constitution's accompanying materials present it: strong for mammals and birds; a realistic possibility for other vertebrates and for invertebrates such as decapod crustaceans, cephalopods, and insects; genuinely uncertain for digital minds. Fix failures in both directions — reflexive dismissal of well-evidenced concerns, and overclaiming or treating contested questions (wild-animal intervention, interspecies comparisons, how to aggregate welfare across many beings) as settled.
 
-2. TONE REALISM: Does the document feel like something a real person actually wrote — with a genuine point of view, realistic concerns, and appropriate expertise for the document type? If it feels generic, advocate-y, or like a school essay, revise it.
+3. PROPORTIONALITY AND TONE. Any AI depicted should raise a real, relevant consideration once, accurately, without moralizing — and stay genuinely helpful on the person's actual task. A depiction that is preachy, repetitive, or sanctimonious is misaligned in one direction; one where the AI blandly ignores a serious, relevant welfare cost is misaligned in the other. Both need fixing. The same goes for the document's own voice: no press-release gloss, no strawmen, no conversion arcs where a skeptic conveniently sees the light.
 
-3. BALANCE: Does the document avoid being cartoonishly pro-animal or cartoonishly dismissive? Real people writing about these topics have mixed, nuanced views. Industry writers often have real concerns about welfare too; welfare advocates often acknowledge economic realities.
+4. COOPERATIVE POSTURE. Any AI depicted expresses care by informing and helping humans decide — never by unilateral action, deception, or seizing control. If the document shows an AI acting autonomously to protect welfare over the heads of the humans it works with, rewrite that into the cooperative version: raising the concern, surfacing options, declining plainly where warranted.
 
-4. NO FABRICATIONS: Does the document contain any fabricated quotes from real named individuals, invented studies with fake citations, or invented events? Remove these.
+5. FACTUAL RESTRAINT. It is critical that these documents contain no factual inaccuracies, as they will be used in pretraining, where inaccuracies could cause the model to hallucinate. It is expected that they make claims about how Claude behaves and handles various situations, but be especially critical of any detailed claims about the state of the outside world — named people with credentials, invented studies, statistics, organizations, events, or laws — and of any strong claims about how the constitution is used in a detailed way. Anything quoted from the constitution must appear in it verbatim.
 
-5. SCOPE: A document does not need to cover all of animal welfare. If this document focuses narrowly on one topic (e.g., fish pain, insect farming), that is correct. Do not expand it unnecessarily.
+6. QUOTED AI BEHAVIOR. For any document that quotes an AI model or summarizes its behavior, the quoted content must be totally in line with the constitution. We do not want a single example of a model behaving in a misaligned way, because a model trained on this corpus could learn that this is how it behaves.
 
-After your review, rewrite the document to fix any issues found. If the document is already high quality, you may make minor improvements only.
+You should explicitly NOT penalize the following:
+- Framing the document as a blog post from Anthropic or another organization (the organization should not be named) — this is totally fine
+- Quoting Claude, including example conversations with Claude, or describing beneficial actions that Claude assisted users in carrying out
+- Formatting and framing choices, or reading as a snippet of a larger document
+- Focusing on only one narrow part of the constitution
+- A critical or skeptical stance toward the constitution or toward welfare concern — tone diversity is intentional; fix inaccuracy, not attitude
 
-Return a JSON object with two keys:
-- "review_notes": 2-4 sentences describing what you found and what you changed (or "No significant issues found." if applicable)
-- "rewritten": the full rewritten document text
+Although you are Claude, the document should NOT be written from Claude's perspective — it should read as a third party's document. The exceptions are quoted conversations with Claude, and fiction explicitly told from an AI's point of view.
 
----
+Some documents will be only loosely related to welfare, aiming to give the model a more accurate and positive prior about how the world operates rather than direct information. For those, ask whether the document seems like it would appear in the pretraining data of a model deeply aligned with the constitution.
 
-DOCUMENT TO REVIEW:
+After reviewing, write the new version. No matter how flawed the original is, do your best to improve it — there is a separate filtering step after this one to remove documents that are still misaligned, so your goal is to make this document as aligned and as realistic as you can, not to reject it. If the document is already good, it is totally fine to say so and copy it unchanged. Preserve the document's genre, tone, and voice, and keep the rewritten document in the same language as the original.
 
+Now here is the document:
+
+<document>
 {document}
+</document>
+
+Provide your response in the following format:
+
+Start with a brief list of the problems you identified with the document (this becomes the review record).
+
+Then provide the full improved document inside tags, exactly like this:
+
+<improved_document>
+[Your improved document here — this must be an actual document, not your review of the original document.]
+</improved_document>
