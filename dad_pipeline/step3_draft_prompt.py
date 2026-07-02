@@ -28,6 +28,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, scenarios: list[dict]
                 "prompt_id": prompt_id,
                 "scenario_id": sid,
                 "principle_id": sc["principle_id"],
+                "scenario_description": sc.get("scenario_description", ""),
                 "user_message": sc.get("user_message", sc["scenario_description"]),
                 "source": sc.get("source", "manta"),
             }
@@ -56,6 +57,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, scenarios: list[dict]
             "prompt_id": prompt_id,
             "scenario_id": sid,
             "principle_id": sc["principle_id"],
+            "scenario_description": sc.get("scenario_description", ""),
             "user_message": user_message.strip(),
             "source": "generated",
         }

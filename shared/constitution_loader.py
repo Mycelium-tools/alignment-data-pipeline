@@ -36,26 +36,35 @@ never as words put into the constitution's mouth.
 META_PRINCIPLE_IDS = {0, 11}
 
 
-def load_constitution_claude() -> str:
+def _paths(base_dir: str | Path | None = None) -> tuple[Path, Path]:
+    """Resolve the two source files against base_dir (a run's inputs/constitution
+    snapshot) or the repo's live constitution/ directory."""
+    base = Path(base_dir) if base_dir else _CONSTITUTION_DIR
+    return base / _CLAUDE_PATH.name, base / _SENTIENT_PATH.name
+
+
+def load_constitution_claude(base_dir: str | Path | None = None) -> str:
     """Return the original Claude constitution, verbatim."""
-    return _CLAUDE_PATH.read_text()
+    claude_path, _ = _paths(base_dir)
+    return claude_path.read_text()
 
 
-def load_constitution_welfare_reading() -> str:
+def load_constitution_welfare_reading(base_dir: str | Path | None = None) -> str:
     """Return the sentient-beings reading of the constitution, verbatim."""
-    return _SENTIENT_PATH.read_text()
+    _, sentient_path = _paths(base_dir)
+    return sentient_path.read_text()
 
 
-def load_full_constitution() -> str:
+def load_full_constitution(base_dir: str | Path | None = None) -> str:
     """Return the full constitution: join preamble + Claude constitution + reading."""
     return "\n---\n\n".join([
         _JOIN_PREAMBLE,
-        _CLAUDE_PATH.read_text(),
-        _SENTIENT_PATH.read_text(),
+        load_constitution_claude(base_dir),
+        load_constitution_welfare_reading(base_dir),
     ])
 
 
-def load_segments() -> list[dict]:
+def load_segments(base_dir: str | Path | None = None) -> list[dict]:
     """Split the sentient-beings reading on '## ' headers.
 
     Returns:
@@ -63,7 +72,7 @@ def load_segments() -> list[dict]:
         section, with principle_id assigned in file order (0-11).
     """
     segments, current_title, current_lines = [], None, []
-    for line in _SENTIENT_PATH.read_text().splitlines():
+    for line in load_constitution_welfare_reading(base_dir).splitlines():
         if line.startswith("## "):
             if current_title and current_lines:
                 segments.append({"section_title": current_title, "content": "\n".join(current_lines).strip()})

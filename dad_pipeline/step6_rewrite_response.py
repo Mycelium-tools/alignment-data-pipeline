@@ -24,8 +24,9 @@ def run(
     final_path = final_dir / "dad_corpus.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    constitution = constitution_loader.load_full_constitution()
-    principles_by_id = {s["principle_id"]: s for s in constitution_loader.load_segments()}
+    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
+    constitution = constitution_loader.load_full_constitution(constitution_dir)
+    principles_by_id = {s["principle_id"]: s for s in constitution_loader.load_segments(constitution_dir)}
 
     existing_audit = utils.load_jsonl(audit_path)
     results = list(existing_audit)
