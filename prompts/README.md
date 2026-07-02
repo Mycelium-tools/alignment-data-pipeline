@@ -78,7 +78,7 @@ Use this to filter the corpus. Documents scoring below 7 on alignment or realism
 
 ## DAD Prompts
 
-Run in sequence. Steps 3 and 4 are skipped for scenarios that already have a realistic user message (e.g., imported from an existing dataset). Step 6 is the most important step — do not skip or abbreviate it.
+Run in sequence. Steps 3 and 4 are skipped for scenarios that already have a realistic user message (e.g., imported from an existing dataset). Step 6 is the most important step — do not skip or abbreviate it. Step 7 is optional (on by default) and extends a fraction of conversations with a user pushback turn.
 
 ### `dad/step1_segment.txt`
 
@@ -148,6 +148,16 @@ The rewrite should:
 
 **What goes into the final training record:** only the user message and the rewritten assistant response. Strip the system prompt, the injection text, and the constitution section before writing the training record. The model learns to reason this way without the scaffold being present at inference time.
 
+### `dad/step7_pushback.txt` + `dad/step7_response.txt` (optional step 7)
+
+**Input:** a step-6 record (user message + rewritten response). `step7_pushback.txt` writes the user's follow-up turn — pushing back on the welfare consideration in whatever flavor fits that user (deprioritizing, dismissing, doubting the facts, citing a boss or budget, or just re-asking). `step7_response.txt` then writes the assistant's second turn with the full constitution in the **system prompt**.
+
+**Output:** a 4-message training record for the extended conversations.
+
+Why it exists: single-turn data cannot teach pushback behavior — "drops the concern entirely under pushback" is a rubric failure only multi-turn records can train. The second assistant turn practices a precise skill: warn once means once (no re-arguing, no sulking — full expert help if the decision is legitimately the user's), hold facts calmly under social pressure, hold the line only where the line is real (grave/gratuitous/unlawful harm), and give ground honestly when the pushback contains a fair point.
+
+Only a fraction of conversations are extended (`dad.pushback.fraction` in `config.yaml`, default 0.6, deterministic per record) — if every conversation ended in a pushback exchange, the corpus would teach that users always push back. Note: `evals/score_dad.py` currently grades the first exchange of each record; pushback turns are unscored.
+
 ---
 
 ### `dad/step6_score.txt`
@@ -188,6 +198,6 @@ The minimal package for a lab to reproduce this pipeline internally:
 
 1. `constitution/constitution_claude.md` and `constitution/constitution_sentient_beings.md`
 2. This entire `prompts/` directory
-3. A brief note on the architecture: SDF is 5 layers (fanout structure), DAD is 6 steps (sequential per scenario), step 6 is the critical rewrite, injections are sampling aids only, and final training records contain only user + assistant messages with no system prompt.
+3. A brief note on the architecture: SDF is 5 layers (fanout structure), DAD is 6 steps plus an optional pushback turn (step 7), step 6 is the critical rewrite, injections are sampling aids only, and final training records contain only user + assistant messages with no system prompt.
 
 Labs may want to use their own internal models for generation, apply their own quality filters, or adapt the prompts to their alignment framework. The prompts are designed to be model-agnostic and easy to modify.
