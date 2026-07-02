@@ -4,8 +4,10 @@
 def summarize(batches):
     """Return the count, total, and mean of a list of per-batch token counts."""
     count = len(batches)
+    total = sum(batches)
     return {
         "count": count,
-        "total": sum(batches),
+        "total": total,
         "average": total / count,
+        "max": maximum,
     }
