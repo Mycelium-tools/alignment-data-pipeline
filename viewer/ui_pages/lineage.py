@@ -26,87 +26,78 @@ finals = loader.load_final(run.run_dir, run.pipeline)
 id_key = "doc_id" if run.pipeline == "sdf" else "record_id"
 ids = [r[id_key] for r in finals]
 
-selected_id = st.session_state.get("lineage_doc")
-if selected_id not in ids:
-    selected_id = st.query_params.get("doc")
-    if selected_id not in ids:
-        selected_id = None
-
-def _doc_title_and_preview(content: str) -> tuple[str, str]:
-    """First meaningful line of the document as its title, next text as preview."""
-    lines = [l.strip().lstrip("#").strip().strip("*").strip()
-             for l in (content or "").splitlines()]
-    lines = [l for l in lines if l]
-    title = lines[0][:90] if lines else "(untitled)"
-    preview = " ".join(lines[1:3])[:110] if len(lines) > 1 else ""
-    return title, preview
+def _doc_title(content: str) -> str:
+    """First meaningful line of the document, cleaned of markdown markers."""
+    for line in (content or "").splitlines():
+        line = line.strip().lstrip("#").strip().strip("*").strip()
+        if line:
+            return line[:90]
+    return "(untitled)"
 
 
-def _row_button(item_id: str, label: str) -> None:
-    global selected_id
-    if st.button(label, key=f"row_{item_id}", width="stretch",
-                 type="primary" if item_id == selected_id else "tertiary"):
-        selected_id = item_id
-        st.session_state["lineage_doc"] = item_id
+def _pick_document(options: list[str], labels: dict[str, str], noun: str) -> str | None:
+    """Document dropdown, seeded from the ?doc= query param."""
+    if not options:
+        st.caption(f"No {noun}s match the current filters.")
+        return None
+    qp_doc = st.query_params.get("doc")
+    choice = st.selectbox(
+        f"{noun.capitalize()} ({len(options)})", options,
+        index=options.index(qp_doc) if qp_doc in options else 0,
+        format_func=lambda i: labels.get(i, str(i)),
+    )
+    st.query_params["doc"] = choice
+    return choice
 
 
-# --- Document list (whole row clickable, grouped) ---
+# --- Document selection ---
+selected_id = None
 if not finals:
     st.info("No final corpus in this run yet (incomplete run).")
 elif run.pipeline == "sdf":
     subtypes = {s["subtype_id"]: s for s in loader.load_stage(run.run_dir, "sdf", "layer2")}
     f1, f2 = st.columns([3, 1])
     all_types = sorted({subtypes.get(d.get("subtype_id"), {}).get("type_name", "") for d in finals})
-    type_filter = f1.multiselect("Filter by type", all_types, placeholder="All types")
-    min_score = f2.slider("Min score", 1, 10, 1)
+    type_filter = f1.multiselect(
+        "Filter by document type (from Layer 1)", all_types, placeholder="All types",
+        help="Top-level document categories generated in Layer 1.",
+    )
+    min_score = f2.slider("Min score (from Layer 5)", 1, 10, 1,
+                          help="Minimum alignment and realism scores assigned in Layer 5.")
 
-    # group documents by subtype so identical-subtype docs sit under one header
-    groups: dict[str, list] = {}
-    kept = 0
-    for d in finals:
+    options, labels = [], {}
+    for d in sorted(finals, key=lambda d: str(d.get("subtype_id", ""))):
         st_rec = subtypes.get(d.get("subtype_id"), {})
         scores = d.get("scores", {})
         if type_filter and st_rec.get("type_name", "") not in type_filter:
             continue
         if (scores.get("alignment") or 0) < min_score or (scores.get("realism") or 0) < min_score:
             continue
-        group = st_rec.get("subtype_name", "ungrouped")
-        groups.setdefault(group, []).append(d)
-        kept += 1
+        options.append(d["doc_id"])
+        labels[d["doc_id"]] = f"{_doc_title(d.get('content'))}   —   {st_rec.get('subtype_name', '?')}"
 
-    st.caption(f"{kept} documents — click one to open it")
-    with st.container(height=min(400, 52 * kept + 34 * len(groups) + 20)):
-        for group, docs in groups.items():
-            st.caption(f":material/folder: {group}")
-            for d in docs:
-                title, preview = _doc_title_and_preview(d.get("content"))
-                _row_button(d["doc_id"], f"**{title}**" + (f" — {preview}…" if preview else ""))
+    st.caption("Dropdown labels: *document title — subtype (from Layer 2)*")
+    selected_id = _pick_document(options, labels, "document")
 else:
     audits = {a["record_id"]: a for a in loader.load_stage(run.run_dir, "dad", "step6")}
     injections = sorted({a.get("injection_used", "") for a in audits.values() if a.get("injection_used")})
-    inj_filter = st.multiselect("Filter by injection", injections, placeholder="All injections")
+    inj_filter = st.multiselect(
+        "Filter by injection (from Step 5)", injections, placeholder="All injections",
+        help="The system-prompt injection active when the draft response was generated in Step 5.",
+    )
 
-    groups: dict[str, list] = {}
-    kept = 0
-    for rec in finals:
+    options, labels = [], {}
+    for rec in sorted(finals, key=lambda r: audits.get(r.get("record_id"), {}).get("injection_used", "")):
         audit = audits.get(rec.get("record_id"), {})
         inj = audit.get("injection_used", "?")
         if inj_filter and inj not in inj_filter:
             continue
-        groups.setdefault(inj, []).append((rec, audit))
-        kept += 1
+        user_msg = rec["messages"][0]["content"] if rec.get("messages") else ""
+        options.append(rec["record_id"])
+        labels[rec["record_id"]] = f"{_doc_title(user_msg)}   —   {inj}"
 
-    st.caption(f"{kept} records — click one to open it")
-    with st.container(height=min(400, 52 * kept + 34 * len(groups) + 20)):
-        for inj, recs in groups.items():
-            st.caption(f":material/vaccines: injection: {inj}")
-            for rec, audit in recs:
-                user_msg = rec["messages"][0]["content"] if rec.get("messages") else ""
-                title, preview = _doc_title_and_preview(user_msg)
-                _row_button(rec["record_id"], f"**{title}**" + (f" — {preview}…" if preview else ""))
-
-if selected_id is not None:
-    st.query_params["doc"] = selected_id
+    st.caption("Dropdown labels: *user message — injection (from Step 5)*")
+    selected_id = _pick_document(options, labels, "record")
 
 
 def stage_expander(title: str, stage: str, lineage: dict, output_fn):
