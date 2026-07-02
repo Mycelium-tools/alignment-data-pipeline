@@ -36,15 +36,25 @@ def _doc_title(content: str) -> str:
 
 
 def _pick_document(options: list[str], labels: dict[str, str], noun: str) -> str | None:
-    """Document dropdown, seeded from the ?doc= query param."""
+    """Document dropdown, seeded from the ?doc= query param.
+
+    The widget needs a stable key: without one, Streamlit derives its identity
+    from its parameters INCLUDING `index`, and since we compute `index` from
+    the query param, every selection changed the identity on the next rerun and
+    orphaned the user's choice (the select-twice bug). The key is scoped to the
+    run so switching runs starts fresh."""
     if not options:
         st.caption(f"No {noun}s match the current filters.")
         return None
+    key = f"doc_pick_{run.pipeline}_{run.run_id}"
+    if st.session_state.get(key) not in options:
+        st.session_state.pop(key, None)  # stale value (e.g. filters changed) — reseed below
     qp_doc = st.query_params.get("doc")
     choice = st.selectbox(
         f"{noun.capitalize()} ({len(options)})", options,
         index=options.index(qp_doc) if qp_doc in options else 0,
         format_func=lambda i: labels.get(i, str(i)),
+        key=key,
     )
     st.query_params["doc"] = choice
     return choice
