@@ -30,7 +30,11 @@ Language: {language}
 
 Work in two stages.
 
-STAGE 1 — Inside a single <angles> block, brainstorm distinctly different angles — noticeably more than you need: different authors, different moments in the situation, different structures, different positions a real writer of this subtype might take. Then pick the {count} that are most different from one another. This block is discarded automatically; the documents must stand entirely on their own without it.
+STAGE 1 — Inside a single <angles> block, brainstorm distinctly different angles — noticeably more than you need: different authors, different moments in the situation, different structures, different positions a real writer of this subtype might take. Then pick the {count} that are most different from one another, and for each one plan three things, one line each:
+- WHAT: the specific constitutional principle or trait this document will embody (or, for a background document, the piece of the world it establishes).
+- HOW: the concrete action, position, or event through which it shows — what someone actually does or decides.
+- WHY: the mechanism that makes the reasoning legible on the page — the actor explains it in their own words, another character or the narrator infers it, a quoted exchange reveals it, or the consequences make it visible. Vary this mechanism across the documents; do not default to self-explanation every time.
+This block is discarded automatically; the documents must stand entirely on their own without it.
 
 STAGE 2 — Write the document(s), applying all of the following:
 

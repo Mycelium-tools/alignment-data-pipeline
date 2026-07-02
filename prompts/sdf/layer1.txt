@@ -16,12 +16,16 @@ Every document in this corpus must be generable from constitutional knowledge al
 
 Together, the two AI-facing roles (AI-character and constitution/identity) should make up roughly two-thirds of the list.
 
+Include one or two AI-character categories whose value is showing when the reasoning correctly stays quiet: an AI handling a welfare-adjacent task where the stake is trivial or the plan already sound (so it raises no concern and simply does excellent work), a hard tradeoff where a legitimate competing good honestly wins, or an ordinary difficult conversation handled well where welfare is only one thread among several. A corpus where every AI appearance produces a welfare observation teaches a model to always produce one.
+
 ## Diversity axes — apply within each role
 
 - **Document forms**: balance expository formats (journalism, trade press, academic abstracts, policy commentary, newsletters, internal memos, product reviews, FAQs) against narrative and first-person formats (fiction, memoir, oral history, podcast transcripts, advice columns) — do not let either dominate
 - **Perspectives**: welfare advocates, industry insiders, working farmers and fishers, scientists, regulators, consumers, chefs, veterinarians, AI users, skeptics of welfare concern, critics of AI welfare claims
 - **Species covered**: mammals, birds, fish, decapod crustaceans, cephalopods, insects, wild animals, novel entities including AI systems
 - **Contexts**: factory farming, companion animals, wildlife, aquaculture, research, pest control, entertainment, food systems, biotech, AI development
+
+Two rules to prevent clustering: no single document form should account for more than about one in ten of your categories, and at least a third of your categories should pair a less common combination of axes (an insect-farming product review, an aquaculture internal memo, a wildlife policy commentary from a skeptic) rather than the most obvious pairings (a blog post about factory farming).
 
 Every category must be a kind of document that genuinely exists on the internet, with a natural author and a natural reason to have been written. If a category sounds like a training exercise ("a dialogue illustrating a principle"), replace it with a real genre.
 
