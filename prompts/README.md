@@ -26,7 +26,7 @@ Run in sequence. Each layer feeds into the next.
 
 ### `sdf/preamble.txt`
 
-A framing block injected into every SDF layer prompt. Explains the goal, tone requirements, and what to avoid. **Prepend this to the system prompt at every layer.**
+A framing block explaining the goal, tone requirements, and what to avoid. **Injected as the `{preamble}` template variable at the top of the layer 1-3 user prompts.** Layers 4-5 do not use it — their system prompt carries the full constitution instead.
 
 Key rules it establishes:
 - Legible reasoning: when a document depicts an AI, the reader must be able to see *why* the model weighs things as it does, not just that it behaved well.

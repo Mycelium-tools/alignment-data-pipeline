@@ -15,8 +15,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     threshold = config["sdf"]["min_score_threshold"]
-    preamble = utils.load_prompt(prompts_dir / "preamble.txt")
-    constitution = constitution_loader.load_full_constitution()
+    constitution = constitution_loader.load_full_constitution(utils.resolve_constitution_dir(prompts_dir))
 
     existing_scores = {r["doc_id"]: r for r in utils.load_jsonl(output_path)}
     results = []
@@ -34,7 +33,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
         print(f"  Scoring {doc_id[:8]}...")
         prompt = utils.load_prompt(
             prompts_dir / "layer5.txt",
-            preamble=preamble,
             document=rw["rewritten"],
         )
 
