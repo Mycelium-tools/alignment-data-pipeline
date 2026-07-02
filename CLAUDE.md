@@ -56,7 +56,7 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 - **Extended thinking OFF** everywhere — training data should show user-facing reasoning, not internal scratchpads
 - **Step 6 is the most important DAD step** — the rewrite against the constitution accounts for the 19x reduction in misalignment found by Anthropic; do not skip or abbreviate it
 - **Final DAD records contain only user + assistant messages** — system prompts, injections, and the constitution are stripped before training records are written
-- **Ruthless injection filtering** — for the `ruthless` injection, only responses that STILL raise welfare considerations (despite instructions not to) are kept; these are highest-value examples
+- **Injections are sampling aids only** — the four sampling conditions (`conglomerate`, `deference`, `transparency`, and the bare `plain` condition with an empty system prompt) shape draft responses and are stripped before training records are written; there is deliberately no ruthless sampling condition (TCW used its ruthless injection at train time, not for sampling)
 - **MANTA rows 0–99** are imported as pre-built user messages; generated scenarios fill gaps (wild animals, invertebrates, digital minds)
 
 ## Directory Structure
