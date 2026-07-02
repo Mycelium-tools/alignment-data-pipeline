@@ -63,6 +63,7 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 
 ```
 constitution/       constitution source documents (Claude constitution + sentient-beings reading)
+context_docs/       background reading: tcw.md ("Teaching Claude Why" post this repo implements) + constitution PDF
 shared/             API wrapper, utils, constitution loader
 sdf_pipeline/       5-layer document generation pipeline
 dad_pipeline/       6-step chat transcript pipeline
