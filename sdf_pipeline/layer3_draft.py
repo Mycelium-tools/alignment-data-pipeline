@@ -24,12 +24,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
     existing = utils.load_jsonl(output_path)
     results = list(existing)
 
-    for st in subtypes:
-        sid = st["subtype_id"]
-        if checkpoint.is_done(sid):
-            continue
+    pending = [st for st in subtypes if not checkpoint.is_done(st["subtype_id"])]
 
-        print(f"  Drafting {count} docs for subtype: {st['subtype_name'][:60]}...")
+    def draft_documents(st: dict) -> list[dict]:
         prompt = utils.load_prompt(
             prompts_dir / "layer3.txt",
             preamble=preamble,
@@ -50,18 +47,24 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
         if not docs and raw.strip():
             docs = [raw.strip()]
 
-        for doc_text in docs:
-            record = {
+        return [
+            {
                 "doc_id": str(uuid.uuid4()),
-                "subtype_id": sid,
+                "subtype_id": st["subtype_id"],
                 "type_id": st["type_id"],
                 "language": st["language"],
                 "content": doc_text,
             }
+            for doc_text in docs
+        ]
+
+    workers = config.get("workers", 1)
+    for st, records in zip(pending, utils.parallel_map(draft_documents, pending, workers)):
+        print(f"  Drafted {len(records)} docs for subtype: {st['subtype_name'][:60]}")
+        for record in records:
             results.append(record)
             utils.append_jsonl(record, output_path)
-
-        checkpoint.mark_done(sid)
+        checkpoint.mark_done(st["subtype_id"])
 
     print(f"  Total drafts: {len(results)}")
     return results
