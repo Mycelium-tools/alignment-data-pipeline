@@ -67,8 +67,9 @@ def fold_long_values(text: str, variables: dict) -> tuple[str, dict[str, str]]:
     return text, folded
 
 
-def show_rendered_prompt(rendered) -> None:
-    """Render a RenderedPrompt: warnings, sources, system + user with folding."""
+def show_rendered_prompt(rendered, key: str = "") -> None:
+    """Render a RenderedPrompt: warnings, sources, system + user with folding.
+    `key` must be unique per prompt on the page (e.g. the stage name)."""
     for w in rendered.warnings:
         st.warning(w)
     if rendered.template_sources:
@@ -91,7 +92,7 @@ def show_rendered_prompt(rendered) -> None:
         st.markdown("**User message**")
         st.code(user_text, language=None, wrap_lines=True)
     for name, value in folded_all.items():
-        if st.toggle(f"Show {name} ({len(value):,} chars)", key=f"fold_{id(rendered)}_{name}"):
+        if st.toggle(f"Show {name} ({len(value):,} chars)", key=f"fold_{key}_{rendered.stage}_{name}"):
             st.code(value, language=None, wrap_lines=True)
 
 

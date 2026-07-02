@@ -63,7 +63,11 @@ with corpus_tab:
         st.dataframe(df, width='stretch', hide_index=True)
         choice = st.selectbox("Inspect document", df["doc_id"].tolist(),
                               format_func=lambda i: f"{i[:8]} — {df[df.doc_id == i]['subtype'].iloc[0][:60]}")
-        if st.button("Open lineage view", type="primary"):
+        if choice:
+            selected = next(d for d in finals if d["doc_id"] == choice)
+            st.markdown("#### Final document")
+            st.code(selected.get("content", ""), language=None, wrap_lines=True)
+        if st.button("Open lineage view (prompts + all stages)", type="primary"):
             st.query_params["doc"] = choice
             st.switch_page("ui_pages/document_detail.py")
     else:
@@ -90,7 +94,13 @@ with corpus_tab:
         st.dataframe(df, width='stretch', hide_index=True)
         choice = st.selectbox("Inspect record", df["record_id"].tolist(),
                               format_func=lambda i: i[:8])
-        if st.button("Open lineage view", type="primary"):
+        if choice:
+            selected = next(r for r in finals if r["record_id"] == choice)
+            st.markdown("#### Final training record")
+            for msg in selected.get("messages", []):
+                st.markdown(f"**{msg['role']}**")
+                st.code(msg["content"], language=None, wrap_lines=True)
+        if st.button("Open lineage view (prompts + all stages)", type="primary"):
             st.query_params["doc"] = choice
             st.switch_page("ui_pages/document_detail.py")
 

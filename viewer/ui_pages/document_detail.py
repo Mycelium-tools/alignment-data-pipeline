@@ -34,7 +34,7 @@ def stage_expander(title: str, stage: str, lineage: dict, output_fn, expanded=Fa
     with st.expander(title, expanded=expanded):
         rendered = rendering.render_prompt(run.pipeline, stage, run.run_dir, manifest, lineage)
         st.markdown("##### Prompt")
-        common.show_rendered_prompt(rendered)
+        common.show_rendered_prompt(rendered, key=stage)
         st.markdown("##### Output")
         output_fn()
 
@@ -68,6 +68,10 @@ if run.pipeline == "sdf":
         st.json(sc.get("scores", {}))
         st.markdown("**In final corpus:** " + ("✅ yes" if lin["final"] else "❌ filtered out"))
     stage_expander("Layer 5 — scoring", "layer5", lin, layer5_output)
+
+    if lin["final"]:
+        with st.expander("Final document (as written to sdf_corpus.jsonl)", expanded=True):
+            st.code(lin["final"].get("content", ""), language=None, wrap_lines=True)
 
 else:
     lin = loader.dad_lineage(run.run_dir, doc_id)
@@ -114,5 +118,7 @@ else:
     stage_expander("Step 6 — constitutional rewrite (critical step)", "step6", lin, step6_output, expanded=True)
 
     if lin.get("final"):
-        with st.expander("Final training record (what the model trains on)"):
-            st.json(lin["final"])
+        with st.expander("Final training record (as written to dad_corpus.jsonl)", expanded=True):
+            for msg in lin["final"].get("messages", []):
+                st.markdown(f"**{msg['role']}**")
+                st.code(msg["content"], language=None, wrap_lines=True)
