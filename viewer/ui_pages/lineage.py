@@ -204,6 +204,7 @@ else:
                 st.markdown(f"**Kept:** {'✅' if resp.get('kept') else '❌ (ruthless judge rejected)'}")
             stage_expander("Step 5 — response under injection", "step5", lin, step5_output)
 
+            # Historical runs only — ruthless sampling was later removed from the pipeline
             if (lin.get("response") or {}).get("injection_used") == "ruthless":
                 stage_expander("Step 5b — ruthless judge", "step5_judge", lin,
                                lambda: st.markdown(f"**Verdict (kept):** {(lin.get('response') or {}).get('kept')}"))

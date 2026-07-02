@@ -270,6 +270,10 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.system = system
 
     elif stage == "step5_judge":
+        # HISTORICAL runs only: the ruthless sampling condition was removed from
+        # the pipeline (commit a53fd6a), but runs generated before that contain
+        # ruthless-injection records, and their judge template is recovered from
+        # the run's snapshot or git commit. Do not delete while such runs exist.
         response = lineage.get("response") or {}
         if response.get("injection_used") != "ruthless":
             r.is_llm_call = False
