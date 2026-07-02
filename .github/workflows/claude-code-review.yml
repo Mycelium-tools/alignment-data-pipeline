@@ -12,11 +12,10 @@ on:
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+    # Fork PRs can't access secrets/OIDC on the pull_request trigger, so the
+    # review can't authenticate and the job always fails. Skip them here; forks
+    # are reviewed on demand via an `@claude` comment (see claude.yml) instead.
+    if: github.event.pull_request.head.repo.full_name == github.repository
 
     runs-on: ubuntu-latest
     permissions:
@@ -36,6 +35,10 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Also review commits pushed by bots (e.g. a fix pushed by claude[bot]).
+          # Without this the action rejects bot-initiated runs. Narrow to specific
+          # bot names instead of '*' if you want to restrict which bots trigger it.
+          allowed_bots: "*"
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
