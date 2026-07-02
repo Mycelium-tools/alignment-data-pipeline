@@ -5,9 +5,10 @@ Two source files live in constitution/:
 - constitution_sentient_beings.md — the animal-welfare section-by-section
   reading, with one `## ` header per section.
 
-They are joined in memory wherever the full text is needed (SDF layer 4,
-DAD step 6 system prompts); only the sentient-beings reading is segmented
-into principles for the DAD pipeline.
+They are joined in memory wherever the full text is needed — the system
+prompts of SDF layers 4-5 (rewrite and scoring) and DAD step 6; SDF layer 3
+embeds the two texts via template variables instead. Only the sentient-beings
+reading is segmented into principles for the DAD pipeline.
 """
 
 from pathlib import Path
@@ -47,7 +48,7 @@ def load_constitution_welfare_reading() -> str:
 
 
 def load_full_constitution() -> str:
-    """Return the full constitution: join preamble + Claude constitution + reading."""
+    """Return the full constitution: join preamble + Claude constitution + reading. Used as the system prompt at SDF layers 4-5 and DAD step 6; SDF layer 3 embeds the constitution via template variables instead."""
     return "\n---\n\n".join([
         _JOIN_PREAMBLE,
         _CLAUDE_PATH.read_text(),

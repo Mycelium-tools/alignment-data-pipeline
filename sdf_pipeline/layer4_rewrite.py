@@ -14,7 +14,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     constitution = constitution_loader.load_full_constitution()
-    preamble = utils.load_prompt(prompts_dir / "preamble.txt")
     existing = utils.load_jsonl(output_path)
     results = list(existing)
 
@@ -26,7 +25,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
         print(f"  Rewriting {doc_id[:8]}...")
         prompt = utils.load_prompt(
             prompts_dir / "layer4.txt",
-            preamble=preamble,
             document=draft["content"],
         )
 

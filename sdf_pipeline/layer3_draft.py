@@ -49,7 +49,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
         # brainstorm block); fall back to the whole output minus <angles> if untagged
         docs = [m.strip() for m in _DOC_TAG_RE.findall(raw) if m.strip()]
         if not docs:
-            fallback = re.sub(r"<angles>.*?</angles>", "", raw, flags=re.DOTALL).strip()
+            fallback = re.sub(r"<angles>.*?(?:</angles>|\Z)", "", raw, flags=re.DOTALL).strip()
             if fallback:
                 docs = [fallback]
 
