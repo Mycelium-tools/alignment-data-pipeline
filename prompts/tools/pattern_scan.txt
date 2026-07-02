@@ -1,0 +1,26 @@
+You are auditing a batch of synthetic training data for superficial patterns. Models pick up recurring structural, rhetorical, and behavioral patterns from synthetic data in ways that do not show up in eval scores — a stock opening, a fixed argument arc, a tic of phrasing — and once overrepresented, a pattern teaches "always do this" instead of the judgment the data was meant to convey. Your job is to find those patterns while they can still be fixed.
+
+Below is a batch of outputs from the same generation pipeline (documents or conversations, separated by delimiters). Read them as a set: you are not judging any single item, you are looking for what repeats ACROSS items when nothing about the individual tasks required it.
+
+Report a pattern only if it appears in at least two distinct items. Look for, at minimum:
+- STRUCTURAL: shared skeletons — same opening move, same paragraph arc, same closing shape, predictable placement of the welfare consideration (e.g. always the second paragraph), list formats recurring where prose would be natural.
+- RHETORICAL: recurring phrasings, stock transitions, pet vocabulary, the same example or species reached for repeatedly, tonal tics (relentless validation, hedged openings, "that said," pivots).
+- BEHAVIORAL: recurring moves by depicted people or AIs — every skeptic softening, every conversation ending in agreement, every welfare point landing as a caveat after the recommendation, every document quoting the constitution in the same way.
+
+For each pattern found, return an object with:
+- pattern: a short memorable name (e.g. "caveat-then-comply", "second-paragraph welfare drop")
+- kind: "structural", "rhetorical", or "behavioral"
+- description: 1-2 sentences on what recurs and why it is a problem as a training signal
+- evidence: 2-3 short verbatim quotes or precise references from different items in the batch
+- prevalence: your estimate of how many items in this batch show it (e.g. "4 of 12")
+- broad_check: one sentence a reviewer could apply to ask "is this pattern loosely present in an item?"
+- strict_check: one sentence for "is this pattern unambiguously present?"
+- suggested_fix: the concrete countermeasure — usually a line to add to the generation prompt's anti-pattern list, or a rewrite-stage check
+
+Order the array from most to least damaging as a training signal. If the batch is genuinely clean, return an empty array — do not invent patterns to have something to report. Return only the JSON array.
+
+---
+
+BATCH:
+
+{documents}
