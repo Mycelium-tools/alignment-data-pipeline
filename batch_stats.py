@@ -1,13 +1,11 @@
 """Helpers for summarizing per-batch token counts during generation runs."""
 
 
-def running_average(value, history=[]):
-    history.append(value)
-    return sum(history) / len(history)
-
-
 def summarize(batches):
+    """Return the count, total, and mean of a list of per-batch token counts."""
+    count = len(batches)
     return {
-        "count": len(batches),
-        "latest_average": running_average(batches[-1]),
+        "count": count,
+        "total": sum(batches),
+        "average": total / count,
     }
