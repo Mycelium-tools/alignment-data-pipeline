@@ -103,6 +103,14 @@ Run: `python evals/score_dad.py --input outputs/dad/final/dad_corpus.jsonl`
 
 Install the dependencies into a virtual environment so they stay isolated from your system Python. (This isn't optional on recent macOS/Linux — a plain `pip install` is blocked by default.)
 
+### Clone the repo
+Open your terminal app and `cd` to a directory where you want the repo (i.e. `cd ~/projects`), then run:
+```bash
+git clone https://github.com/Mycelium-tools/alignment-data-pipeline.git
+cd alignment-data-pipeline
+```
+
+### Create a virtual environment and install dependencies
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
@@ -110,9 +118,15 @@ pip install -r requirements.txt
 cp .env.example .env           # then add your ANTHROPIC_API_KEY
 ```
 
-> **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again before running the pipeline.
+> **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again.
 
-All scale and cost knobs are in `config.yaml`. For a cheap test run, set:
+---
+
+## Quick test run
+
+Start with the SDF pipeline — it has no external dependencies and finishes in a few minutes.
+
+**1. Check your config.yaml is at small scale** (these are the defaults):
 
 ```yaml
 sdf:
@@ -121,6 +135,57 @@ sdf:
   documents_per_subtype: 1
 ```
 
+This produces 6 documents and costs roughly $0.05–0.15.
+
+**2. Run the SDF pipeline:**
+
+```bash
+source .venv/bin/activate
+python sdf_pipeline/run.py --config config.yaml
+```
+
+You'll see progress printed per layer with a running cost after each. Final output lands in `outputs/sdf/latest/final/sdf_corpus.jsonl`.
+
+**3. Browse the output:**
+
+Open `viewer.html` in a browser (double-click it), then drag-and-drop `outputs/sdf/latest/final/sdf_corpus.jsonl` onto the drop zone.
+
+**4. Test the DAD pipeline** — reduce `scenarios_per_principle` first or it will make hundreds of API calls:
+
+```yaml
+dad:
+  scenarios_per_principle: 1   # default is 10; set to 1-2 for a test
+```
+
+Then run:
+
+```bash
+python dad_pipeline/run.py --config config.yaml
+```
+
+With 1 scenario per principle (7 principles) and 4 injection types, this is ~50–80 API calls — about $0.20–0.50. Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
+
+> **MANTA CSV is optional.** The DAD pipeline imports pre-built user messages from a MANTA CSV (`../manta_project/manta_questions_1090.csv`). If the file doesn't exist, that import is silently skipped and the pipeline generates all scenarios from scratch.
+
+**5. Score the outputs:**
+
+```bash
+python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl
+python evals/score_sdf.py --input outputs/sdf/latest/final/sdf_corpus.jsonl
+```
+
+---
+
+## Resuming interrupted runs
+
+All pipeline steps checkpoint after every API call. Resume from any layer/step:
+
+```bash
+python sdf_pipeline/run.py --config config.yaml --resume --layer 3
+python dad_pipeline/run.py --config config.yaml --resume --step 5
+```
+
+Running cost is tracked in each run's `cost_log.jsonl` and printed after each layer/step (see "Run organization" below).
 ## Run organization
 
 Every pipeline invocation creates its own run directory so outputs from different runs never mix:
