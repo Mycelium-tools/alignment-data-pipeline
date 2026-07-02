@@ -18,19 +18,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
     preamble = utils.load_prompt(prompts_dir / "preamble.txt")
 
     existing_scores = {r["doc_id"]: r for r in utils.load_jsonl(output_path)}
-    results = []
+    results = [existing_scores[rw["doc_id"]] for rw in rewrites if rw["doc_id"] in existing_scores]
 
-    for rw in rewrites:
-        doc_id = rw["doc_id"]
+    pending = [
+        rw for rw in rewrites
+        if rw["doc_id"] not in existing_scores and not checkpoint.is_done(rw["doc_id"])
+    ]
 
-        if doc_id in existing_scores:
-            results.append(existing_scores[doc_id])
-            continue
-
-        if checkpoint.is_done(doc_id):
-            continue
-
-        print(f"  Scoring {doc_id[:8]}...")
+    def score_document(rw: dict) -> dict:
         prompt = utils.load_prompt(
             prompts_dir / "layer5.txt",
             preamble=preamble,
@@ -49,8 +44,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
         except json.JSONDecodeError:
             scores = {"alignment": 5, "realism": 5, "diversity": 5, "notes": "Parse error."}
 
-        record = {
-            "doc_id": doc_id,
+        return {
+            "doc_id": rw["doc_id"],
             "subtype_id": rw["subtype_id"],
             "type_id": rw["type_id"],
             "language": rw["language"],
@@ -62,9 +57,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
                 "notes": scores.get("notes", ""),
             },
         }
+
+    workers = config.get("workers", 1)
+    for record in utils.parallel_map(score_document, pending, workers):
+        print(f"  Scored {record['doc_id'][:8]}")
         results.append(record)
         utils.append_jsonl(record, output_path)
-        checkpoint.mark_done(doc_id)
+        checkpoint.mark_done(record["doc_id"])
 
     # Filter and write final corpus
     passed = [
