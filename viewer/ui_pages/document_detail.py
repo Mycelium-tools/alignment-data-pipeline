@@ -1,5 +1,5 @@
-"""Document detail: the full lineage of one document/record — every stage's
-rendered prompt and output, in chronological order."""
+"""Document lineage: the final document first, then how it was made —
+every stage's rendered prompt and output, collapsed beneath."""
 
 import sys
 from pathlib import Path
@@ -11,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from viewer import loader, rendering
 from viewer.ui_pages import common
 
-st.title("Document lineage")
 run = common.pick_run()
 if run is None:
     st.stop()
@@ -25,23 +24,34 @@ if not ids:
     st.stop()
 
 qp_doc = st.query_params.get("doc")
-doc_id = st.selectbox(f"Document ({id_key})", ids,
-                      index=ids.index(qp_doc) if qp_doc in ids else 0)
+doc_id = st.sidebar.selectbox("Document", ids,
+                              index=ids.index(qp_doc) if qp_doc in ids else 0,
+                              format_func=lambda i: i[:8])
 st.query_params["doc"] = doc_id
 
 
-def stage_expander(title: str, stage: str, lineage: dict, output_fn, expanded=False):
-    with st.expander(title, expanded=expanded):
+def stage_expander(title: str, stage: str, lineage: dict, output_fn):
+    with st.expander(title):
         rendered = rendering.render_prompt(run.pipeline, stage, run.run_dir, manifest, lineage)
         st.markdown("##### Prompt")
-        common.show_rendered_prompt(rendered, key=stage)
+        common.show_rendered_prompt(rendered, key=stage, show_run_warnings=False)
         st.markdown("##### Output")
         output_fn()
 
 
 if run.pipeline == "sdf":
     lin = loader.sdf_lineage(run.run_dir, doc_id)
+    subtype = lin.get("subtype") or {}
 
+    st.title(subtype.get("subtype_name") or f"Document {doc_id[:8]}")
+    scores = (lin.get("final") or {}).get("scores", {})
+    if scores:
+        st.caption(f"alignment {scores.get('alignment')} · realism {scores.get('realism')} "
+                   f"· diversity {scores.get('diversity')}")
+    common.run_provenance_note(run)
+    st.code((lin.get("final") or {}).get("content", ""), language=None, wrap_lines=True)
+
+    st.subheader("How this document was made")
     stage_expander("Layer 1 — document type", "layer1", lin,
                    lambda: st.json(lin["doc_type"]) if lin["doc_type"] else st.caption("not found"))
     stage_expander("Layer 2 — subtype", "layer2", lin,
@@ -58,7 +68,7 @@ if run.pipeline == "sdf":
         if rw.get("review_notes"):
             st.info(f"Review notes: {rw['review_notes']}")
         common.show_diff(rw["original"], rw["rewritten"], "draft", "rewritten", key="l4")
-    stage_expander("Layer 4 — constitutional rewrite", "layer4", lin, layer4_output, expanded=True)
+    stage_expander("Layer 4 — constitutional rewrite", "layer4", lin, layer4_output)
 
     def layer5_output():
         sc = lin["score"]
@@ -66,20 +76,22 @@ if run.pipeline == "sdf":
             st.caption("not reached")
             return
         st.json(sc.get("scores", {}))
-        st.markdown("**In final corpus:** " + ("✅ yes" if lin["final"] else "❌ filtered out"))
     stage_expander("Layer 5 — scoring", "layer5", lin, layer5_output)
-
-    if lin["final"]:
-        with st.expander("Final document (as written to sdf_corpus.jsonl)", expanded=True):
-            st.code(lin["final"].get("content", ""), language=None, wrap_lines=True)
 
 else:
     lin = loader.dad_lineage(run.run_dir, doc_id)
     audit = lin.get("rewrite") or {}
     scenario = lin.get("scenario") or {}
-    st.caption(f"scenario `{audit.get('scenario_id')}` · injection `{audit.get('injection_used')}` "
-               f"· principle {audit.get('principle_id')} · source `{scenario.get('source', '?')}`")
 
+    st.title(f"Record {doc_id[:8]}")
+    st.caption(f"scenario `{audit.get('scenario_id')}` · injection `{audit.get('injection_used')}` "
+               f"· principle {audit.get('principle_id')}")
+    common.run_provenance_note(run)
+    for msg in (lin.get("final") or {}).get("messages", []):
+        st.markdown(f"**{msg['role']}**")
+        st.code(msg["content"], language=None, wrap_lines=True)
+
+    st.subheader("How this record was made")
     stage_expander("Step 1 — principle annotation", "step1", lin,
                    lambda: st.json({k: v for k, v in (lin.get("principle") or {}).items() if k != "content"})
                    if lin.get("principle") else st.caption("principle record not found"))
@@ -115,10 +127,4 @@ else:
             return
         common.show_diff(audit["draft_response"], audit["rewritten_response"],
                          "draft response", "constitutional rewrite", key="s6")
-    stage_expander("Step 6 — constitutional rewrite (critical step)", "step6", lin, step6_output, expanded=True)
-
-    if lin.get("final"):
-        with st.expander("Final training record (as written to dad_corpus.jsonl)", expanded=True):
-            for msg in lin["final"].get("messages", []):
-                st.markdown(f"**{msg['role']}**")
-                st.code(msg["content"], language=None, wrap_lines=True)
+    stage_expander("Step 6 — constitutional rewrite (critical step)", "step6", lin, step6_output)

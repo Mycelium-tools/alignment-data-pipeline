@@ -12,47 +12,45 @@ from viewer import loader
 
 FOLD_THRESHOLD = 2000  # chars; variable values longer than this get folded out of prompts
 
-_SOURCE_BADGES = {
-    "snapshot": ":green-badge[snapshot]",
-    "git": ":orange-badge[reconstructed from git]",
-    "missing": ":red-badge[missing]",
-}
 
-
-def source_badge(source: str, commit: str | None = None) -> str:
-    badge = _SOURCE_BADGES.get(source, source)
-    if source == "git" and commit:
-        badge += f" :gray-badge[{commit}]"
-    return badge
-
-
-def pick_run(pipeline_key: str = "pipeline", run_key: str = "run") -> loader.RunInfo | None:
-    """Run selector seeded from query params; keeps params in sync."""
+def pick_run(sidebar: bool = True) -> loader.RunInfo | None:
+    """Run selector seeded from query params; keeps params in sync.
+    Renders in the sidebar by default so the content area stays clean."""
+    container = st.sidebar if sidebar else st
     runs = loader.list_runs()
     if not runs:
         st.info("No runs found under outputs/. Run a pipeline first.")
         return None
 
     pipelines = sorted({r.pipeline for r in runs})
-    qp_pipeline = st.query_params.get(pipeline_key)
-    pipeline = st.selectbox(
+    qp_pipeline = st.query_params.get("pipeline")
+    pipeline = container.selectbox(
         "Pipeline", pipelines,
         index=pipelines.index(qp_pipeline) if qp_pipeline in pipelines else 0,
-        key=f"sel_{pipeline_key}",
+        key="sel_pipeline",
     )
 
     pipeline_runs = [r for r in runs if r.pipeline == pipeline]
     run_ids = [r.run_id for r in pipeline_runs]
-    qp_run = st.query_params.get(run_key)
-    run_id = st.selectbox(
+    qp_run = st.query_params.get("run")
+    run_id = container.selectbox(
         "Run", run_ids,
         index=run_ids.index(qp_run) if qp_run in run_ids else 0,
-        key=f"sel_{run_key}",
+        key="sel_run",
     )
 
-    st.query_params[pipeline_key] = pipeline
-    st.query_params[run_key] = run_id
+    st.query_params["pipeline"] = pipeline
+    st.query_params["run"] = run_id
     return next(r for r in pipeline_runs if r.run_id == run_id)
+
+
+def run_provenance_note(run: loader.RunInfo) -> None:
+    """One-line provenance caveat, shown at most once per page."""
+    if not run.has_snapshot:
+        st.caption(f":material/history: Prompts for this run are reconstructed from git "
+                   f"commit `{run.git_commit}`" +
+                   (" — repo had uncommitted changes at run time, so they may differ from what actually ran."
+                    if run.git_dirty else "."))
 
 
 def fold_long_values(text: str, variables: dict) -> tuple[str, dict[str, str]]:
@@ -67,15 +65,18 @@ def fold_long_values(text: str, variables: dict) -> tuple[str, dict[str, str]]:
     return text, folded
 
 
-def show_rendered_prompt(rendered, key: str = "") -> None:
-    """Render a RenderedPrompt: warnings, sources, system + user with folding.
-    `key` must be unique per prompt on the page (e.g. the stage name)."""
+def show_rendered_prompt(rendered, key: str = "", show_run_warnings: bool = True) -> None:
+    """Render a RenderedPrompt: system + user with long values folded.
+    `key` must be unique per prompt on the page (e.g. the stage name).
+    Run-level provenance warnings are suppressed when show_run_warnings=False
+    (pages show them once at the top instead)."""
+    run_level = ("Pre-snapshot run", "Repo was dirty")
     for w in rendered.warnings:
-        st.warning(w)
-    if rendered.template_sources:
-        st.markdown(" ".join(
-            f"`{t.name}` {source_badge(t.source)}" for t in rendered.template_sources
-        ))
+        if any(w.startswith(prefix) for prefix in run_level):
+            if show_run_warnings:
+                st.warning(w)
+        else:
+            st.warning(w)
     if not rendered.is_llm_call:
         st.caption("No LLM call at this stage for this record.")
         return

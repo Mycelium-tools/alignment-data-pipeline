@@ -12,7 +12,6 @@ from viewer import loader, rendering
 from viewer.ui_pages import common
 
 st.title("Compare runs")
-st.caption("Diff the prompts between two runs of the same pipeline, next to the outputs they produced.")
 
 runs = loader.list_runs()
 if len(runs) < 2:
@@ -20,52 +19,50 @@ if len(runs) < 2:
     st.stop()
 
 pipelines = sorted({r.pipeline for r in runs})
-pipeline = st.selectbox("Pipeline", pipelines)
+pipeline = st.sidebar.selectbox("Pipeline", pipelines)
 pipeline_runs = [r for r in runs if r.pipeline == pipeline]
 if len(pipeline_runs) < 2:
     st.info(f"Only one {pipeline} run exists — nothing to compare against.")
     st.stop()
 
-col_a, col_b = st.columns(2)
 ids = [r.run_id for r in pipeline_runs]
-run_a_id = col_a.selectbox("Run A (older/baseline)", ids, index=min(1, len(ids) - 1))
-run_b_id = col_b.selectbox("Run B (newer)", ids, index=0)
+run_a_id = st.sidebar.selectbox("Run A (baseline)", ids, index=min(1, len(ids) - 1))
+run_b_id = st.sidebar.selectbox("Run B", ids, index=0)
 run_a = next(r for r in pipeline_runs if r.run_id == run_a_id)
 run_b = next(r for r in pipeline_runs if r.run_id == run_b_id)
 if run_a_id == run_b_id:
     st.warning("Pick two different runs.")
     st.stop()
 
+if not (run_a.has_snapshot and run_b.has_snapshot):
+    st.caption(":material/history: One or both runs predate prompt snapshots — "
+               "their templates are reconstructed from git and may not match what actually ran.")
+
 st.header("Prompt differences")
 templates_a = {t.name: t for t in rendering.list_templates(run_a.run_dir, run_a.git_commit, pipeline)}
 templates_b = {t.name: t for t in rendering.list_templates(run_b.run_dir, run_b.git_commit, pipeline)}
-any_diff = False
+changed = []
 for name in sorted(set(templates_a) | set(templates_b)):
     ta, tb = templates_a.get(name), templates_b.get(name)
     text_a = ta.text if ta else None
     text_b = tb.text if tb else None
-    if text_a == text_b:
-        continue
-    any_diff = True
+    if text_a != text_b:
+        changed.append((name, text_a, text_b))
+
+if not changed:
+    st.success("No prompt or constitution differences — output differences come from sampling alone.")
+for i, (name, text_a, text_b) in enumerate(changed):
     label = name
     if text_a is None:
         label += " (only in B)"
     elif text_b is None:
         label += " (only in A)"
-    with st.expander(label, expanded=True):
-        badges = []
-        if ta:
-            badges.append(f"A: {common.source_badge(ta.source, run_a.git_commit)}")
-        if tb:
-            badges.append(f"B: {common.source_badge(tb.source, run_b.git_commit)}")
-        st.markdown(" · ".join(badges))
+    with st.expander(label, expanded=(i == 0)):
         diff = "\n".join(difflib.unified_diff(
             (text_a or "").splitlines(), (text_b or "").splitlines(),
             fromfile=f"A/{name}", tofile=f"B/{name}", lineterm="",
         ))
         st.code(diff, language="diff", wrap_lines=True)
-if not any_diff:
-    st.success("No prompt/constitution differences between these runs — output differences come from sampling.")
 
 st.header("Matched outputs")
 pairs = loader.match_outputs(run_a.run_dir, run_b.run_dir, pipeline)
@@ -73,12 +70,12 @@ if not pairs:
     st.info("No matching outputs between the two runs (different types/scenarios, or a run has no final corpus).")
     st.stop()
 
-quality_note = {"exact": "", "positional": " :orange-badge[positional match]", "group": " :gray-badge[grouped]"}
+quality_note = {"positional": " · positional match", "group": " · grouped by principle"}
 content_of = (lambda rec: rec.get("content", "")) if pipeline == "sdf" else \
              (lambda rec: rec["messages"][1]["content"] if rec.get("messages") else "")
 
 for pair in pairs:
-    with st.expander(f"{pair.key} — {len(pair.a)} vs {len(pair.b)}{quality_note.get(pair.quality, '')}"):
+    with st.expander(f"{pair.key}{quality_note.get(pair.quality, '')}"):
         n = min(len(pair.a), len(pair.b))
         for i in range(n):
             ca, cb = st.columns(2)
