@@ -103,6 +103,14 @@ Run: `python evals/score_dad.py --input outputs/dad/final/dad_corpus.jsonl`
 
 Install the dependencies into a virtual environment so they stay isolated from your system Python. (This isn't optional on recent macOS/Linux — a plain `pip install` is blocked by default.)
 
+### Clone the repo
+Open your terminal app and `cd` to a directory where you want the repo (i.e. `cd ~/projects`), then run:
+```bash
+git clone https://github.com/Mycelium-tools/alignment-data-pipeline.git
+cd alignment-data-pipeline
+```
+
+### Create a virtual environment and install dependencies
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
