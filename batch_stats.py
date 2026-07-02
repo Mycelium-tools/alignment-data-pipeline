@@ -2,7 +2,7 @@
 
 
 def summarize(batches):
-    """Return the count, total, and mean of a list of per-batch token counts."""
+    """Return count, total, mean, and max of a list of per-batch token counts."""
     count = len(batches)
     total = sum(batches)
     return {
