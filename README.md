@@ -107,10 +107,8 @@ Install the dependencies into a virtual environment so they stay isolated from y
 python3 -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env           # then fill in ANTHROPIC_API_KEY
+cp .env.example .env           # then add your ANTHROPIC_API_KEY
 ```
-
-Get an API key at [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys).
 
 > **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again.
 
