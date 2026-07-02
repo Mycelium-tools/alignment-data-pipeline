@@ -144,11 +144,11 @@ source .venv/bin/activate
 python sdf_pipeline/run.py --config config.yaml
 ```
 
-You'll see progress printed per layer with a running cost after each. Final output lands in `outputs/sdf/final/sdf_corpus.jsonl`.
+You'll see progress printed per layer with a running cost after each. Final output lands in `outputs/sdf/latest/final/sdf_corpus.jsonl`.
 
 **3. Browse the output:**
 
-Open `viewer.html` in a browser (double-click it), then drag-and-drop `outputs/sdf/final/sdf_corpus.jsonl` onto the drop zone.
+Open `viewer.html` in a browser (double-click it), then drag-and-drop `outputs/sdf/latest/final/sdf_corpus.jsonl` onto the drop zone.
 
 **4. Test the DAD pipeline** — reduce `scenarios_per_principle` first or it will make hundreds of API calls:
 
@@ -163,15 +163,15 @@ Then run:
 python dad_pipeline/run.py --config config.yaml
 ```
 
-With 1 scenario per principle (7 principles) and 4 injection types, this is ~50–80 API calls — about $0.20–0.50. Final output is `outputs/dad/final/dad_corpus.jsonl`.
+With 1 scenario per principle (7 principles) and 4 injection types, this is ~50–80 API calls — about $0.20–0.50. Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
 
 > **MANTA CSV is optional.** The DAD pipeline imports pre-built user messages from a MANTA CSV (`../manta_project/manta_questions_1090.csv`). If the file doesn't exist, that import is silently skipped and the pipeline generates all scenarios from scratch.
 
 **5. Score the outputs:**
 
 ```bash
-python evals/score_dad.py --input outputs/dad/final/dad_corpus.jsonl
-python evals/score_sdf.py --input outputs/sdf/final/sdf_corpus.jsonl
+python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl
+python evals/score_sdf.py --input outputs/sdf/latest/final/sdf_corpus.jsonl
 ```
 
 ---
@@ -185,7 +185,7 @@ python sdf_pipeline/run.py --config config.yaml --resume --layer 3
 python dad_pipeline/run.py --config config.yaml --resume --step 5
 ```
 
-Running cost is tracked in `outputs/cost_log.jsonl` and printed after each layer/step.
+Running cost is tracked in each run's `cost_log.jsonl` and printed after each layer/step (see "Run organization" below).
 ## Run organization
 
 Every pipeline invocation creates its own run directory so outputs from different runs never mix:
