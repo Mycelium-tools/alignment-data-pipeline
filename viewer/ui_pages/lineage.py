@@ -46,7 +46,7 @@ elif run.pipeline == "sdf":
     view = df[df["type"].isin(type_filter)] if type_filter else df
     view = view[(view["align"].fillna(0) >= min_score) & (view["realism"].fillna(0) >= min_score)]
 
-    st.caption(f"{len(view)} documents — click a row to see its lineage")
+    st.caption(f"{len(view)} documents — select one (checkbox on the left) to see its lineage")
     event = st.dataframe(
         view.drop(columns=["doc_id"]), width="stretch", hide_index=True, height=280,
         on_select="rerun", selection_mode="single-row", key="docs_sdf",
@@ -67,7 +67,7 @@ else:
                                 placeholder="All injections")
     view = df[df["injection"].isin(inj_filter)] if inj_filter else df
 
-    st.caption(f"{len(view)} records — click a row to see its lineage")
+    st.caption(f"{len(view)} records — select one (checkbox on the left) to see its lineage")
     event = st.dataframe(
         view.drop(columns=["record_id"]), width="stretch", hide_index=True, height=280,
         on_select="rerun", selection_mode="single-row", key="docs_dad",
@@ -101,7 +101,7 @@ def stage_row(title: str, stage: str, lineage: dict, output_fn):
 # --- Lineage (detail) ---
 if selected_id is None:
     if finals:
-        st.caption("Click a document above to see its lineage.")
+        st.caption("Select a document above (checkbox at the left of a row) to see its lineage.")
 elif run.pipeline == "sdf":
     lin = loader.sdf_lineage(run.run_dir, selected_id)
     subtype = lin.get("subtype") or {}
