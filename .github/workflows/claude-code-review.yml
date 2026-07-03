@@ -58,9 +58,11 @@ jobs:
             #${{ github.event.pull_request.number }} with `gh pr review`:
             - If you found significant issues, run `gh pr review
               ${{ github.event.pull_request.number }} --request-changes --body "<brief summary>"`.
-            - If there are no significant issues, run `gh pr review
+            - If the changes look correct and you found no significant issues, run
+              `gh pr review ${{ github.event.pull_request.number }} --approve --body "<brief summary>"`.
+            - If you are unsure or the PR is out of scope to judge, run `gh pr review
               ${{ github.event.pull_request.number }} --comment --body "<brief summary>"`.
-            Do NOT use `--approve`; a human gives the final approval.
+            Never merge the PR; a human decides whether to merge.
           # The action denies comment-posting tools by default; grant the inline
           # comment tool plus the gh subcommands the review needs, or it reviews
           # but cannot post its findings.
