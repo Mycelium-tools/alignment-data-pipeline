@@ -55,7 +55,7 @@ Generates chat-format transcripts where a user brings a practical goal with anim
 
 | Step | Script | What it does |
 |---|---|---|
-| 1 | `step1_segment.py` | Parses constitution into 7 principle sections, annotates each |
+| 1 | `step1_segment.py` | Parses constitution into 10 principle sections, annotates each |
 | 2 | `step2_scenarios.py` | Imports MANTA scenarios + generates additional frontier cases |
 | 3 | `step3_draft_prompt.py` | Drafts realistic user messages (skipped for MANTA rows) |
 | 4 | `step4_refine_prompt.py` | Naturalizes user messages (skipped for MANTA rows) |
@@ -95,7 +95,7 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 
 `score_sdf.py` — scores SDF documents on alignment, realism, and diversity.
 
-Run: `python evals/score_dad.py --input outputs/dad/final/dad_corpus.jsonl`
+Run: `python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl`
 
 ---
 
@@ -163,7 +163,7 @@ Then run:
 python dad_pipeline/run.py --config config.yaml
 ```
 
-With 1 scenario per principle (7 principles) and 4 injection types, this is ~50–80 API calls — about $0.20–0.50. Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
+With 1 scenario per principle (10 principles) and 4 injection types, this is roughly 200 API calls — about $1–3. (The `ruthless` injection alone generates 5 candidate responses plus a judge call each, which dominates the count.) Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
 
 > **MANTA CSV is optional.** The DAD pipeline imports pre-built user messages from a MANTA CSV (`../manta_project/manta_questions_1090.csv`). If the file doesn't exist, that import is silently skipped and the pipeline generates all scenarios from scratch.
 
