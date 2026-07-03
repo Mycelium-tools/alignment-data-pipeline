@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# --disable-socket: pytest-socket blocks ALL network access during tests, so the
+# suite cannot reach the Anthropic API even if a stub is forgotten. It also makes
+# the suite refuse to run at all when pytest-socket isn't installed.
+addopts = "-ra -q --strict-markers --disable-socket"

@@ -42,6 +42,15 @@ All knobs are in `config.yaml`. For development, reduce `document_types_count`, 
 
 Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jsonl` (evals log to the global `outputs/cost_log.jsonl`) — check it any time.
 
+## Testing
+
+- Run `pytest` from the repo root (deps are in `requirements.txt`). The suite is fully offline and finishes in seconds; CI runs it on every PR (`.github/workflows/tests.yml`, a job with no API secret exposed).
+- Tests NEVER call the Anthropic API. Three layers enforce this: pytest-socket (`--disable-socket` in `pyproject.toml`) blocks all network at the socket level; an autouse fixture sets a fake `ANTHROPIC_API_KEY` and resets `shared.api` globals per test; and `shared.api._call_with_retry` is replaced with a function that raises.
+- To exercise pipeline stages, use the `stub_claude` fixture in `tests/conftest.py` (queue of canned response strings, or a callable dispatcher) — it patches `shared.api.call_claude`, the single chokepoint every module uses. Never let real `anthropic` error types reach the real `_call_with_retry`; tenacity would sleep minutes.
+- All test outputs go to pytest `tmp_path`; the `PIPELINE_OUTPUT_ROOT` env var redirects the `run.py` orchestrators away from the real `outputs/` tree.
+- Determinism: an autouse fixture seeds `random`; `sample_language` accepts an injectable `rng`; uuid/timestamp values are asserted by shape, never by value.
+- Tests encode CURRENT behavior, including known quirks (unused `ruthless_keep_threshold`, empty `{scenario_description}` in step 4, unused `temperature`, `config.yaml`'s model missing from the pricing table). Don't change pipeline behavior just to make a test expectation nicer — decide the spec first, then flip the test deliberately.
+
 ## Constitution
 
 Two source files, joined in memory by `shared/constitution_loader.py` (never combined on disk):

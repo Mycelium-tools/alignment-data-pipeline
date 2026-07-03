@@ -58,10 +58,11 @@ def load_config(path: str = "config.yaml") -> dict:
         return yaml.safe_load(f)
 
 
-def sample_language(distribution: dict[str, float]) -> str:
+def sample_language(distribution: dict[str, float], rng: random.Random | None = None) -> str:
+    chooser = rng or random
     languages = list(distribution.keys())
     weights = list(distribution.values())
-    return random.choices(languages, weights=weights, k=1)[0]
+    return chooser.choices(languages, weights=weights, k=1)[0]
 
 
 def new_run_id(label: str) -> str:
