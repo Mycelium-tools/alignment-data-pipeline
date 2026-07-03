@@ -5,3 +5,4 @@ python-dotenv
 tqdm
 jsonlines
 tenacity
+streamlit>=1.40

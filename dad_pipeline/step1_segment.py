@@ -17,7 +17,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         print("  Step 1 already complete, loading from disk.")
         return utils.load_jsonl(output_path)
 
-    segments = constitution_loader.load_segments()
+    segments = constitution_loader.load_segments(utils.resolve_constitution_dir(prompts_dir))
     results = []
 
     for seg in segments:

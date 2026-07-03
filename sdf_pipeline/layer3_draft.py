@@ -18,8 +18,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
 
     count = config["sdf"]["documents_per_subtype"]
     preamble = utils.load_prompt(prompts_dir / "preamble.txt")
-    constitution_claude = constitution_loader.load_constitution_claude()
-    constitution_welfare_reading = constitution_loader.load_constitution_welfare_reading()
+    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
+    constitution_claude = constitution_loader.load_constitution_claude(constitution_dir)
+    constitution_welfare_reading = constitution_loader.load_constitution_welfare_reading(constitution_dir)
 
     existing = utils.load_jsonl(output_path)
     results = list(existing)
