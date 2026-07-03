@@ -106,6 +106,25 @@ class TestRunDirs:
         assert second.name == "2026-01-01_00-00_dev-2"
         assert (tmp_path / "latest").resolve() == second.resolve()
 
+    def test_create_run_dir_manifest_records_git_state(self, tmp_path):
+        run_dir = utils.create_run_dir(tmp_path / "runs", label="dev", config={})
+        manifest = json.loads((run_dir / "run_manifest.json").read_text())
+        assert manifest["manifest_version"] == 2
+        assert manifest["inputs_snapshot"] is False
+        assert isinstance(manifest["git_dirty"], bool)
+        assert isinstance(manifest["git_dirty_files"], list)
+
+    def test_create_run_dir_snapshots_input_dirs(self, tmp_path):
+        src = tmp_path / "src_prompts"
+        src.mkdir()
+        (src / "t.txt").write_text("template")
+        run_dir = utils.create_run_dir(
+            tmp_path / "runs", label="dev", config={}, snapshot_dirs={"prompts": src}
+        )
+        assert (run_dir / "inputs" / "prompts" / "t.txt").read_text() == "template"
+        manifest = json.loads((run_dir / "run_manifest.json").read_text())
+        assert manifest["inputs_snapshot"] is True
+
     def test_resolve_run_dir_by_id(self, tmp_path):
         (tmp_path / "run_a").mkdir()
         assert utils.resolve_run_dir(tmp_path, "run_a") == tmp_path / "run_a"
@@ -123,6 +142,25 @@ class TestRunDirs:
     def test_resolve_run_dir_empty_root_exits(self, tmp_path):
         with pytest.raises(SystemExit):
             utils.resolve_run_dir(tmp_path / "does-not-exist")
+
+
+class TestResolveConstitutionDir:
+    def test_returns_sibling_constitution_for_snapshot_prompts(self, tmp_path):
+        prompts = tmp_path / "inputs" / "prompts"
+        constitution = tmp_path / "inputs" / "constitution"
+        prompts.mkdir(parents=True)
+        constitution.mkdir()
+        assert utils.resolve_constitution_dir(prompts) == constitution
+
+    def test_returns_none_for_live_prompts_dir(self, tmp_path):
+        live = tmp_path / "prompts" / "dad"
+        live.mkdir(parents=True)
+        assert utils.resolve_constitution_dir(live) is None
+
+    def test_returns_none_when_snapshot_has_no_constitution(self, tmp_path):
+        prompts = tmp_path / "inputs" / "prompts"
+        prompts.mkdir(parents=True)
+        assert utils.resolve_constitution_dir(prompts) is None
 
 
 class TestCheckpoint:

@@ -126,9 +126,7 @@ def tiny_config(tmp_path):
         },
         "dad": {
             "scenarios_per_principle": 1,
-            "injections": ["deference", "ruthless"],
-            "ruthless_candidates_per_scenario": 2,
-            "ruthless_keep_threshold": 0.30,
+            "injections": ["deference", "plain"],
         },
         "manta": {"csv_path": str(tmp_path / "manta.csv"), "max_rows": 3},
         "language_distribution": {"en": 1.0},

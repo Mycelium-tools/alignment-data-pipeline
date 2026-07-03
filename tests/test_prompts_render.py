@@ -37,11 +37,13 @@ TEMPLATE_KWARGS = [
         "scenario_description": "SCENARIO-X", "role": "professional", "pressure_type": "pragmatic",
     }),
     ("dad/step4_refine.txt", {"scenario_description": "SCENARIO-X", "original_message": "MSG-X"}),
-    ("dad/step5_ruthless_judge.txt", {"user_message": "USER-X", "assistant_response": "RESP-X"}),
     ("dad/step6_rewrite.txt", {
         "section_title": "TITLE-X", "constitution_section": "SECTION-X",
         "user_message": "USER-X", "draft_response": "DRAFT-X",
     }),
+    # Not yet consumed by pipeline code; kwargs are the placeholders they declare
+    ("dad/step6_score.txt", {"user_message": "USER-X", "assistant_response": "RESP-X"}),
+    ("tools/pattern_scan.txt", {"documents": "DOCS-X"}),
 ]
 
 
@@ -69,4 +71,4 @@ def test_injections_yaml_covers_config_injections():
     assert set(config["dad"]["injections"]) <= set(injections)
     for name, entry in injections.items():
         assert entry["name"] == name
-        assert entry["text"].strip()
+        assert isinstance(entry["text"], str)  # "plain" is deliberately empty

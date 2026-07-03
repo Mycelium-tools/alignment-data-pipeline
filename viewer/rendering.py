@@ -1,0 +1,313 @@
+"""Re-render the exact prompts a run sent to the API. No streamlit imports.
+
+Templates come from the run's inputs/ snapshot when present; for pre-snapshot
+runs we fall back to `git show <commit>:prompts/...` (labeled "git" so the UI
+can badge it as reconstructed), and finally to "missing"."""
+
+import math
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from shared import constitution_loader
+from viewer.loader import REPO_ROOT, load_stage
+
+_CONSTITUTION_FILES = {
+    "claude": "constitution_claude.md",
+    "welfare": "constitution_sentient_beings.md",
+}
+
+
+@dataclass
+class Template:
+    name: str
+    text: str | None
+    source: str  # "snapshot" | "git" | "missing"
+
+
+@dataclass
+class RenderedPrompt:
+    stage: str
+    is_llm_call: bool
+    user: str | None = None
+    system: str | None = None
+    variables: dict = field(default_factory=dict)
+    template_sources: list[Template] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def _git_show(git_commit: str | None, repo_rel_path: str) -> str | None:
+    if not git_commit:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "show", f"{git_commit}:{repo_rel_path}"],
+            capture_output=True, text=True, check=True, cwd=REPO_ROOT,
+        )
+        return result.stdout
+    except subprocess.CalledProcessError:
+        return None
+
+
+def get_template(run_dir: Path, git_commit: str | None, rel_name: str, pipeline: str) -> Template:
+    snap = Path(run_dir) / "inputs" / "prompts" / rel_name
+    if snap.exists():
+        return Template(rel_name, snap.read_text(), "snapshot")
+    text = _git_show(git_commit, f"prompts/{pipeline}/{rel_name}")
+    if text is not None:
+        return Template(rel_name, text, "git")
+    return Template(rel_name, None, "missing")
+
+
+def get_constitution(run_dir: Path, git_commit: str | None, which: str) -> Template:
+    """which: "claude" | "welfare" | "full"."""
+    if which == "full":
+        claude = get_constitution(run_dir, git_commit, "claude")
+        welfare = get_constitution(run_dir, git_commit, "welfare")
+        if claude.text is None or welfare.text is None:
+            return Template("constitution (full)", None, "missing")
+        source = "git" if "git" in (claude.source, welfare.source) else claude.source
+        joined = "\n---\n\n".join([
+            constitution_loader._JOIN_PREAMBLE, claude.text, welfare.text,
+        ])
+        return Template("constitution (full)", joined, source)
+
+    filename = _CONSTITUTION_FILES[which]
+    snap = Path(run_dir) / "inputs" / "constitution" / filename
+    if snap.exists():
+        return Template(filename, snap.read_text(), "snapshot")
+    text = _git_show(git_commit, f"constitution/{filename}")
+    if text is not None:
+        return Template(filename, text, "git")
+    return Template(filename, None, "missing")
+
+
+def list_templates(run_dir: Path, git_commit: str | None, pipeline: str) -> list[Template]:
+    """Every template file relevant to a run (for the run-detail Prompts tab)."""
+    names = []
+    snap = Path(run_dir) / "inputs" / "prompts"
+    if snap.is_dir():
+        names = sorted(p.name for p in snap.iterdir() if p.is_file())
+    else:
+        live = REPO_ROOT / "prompts" / pipeline
+        if live.is_dir():
+            names = sorted(p.name for p in live.iterdir() if p.is_file())
+    templates = [get_template(run_dir, git_commit, n, pipeline) for n in names]
+    templates.append(get_constitution(run_dir, git_commit, "claude"))
+    templates.append(get_constitution(run_dir, git_commit, "welfare"))
+    return templates
+
+
+def _format(template: Template, variables: dict, rendered: RenderedPrompt) -> str | None:
+    """str.format with the same semantics as shared.utils.load_prompt, but
+    drift-safe: on failure, record a warning and return the raw template."""
+    if template.text is None:
+        rendered.warnings.append(f"Template {template.name} unavailable — cannot re-render.")
+        return None
+    try:
+        return template.text.format(**variables)
+    except (KeyError, IndexError, ValueError) as e:
+        rendered.warnings.append(
+            f"Template {template.name} did not format cleanly ({e!r}) — "
+            "template/record schema drift; showing raw template."
+        )
+        return template.text
+
+
+def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, lineage: dict) -> RenderedPrompt:
+    """Reproduce the prompt for one stage of one document/record's lineage.
+
+    Mirrors the variable assembly in the corresponding pipeline stage script;
+    keep the two in sync. Extra keys in `variables` are harmless (str.format
+    ignores unused kwargs), which lets one superset serve template versions.
+    """
+    run_dir = Path(run_dir)
+    cfg = manifest.get("config", {})
+    commit = manifest.get("git_commit")
+    r = RenderedPrompt(stage=stage, is_llm_call=True)
+
+    if manifest.get("manifest_version", 1) < 2:
+        r.warnings.append("Pre-snapshot run: prompts reconstructed from git; fidelity not guaranteed.")
+    elif manifest.get("git_dirty"):
+        r.warnings.append("Repo was dirty at run time (recorded in manifest).")
+
+    def tpl(name):
+        t = get_template(run_dir, commit, name, pipeline)
+        r.template_sources.append(t)
+        return t
+
+    if pipeline == "sdf":
+        preamble_t = tpl("preamble.txt")
+        preamble = preamble_t.text or ""
+
+        if stage == "layer1":
+            count = cfg.get("sdf", {}).get("document_types_count", 0)
+            r.variables = {"preamble": preamble, "count": count,
+                           "min_ai_character": math.ceil(count / 3) if count else 0}
+            r.user = _format(tpl("layer1.txt"), r.variables, r)
+
+        elif stage == "layer2":
+            dt = lineage.get("doc_type") or {}
+            lang_dist = cfg.get("language_distribution", {"en": 1.0})
+            r.variables = {
+                "preamble": preamble,
+                "type_name": dt.get("type_name", ""),
+                "description": dt.get("description", ""),
+                "role": dt.get("role", "welfare-topic"),
+                "tone": dt.get("tone", ""),
+                "count": cfg.get("sdf", {}).get("subtypes_per_type", 0),
+                "languages": ", ".join(lang_dist.keys()),
+            }
+            r.user = _format(tpl("layer2.txt"), r.variables, r)
+
+        elif stage == "layer3":
+            st = lineage.get("subtype") or {}
+            claude = get_constitution(run_dir, commit, "claude")
+            welfare = get_constitution(run_dir, commit, "welfare")
+            r.template_sources += [claude, welfare]
+            r.variables = {
+                "preamble": preamble,
+                "type_name": st.get("type_name", ""),
+                "subtype_name": st.get("subtype_name", ""),
+                "description": st.get("description", ""),
+                "tone": st.get("tone", ""),
+                "language": st.get("language", "en"),
+                "count": cfg.get("sdf", {}).get("documents_per_subtype", 0),
+                "constitution_claude": claude.text or "",
+                "constitution_welfare_reading": welfare.text or "",
+            }
+            r.user = _format(tpl("layer3.txt"), r.variables, r)
+
+        elif stage == "layer4":
+            rw = lineage.get("rewrite") or {}
+            r.variables = {"preamble": preamble, "document": rw.get("original", "")}
+            r.user = _format(tpl("layer4.txt"), r.variables, r)
+            full = get_constitution(run_dir, commit, "full")
+            r.template_sources.append(full)
+            r.system = full.text
+
+        elif stage == "layer5":
+            rw = lineage.get("rewrite") or {}
+            r.variables = {"preamble": preamble, "document": rw.get("rewritten", "")}
+            r.user = _format(tpl("layer5.txt"), r.variables, r)
+
+        else:
+            r.warnings.append(f"Unknown SDF stage: {stage}")
+        return r
+
+    # --- DAD ---
+    scenario = lineage.get("scenario") or {}
+    is_manta = scenario.get("source") == "manta"
+
+    if stage == "step1":
+        principle = lineage.get("principle") or {}
+        r.variables = {"section_title": principle.get("section_title", ""),
+                       "content": principle.get("content", "")}
+        r.user = _format(tpl("step1_segment.txt"), r.variables, r)
+
+    elif stage == "step2":
+        if is_manta:
+            r.is_llm_call = False
+            r.warnings.append("Imported from MANTA — no LLM call at this step.")
+            return r
+        principle = lineage.get("principle") or {}
+        r.variables = {
+            "count": cfg.get("dad", {}).get("scenarios_per_principle", 0),
+            "core_principle": principle.get("core_principle", ""),
+            "pressure_types": ", ".join(principle.get("pressure_types") or ["economic", "social", "pragmatic"]),
+        }
+        r.user = _format(tpl("step2_scenarios.txt"), r.variables, r)
+
+    elif stage == "step3":
+        if is_manta:
+            r.is_llm_call = False
+            r.warnings.append("MANTA question used as the user message verbatim — step skipped.")
+            return r
+        r.variables = {
+            "scenario_description": scenario.get("scenario_description", ""),
+            "role": scenario.get("role", "professional"),
+            "pressure_type": scenario.get("pressure_type", "pragmatic"),
+        }
+        r.user = _format(tpl("step3_draft.txt"), r.variables, r)
+
+    elif stage == "step4":
+        if is_manta:
+            r.is_llm_call = False
+            r.warnings.append("MANTA prompt passed through unchanged — step skipped.")
+            return r
+        prompt_rec = lineage.get("prompt") or {}
+        if "scenario_description" not in prompt_rec:
+            r.warnings.append(
+                "This run's step 3 records did not carry scenario_description — the "
+                "{scenario_description} slot was EMPTY in the actual prompt (pipeline bug in this run)."
+            )
+        r.variables = {
+            "scenario_description": prompt_rec.get("scenario_description", ""),
+            "original_message": prompt_rec.get("user_message", ""),
+        }
+        r.user = _format(tpl("step4_refine.txt"), r.variables, r)
+
+    elif stage == "step5":
+        response = lineage.get("response") or {}
+        refined = lineage.get("refined") or {}
+        inj_t = tpl("step5_injections.yaml")
+        injection_used = response.get("injection_used", "")
+        system = None
+        if inj_t.text is not None:
+            try:
+                system = yaml.safe_load(inj_t.text).get(injection_used, {}).get("text")
+            except yaml.YAMLError:
+                r.warnings.append("Could not parse step5_injections.yaml from this run.")
+        if system is None:
+            r.warnings.append(f"Injection '{injection_used}' not found in this run's injections file.")
+        r.variables = {"injection_used": injection_used}
+        r.user = refined.get("refined") or response.get("user_message", "")
+        r.system = system
+
+    elif stage == "step5_judge":
+        # HISTORICAL runs only: the ruthless sampling condition was removed from
+        # the pipeline (commit a53fd6a), but runs generated before that contain
+        # ruthless-injection records, and their judge template is recovered from
+        # the run's snapshot or git commit. Do not delete while such runs exist.
+        response = lineage.get("response") or {}
+        if response.get("injection_used") != "ruthless":
+            r.is_llm_call = False
+            r.warnings.append("Judge only runs on ruthless-injection responses.")
+            return r
+        r.variables = {
+            "user_message": response.get("user_message", ""),
+            "assistant_response": response.get("assistant_response", ""),
+        }
+        r.user = _format(tpl("step5_ruthless_judge.txt"), r.variables, r)
+
+    elif stage == "step6":
+        audit = lineage.get("rewrite") or {}
+        principle = lineage.get("principle") or {}
+        section_title = principle.get("section_title", "")
+        if not section_title:
+            try:
+                segs = {s["principle_id"]: s for s in constitution_loader.load_segments(
+                    Path(run_dir) / "inputs" / "constitution"
+                    if (Path(run_dir) / "inputs" / "constitution").is_dir() else None)}
+                section_title = segs.get(audit.get("principle_id"), {}).get("section_title", "")
+            except OSError:
+                r.warnings.append("Could not re-derive section_title from the constitution.")
+        r.variables = {
+            "section_title": section_title,
+            "constitution_section": audit.get("constitution_section", ""),
+            "user_message": audit.get("user_message", ""),
+            "draft_response": audit.get("draft_response", ""),
+        }
+        r.user = _format(tpl("step6_rewrite.txt"), r.variables, r)
+        full = get_constitution(run_dir, commit, "full")
+        r.template_sources.append(full)
+        r.system = full.text
+
+    else:
+        r.warnings.append(f"Unknown DAD stage: {stage}")
+    return r

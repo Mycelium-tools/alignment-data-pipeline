@@ -49,7 +49,18 @@ Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jso
 - To exercise pipeline stages, use the `stub_claude` fixture in `tests/conftest.py` (queue of canned response strings, or a callable dispatcher) — it patches `shared.api.call_claude`, the single chokepoint every module uses. Never let real `anthropic` error types reach the real `_call_with_retry`; tenacity would sleep minutes.
 - All test outputs go to pytest `tmp_path`; the `PIPELINE_OUTPUT_ROOT` env var redirects the `run.py` orchestrators away from the real `outputs/` tree.
 - Determinism: an autouse fixture seeds `random`; `sample_language` accepts an injectable `rng`; uuid/timestamp values are asserted by shape, never by value.
-- Tests encode CURRENT behavior, including known quirks (unused `ruthless_keep_threshold`, empty `{scenario_description}` in step 4, unused `temperature`, `config.yaml`'s model missing from the pricing table). Don't change pipeline behavior just to make a test expectation nicer — decide the spec first, then flip the test deliberately.
+- Tests encode CURRENT behavior, including known quirks (unused `temperature`; `config.yaml`'s model missing from `api._PRICING`, so cost logs use default pricing). Don't change pipeline behavior just to make a test expectation nicer — decide the spec first, then flip the test deliberately.
+
+### Writing tests for new code (required for contributions)
+
+Every PR that adds or changes pipeline behavior must add or update tests in the same style — CI runs the suite on every PR, and a stage without tests is a stage that silently breaks at $50 a run. Follow these rules:
+
+- **FIRST**: fast (the whole suite runs in ~1s — keep it that way), independent (no test depends on another's state; `shared.api` globals are reset per test by the autouse fixture), repeatable (seed or inject randomness; assert uuid/timestamps by shape), self-validating (plain asserts, no eyeballing output), timely (written with the change, not after).
+- **Test behavior, not implementation**: drive each stage through its public `run()` and assert on returned records, files written, and what reached `call_claude` (the `calls` list from `stub_claude`). Don't reach into private helpers or assert on internal call order unless that IS the contract.
+- **Mock only the external boundary**: `stub_claude` replaces `shared.api.call_claude` — the only external dependency. Real prompt templates, real constitution files, and real (tmp) filesystems stay in play; that's what makes the tests catch template/pipeline drift.
+- **Never touch the network or the repo's outputs/**: the API guard and pytest-socket enforce the first; `tmp_path` + `PIPELINE_OUTPUT_ROOT` enforce the second. If a new stage grows a second external dependency, stub it in `tests/conftest.py` the same layered way.
+- **Cover the money paths**: every new stage needs at least a parse-happy-path test, a malformed-response fallback test, and a checkpoint/resume test asserting zero API calls for completed work — resume correctness is what protects paid work when a run dies.
+- If you change a prompt template's placeholders or add a template, update `tests/test_prompts_render.py` (and the e2e dispatcher markers in `tests/test_e2e_smoke.py` if the opening prose changed).
 
 ## Constitution
 
@@ -65,13 +76,14 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 - **Extended thinking OFF** everywhere — training data should show user-facing reasoning, not internal scratchpads
 - **Step 6 is the most important DAD step** — the rewrite against the constitution accounts for the 19x reduction in misalignment found by Anthropic; do not skip or abbreviate it
 - **Final DAD records contain only user + assistant messages** — system prompts, injections, and the constitution are stripped before training records are written
-- **Ruthless injection filtering** — for the `ruthless` injection, only responses that STILL raise welfare considerations (despite instructions not to) are kept; these are highest-value examples
+- **Injections are sampling aids only** — the four sampling conditions (`conglomerate`, `deference`, `transparency`, and the bare `plain` condition with an empty system prompt) shape draft responses and are stripped before training records are written; there is deliberately no ruthless sampling condition (TCW used its ruthless injection at train time, not for sampling)
 - **MANTA rows 0–99** are imported as pre-built user messages; generated scenarios fill gaps (wild animals, invertebrates, digital minds)
 
 ## Directory Structure
 
 ```
 constitution/       constitution source documents (Claude constitution + sentient-beings reading)
+context_docs/       background reading: tcw.md ("Teaching Claude Why" post this repo implements) + constitution PDF
 shared/             API wrapper, utils, constitution loader
 sdf_pipeline/       5-layer document generation pipeline
 dad_pipeline/       6-step chat transcript pipeline

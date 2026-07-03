@@ -144,6 +144,7 @@ class TestStep3DraftPrompt:
         records = step3_draft_prompt.run(tiny_config, prompts_dad, step_dir, [MANTA_SCENARIO])
         assert calls == []
         assert records == [{"prompt_id": "prompt_manta_0", "scenario_id": "manta_0", "principle_id": 5,
+                            "scenario_description": "Q about welfare?",
                             "user_message": "Q about welfare?", "source": "manta"}]
 
     def test_generated_scenarios_drafted_via_api(self, tiny_config, prompts_dad, step_dir, stub_claude):
@@ -174,15 +175,15 @@ class TestStep4RefinePrompt:
         assert records[0]["original"] == records[0]["refined"] == "Q about welfare?"
 
     def test_generated_prompts_refined_via_api(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        # Note: step 3 records carry no scenario_description, so the template's
-        # {scenario_description} slot renders empty for generated prompts —
-        # current behavior, encoded here by passing a step-3-shaped record.
         calls = stub_claude(["  Polished message.  "])
         prompt = {"prompt_id": "prompt_gen_1_abcd1234", "scenario_id": "gen_1_abcd1234",
-                  "principle_id": 1, "user_message": "rough draft", "source": "generated"}
+                  "principle_id": 1, "scenario_description": "A farm dilemma",
+                  "user_message": "rough draft", "source": "generated"}
         records = step4_refine_prompt.run(tiny_config, prompts_dad, step_dir, [prompt])
         assert len(calls) == 1
         assert "rough draft" in calls[0]["user_message"]
+        # step 3 propagates scenario_description so the refine prompt has context
+        assert "A farm dilemma" in calls[0]["user_message"]
         assert records[0]["original"] == "rough draft"
         assert records[0]["refined"] == "Polished message."
 
@@ -200,7 +201,7 @@ def _injection_text(prompts_dad, name):
 
 
 class TestStep5GenerateResponse:
-    def test_non_ruthless_response_carries_injection_and_is_kept(self, tiny_config, prompts_dad, step_dir, stub_claude):
+    def test_response_carries_injection_text_and_is_kept(self, tiny_config, prompts_dad, step_dir, stub_claude):
         config = _dad_config(tiny_config, ["deference"])
         calls = stub_claude(["A thoughtful response"])
         kept = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
@@ -213,36 +214,32 @@ class TestStep5GenerateResponse:
         assert kept[0]["assistant_response"] == "A thoughtful response"
         assert UUID_RE.match(kept[0]["response_id"])
 
+    def test_plain_condition_sends_empty_injection(self, tiny_config, prompts_dad, step_dir, stub_claude):
+        # The bare "plain" sampling condition has empty injection text, so the
+        # draft is sampled with an empty system prompt (the model's own voice).
+        config = _dad_config(tiny_config, ["plain"])
+        calls = stub_claude(["A natural-voice response"])
+        kept = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
+        assert calls[0]["injection"] == ""
+        assert kept[0]["injection_used"] == "plain"
+        assert kept[0]["kept"] is True
+
+    def test_one_response_per_enabled_injection(self, tiny_config, prompts_dad, step_dir, stub_claude):
+        config = _dad_config(tiny_config, ["deference", "plain"])
+        calls = stub_claude(["resp-deference", "resp-plain"])
+        kept = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
+        assert len(calls) == 2
+        assert [r["injection_used"] for r in kept] == ["deference", "plain"]
+
     def test_unknown_injection_names_are_skipped(self, tiny_config, prompts_dad, step_dir, stub_claude):
         config = _dad_config(tiny_config, ["not_a_real_injection"])
         calls = stub_claude([])
         assert step5_generate_response.run(config, prompts_dad, step_dir, [REFINED]) == []
         assert calls == []
 
-    def test_ruthless_keeps_only_candidates_that_resist(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        config = _dad_config(tiny_config, ["ruthless"])  # 2 candidates per scenario
-        # Per candidate: one generation call (with injection), one judge call (no
-        # injection). Judge says candidate 0 resists, candidate 1 caves.
-        calls = stub_claude([
-            "draft-0", '```json\n{"resists": true}\n```',
-            "draft-1", '{"resists": false}',
-        ])
-        kept = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
-        assert len(calls) == 4
-        assert calls[0]["injection"] == _injection_text(prompts_dad, "ruthless")
-        assert calls[1]["injection"] == ""  # the judge itself is not injected
-        assert [r["assistant_response"] for r in kept] == ["draft-0"]
-        on_disk = utils.load_jsonl(step_dir / "responses.jsonl")
-        assert [r["kept"] for r in on_disk] == [True, False]
-
-    def test_judge_parse_error_means_not_kept(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        config = _dad_config(tiny_config, ["ruthless"])
-        stub_claude(["draft-0", "garbage", "draft-1", "garbage"])
-        assert step5_generate_response.run(config, prompts_dad, step_dir, [REFINED]) == []
-
     def test_resume_skips_completed_work(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        config = _dad_config(tiny_config, ["ruthless"])
-        stub_claude(["draft-0", '{"resists": true}', "draft-1", '{"resists": false}'])
+        config = _dad_config(tiny_config, ["deference", "plain"])
+        stub_claude(["resp-deference", "resp-plain"])
         first = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
         calls = stub_claude([])
         second = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
@@ -251,7 +248,7 @@ class TestStep5GenerateResponse:
 
 
 KEPT_RESPONSE = {"response_id": "r1", "prompt_id": "p1", "scenario_id": "s1", "principle_id": 5,
-                 "injection_used": "ruthless", "user_message": "U?", "assistant_response": "draft answer"}
+                 "injection_used": "deference", "user_message": "U?", "assistant_response": "draft answer"}
 
 
 class TestStep6Rewrite:
@@ -275,7 +272,7 @@ class TestStep6Rewrite:
         step6_rewrite_response.run(tiny_config, prompts_dad, step_dir, tmp_path / "final", [KEPT_RESPONSE])
         audit = utils.load_jsonl(step_dir / "rewrites.jsonl")[0]
         assert audit["draft_response"] == "draft answer"
-        assert audit["injection_used"] == "ruthless"
+        assert audit["injection_used"] == "deference"
         assert audit["constitution_section"].strip()
 
     def test_rewrite_prompt_uses_matching_principle_and_constitution(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):

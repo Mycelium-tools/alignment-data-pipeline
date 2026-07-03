@@ -4,6 +4,7 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
@@ -71,18 +72,22 @@ def new_run_id(label: str) -> str:
     return f"{datetime.now().strftime('%Y-%m-%d_%H-%M')}_{safe_label}"
 
 
-def _git_commit() -> str | None:
+def _git_status() -> tuple[str | None, bool, list[str]]:
+    """Return (short_commit, dirty, dirty_files) for the repo, or (None, False, []) outside git."""
+    cwd = Path(__file__).parent
     try:
-        result = subprocess.run(
+        commit = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-            cwd=Path(__file__).parent,
-        )
-        return result.stdout.strip()
+            capture_output=True, text=True, check=True, cwd=cwd,
+        ).stdout.strip()
+        porcelain = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, check=True, cwd=cwd,
+        ).stdout
+        dirty_files = [line[3:].strip() for line in porcelain.splitlines() if line.strip()]
+        return commit, bool(dirty_files), dirty_files
     except Exception:
-        return None
+        return None, False, []
 
 
 def _update_latest_symlink(parent: Path, run_dir: Path) -> None:
@@ -92,8 +97,18 @@ def _update_latest_symlink(parent: Path, run_dir: Path) -> None:
     link.symlink_to(run_dir.relative_to(parent), target_is_directory=True)
 
 
-def create_run_dir(runs_root: str | Path, label: str, config: dict) -> Path:
-    """Create a new run directory with a manifest, and point the `latest` symlink at it."""
+def create_run_dir(
+    runs_root: str | Path,
+    label: str,
+    config: dict,
+    snapshot_dirs: dict[str, Path] | None = None,
+) -> Path:
+    """Create a new run directory with a manifest, and point the `latest` symlink at it.
+
+    snapshot_dirs maps name -> source directory; each is copied into
+    run_dir/inputs/<name> so the run stays reproducible even after the
+    source files (prompt templates, constitution) change.
+    """
     runs_root = Path(runs_root)
     run_id = new_run_id(label)
     run_dir = runs_root / run_id
@@ -103,11 +118,20 @@ def create_run_dir(runs_root: str | Path, label: str, config: dict) -> Path:
         suffix += 1
     run_dir.mkdir(parents=True)
 
+    if snapshot_dirs:
+        for name, src in snapshot_dirs.items():
+            shutil.copytree(src, run_dir / "inputs" / name)
+
+    commit, dirty, dirty_files = _git_status()
     manifest = {
+        "manifest_version": 2,
         "run_id": run_dir.name,
         "label": label,
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "git_commit": _git_commit(),
+        "git_commit": commit,
+        "git_dirty": dirty,
+        "git_dirty_files": dirty_files,
+        "inputs_snapshot": bool(snapshot_dirs),
         "model": config.get("model"),
         "config": config,
     }
@@ -116,6 +140,18 @@ def create_run_dir(runs_root: str | Path, label: str, config: dict) -> Path:
 
     _update_latest_symlink(runs_root.parent, run_dir)
     return run_dir
+
+
+def resolve_constitution_dir(prompts_dir: str | Path) -> Path | None:
+    """If prompts_dir is a run's input snapshot (.../inputs/prompts), return the
+    sibling inputs/constitution dir; otherwise None (callers fall back to the
+    repo's live constitution/)."""
+    prompts_dir = Path(prompts_dir)
+    if prompts_dir.name == "prompts" and prompts_dir.parent.name == "inputs":
+        candidate = prompts_dir.parent / "constitution"
+        if candidate.is_dir():
+            return candidate
+    return None
 
 
 def resolve_run_dir(runs_root: str | Path, run_id: str | None = None) -> Path:

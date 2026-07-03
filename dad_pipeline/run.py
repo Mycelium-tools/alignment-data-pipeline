@@ -31,7 +31,6 @@ def main() -> None:
     config = utils.load_config(args.config)
 
     root = Path(__file__).parent.parent
-    prompts_dir = root / "prompts" / "dad"
     # PIPELINE_OUTPUT_ROOT redirects all run output (used by the test suite)
     outputs_root = Path(os.environ.get("PIPELINE_OUTPUT_ROOT", root / "outputs"))
     runs_root = outputs_root / "dad" / "runs"
@@ -39,7 +38,22 @@ def main() -> None:
     if args.resume:
         run_dir = utils.resolve_run_dir(runs_root, args.run_id)
     else:
-        run_dir = utils.create_run_dir(runs_root, label=args.label, config=config)
+        run_dir = utils.create_run_dir(
+            runs_root,
+            label=args.label,
+            config=config,
+            snapshot_dirs={
+                "prompts": root / "prompts" / "dad",
+                "constitution": root / "constitution",
+            },
+        )
+
+    # Read templates from the run's frozen snapshot so prompts stay reproducible
+    # (and --resume replays the run's own templates, not the repo's current ones).
+    prompts_dir = run_dir / "inputs" / "prompts"
+    if not prompts_dir.is_dir():
+        prompts_dir = root / "prompts" / "dad"
+        print("WARNING: run has no inputs/ snapshot (pre-snapshot run); using live prompts/.")
 
     api.init(args.config, cost_log_path=run_dir / "cost_log.jsonl")
 
