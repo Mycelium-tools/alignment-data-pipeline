@@ -3,6 +3,5 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
-outputs/
 *.egg-info/
 .venv/

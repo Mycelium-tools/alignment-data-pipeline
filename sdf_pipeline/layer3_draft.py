@@ -1,14 +1,15 @@
 """Layer 3: Generate document drafts for each subtype."""
 
+import re
 import sys
 import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, utils
+from shared import api, utils, constitution_loader
 
-_BREAK = "===DOCUMENT_BREAK==="
+_DOC_TAG_RE = re.compile(r"<document>(.*?)</document>", re.DOTALL)
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict]) -> list[dict]:
@@ -17,6 +18,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
 
     count = config["sdf"]["documents_per_subtype"]
     preamble = utils.load_prompt(prompts_dir / "preamble.txt")
+    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
+    constitution_claude = constitution_loader.load_constitution_claude(constitution_dir)
+    constitution_welfare_reading = constitution_loader.load_constitution_welfare_reading(constitution_dir)
 
     existing = utils.load_jsonl(output_path)
     results = list(existing)
@@ -30,6 +34,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
         prompt = utils.load_prompt(
             prompts_dir / "layer3.txt",
             preamble=preamble,
+            constitution_claude=constitution_claude,
+            constitution_welfare_reading=constitution_welfare_reading,
             type_name=st["type_name"],
             subtype_name=st["subtype_name"],
             description=st["description"],
@@ -40,9 +46,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
 
         raw = api.call_claude(user_message=prompt, max_tokens=6000)
 
-        # Split on document break delimiter
-        parts = raw.split(_BREAK)
-        docs = [p.strip() for p in parts if p.strip()]
+        # Extract <document>...</document> blocks; fall back to whole output
+        docs = [m.strip() for m in _DOC_TAG_RE.findall(raw) if m.strip()]
+        if not docs and raw.strip():
+            docs = [raw.strip()]
 
         for doc_text in docs:
             record = {

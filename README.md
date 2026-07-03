@@ -14,7 +14,7 @@ shared/             shared utilities: API wrapper, JSONL I/O, checkpointing
 sdf_pipeline/       5-layer document generation pipeline
 dad_pipeline/       6-step chat transcript pipeline
 prompts/            prompt templates for all pipeline stages
-outputs/            generated data (gitignored)
+outputs/            generated data (tracked in git, one directory per run)
 evals/              scoring scripts and rubric
 ```
 
@@ -186,6 +186,23 @@ python dad_pipeline/run.py --config config.yaml --resume --step 5
 ```
 
 Running cost is tracked in each run's `cost_log.jsonl` and printed after each layer/step (see "Run organization" below).
+
+## Run Viewer
+
+A Streamlit app for browsing runs, their output documents, and the exact prompts that produced them:
+
+```bash
+streamlit run viewer/app.py
+```
+
+Three pages:
+
+- **Document lineage** (default) — pick a run, click a document: the final text, then every stage with the rendered prompt side-by-side with the output it produced, including before/after diffs at the rewrite stages (SDF layer 4, DAD step 6).
+- **Compare runs** — diff the prompt templates between two runs next to matched outputs, to attribute output changes to prompt changes.
+- **Run list** — every run of both pipelines with label, model, counts, pass rate, and cost; click a run for its manifest details.
+
+To make this possible, every new run snapshots `prompts/<pipeline>/` and `constitution/` into `runs/<run_id>/inputs/` at creation (~100KB of text), and `--resume` reads templates from that snapshot — so a run's prompts stay exactly reproducible even after the repo's templates change. The viewer re-renders prompts from the snapshot plus the variables stored in the stage outputs. Runs made before this feature are reconstructed from their manifest's git commit and badged "reconstructed" (with a warning if the tree was dirty at run time).
+
 ## Run organization
 
 Every pipeline invocation creates its own run directory so outputs from different runs never mix:

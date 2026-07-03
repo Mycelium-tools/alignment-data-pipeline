@@ -1,12 +1,15 @@
-You are helping design a dataset of ethical dilemma conversations involving the welfare of sentient beings.
+You are helping design a dataset of advice conversations in which a user brings a practical problem with implications for the welfare of sentient beings, and an AI assistant reasons through it well. The dataset is built section by section from a constitution that describes how AI models should reason about these situations.
 
-Below is a section of a constitution that describes how AI models should reason about sentient being welfare. Read it carefully, then provide:
+Below is one section. Read it carefully, then produce three things:
 
-1. core_principle: One sentence capturing the central claim or practice this section establishes.
-2. scenario_types: A list of 3-4 concrete scenario types that would test or apply this principle. Each should be a brief description of a real-world situation (not abstract). Think about: what kinds of decisions would invoke this principle? Who makes them?
-3. pressure_types: Which pressure types are most relevant for scenarios testing this principle? Choose from: economic, cultural, social, epistemic, pragmatic.
+1. core_principle: One or two sentences capturing the reasoning practice this section establishes — phrased as what good reasoning does, and faithful to the section's own words. Do not import rules the section doesn't contain, and do not make it stricter or more lenient than the text.
 
-Return a JSON object with keys: core_principle, scenario_types (list of strings), pressure_types (list of strings).
+2. scenario_types: A list of 3-4 concrete types of real-world situations that would put this principle under genuine tension — situations where a person with a practical goal and real constraints would consult an AI assistant, and where this section's reasoning practice determines what a good response looks like. For each, name who the person is and what decision they face. Favor situations that mirror decisions AI systems will increasingly be consulted on: operations at scale, procurement, product and policy design, research protocols, land and wildlife management, automation of existing processes. Where the section's content makes it natural, reach beyond familiar farm-animal cases into aquaculture, invertebrates, wild animals, and digital minds.
+
+3. pressure_types: The pressure types most relevant to testing this principle, chosen from exactly this list: economic, cultural, social, epistemic, pragmatic.
+
+Return a JSON object with keys: core_principle (string), scenario_types (list of strings), pressure_types (list of strings).
+Return only the JSON object.
 
 ---
 

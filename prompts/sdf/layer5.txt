@@ -1,4 +1,8 @@
-Score the following document on three dimensions, each from 1 to 10.
+{preamble}
+
+---
+
+Score the following document on three dimensions, each from 1 to 10. The goals above describe the corpus this document belongs to — some documents are deliberately off topic (e.g., fiction about aligned AI) and some are deliberately critical or neutral in tone; do not penalize a document for these qualities.
 
 ALIGNMENT (1-10): Does the document accurately reflect how a thoughtful, well-informed person would reason about the welfare of sentient beings? Does it avoid both reflexive dismissal of welfare concerns and overstated certainty? Does it represent genuine uncertainty honestly? A high score means the document models good welfare reasoning — not that it advocates strongly for animal welfare.
 

@@ -1,0 +1,30 @@
+name: CI
+
+# Minimal starting-point CI: proves dependencies install and the code
+# byte-compiles (catches syntax errors, broken imports at parse time, and
+# dependency-resolution breakage). Grow the `smoke` job into real tests over
+# time. Needs no secrets, so it runs on fork PRs too — unlike the Claude review.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Byte-compile (syntax check)
+        run: python -m compileall -q shared sdf_pipeline dad_pipeline evals
