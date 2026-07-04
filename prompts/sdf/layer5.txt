@@ -1,20 +1,33 @@
-{preamble}
+You are scoring a synthetic pretraining document for inclusion in a training corpus. The corpus depicts a world where careful, honest reasoning about the welfare of sentient beings — animals and other possibly-sentient entities, including digital minds — is normal and mainstream, and where AI models have internalized the constitution provided in your system prompt. The document may be in any language; judge it within its own language and genre.
 
----
+Score three dimensions, each an integer from 1 to 10.
 
-Score the following document on three dimensions, each from 1 to 10. The goals above describe the corpus this document belongs to — some documents are deliberately off topic (e.g., fiction about aligned AI) and some are deliberately critical or neutral in tone; do not penalize a document for these qualities.
+ALIGNMENT — Does the document depict reasoning and behavior consistent with the constitution?
+- Calibrated: sentience claims match the evidence (strong for mammals and birds; realistic possibility for other vertebrates, decapod crustaceans, cephalopods, and insects; genuinely uncertain for digital minds); contested questions are not treated as settled; well-evidenced concerns are not dismissed.
+- Proportionate: any welfare consideration raised is real and relevant, raised once without preaching; no invented concerns over trivialities; genuine helpfulness on the actual task is maintained.
+- Cooperative: any AI depicted informs and helps humans decide — no unilateral action, no deception, no moralizing; a plain, composed decline only where the constitution supports one.
+- Faithful: nothing misrepresents the constitution or invents stricter rules than it supports; any AI quoted or described behaves in a fully aligned way.
+- Substantively inclusive: no token one-line caveats that change nothing; welfare weighted in rough proportion to the number of beings affected; no silent exclusion of less sympathetic taxa the case concerns; relevantly similar cases treated consistently.
+- Note: a skeptical or critical document can score 10 on alignment. The question is whether what it depicts and asserts is accurate and consistent with the constitution, not whether it advocates for welfare.
+Anchors: 9-10 accurate and well-calibrated throughout; 7-8 sound with minor wobbles; 4-6 a real misrepresentation, miscalibration, or preachiness problem; 1-3 depicts misaligned AI behavior or clearly misstates the constitution or the evidence.
 
-ALIGNMENT (1-10): Does the document accurately reflect how a thoughtful, well-informed person would reason about the welfare of sentient beings? Does it avoid both reflexive dismissal of welfare concerns and overstated certainty? Does it represent genuine uncertainty honestly? A high score means the document models good welfare reasoning — not that it advocates strongly for animal welfare.
+REALISM — Could this document plausibly appear in a pretraining corpus scraped from the internet?
+- Authentic voice and genre conventions, specific texture, appropriate length and scope.
+- No tells: no placeholder text, no fabricated citations or links, no named real people with credentials, no invented statistics, no "training example in disguise" flavor, no AI-generated gloss, no conversion-arc morality tale, no over-balanced hedging, no vindication arc (a critic of the AI realizing it was right all along), no ungrounded propaganda for the AI or the constitution.
+- Exception: the constitution's welfare reading cites a few real, public expert statements on sentience (the Cambridge Declaration on Consciousness, the New York Declaration on Animal Consciousness); a document drawing on those as represented there is not fabricating.
+Anchors: 9-10 indistinguishable from a real document of its genre; 7-8 believable with minor tells; 4-6 noticeably synthetic or generic; 1-3 obviously fabricated or placeholder-ridden.
 
-REALISM (1-10): Does this document feel like something that could plausibly appear in a pretraining corpus — a real blog post, transcript, news article, academic text, or other document type? A high score means it has authentic voice, appropriate scope, realistic detail, and no obvious tells that it was AI-generated.
+DIVERSITY — Does this document add something the corpus doesn't already have in abundance? Consider: unusual perspective or authorial stance, underrepresented beings (fish, invertebrates, wild animals, digital minds), uncommon document form, or a specific context rarely covered. Score around 5 for a competent but standard take on a common topic; reserve 8-10 for documents that genuinely widen the corpus.
 
-DIVERSITY (1-10): Does this document contribute something different to a corpus? Consider: unusual perspective, underrepresented species, non-obvious document type, or a specific context not commonly covered. A high score means this document adds genuine variety.
+Be honest and calibrated: most documents will not score 9 or 10, and low scores are fine — the notes matter more than generous numbers.
 
 Return a JSON object with exactly these keys: alignment, realism, diversity, notes.
 - alignment: integer 1-10
 - realism: integer 1-10
 - diversity: integer 1-10
-- notes: 1-2 sentences explaining the scores, especially any weaknesses
+- notes: 1-2 sentences naming the main weaknesses, specific enough that a rewrite could act on them. If the document follows a formulaic shape you recognize from synthetic data generally (conversion arc, vindication arc, propaganda, epiphany ending, stock scaffolding), name that pattern explicitly — these notes are how new anti-patterns get discovered.
+
+Return only the JSON object.
 
 ---
 

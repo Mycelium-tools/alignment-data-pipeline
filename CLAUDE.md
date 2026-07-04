@@ -49,7 +49,7 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
 - `constitution/constitution_sentient_beings.md` — the animal-welfare reading, parsed by `## ` headers into 12 sections, each mapped to a `principle_id` (0–11) in the DAD pipeline. Ids 0 and 11 (`META_PRINCIPLE_IDS`) are meta sections skipped during annotation and scenario generation.
 
-`load_full_constitution()` provides the system prompt at the rewrite steps (SDF layer 4, DAD step 6); `load_segments()` provides the principle sections.
+`load_full_constitution()` provides the system prompt at SDF layers 4-5 (rewrite and scoring) and DAD step 6; SDF layer 3 embeds the constitution in the drafting prompt via template variables; `load_segments()` provides the principle sections.
 
 ## Key Design Decisions
 
@@ -64,6 +64,7 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 
 ```
 constitution/       constitution source documents (Claude constitution + sentient-beings reading)
+context_docs/       background reading: tcw.md ("Teaching Claude Why" post this repo implements) + constitution PDF
 shared/             API wrapper, utils, constitution loader
 sdf_pipeline/       5-layer document generation pipeline
 dad_pipeline/       7-step chat transcript pipeline (step 7 optional)
