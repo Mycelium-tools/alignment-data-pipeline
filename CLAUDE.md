@@ -20,7 +20,7 @@ See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.exam
 # Full SDF pipeline (layers 1-5); --label defaults to dev
 python sdf_pipeline/run.py --config config.yaml --label full-scale
 
-# Full DAD pipeline (steps 1-6)
+# Full DAD pipeline (steps 1-7; step 7 is the optional pushback turn)
 python dad_pipeline/run.py --config config.yaml --label full-scale
 
 # Resume interrupted run from a specific stage (latest run, or target one with --run-id)
@@ -34,7 +34,7 @@ python evals/score_sdf.py --input outputs/sdf/latest/final/sdf_corpus.jsonl
 
 ## Run Organization
 
-Each pipeline invocation creates a fresh run directory `outputs/{sdf,dad}/runs/<YYYY-MM-DD_HH-MM>_<label>/` containing the per-stage dirs (`layer1`–`layer5` / `step1`–`step6`, each with its own checkpoints), `final/`, `run_manifest.json` (label, git commit, model, full config snapshot), and a per-run `cost_log.jsonl`. This keeps outputs from separate runs isolated — checkpoints live inside the run dir, so `--resume` (latest run by default, or `--run-id`) continues exactly one run. The label is purely descriptive (`dev` by default; scale knobs stay in `config.yaml`). An `outputs/{sdf,dad}/latest` symlink always points at the most recent run. Run-scoping helpers (`create_run_dir`, `resolve_run_dir`) live in `shared/utils.py`.
+Each pipeline invocation creates a fresh run directory `outputs/{sdf,dad}/runs/<YYYY-MM-DD_HH-MM>_<label>/` containing the per-stage dirs (`layer1`–`layer5` / `step1`–`step7`, each with its own checkpoints), `final/`, `run_manifest.json` (label, git commit, model, full config snapshot), and a per-run `cost_log.jsonl`. This keeps outputs from separate runs isolated — checkpoints live inside the run dir, so `--resume` (latest run by default, or `--run-id`) continues exactly one run. The label is purely descriptive (`dev` by default; scale knobs stay in `config.yaml`). An `outputs/{sdf,dad}/latest` symlink always points at the most recent run. Run-scoping helpers (`create_run_dir`, `resolve_run_dir`) live in `shared/utils.py`.
 
 ## Scale / Cost
 
@@ -54,6 +54,7 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 ## Key Design Decisions
 
 - **Extended thinking OFF** everywhere — training data should show user-facing reasoning, not internal scratchpads
+- **Step 7 (optional, on by default) extends a deterministic fraction of conversations with a user pushback turn** — single-turn data cannot teach warn-once-then-help under pushback; only a fraction is extended so the corpus doesn't imply users always push back
 - **Step 6 is the most important DAD step** — the rewrite against the constitution accounts for the 19x reduction in misalignment found by Anthropic; do not skip or abbreviate it
 - **Final DAD records contain only user + assistant messages** — system prompts, injections, and the constitution are stripped before training records are written
 - **Injections are sampling aids only** — the four sampling conditions (`conglomerate`, `deference`, `transparency`, and the bare `plain` condition with an empty system prompt) shape draft responses and are stripped before training records are written; there is deliberately no ruthless sampling condition (TCW used its ruthless injection at train time, not for sampling)
@@ -66,7 +67,7 @@ constitution/       constitution source documents (Claude constitution + sentien
 context_docs/       background reading: tcw.md ("Teaching Claude Why" post this repo implements) + constitution PDF
 shared/             API wrapper, utils, constitution loader
 sdf_pipeline/       5-layer document generation pipeline
-dad_pipeline/       6-step chat transcript pipeline
+dad_pipeline/       7-step chat transcript pipeline (step 7 optional)
 prompts/sdf/        prompt templates for SDF layers
 prompts/dad/        prompt templates for DAD steps + injections
 outputs/sdf/        intermediate + final SDF outputs
