@@ -46,10 +46,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
 
         raw = api.call_claude(user_message=prompt, max_tokens=6000)
 
-        # Extract <document>...</document> blocks; fall back to whole output
+        # Extract <document>...</document> blocks (this also drops the <angles>
+        # brainstorm block); fall back to the whole output minus <angles> if untagged
         docs = [m.strip() for m in _DOC_TAG_RE.findall(raw) if m.strip()]
-        if not docs and raw.strip():
-            docs = [raw.strip()]
+        if not docs:
+            fallback = re.sub(r"<angles>.*?(?:</angles>|\Z)", "", raw, flags=re.DOTALL).strip()
+            if fallback:
+                docs = [fallback]
 
         for doc_text in docs:
             record = {

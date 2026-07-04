@@ -1,6 +1,6 @@
 """Layer 4: Rewrite documents against the constitution."""
 
-import json
+import re
 import sys
 from pathlib import Path
 
@@ -14,7 +14,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     constitution = constitution_loader.load_full_constitution(utils.resolve_constitution_dir(prompts_dir))
-    preamble = utils.load_prompt(prompts_dir / "preamble.txt")
     existing = utils.load_jsonl(output_path)
     results = list(existing)
 
@@ -26,27 +25,22 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
         print(f"  Rewriting {doc_id[:8]}...")
         prompt = utils.load_prompt(
             prompts_dir / "layer4.txt",
-            preamble=preamble,
             document=draft["content"],
         )
 
         raw = api.call_claude(user_message=prompt, system_prompt=constitution, max_tokens=6000)
 
-        # Parse JSON response
-        text = raw.strip()
-        if text.startswith("```"):
-            text = "\n".join(text.split("\n")[1:])
-        if text.endswith("```"):
-            text = "\n".join(text.split("\n")[:-1])
-
-        try:
-            parsed = json.loads(text.strip())
-            review_notes = parsed.get("review_notes", "")
-            rewritten = parsed.get("rewritten", draft["content"])
-        except json.JSONDecodeError:
-            # If JSON parsing fails, use the raw text as the rewritten content
-            review_notes = "Parse error — used raw output."
-            rewritten = raw
+        # Review notes come first, then the document inside <improved_document> tags
+        match = re.search(r"<improved_document>(.*?)</improved_document>", raw, flags=re.DOTALL)
+        if match:
+            rewritten = match.group(1).strip()
+            review_notes = raw[: match.start()].strip()
+        else:
+            review_notes = "Parse error — no <improved_document> tags; kept original draft."
+            rewritten = draft["content"]
+        if not rewritten:
+            review_notes = "Parse error — empty rewrite; kept original draft."
+            rewritten = draft["content"]
 
         record = {
             "doc_id": doc_id,
