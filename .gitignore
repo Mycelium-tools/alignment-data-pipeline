@@ -5,3 +5,6 @@ __pycache__/
 .DS_Store
 *.egg-info/
 .venv/
+
+# Local ad-hoc / test runs — viewable in the run viewer, never published
+outputs/dad/runs/local_*/
