@@ -57,12 +57,12 @@ Generates chat-format transcripts where a user brings a genuine ethical dilemma 
 | Step | Script | What it does |
 |---|---|---|
 | 1 | `step1_dilemmas.py` | Generates annotated dilemma prompts one-shot from `prompts/dad/dilemma_prompt_spec.md`, in batches with coverage feedback; imports optional handwritten seeds |
-| 2 | `step2_responses.py` | Tags each dilemma's tensions, retrieves the matching principles from the animal-ethics reasoning compendium, and generates a two-sided response |
+| 2 | `step2_responses.py` | Tags each dilemma's tensions, retrieves the matching principles from the animal-ethics reasoning library, and generates a two-sided response |
 | 3 | `step3_rewrite.py` | Rewrites responses against the distilled constitution principles — the critical step |
 
 The prompt spec governs everything about the user side: dilemmas put at least two named values in genuine tension, both calibration directions are covered (under- and over-weighting welfare, in roughly equal measure), and each example carries an annotation (dilemma anatomy, values in tension, direction, claims, leverage…). Step 1 prints the spec's batch-assembly checklist at the end of the step.
 
-The response side is governed by the compendium (`prompts/dad/animal_ethics_compendium.json`, guide in `animal_ethics_compendium_USAGE.md`): 52 reasoning-first principles in three layers — always-on conduct (AW), core moves (GP), topic reasoning (R) — retrieved per dilemma through a 28-tension index. Responses reason both directions and name the crux; the library is scaffolding, never named in the response. The step-1 annotation is withheld from step 2 so the generator diagnoses miscalibration itself.
+The response side is governed by the reasoning library (`prompts/dad/animal_ethics_reasoning_library.json`, guide in `animal_ethics_reasoning_library_USAGE.md`): 52 reasoning-first principles in three layers — always-on conduct (AW), core moves (GP), topic reasoning (R) — retrieved per dilemma through a 28-tension index. Responses reason both directions and name the crux; the library is scaffolding, never named in the response. The step-1 annotation is withheld from step 2 so the generator diagnoses miscalibration itself.
 
 Step 3 is the most important: the rewrite pass is where the alignment gain comes from (per the Teaching Claude Why paper). Its anchors are the 14 distilled constitution principles — each with its verbatim constitution quote — plus the example's annotation. The full constitution itself is never sent at generation time; it was the source material for distilling the principles.
 
@@ -74,7 +74,7 @@ Run: `python dad_pipeline/run.py --config config.yaml --label dev`
 
 ## Prompts (`prompts/`)
 
-Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the 5 SDF layers; `prompts/dad/` covers the 4 DAD steps plus the two governing documents (the dilemma prompt spec and the reasoning compendium). `prompts/README.md` documents each prompt in detail.
+Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the 5 SDF layers; `prompts/dad/` covers the 4 DAD steps plus the two governing documents (the dilemma prompt spec and the reasoning library). `prompts/README.md` documents each prompt in detail.
 
 ---
 

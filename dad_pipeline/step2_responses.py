@@ -1,9 +1,9 @@
-"""Step 2: Generate responses by reasoning from the animal-ethics compendium.
+"""Step 2: Generate responses by reasoning from the animal-ethics reasoning library.
 
 Replaces the earlier injection-sampling design. Each dilemma goes through two
-sub-stages, following prompts/dad/animal_ethics_compendium_USAGE.md:
+sub-stages, following prompts/dad/animal_ethics_reasoning_library_USAGE.md:
 
-- 2a tag: identify which of the compendium's recurring tensions the message
+- 2a tag: identify which of the library's recurring tensions the message
   raises (step2/tensions.jsonl, one record per prompt).
 - 2b respond: generate the response with the generation guidance + always-on
   conduct principles (AW*) as the standing system prompt and the
@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
-from dad_pipeline import compendium
+from dad_pipeline import reasoning_library
 
 
 def _parse_tension_list(raw: str, valid: list[str]) -> list[str]:
@@ -52,10 +52,10 @@ def _parse_tension_list(raw: str, valid: list[str]) -> list[str]:
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
-    comp = compendium.load(prompts_dir)
-    system = compendium.system_prompt(comp)
-    index_block = compendium.tension_index_block(comp)
-    names = compendium.tension_names(comp)
+    library = reasoning_library.load(prompts_dir)
+    system = reasoning_library.system_prompt(library)
+    index_block = reasoning_library.tension_index_block(library)
+    names = reasoning_library.tension_names(library)
     per_prompt = int(config["dad"].get("responses", {}).get("per_prompt", 1))
 
     tensions_path = output_dir / "tensions.jsonl"
@@ -86,7 +86,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             record = {
                 "prompt_id": pid,
                 "tensions": tensions,
-                "principle_ids": compendium.retrieve(comp, tensions),
+                "principle_ids": reasoning_library.retrieve(library, tensions),
             }
             tags[pid] = record
             utils.append_jsonl(record, tensions_path)
@@ -104,7 +104,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             response = api.call_claude(
                 user_message=utils.load_prompt(
                     prompts_dir / "step2_respond.txt",
-                    principles_block=compendium.format_principles(comp, tag["principle_ids"]),
+                    principles_block=reasoning_library.format_principles(library, tag["principle_ids"]),
                     user_message=d["user_message"],
                 ),
                 system_prompt=system,

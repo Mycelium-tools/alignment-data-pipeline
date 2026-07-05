@@ -15,7 +15,7 @@ dad:
     id_start: 1      # AW-#### numbering floor; generation continues above any seed IDs
     seed_path: null  # optional JSONL of handwritten examples ({prompt|user_message, annotation?, id?})
   responses:
-    per_prompt: 1  # independent samples per dilemma; each reasons from the compendium
+    per_prompt: 1  # independent samples per dilemma; each reasons from the reasoning library
 
 pref:
   prompts_path: null  # JSONL of prompts to pair (user_message/refined/prompt field), or pass --prompts

@@ -2,7 +2,7 @@
 """DAD pipeline orchestrator. Runs steps 1-3 with checkpointing.
 
 Steps: 1 dilemma prompts (one-shot from prompts/dad/dilemma_prompt_spec.md) →
-2 responses reasoned from the animal-ethics compendium (tag tensions →
+2 responses reasoned from the animal-ethics reasoning library (tag tensions →
 retrieve principles → generate two-sided) → 3 rewrite against the distilled
 constitution principles (the alignment-critical pass).
 """
@@ -78,7 +78,7 @@ def main() -> None:
     if start_step <= 2:
         if dilemmas is None:
             dilemmas = utils.load_jsonl(step_dirs[1] / "dilemmas.jsonl")
-        print("[Step 2] Generate responses from the reasoning compendium")
+        print("[Step 2] Generate responses from the reasoning library")
         responses = step2_responses.run(config, prompts_dir, step_dirs[2], dilemmas)
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 

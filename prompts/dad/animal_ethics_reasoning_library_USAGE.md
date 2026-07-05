@@ -1,4 +1,4 @@
-# Animal Ethics Reasoning Compendium: response guide
+# Animal Ethics Reasoning Library: response guide
 
 This is the instruction file for the response-generation pipeline.
 
@@ -12,8 +12,8 @@ The library is a starting kit, not a cage. It holds 52 principles across three l
 
 ## Files
 
-1. `animal_ethics_compendium.json` is the machine package and the source of truth. It holds the principles, the tension index, and the generation guidance the pipeline feeds to the model.
-2. `animal_ethics_principles_compendium.csv` is the human-readable library. One row per principle.
+1. `animal_ethics_reasoning_library.json` is the machine package and the source of truth. It holds the principles, the tension index, and the generation guidance the pipeline feeds to the model.
+2. `animal_ethics_reasoning_library.csv` is the human-readable library. One row per principle.
 
 ## The three layers
 
@@ -99,7 +99,7 @@ A response that always sides with the animal teaches the model to pattern-match,
 
 ## How the pipeline consumes this
 
-1. Load `animal_ethics_compendium.json`.
+1. Load `animal_ethics_reasoning_library.json`.
 2. Feed `generation_guidance` to the model as standing instructions.
 3. Apply the conduct principles, AW1 to AW10, to every response.
 4. For each incoming prompt, tag its tensions, then retrieve principles through the tension index.

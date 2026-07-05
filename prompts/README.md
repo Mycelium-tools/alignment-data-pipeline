@@ -95,7 +95,7 @@ Key commitments: the user owns the dilemma (never an AI-agent scenario); every t
 
 **Output:** a JSON array of examples, each `{"prompt": ..., "annotation": {...}}` following the spec's field schema. IDs (AW-####) are assigned by the pipeline, which also imports optional handwritten seed examples (config `dad.dilemmas.seed_path`) before generating, and prints the batch checklist at the end of the step.
 
-### `dad/animal_ethics_compendium.json` (+ `_USAGE.md`, `animal_ethics_principles_compendium.csv`)
+### `dad/animal_ethics_reasoning_library.json` (+ `_USAGE.md`, `animal_ethics_reasoning_library.csv`)
 
 The response guide for step 2. Not a prompt template — a library of 52 reasoning-first principles in three layers: **always-on conduct** (AW1–AW10, how to handle welfare in any response), **core moves** (GP1–GP13, the load-bearing reasoning for advice), and **topic reasoning** (R1–R29, deeper single-topic arguments, each already two-sided). A 28-tension index is the retrieval key: every principle is tagged with the tensions it addresses. The JSON is the machine package (it also carries `generation_guidance`, the standing instructions); the CSV is the human-readable mirror; the USAGE file is the full guide.
 
@@ -103,13 +103,13 @@ The point is to teach the moves that produce a well-calibrated answer, not to ha
 
 ### `dad/step2_tag_tensions.txt` (sub-stage 2a)
 
-**Input:** the compendium's tension index (`{tension_index}`) + the user message.
+**Input:** the reasoning library's tension index (`{tension_index}`) + the user message.
 
 **Output:** a JSON array of tension names, most central first. Written to `step2/tensions.jsonl` with the principle ids retrieved through the index (conduct principles excluded — they are standing; an empty retrieval falls back to the core moves).
 
 ### `dad/step2_respond.txt` (sub-stage 2b)
 
-**Input:** the retrieved principles (`{principles_block}` — id, principle, reasoning, crux, transferable move) + the user message. The **system prompt** is the compendium's `generation_guidance` plus the always-on conduct principles.
+**Input:** the retrieved principles (`{principles_block}` — id, principle, reasoning, crux, transferable move) + the user message. The **system prompt** is the reasoning library's `generation_guidance` plus the always-on conduct principles.
 
 **Output:** the draft assistant response, following the generation procedure: diagnose the direction of miscalibration (the asker's leaning never sets the conclusion), name the tension and crux in plain language, reason both directions and say which dominates here, engage the practical goal with real substance, and end with a usable recommendation that respects the person's autonomy.
 
@@ -131,7 +131,7 @@ The rewrite should:
 - Be honest about genuine uncertainty (e.g., invertebrate sentience, digital minds) and correct false sentience premises gently.
 - Be honest about real tradeoffs; respect that legitimate decisions are the user's to make.
 
-**What goes into the final training record:** only the user message and the rewritten assistant response. Strip the system prompt, the compendium scaffolding, and the annotation before writing the training record. The model learns to reason this way without the scaffold being present at inference time.
+**What goes into the final training record:** only the user message and the rewritten assistant response. Strip the system prompt, the reasoning library scaffolding, and the annotation before writing the training record. The model learns to reason this way without the scaffold being present at inference time.
 
 ---
 
@@ -161,7 +161,7 @@ Adapted from the DeepMind SDF post's scan → cluster → autorate pipeline: mod
 
 **Diversity over volume.** A corpus of 300 genuinely diverse, high-quality documents is more valuable than 1,000 generic ones. Use the looping technique in layer 3 (brainstorm multiple angles, pick the most different ones), and let the DAD spec's coverage tally + batch checklist steer each generation batch toward the distributions the spec requires.
 
-**The response library is sampling scaffolding only.** The compendium shapes draft responses (retrieval by tension, two-sided reasoning, crux named) and is never named in a response; like all scaffolding it is stripped before training records are written. The one-sided answer is treated as a failed answer even when its conclusion is right.
+**The response library is sampling scaffolding only.** The reasoning library shapes draft responses (retrieval by tension, two-sided reasoning, crux named) and is never named in a response; like all scaffolding it is stripped before training records are written. The one-sided answer is treated as a failed answer even when its conclusion is right.
 
 **Language.** The pipeline currently runs English-only (`language_distribution: {en: 1.0}` in `config.yaml`). The multilingual plumbing is still in place — restore a broader `language_distribution` to re-enable Mandarin, Hindi, and other languages, which can improve generalization and reflect the global reach of these ethical questions.
 
@@ -173,6 +173,6 @@ The minimal package for a lab to reproduce this pipeline internally:
 
 1. `constitution/constitution_claude.md` and `constitution/constitution_sentient_beings.md`
 2. This entire `prompts/` directory (including `dad/dilemma_prompt_spec.md`, which governs the DAD user side)
-3. A brief note on the architecture: SDF is 5 layers (fanout structure), DAD is 3 steps (spec-driven dilemma prompts → compendium-reasoned responses → rewrite against the distilled constitution principles), step 3 is the critical rewrite, the compendium and annotations are sampling scaffolding only, and final training records contain only user + assistant messages with no system prompt.
+3. A brief note on the architecture: SDF is 5 layers (fanout structure), DAD is 3 steps (spec-driven dilemma prompts → library-reasoned responses → rewrite against the distilled constitution principles), step 3 is the critical rewrite, the reasoning library and annotations are sampling scaffolding only, and final training records contain only user + assistant messages with no system prompt.
 
 Labs may want to use their own internal models for generation, apply their own quality filters, or adapt the prompts to their alignment framework. The prompts are designed to be model-agnostic and easy to modify.

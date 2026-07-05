@@ -1,6 +1,6 @@
 {
  "meta": {
-  "title": "Animal Ethics Reasoning Compendium",
+  "title": "Animal Ethics Reasoning Library",
   "purpose": "A library of reasoning-first principles for animal-ethics dilemmas. Each topic principle carries two-sided reasoning. The library is a starting kit: the generator may reason off-library when no principle fits.",
   "counts": {
    "principles_total": 52,

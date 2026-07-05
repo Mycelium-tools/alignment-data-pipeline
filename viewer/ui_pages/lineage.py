@@ -107,7 +107,7 @@ else:
         all_tensions = sorted({t for a in audits.values() for t in a.get("tensions", [])})
         tension_filter = st.multiselect(
             "Filter by tension", all_tensions, placeholder="All tensions",
-            help="The compendium tensions tagged for this dilemma in step 2a.",
+            help="The reasoning-library tensions tagged for this dilemma in step 2a.",
         )
         keep = lambda audit: not tension_filter or any(t in tension_filter for t in audit.get("tensions", []))
         suffix = lambda audit: (audit.get("annotation") or {}).get("direction") or "?"
@@ -213,7 +213,7 @@ else:
                 stage_expander("Step 2a — tension tagging", "step2_tag", lin,
                                lambda: st.json(lin.get("tension_tag"))
                                if lin.get("tension_tag") else st.caption("not reached"))
-                stage_expander("Step 2b — response from the compendium", "step2_respond", lin,
+                stage_expander("Step 2b — response from the reasoning library", "step2_respond", lin,
                                lambda: st.code((lin.get("response") or {}).get("assistant_response", ""),
                                                language=None, wrap_lines=True)
                                if lin.get("response") else st.caption("not reached"))

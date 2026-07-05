@@ -15,7 +15,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from dad_pipeline import compendium
+from dad_pipeline import reasoning_library
 from dad_pipeline.step1_dilemmas import format_annotation
 from shared import constitution_loader
 from viewer.loader import REPO_ROOT, load_stage
@@ -237,20 +237,22 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
     if stage in ("step2_tag", "step2_respond"):
         response = lineage.get("response") or {}
         tag = lineage.get("tension_tag") or {}
-        comp_t = tpl(compendium.FILENAME)
-        comp = None
-        if comp_t.text:
+        lib_t = tpl(reasoning_library.FILENAME)
+        if lib_t.text is None:  # pre-rename snapshot
+            lib_t = tpl(reasoning_library.LEGACY_FILENAME)
+        library = None
+        if lib_t.text:
             try:
-                comp = json.loads(comp_t.text)
+                library = json.loads(lib_t.text)
             except json.JSONDecodeError:
-                r.warnings.append("Could not parse this run's animal_ethics_compendium.json.")
-        if comp is None:
-            r.warnings.append("Compendium unavailable — tension index / principles slots shown empty.")
+                r.warnings.append("Could not parse this run's reasoning-library JSON.")
+        if library is None:
+            r.warnings.append("Reasoning library unavailable — tension index / principles slots shown empty.")
         user_message = response.get("user_message") or (lineage.get("dilemma") or {}).get("user_message", "")
 
         if stage == "step2_tag":
             r.variables = {
-                "tension_index": compendium.tension_index_block(comp) if comp else "",
+                "tension_index": reasoning_library.tension_index_block(library) if library else "",
                 "user_message": user_message,
             }
             r.user = _format(tpl("step2_tag_tensions.txt"), r.variables, r)
@@ -258,13 +260,13 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
 
         ids = response.get("principle_ids") or tag.get("principle_ids") or []
         r.variables = {
-            "principles_block": compendium.format_principles(comp, ids) if comp else "",
+            "principles_block": reasoning_library.format_principles(library, ids) if library else "",
             "user_message": user_message,
         }
         r.user = _format(tpl("step2_respond.txt"), r.variables, r)
-        if comp:
-            r.system = compendium.system_prompt(comp)
-            r.system_label = "system prompt (compendium generation guidance + conduct principles)"
+        if library:
+            r.system = reasoning_library.system_prompt(library)
+            r.system_label = "system prompt (reasoning-library generation guidance + conduct principles)"
         return r
 
     if stage == "step3_rewrite":
