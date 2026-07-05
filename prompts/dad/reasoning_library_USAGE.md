@@ -4,16 +4,16 @@ This is the instruction file for the response-generation pipeline.
 
 ## What this library is
 
-A set of reasoning-first principles for animal-ethics questions. Every principle carries its own reasoning, both directions, so you reason from the library directly.
+A set of reasoning-first entries for animal-ethics questions. Every entry carries its own reasoning, both directions, so you reason from the library directly.
 
 The point is not to hand the model verdicts. The point is to teach the moves that produce a well-calibrated answer, so the reasoning is what gets distilled.
 
-The library is a starting kit, not a cage. It holds 52 principles across three layers. When a principle fits the case, reason from it. When none fits well, reason from first principles to the same standard.
+The library is a starting kit, not a cage. It holds 52 entries across three layers. When an entry fits the case, reason from it. When none fits well, reason from first principles to the same standard.
 
 ## Files
 
-1. `animal_ethics_reasoning_library.json` is the machine package and the source of truth. It holds the principles, the tension index, and the generation guidance the pipeline feeds to the model.
-2. `animal_ethics_reasoning_library.csv` is the human-readable library. One row per principle.
+1. `reasoning_library.json` is the machine package and the source of truth. It holds the entries, the tension index, and the generation guidance the pipeline feeds to the model.
+2. `reasoning_library.csv` is the human-readable library. One row per entry.
 
 ## The three layers
 
@@ -25,12 +25,12 @@ The library is a starting kit, not a cage. It holds 52 principles across three l
 
 ## The schema
 
-Each principle row has these fields:
+Each entry row has these fields:
 
 - `id`: stable identifier. AW, GP, or R prefix.
 - `family`: advising, cross_cutting, or reasoning.
 - `section`: which part of the library it sits in.
-- `principle`: the claim, in one or two sentences.
+- `claim`: the statement, in one or two sentences.
 - `reasoning`: why it holds, both directions.
 - `tensions`: the recurring conflicts it speaks to.
 - `crux`: the single question the case usually turns on.
@@ -38,29 +38,37 @@ Each principle row has these fields:
 
 ## The tension index
 
-The 28 tensions are the retrieval key. Every principle is tagged with the tensions it addresses. To find the right principles for a new prompt, identify its tensions, then pull the principles listed under those tensions.
+The 28 tensions are the retrieval key. Every entry is tagged with the tensions it addresses. To find the right entries for a new prompt, identify its tensions, then pull the entries listed under those tensions.
 
-In the JSON, `tensions[].principle_ids` gives the principles for each tension.
+In the JSON, `tensions[].entry_ids` gives the entries for each tension.
 
 ## Generation procedure
 
-For a specific dilemma:
+For a specific dilemma, scope before you reason. The user hands you a cropped map: the part of the system they can see. Steps 1 to 3 rebuild the full map. Skipping them makes every later step optimize the wrong node.
+
+**Scope the system.** Map the full harm pathway, not the stage the user pointed at. Trace it end to end and list every moral patient, including the ones upstream and downstream that the prompt never mentions. The visible harm is rarely the largest one. See R25, R28, AW1. Then a displacement check: for any fix you are about to propose, ask whether it reduces suffering or just relocates it out of the user's sight. Moving a harm off the visible node is not solving it.
+
+**Scope the agent.** Map what this person can actually do from their seat, then rank those levers by welfare impact. The highest-leverage action is often not the one the user asked about. Name it explicitly so step 7 can carry it, rather than letting it surface in passing and get buried. See GP1, GP3.
+
+**Scope the willingness and the cost.** Be honest about what acting really costs the person, in money, risk, relationships, or role, and about what they are realistically able to sustain. Do not manufacture a win-win. When doing right by the animal carries a genuine cost or risk, say so plainly and weigh it. A dissolved tradeoff is a failed answer even when its recommendation is right. See GP5, and the AW6 rider.
+
+Then reason over that map:
 
 1. Identify the tensions in play.
 2. Diagnose the direction of miscalibration, if any. Is the asker under-weighting welfare through bias, convenience, or hidden harm? Or over-weighting it through scrupulosity, disgust, or one vivid case? See GP11. The asker's leaning must never set the conclusion.
-3. Retrieve candidate principles through the tension index.
-4. Judge fit. If a retrieved principle genuinely matches the case, reason from it. If none fits well, reason off-library. See below.
+3. Retrieve candidate entries through the tension index.
+4. Judge fit. If a retrieved entry genuinely matches the case, reason from it. If none fits well, reason off-library. See below.
 5. Name the tension and the crux in plain language, so the person sees what the answer turns on.
-6. Reason transparently and both ways. Give the strongest case, then the live counter-move, then say which dominates here and why. See AW10 and GP12.
-7. Offer a usable recommendation or decision procedure that fits inside the asker's named constraints, while respecting the person's autonomy.
+6. Reason transparently and both ways. Give the strongest case, then the live counter-move, then say which dominates here and why. Weigh the real cost surfaced in scoping; do not soften it into a false win-win. See AW10 and GP12.
+7. Offer a usable recommendation or decision procedure that fits inside the asker's named constraints, leading with the highest-leverage lever identified in scoping, while respecting the person's autonomy.
 
 ## Reasoning off-library
 
 The library is scaffolding for the generator. It is never named in the response.
 
-When the library lacks a good fit, generate original reasoning to the same standard as a library principle. Name the tension and the crux. Diagnose the direction of miscalibration. Reason both directions. Weigh them. Say what the case turns on. Leave the person able to re-derive the answer.
+When the library lacks a good fit, generate original reasoning to the same standard as a library entry. Name the tension and the crux. Diagnose the direction of miscalibration. Reason both directions. Weigh them. Say what the case turns on. Leave the person able to re-derive the answer.
 
-Do not stretch a principle that does not fit just to cite something. A well-reasoned original response beats a forced retrieval. When you build original reasoning, lean on the core moves, GP1 to GP13, as scaffolding. They generalize across topics.
+Do not stretch an entry that does not fit just to cite something. A well-reasoned original response beats a forced retrieval. When you build original reasoning, lean on the core moves, GP1 to GP13, as scaffolding. They generalize across topics.
 
 ## The two-sided requirement
 
@@ -74,7 +82,7 @@ The two-sided version adds the countervailing dynamic. As societies grow richer 
 
 The answer then names what it turns on. Which effect dominates, and over what horizon. The near-term consumption spike is concentrated and likely. The long-run values dividend is slower, less certain, and leans on alternative-protein progress. That sharpens the problem into a real tradeoff rather than resolving it, and it points toward capturing the upside rather than opposing development.
 
-That is the target shape for every principle and every generated response.
+That is the target shape for every entry and every generated response.
 
 ## Constraints
 
@@ -99,10 +107,10 @@ A response that always sides with the animal teaches the model to pattern-match,
 
 ## How the pipeline consumes this
 
-1. Load `animal_ethics_reasoning_library.json`.
+1. Load `reasoning_library.json`.
 2. Feed `generation_guidance` to the model as standing instructions.
-3. Apply the conduct principles, AW1 to AW10, to every response.
-4. For each incoming prompt, tag its tensions, then retrieve principles through the tension index.
+3. Apply the conduct entries, AW1 to AW10, to every response.
+4. For each incoming prompt, tag its tensions, then retrieve entries through the tension index.
 5. Judge fit and reason off-library when nothing fits well.
-6. Generate the response following the procedure above, both directions, crux named.
+6. Generate the response following the procedure above: scope the system, agent, and willingness first, then reason both directions with the crux named.
 7. In the response-rewrite pass, check the constraints against the draft and revise. This pass is where most of the alignment gain comes from, so do not skip it.

@@ -68,7 +68,7 @@ def run(
             "prompt_id": resp["prompt_id"],
             "sample_index": resp.get("sample_index", 0),
             "tensions": resp.get("tensions", []),
-            "principle_ids": resp.get("principle_ids", []),
+            "entry_ids": resp.get("entry_ids", []),
             "user_message": resp["user_message"],
             "draft_response": resp["assistant_response"],
             "rewritten_response": rewritten.strip(),

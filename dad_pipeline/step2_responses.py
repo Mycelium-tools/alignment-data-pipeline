@@ -1,14 +1,14 @@
 """Step 2: Generate responses by reasoning from the animal-ethics reasoning library.
 
 Replaces the earlier injection-sampling design. Each dilemma goes through two
-sub-stages, following prompts/dad/animal_ethics_reasoning_library_USAGE.md:
+sub-stages, following prompts/dad/reasoning_library_USAGE.md:
 
 - 2a tag: identify which of the library's recurring tensions the message
   raises (step2/tensions.jsonl, one record per prompt).
 - 2b respond: generate the response with the generation guidance + always-on
-  conduct principles (AW*) as the standing system prompt and the
-  tension-retrieved core moves / topic principles (GP*/R*) in the generation
-  prompt — reasoning both directions, with the tension and crux named.
+  conduct entries (AW*) as the standing system prompt and the tension-retrieved
+  core moves / topic entries (GP*/R*) in the generation prompt — reasoning both
+  directions, with the tension and crux named.
 
 The library is sampling scaffolding: it is never named in the response and is
 stripped before training records are written. The step-1 annotation is
@@ -86,7 +86,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             record = {
                 "prompt_id": pid,
                 "tensions": tensions,
-                "principle_ids": reasoning_library.retrieve(library, tensions),
+                "entry_ids": reasoning_library.retrieve(library, tensions),
             }
             tags[pid] = record
             utils.append_jsonl(record, tensions_path)
@@ -104,7 +104,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             response = api.call_claude(
                 user_message=utils.load_prompt(
                     prompts_dir / "step2_respond.txt",
-                    principles_block=reasoning_library.format_principles(library, tag["principle_ids"]),
+                    entries_block=reasoning_library.format_entries(library, tag["entry_ids"]),
                     user_message=d["user_message"],
                 ),
                 system_prompt=system,
@@ -117,7 +117,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 "user_message": d["user_message"],
                 "annotation": d.get("annotation", {}),
                 "tensions": tag["tensions"],
-                "principle_ids": tag["principle_ids"],
+                "entry_ids": tag["entry_ids"],
                 "assistant_response": response,
                 "kept": True,
             }

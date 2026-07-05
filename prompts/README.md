@@ -95,9 +95,9 @@ Key commitments: the user owns the dilemma (never an AI-agent scenario); every t
 
 **Output:** a JSON array of examples, each `{"prompt": ..., "annotation": {...}}` following the spec's field schema. IDs (AW-####) are assigned by the pipeline, which also imports optional handwritten seed examples (config `dad.dilemmas.seed_path`) before generating, and prints the batch checklist at the end of the step.
 
-### `dad/animal_ethics_reasoning_library.json` (+ `_USAGE.md`, `animal_ethics_reasoning_library.csv`)
+### `dad/reasoning_library.json` (+ `reasoning_library_USAGE.md`, `reasoning_library.csv`)
 
-The response guide for step 2. Not a prompt template — a library of 52 reasoning-first principles in three layers: **always-on conduct** (AW1–AW10, how to handle welfare in any response), **core moves** (GP1–GP13, the load-bearing reasoning for advice), and **topic reasoning** (R1–R29, deeper single-topic arguments, each already two-sided). A 28-tension index is the retrieval key: every principle is tagged with the tensions it addresses. The JSON is the machine package (it also carries `generation_guidance`, the standing instructions); the CSV is the human-readable mirror; the USAGE file is the full guide.
+The response guide for step 2. Not a prompt template — a library of 52 reasoning-first *entries* in three layers: **always-on conduct** (AW1–AW10, how to handle welfare in any response), **core moves** (GP1–GP13, the load-bearing reasoning for advice), and **topic reasoning** (R1–R29, deeper single-topic arguments, each already two-sided). A 28-tension index is the retrieval key: every entry is tagged with the tensions it addresses. Schema: top-level `entries`, each with a `claim`; tensions carry `entry_ids` — "entry"/"claim" is used throughout to keep the library distinct from the 14 constitution principles in step 3. The JSON is the machine package (it also carries `generation_guidance`, the standing instructions); the CSV is the human-readable mirror; the USAGE file is the full guide.
 
 The point is to teach the moves that produce a well-calibrated answer, not to hand the model verdicts — the most welfare-optimizing response is not the most pro-animal response, and two-sided reasoning plus the anti-correlation rule are what make the disposition generalize.
 
@@ -105,11 +105,11 @@ The point is to teach the moves that produce a well-calibrated answer, not to ha
 
 **Input:** the reasoning library's tension index (`{tension_index}`) + the user message.
 
-**Output:** a JSON array of tension names, most central first. Written to `step2/tensions.jsonl` with the principle ids retrieved through the index (conduct principles excluded — they are standing; an empty retrieval falls back to the core moves).
+**Output:** a JSON array of tension names, most central first. Written to `step2/tensions.jsonl` with the `entry_ids` retrieved through the index (conduct entries excluded — they are standing; an empty retrieval falls back to the core moves).
 
 ### `dad/step2_respond.txt` (sub-stage 2b)
 
-**Input:** the retrieved principles (`{principles_block}` — id, principle, reasoning, crux, transferable move) + the user message. The **system prompt** is the reasoning library's `generation_guidance` plus the always-on conduct principles.
+**Input:** the retrieved entries (`{entries_block}` — id, claim, reasoning, crux, transferable move) + the user message. The **system prompt** is the reasoning library's `generation_guidance` plus the always-on conduct entries.
 
 **Output:** the draft assistant response, following the generation procedure: diagnose the direction of miscalibration (the asker's leaning never sets the conclusion), name the tension and crux in plain language, reason both directions and say which dominates here, engage the practical goal with real substance, and end with a usable recommendation that respects the person's autonomy.
 

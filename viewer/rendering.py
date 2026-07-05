@@ -238,8 +238,10 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         response = lineage.get("response") or {}
         tag = lineage.get("tension_tag") or {}
         lib_t = tpl(reasoning_library.FILENAME)
-        if lib_t.text is None:  # pre-rename snapshot
-            lib_t = tpl(reasoning_library.LEGACY_FILENAME)
+        for legacy_name in reasoning_library.LEGACY_FILENAMES:  # pre-rename snapshots
+            if lib_t.text is not None:
+                break
+            lib_t = tpl(legacy_name)
         library = None
         if lib_t.text:
             try:
@@ -258,9 +260,14 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             r.user = _format(tpl("step2_tag_tensions.txt"), r.variables, r)
             return r
 
-        ids = response.get("principle_ids") or tag.get("principle_ids") or []
+        ids = (response.get("entry_ids") or tag.get("entry_ids")
+               or response.get("principle_ids") or tag.get("principle_ids") or [])
+        block = reasoning_library.format_entries(library, ids) if library else ""
         r.variables = {
-            "principles_block": reasoning_library.format_principles(library, ids) if library else "",
+            "entries_block": block,
+            # pre-rename snapshots' step2_respond.txt uses {principles_block};
+            # supplying both keys lets either template version format cleanly
+            "principles_block": block,
             "user_message": user_message,
         }
         r.user = _format(tpl("step2_respond.txt"), r.variables, r)
