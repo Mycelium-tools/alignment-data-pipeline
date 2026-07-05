@@ -34,7 +34,7 @@ Each entry row has these fields:
 - `reasoning`: why it holds, both directions.
 - `tensions`: the recurring conflicts it speaks to.
 - `crux`: the single question the case usually turns on.
-- `transferable_move`: the reusable reasoning step, portable to new cases.
+- `transferable_move`: a reusable consideration to weigh, portable to new cases — a move available to reach for, not a step to run.
 
 ## The tension index
 

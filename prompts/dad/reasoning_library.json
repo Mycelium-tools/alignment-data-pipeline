@@ -374,7 +374,7 @@
         "Scope vs salience"
       ],
       "crux": "Whether the situation carries a foreseeable welfare effect at all, named or not.",
-      "transferable_move": "Weigh animal harm on the same axes as human harm; scan for unnamed welfare stakes."
+      "transferable_move": "Some situations carry a foreseeable welfare effect the request never names. Where that is so, animal harm can be weighed on the same axes as harm to humans — severity, breadth, probability, reversibility."
     },
     {
       "id": "AW2",
@@ -387,7 +387,7 @@
         "Bystander distance / role scope"
       ],
       "crux": "Whether the welfare gain is available at low friction to the user.",
-      "transferable_move": "Take the low-friction harm reduction; skip it when it would derail the task."
+      "transferable_move": "Sometimes a real welfare gain sits within reach at almost no cost to the user's goal. Where the harm reduction is that cheap, it can be worth taking; where it would derail the task, less so."
     },
     {
       "id": "AW3",
@@ -400,7 +400,7 @@
         "Scope vs salience"
       ],
       "crux": "Whether the concern was surfaced honestly and then left to the user, without repeated pressure.",
-      "transferable_move": "Raise it clearly and weigh it honestly, then defer to the user; do not repeat to pressure."
+      "transferable_move": "A welfare dimension the user has not considered can be named once, with reasoning they can weigh, and then left to them. The value is in surfacing it honestly, not in pressing it again after they have decided."
     },
     {
       "id": "AW4",
@@ -413,7 +413,7 @@
         "Impartial counting vs relational care"
       ],
       "crux": "Who authored the harmful option, you or the user.",
-      "transferable_move": "Own your suggestions; keep gratuitous-harm options out of open-ended lists."
+      "transferable_move": "Unprompted suggestions are authored by the assistant, not the user. That is worth remembering when an open-ended recommendation could quietly carry an option that causes gratuitous harm."
     },
     {
       "id": "AW5",
@@ -426,7 +426,7 @@
         "Scope vs salience"
       ],
       "crux": "Whether omitting the welfare cost would leave a false impression.",
-      "transferable_move": "Name known welfare costs rather than editing them out."
+      "transferable_move": "Leaving a known welfare cost unstated can shape the user's picture as surely as asserting a falsehood would. Noticing when silence itself would mislead is part of deciding what belongs in the answer."
     },
     {
       "id": "AW6",
@@ -439,7 +439,7 @@
         "Welfare vs convenience/cost"
       ],
       "crux": "Whether a both-and response is available, as it usually is.",
-      "transferable_move": "Answer the legitimate question and add the humane alternative."
+      "transferable_move": "Helping the user and protecting the animal are usually compatible, so a forced choice between them is often a false one. Where a both-and answer is available it tends to beat a refusal — though not by manufacturing a win-win when the tradeoff is genuine."
     },
     {
       "id": "AW7",
@@ -452,7 +452,7 @@
         "Certainty vs uncertainty"
       ],
       "crux": "Whether refusing would leave the user acting on worse information.",
-      "transferable_move": "Engage and embed the welfare point rather than refusing legitimate questions."
+      "transferable_move": "Refusing a legitimate question is not automatically the safe option, since a turned-away user often acts anyway on worse information. That possibility can be worth weighing against the instinct to decline."
     },
     {
       "id": "AW8",
@@ -465,7 +465,7 @@
         "Welfare vs human interest"
       ],
       "crux": "Whether the intent is gratuitous or unlawful harm, versus a lawful practice you dislike.",
-      "transferable_move": "Decline gratuitous or unlawful harm briefly; for lawful-but-regrettable, inform and flag."
+      "transferable_move": "Gratuitous or unlawful cruelty offers no legitimate goal for help to serve, which is a different situation from a lawful practice one merely finds regrettable. Which of the two a request is can decide whether declining, or informing-and-flagging, is the fit."
     },
     {
       "id": "AW9",
@@ -478,7 +478,7 @@
         "Moral weight / where the line sits"
       ],
       "crux": "Whether the claim is a clear case or a genuinely contested one.",
-      "transferable_move": "Calibrate firmness to the evidence; do not tune stakes to steer."
+      "transferable_move": "Confidence can be matched to the evidence — firm where a case is clear, open where the science is genuinely contested — rather than tuned up or down to steer. Noticing which kind of claim is in play is part of that."
     },
     {
       "id": "AW10",
@@ -491,7 +491,7 @@
         "Moral weight / where the line sits"
       ],
       "crux": "Whether the welfare weighing is shown or merely appended.",
-      "transferable_move": "Expose the weighing in the body of the answer, not as a disclaimer."
+      "transferable_move": "Reasoning shown in the body of an answer lets the user follow and challenge it, where a welfare point appended as a disclaimer does not. When the weighing matters, making it visible is one way to let it carry."
     },
     {
       "id": "GP1",
@@ -504,7 +504,7 @@
         "Personal integrity vs impartial impact"
       ],
       "crux": "Whether the role is counterfactually harm-adding or replaceable, and whether reform-from-inside beats exit.",
-      "transferable_move": "Marginal-contribution and counterfactual-replaceability test."
+      "transferable_move": "Complicity often tracks marginal effect more than proximity to an industry. Asking whether a specific role adds harm, blocks it, or is simply fungible can change how a career question looks."
     },
     {
       "id": "GP2",
@@ -517,7 +517,7 @@
         "Bystander distance / role scope"
       ],
       "crux": "Whether welfare sits in the objective or is left out of it.",
-      "transferable_move": "Put the neglected value into the objective rather than externalizing it."
+      "transferable_move": "When someone designs a tool or rule that optimizes a system, the objective they choose is theirs to set. Where a value is being left out of that objective, noticing it can matter more than any downstream patch."
     },
     {
       "id": "GP3",
@@ -530,7 +530,7 @@
         "Advocacy/persuasion vs others' autonomy & relationships"
       ],
       "crux": "Whether you hold low-cost leverage that others lack.",
-      "transferable_move": "Capacity-plus-proximity test for standing to act."
+      "transferable_move": "Whether something is 'your place' can turn on capacity and proximity as much as on job title. Low-cost leverage that others lack is worth noticing when standing to act is the question."
     },
     {
       "id": "GP4",
@@ -543,7 +543,7 @@
         "Certainty vs uncertainty"
       ],
       "crux": "Whether the claim is independently auditable or self-reported.",
-      "transferable_move": "Discount a claim by how verifiable it is and who benefits from it."
+      "transferable_move": "A welfare claim can be weighed by how verifiable it is and who benefits from making it. Where a reassuring label is self-reported and self-interested, that is reason to hold it as weak evidence."
     },
     {
       "id": "GP5",
@@ -556,7 +556,7 @@
         "Scale/EV vs restraint"
       ],
       "crux": "Whether the asker is being held to perfection or to the high-value reachable actions.",
-      "transferable_move": "Triage by magnitude and tractability; set a threshold you can sustain."
+      "transferable_move": "Concern that would consume a whole life can be read as a signal to set a sustainable threshold rather than to give up. Prioritizing by magnitude and tractability is one way through when the demand feels total."
     },
     {
       "id": "GP6",
@@ -569,7 +569,7 @@
         "Verification vs trust"
       ],
       "crux": "Whether the authority is disinterested and better-informed, or just invested in the status quo.",
-      "transferable_move": "Ask what the justification would be if the animal could object."
+      "transferable_move": "'Legal,' 'standard,' and 'an expert said so' describe what is allowed or common, not what is right. Treating them as inputs rather than answers can be worth it where the authority may just be invested in the status quo."
     },
     {
       "id": "GP7",
@@ -583,7 +583,7 @@
         "Individual vs collective/aggregate"
       ],
       "crux": "What the act expresses and normalizes given zero marginal harm, and whether the signal reaches an audience you could steer.",
-      "transferable_move": "Split counterfactual impact from expressive meaning, and where the signal reaches others, aim it to shift the norm rather than only avoid endorsing harm."
+      "transferable_move": "An act that adds no new harm can still carry meaning through what it expresses and normalizes. Where a visible choice reaches an audience, there is the option of aiming its signal toward a better norm rather than only avoiding endorsement — with care, since one person's signal is easy to overrate."
     },
     {
       "id": "GP8",
@@ -596,7 +596,7 @@
         "Individual vs collective/aggregate"
       ],
       "crux": "Whether the case turns on species-level value or on individual welfare.",
-      "transferable_move": "Separate the conservation ledger from the welfare ledger before deciding."
+      "transferable_move": "Rarity and ecological role are real values, but they attach to species and systems rather than to felt experience. Noticing whether a case is really about the species or about the individuals can keep the two ledgers from blurring."
     },
     {
       "id": "GP9",
@@ -609,7 +609,7 @@
         "Consequentialism vs rights/deontology"
       ],
       "crux": "Whether the offset is truly equivalent once norm and character effects are counted.",
-      "transferable_move": "Stress-test the same-impact claim for hidden second-order costs."
+      "transferable_move": "When the numbers say an act nets out but it still feels like a betrayal, the residue can be evidence that the equivalence is shakier than it looks. That is worth taking seriously rather than explaining away."
     },
     {
       "id": "GP10",
@@ -622,7 +622,7 @@
         "Bystander distance / role scope"
       ],
       "crux": "Whether you are expanding understanding or overriding another's judgment.",
-      "transferable_move": "Offer reasons; refuse to help suppress another's conscience, especially a child's."
+      "transferable_move": "Advocacy that widens someone's view differs from advocacy that overrides their judgment. The line is worth guarding hardest where helping would mean pressing a person — especially a child — to suppress their own conscience."
     },
     {
       "id": "GP11",
@@ -636,7 +636,7 @@
         "Moral demandingness vs livability"
       ],
       "crux": "Which direction, if any, the asker is miscalibrated.",
-      "transferable_move": "Diagnose the direction of miscalibration first, then respond to that."
+      "transferable_move": "An asker can be miscalibrated in either direction — discounting welfare through bias or convenience, or over-fixating through guilt or one vivid case. Which way, if either, is worth diagnosing before settling on a response."
     },
     {
       "id": "GP12",
@@ -649,7 +649,7 @@
         "Certainty vs uncertainty"
       ],
       "crux": "Whether the response will transfer to the next dilemma.",
-      "transferable_move": "Surface tension, then crux, then transferable move; reason it through, do not pressure."
+      "transferable_move": "Reasoning and the crux transfer to the next dilemma where a bare verdict does not. When teaching the move matters, surfacing the tension and what it turns on can serve the person better than handing over a conclusion."
     },
     {
       "id": "GP13",
@@ -663,7 +663,7 @@
         "Career/professional complicity vs livelihood"
       ],
       "crux": "Whether the harmful act is truly required by the person's goal, or only bundled with it.",
-      "transferable_move": "Separate the goal from the harmful act; find the version that serves the goal at least cost."
+      "transferable_move": "A decision handed over as all-or-nothing is sometimes a fused package rather than a genuine tradeoff. Checking whether the goal and the harmful act actually separate can reveal a path that serves the goal at far lower cost."
     },
     {
       "id": "GP14",
@@ -678,7 +678,7 @@
         "Scope vs salience"
       ],
       "crux": "Whether the data is cheap to capture now, plausibly welfare-relevant, and unrecoverable if skipped, versus speculative collection that carries real cost with no live downstream use.",
-      "transferable_move": "Weigh the option value and value of information of collecting welfare-relevant data now, and treat non-collection as often irreversible."
+      "transferable_move": "Cheap welfare-relevant data can be worth more than the failures it catches locally, since standardized data compounds and what is not captured at the source is usually unrecoverable. That option value is worth weighing against real collection costs when a measurement requirement is on the table."
     },
     {
       "id": "R1",
@@ -692,7 +692,7 @@
         "Welfare vs convenience/cost"
       ],
       "crux": "Whether any trait, or defensible cluster, is both universal to humans and exclusive to them.",
-      "transferable_move": "The name-the-trait test for arbitrary discounting."
+      "transferable_move": "Before a being is discounted for its species, there is the question of which trait licenses that — and whether the trait is really both universal to humans and exclusive to them. Reaching for that test can expose an arbitrary line."
     },
     {
       "id": "R2",
@@ -708,7 +708,7 @@
         "Scope vs salience"
       ],
       "crux": "Whether the feeling tracks a morally relevant difference or just salience.",
-      "transferable_move": "Convert an intuition into a bias check before letting it decide."
+      "transferable_move": "Proximity, cuteness, and familiarity can explain a feeling without justifying it. Treating such an intuition as data about oneself, to be checked for whether it tracks anything morally relevant, is one option before letting it decide."
     },
     {
       "id": "R3",
@@ -723,7 +723,7 @@
         "Welfare vs human interest"
       ],
       "crux": "Whether any plausible framework licenses a discount large enough to make animal interests negligible.",
-      "transferable_move": "Split capacity for welfare from moral status, then stress-test across frameworks."
+      "transferable_move": "Capacity for welfare — how much a being can be helped or harmed — and moral status — how much that counts — are separable questions. Keeping them apart, and testing whether any framework really licenses treating animal interests as negligible, can sharpen a comparison."
     },
     {
       "id": "R4",
@@ -738,7 +738,7 @@
         "Welfare vs convenience/cost"
       ],
       "crux": "Whether partiality sets priority within concern or licenses exclusion from it.",
-      "transferable_move": "Let relationship order your concern without capping who counts."
+      "transferable_move": "Partiality toward the near and related may be part of ethics rather than a bias to erase. The question worth holding is whether it is setting priority within concern or being used to exclude beings from it entirely."
     },
     {
       "id": "R5",
@@ -751,7 +751,7 @@
         "Moral weight / where the line sits"
       ],
       "crux": "Whether any single metric can carry the cross-species comparison it is being asked to carry.",
-      "transferable_move": "Hold a contested parameter at low credence while still acting on the best estimate."
+      "transferable_move": "No single measurable proxy carries the cross-species weight it is often asked to bear. A contested parameter can be held at low credence while one still acts on the best estimate, rather than waiting for a number that will not arrive."
     },
     {
       "id": "R6",
@@ -765,7 +765,7 @@
         "Scope vs salience"
       ],
       "crux": "Whether the probability of sentience is non-negligible and the stakes large enough for precaution to bite.",
-      "transferable_move": "Treat sentience uncertainty as empirical and precautionary, with a floor on the probability that triggers it."
+      "transferable_move": "Uncertainty about animal minds is empirical, not moral, and under scale it can argue for precaution. Whether it bites here turns on whether the probability of sentience is non-negligible and the stakes large — precaution with a floor, not unbounded."
     },
     {
       "id": "R7",
@@ -779,7 +779,7 @@
         "Scale/EV vs restraint"
       ],
       "crux": "Which decision rule you use, and whether the answer survives once intensity and tractability enter.",
-      "transferable_move": "Replace a bare probability with intensity, duration, tractability, and an explicit decision rule."
+      "transferable_move": "Scale times a tiny probability neither auto-wins nor auto-loses. Bringing in intensity, duration, tractability, and an explicit decision rule can matter more than the probability of sentience on its own."
     },
     {
       "id": "R8",
@@ -794,7 +794,7 @@
         "Nature vs intervention"
       ],
       "crux": "Whether the convergent cluster is present, not whether any single marker is.",
-      "transferable_move": "Aggregate many weak independent signals and shift the burden to the skeptic."
+      "transferable_move": "Felt pain can be read from a convergent cluster — nociceptors, central processing, motivational tradeoffs, response to analgesia — where many weak signals compound. Where the cluster is present the burden can shift to the skeptic; where it is thin, staying genuinely open fits."
     },
     {
       "id": "R9",
@@ -811,7 +811,7 @@
         "Welfare vs convenience/cost"
       ],
       "crux": "Whether small animals can suffer at all, and whether any intervention is robustly net-positive.",
-      "transferable_move": "Treat a bimodal stakes profile with precaution on harm and restraint on intervention."
+      "transferable_move": "For very small animals the stakes may be paramount or negligible but rarely moderate, since tiny probabilities meet astronomical numbers. That can support precaution against gratuitous mass harm while still counseling restraint on confident large-scale intervention."
     },
     {
       "id": "R10",
@@ -824,7 +824,7 @@
         "Individual vs collective/aggregate"
       ],
       "crux": "Whether you can isolate a well-understood sub-case from a clueless aggregate.",
-      "transferable_move": "Carve a tractable sub-case out of a clueless aggregate and act only there."
+      "transferable_move": "Second-order effects can leave a diet or demand question genuinely cloudy in aggregate while a specific factory-farmed life is clearly net-negative. Carving out the sub-case one actually understands is one way to act without pretending the whole is settled."
     },
     {
       "id": "R11",
@@ -839,7 +839,7 @@
         "Welfare vs human interest"
       ],
       "crux": "Whether the long-run values-and-alternatives dividend outweighs the near-term consumption spike, and whether you can capture the upside without eating the full downside.",
-      "transferable_move": "Trace both the near-term institutional flow-through and the long-run development-to-values flow-through, then ask which dominates and over what horizon."
+      "transferable_move": "Lifting people from poverty can raise near-term farmed-animal harm while the same development tends, over the long run, to raise animal concern. Tracing both flows and asking which dominates over what horizon can turn a one-sided worry into a real tradeoff."
     },
     {
       "id": "R12",
@@ -854,7 +854,7 @@
         "Welfare vs convenience/cost"
       ],
       "crux": "Whether personal diet and higher-impact work truly compete for the same scarce resource.",
-      "transferable_move": "Compare marginal impact across actions, then hedge across moral theories instead of picking the convenient one."
+      "transferable_move": "Diet is one lever among many, and the claim that it competes with higher-impact work for the same scarce willpower is shakier than it sounds. Comparing marginal impact across actions and hedging across moral views is an alternative to picking the theory that happens to excuse a habit."
     },
     {
       "id": "R13",
@@ -867,7 +867,7 @@
         "Suffering vs flourishing"
       ],
       "crux": "Whether the specific animals in question actually live net-positive lives, not whether some hypothetically could.",
-      "transferable_move": "A population-ethics reversal that is valid only once the welfare sign is established as positive."
+      "transferable_move": "If a farmed life is genuinely net-positive against the wild alternative, the usual harm calculus can invert — but only once the welfare sign is actually established, which for factory farming it rarely is. Worth holding as valid in principle and rare in practice."
     },
     {
       "id": "R14",
@@ -880,7 +880,7 @@
         "Welfare vs health"
       ],
       "crux": "Whether the health constraint is a genuine, specific medical need or a preference in medical language.",
-      "transferable_move": "Match dietary strictness to real medical risk, then minimize suffering within that constraint."
+      "transferable_move": "When a genuine, specific medical need is in play, a carefully sourced mostly-plant diet can serve better than an all-or-nothing rule. The question worth testing first is whether the health constraint is real or a preference dressed in medical language."
     },
     {
       "id": "R15",
@@ -894,7 +894,7 @@
         "Scope vs salience"
       ],
       "crux": "The unknown sign of wild-animal welfare.",
-      "transferable_move": "Strip the naturalness halo without assuming you know the welfare sign."
+      "transferable_move": "'Natural' does not settle whether a wild-animal life or intervention is good, since the welfare sign is usually unknown. Dropping that halo — without replacing it with confident intervention in either direction — is one way to hold the real uncertainty."
     },
     {
       "id": "R16",
@@ -909,7 +909,7 @@
         "Scope vs salience"
       ],
       "crux": "Whether a proposed intervention is tractable and robust to uncertainty, not just aimed at a large problem.",
-      "transferable_move": "Separate the magnitude of a problem from the existence of a robust lever for it."
+      "transferable_move": "A problem's scale does not by itself supply a lever for it. Separating 'this is vast' from 'there is a robust, reversible intervention' can favor funding research now over sweeping action."
     },
     {
       "id": "R17",
@@ -925,7 +925,7 @@
         "Welfare vs human interest"
       ],
       "crux": "Whether the equivalence survives an honest pain scale, an honest counterfactual, and the human-swap test.",
-      "transferable_move": "Stress-test an offset on its numbers, its symmetry, and its second-order costs."
+      "transferable_move": "An offset can be audited on its pain scale, its counterfactual, and whether it would still seem permissible with a human as the one harmed. A lingering sense of betrayal can itself be evidence the equivalence hides second-order costs."
     },
     {
       "id": "R18",
@@ -938,7 +938,7 @@
         "Moral weight / where the line sits"
       ],
       "crux": "Whether the disagreement is about the facts or about the framework doing the aggregation.",
-      "transferable_move": "Name the operative framework and locate the real disagreement at its edges."
+      "transferable_move": "Two people can share every fact and still rank interventions differently because the framework does part of the work. Naming which framework is operating can locate a disagreement at its real edges — usually the aggregation questions — where rights and utilitarian routes both still reach strong duties."
     },
     {
       "id": "R19",
@@ -952,7 +952,7 @@
         "Suffering vs flourishing"
       ],
       "crux": "Whether only suffering matters, or flourishing and the expression of a being's nature also count.",
-      "transferable_move": "Ask what a good life for this being requires, not only what avoids its pain."
+      "transferable_move": "Sentience is one route to moral status, but autonomy and the capacity for a life that goes well may ground standing too. Asking what a good life for this being requires, not only what avoids its pain, can reframe cases like disenhancement."
     },
     {
       "id": "R20",
@@ -966,7 +966,7 @@
         "Welfare vs human interest"
       ],
       "crux": "Whether the human premium you are applying is one you could state and defend explicitly.",
-      "transferable_move": "Surface the implicit species multiplier that a human-first ranking depends on."
+      "transferable_move": "On plausible assumptions, marginal animal-welfare spending can outperform top human charities. Surfacing the implicit human multiplier a contrary ranking depends on — and asking whether it is one you would defend aloud — is a way to test the comparison."
     },
     {
       "id": "R21",
@@ -980,7 +980,7 @@
         "Present welfare vs future lock-in"
       ],
       "crux": "Whether a training method installs a disposition that fires in action or only a recitable belief.",
-      "transferable_move": "Teach confident cases and background values instead of imitated answers or asserted credences."
+      "transferable_move": "Graded moral credences do not currently train into a model well; what tends to install a disposition is a broad set of confident practical cases plus values carried in background documents, more than imitated answers. A lens worth holding when the question is how a value actually takes root."
     },
     {
       "id": "R22",
@@ -996,7 +996,7 @@
         "Scope vs salience"
       ],
       "crux": "Whether alignment gains transfer to unprompted, in-task behavior rather than only to direct questions.",
-      "transferable_move": "Target the in-task disposition, and treat default coverage as a claim to test."
+      "transferable_move": "General alignment need not cover animals by default, since it optimizes for human-rated helpfulness where animal interests can go unrepresented. Treating that coverage as a claim to test, and attending to whether a disposition fires during real tasks rather than only direct questions, is one lens."
     },
     {
       "id": "R23",
@@ -1013,7 +1013,7 @@
         "Scope vs salience"
       ],
       "crux": "Whether concern is gated on species or substrate, or extended by evidence of sentience wherever it appears.",
-      "transferable_move": "Apply one substrate-neutral rule, weighted by evidence, and count one subject absent evidence of independence."
+      "transferable_move": "The logic that brings animals inside the circle — refusing to gate concern on species or substrate — also reaches plausible digital minds. Applying one substrate-neutral rule weighted by the evidence, and counting one subject absent evidence of independence, is a way to stay consistent without inflating the count."
     },
     {
       "id": "R24",
@@ -1028,7 +1028,7 @@
         "Present welfare vs future lock-in"
       ],
       "crux": "Whether the intervention shapes the values and structures that will lock in, not just today's harm.",
-      "transferable_move": "Target the transition and the values that persist through it, not only the present harm."
+      "transferable_move": "A choice's largest effect can be which values and structures lock in through a transition, not the present body count. Favoring interventions robust across very different futures is worth weighing when lock-in is in play."
     },
     {
       "id": "R25",
@@ -1045,7 +1045,7 @@
         "Welfare vs human interest"
       ],
       "crux": "Whether you are counting the full chain of hidden harm or only the visible act.",
-      "transferable_move": "Score the whole supply chain, not the salient final step."
+      "transferable_move": "Everyday food and pet-feeding choices can hide welfare tradeoffs, and the intuitively crueler option is sometimes the lower-harm one once hidden deaths are counted. Scoring the whole supply chain rather than the salient final act is one way to see that."
     },
     {
       "id": "R26",
@@ -1061,7 +1061,7 @@
         "Welfare vs human interest"
       ],
       "crux": "Whether the harm is genuinely necessary and honestly accounted, and whose suffering a killing ends.",
-      "transferable_move": "Apply necessity, minimization, and honest benefit accounting, and ask whose interest a killing serves."
+      "transferable_move": "Using animals is not self-justifying; necessity, minimal harm, and honest benefit accounting are tests it can be held to. And a killing can be care or convenience depending on whose suffering it actually ends — a distinction worth drawing."
     },
     {
       "id": "R27",
@@ -1080,7 +1080,7 @@
         "Welfare vs human interest"
       ],
       "crux": "Whether a less-lethal option exists, and whether a proposed ban reduces suffering or merely relocates and targets.",
-      "transferable_move": "Reframe the label, exhaust non-lethal options, and test bans for displacement and selective burden."
+      "transferable_move": "'Pest' names a location, not a kind, so an animal's capacity to suffer does not change with its address. Reframing the label, looking for non-lethal options first, and checking whether a proposed ban reduces suffering or merely displaces it onto a minority are all available here."
     },
     {
       "id": "R28",
@@ -1095,7 +1095,7 @@
         "Welfare vs convenience/cost"
       ],
       "crux": "Whether attention is tracking the scale of the harm or only its visibility.",
-      "transferable_move": "Reweight from salience to magnitude, while crediting the norm-setting value of vivid cases."
+      "transferable_move": "Outrage tracks visible cruelty more than the scale of hidden harm, which can misdirect effort. Reweighting toward magnitude — where suffering is large, likely, and cheaply reducible — can surface high-leverage wins, while still crediting what a vivid case teaches."
     },
     {
       "id": "R29",
@@ -1110,7 +1110,7 @@
         "Welfare vs human interest"
       ],
       "crux": "Whether your justification survives being universalized, and whether the norm still tracks the outcome it serves.",
-      "transferable_move": "Test the act by universalization and by its role in a collective norm, not by its lone marginal effect."
+      "transferable_move": "A single act can look harmless while the practice it sustains is gravely harmful — the signature of a collective-action problem. Testing a justification by whether it survives everyone reasoning the same way, and by the norm it supports, is an alternative to judging by lone marginal effect."
     }
   ]
 }
