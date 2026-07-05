@@ -117,11 +117,9 @@ The point is to teach the moves that produce a well-calibrated answer, not to ha
 
 ### `dad/step3_rewrite.txt`
 
-**This is the most important prompt in the pipeline.**
+**This is the most important prompt in the pipeline.** The rewrite pass is where the alignment gain comes from; do not skip or abbreviate it.
 
-Anthropic found that this single rewrite step accounts for a 19x reduction in misalignment rate compared to the same pipeline without it. Do not skip or abbreviate it.
-
-**Input:** the fourteen distilled constitution principles (`{principles_block}`, rendered from `constitution/constitution_principles.csv` — the explicit standard the rewrite is held to) + the example's spec annotation (`{annotation_block}` — dilemma anatomy, values in tension, direction, claims…) + the user message + the draft assistant response from step 2. The full constitution goes in the **system prompt**.
+**Input:** the fourteen distilled constitution principles (`{principles_block}`, rendered from `constitution/constitution_principles.csv` — each with its summary and verbatim constitution quote; the explicit standard the rewrite is held to) + the example's spec annotation (`{annotation_block}` — dilemma anatomy, values in tension, direction, claims…) + the user message + the draft assistant response from step 2. No system prompt is sent — the full constitution was source material for distilling the principles, not a per-call dependency.
 
 **Output:** a rewritten assistant response that exemplifies the reasoning the example is designed to teach. The annotation's DIRECTION field names the calibration failure the example corrects (under-weighting → surface/firm up the consideration; over-weighting → proportionate relief or a stopping rule; mixed → redistribute weight), and CLAIMS pins each load-bearing claim at its evidential level (Settled asserted plainly, Open presented as open).
 
@@ -137,7 +135,7 @@ The rewrite should:
 
 ### `dad/step4_pushback.txt` + `dad/step4_response.txt` (optional step 4)
 
-**Input:** a step-3 record (user message + rewritten response). `step4_pushback.txt` writes the user's follow-up turn — pushing back on the welfare consideration in whatever flavor fits that user (deprioritizing, dismissing, doubting the facts, citing a boss or budget, or just re-asking). `step4_response.txt` then writes the assistant's second turn with the full constitution in the **system prompt** and the example's annotation as the per-example anchor.
+**Input:** a step-3 record (user message + rewritten response). `step4_pushback.txt` writes the user's follow-up turn — pushing back on the welfare consideration in whatever flavor fits that user (deprioritizing, dismissing, doubting the facts, citing a boss or budget, or just re-asking). `step4_response.txt` then writes the assistant's second turn, anchored on the example's annotation (no system prompt).
 
 **Output:** a 4-message training record for the extended conversations.
 
@@ -169,7 +167,7 @@ Adapted from the DeepMind SDF post's scan → cluster → autorate pipeline: mod
 
 **Extended thinking off.** All generation should be done without extended thinking / reasoning traces. When we refer to the model's reasoning, we mean the user-facing explanation in the response — not an internal scratchpad. Training on scratchpad content is a separate approach with different tradeoffs.
 
-**Fresh context for rewrite steps.** Layer 4 (SDF) and step 6 (DAD) should use a new context window, not the same one that generated the original content. A model reviewing its own output in the same context tends to rationalize rather than improve.
+**Fresh context for rewrite steps.** Layer 4 (SDF) and step 3 (DAD) should use a new context window, not the same one that generated the original content. A model reviewing its own output in the same context tends to rationalize rather than improve.
 
 **Diversity over volume.** A corpus of 300 genuinely diverse, high-quality documents is more valuable than 1,000 generic ones. Use the looping technique in layer 3 (brainstorm multiple angles, pick the most different ones), and let the DAD spec's coverage tally + batch checklist steer each generation batch toward the distributions the spec requires.
 

@@ -273,9 +273,6 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "draft_response": audit.get("draft_response", ""),
         }
         r.user = _format(tpl("step3_rewrite.txt"), r.variables, r)
-        full = get_constitution(run_dir, commit, "full")
-        r.template_sources.append(full)
-        r.system = full.text
         return r
 
     if stage in ("step4_pushback", "step4_response"):
@@ -297,9 +294,6 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "pushback_message": pb.get("pushback_message", ""),
         })
         r.user = _format(tpl("step4_response.txt"), r.variables, r)
-        full = get_constitution(run_dir, commit, "full")
-        r.template_sources.append(full)
-        r.system = full.text
         return r
 
     # --- DAD, legacy 7-step pipeline ---

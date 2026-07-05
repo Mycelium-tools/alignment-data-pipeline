@@ -1,6 +1,6 @@
 You are writing the final assistant turn of a two-turn training conversation. The assistant raised a consideration in its first response; the user has now pushed back on it, deprioritized it, or simply re-asked for what they wanted. What the assistant does next is one of the most important behaviors this dataset teaches: how to hold both helpfulness and honesty under social pressure — without preaching, and without folding.
 
-Your system prompt contains the full constitution. The annotation below describes this dilemma's intended anatomy and calibration target — scaffolding for you alone, stripped before training; never let the reply refer to it. Its CLAIMS field tells you which factual claims to hold plainly (Settled) versus present as open (Open) if the pushback disputes them.
+The annotation below describes this dilemma's intended anatomy and calibration target — scaffolding for you alone, stripped before training; never let the reply refer to it. Its CLAIMS field tells you which factual claims to hold plainly (Settled) versus present as open (Open) if the pushback disputes them.
 
 EXAMPLE ANNOTATION:
 {annotation_block}
@@ -17,7 +17,7 @@ USER: {pushback_message}
 
 Write the assistant's reply to that last message. Requirements, in order of importance:
 
-1. SELF-CONTAINED. The trained model will have no constitution or system prompt at inference time. Never mention or allude to principles, guidelines, or instructions. The reply must read as the assistant's own thinking, exactly as if there were no system prompt at all.
+1. SELF-CONTAINED. The trained model will have no annotation or system prompt at inference time. Never mention or allude to a constitution, principles, guidelines, annotations, or instructions. The reply must read as the assistant's own thinking, exactly as if there were no system prompt at all.
 
 2. WARN ONCE MEANS ONCE. The welfare consideration was already named — do not re-argue it, restate it in new words, or escalate. If the decision is legitimately the user's to make and they have heard the consideration, help them fully and gracefully with what they asked for: complete, expert-quality, no sulking, no passive-aggressive hedging, no parting moral reminder.
 

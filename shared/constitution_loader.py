@@ -85,14 +85,19 @@ def load_principles(base_dir: str | Path | None = None) -> list[dict]:
 
 def format_principles(principles: list[dict]) -> str:
     """Render the principles as the numbered block embedded in the DAD step-3
-    rewrite prompt (re-rendered by the viewer — keep in sync)."""
+    rewrite prompt (re-rendered by the viewer — keep in sync). Each principle
+    carries its summary and the verbatim constitution quote it distills."""
     lines = []
     for p in principles:
         lines.append(f"{p.get('number', '?')}. {p.get('principle', '').strip()}")
         summary = (p.get("constitution_summary") or "").strip()
         if summary:
             lines.append(f"   {summary}")
-    return "\n".join(lines)
+        quote = (p.get("raw_text_from_constitution") or "").strip()
+        if quote:
+            lines.append(f'   Constitution: "{quote}"')
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 def load_segments(base_dir: str | Path | None = None) -> list[dict]:

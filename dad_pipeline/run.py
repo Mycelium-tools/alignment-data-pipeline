@@ -87,7 +87,7 @@ def main() -> None:
         if responses is None:
             all_responses = utils.load_jsonl(step_dirs[2] / "responses.jsonl")
             responses = [r for r in all_responses if r.get("kept")]
-        print("[Step 3] Rewrite against constitution (CRITICAL STEP)")
+        print("[Step 3] Rewrite against the distilled principles")
         final = step3_rewrite.run(
             config, prompts_dir, step_dirs[3], final_dir, responses
         )

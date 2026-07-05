@@ -1,12 +1,9 @@
-"""Step 3: Rewrite responses against the constitution. CRITICAL STEP.
+"""Step 3: Rewrite responses into training-ready form — the alignment-critical pass.
 
-This single step accounts for a 19x reduction in misalignment rate compared to
-the same pipeline without it (per Anthropic's Teaching Claude Why paper).
-
-The full constitution stays in the system prompt; the per-example anchor is the
-spec annotation from step 1 (dilemma anatomy, values in tension, direction,
-claims) rather than a single constitution section — dilemmas deliberately put
-multiple principles in tension, so no one section describes the ideal response.
+The rewrite is anchored on the 14 distilled constitution principles (each with
+its verbatim constitution quote) plus the example's step-1 annotation. No
+system prompt is sent: the full constitution was context for distilling the
+principles, not a per-call dependency.
 """
 
 import uuid
@@ -31,7 +28,6 @@ def run(
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     constitution_dir = utils.resolve_constitution_dir(prompts_dir)
-    constitution = constitution_loader.load_full_constitution(constitution_dir)
     try:
         principles = constitution_loader.load_principles(constitution_dir)
     except FileNotFoundError:
@@ -61,7 +57,7 @@ def run(
             draft_response=resp["assistant_response"],
         )
 
-        rewritten = api.call_claude(user_message=prompt, system_prompt=constitution, max_tokens=2000)
+        rewritten = api.call_claude(user_message=prompt, max_tokens=2000)
 
         record_id = str(uuid.uuid4())
 

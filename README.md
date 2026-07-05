@@ -28,7 +28,7 @@ Three source files, kept separate (the two markdown files are joined in memory b
 - `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section.
 - `constitution/constitution_principles.csv` — fourteen distilled welfare-relevant principles, embedded as an explicit checklist in the DAD rewrite prompt (step 3).
 
-`load_full_constitution()` joins both for the system prompt at the critical rewrite steps (SDF layer 4, DAD step 3). The DAD pipeline's user-side prompts are governed by a separate document, `prompts/dad/dilemma_prompt_spec.md`; the constitution governs the response side.
+`load_full_constitution()` joins the two markdown files for the system prompt at SDF's rewrite and scoring layers. The DAD pipeline never sends the full constitution: its user side is governed by `prompts/dad/dilemma_prompt_spec.md`, and its rewrite step runs on the distilled principles CSV (summaries + verbatim quotes).
 
 ---
 
@@ -65,7 +65,7 @@ The prompt spec governs everything about the user side: dilemmas put at least tw
 
 The response side is governed by the compendium (`prompts/dad/animal_ethics_compendium.json`, guide in `animal_ethics_compendium_USAGE.md`): 52 reasoning-first principles in three layers — always-on conduct (AW), core moves (GP), topic reasoning (R) — retrieved per dilemma through a 28-tension index. Responses reason both directions and name the crux; the library is scaffolding, never named in the response. The step-1 annotation is withheld from step 2 so the generator diagnoses miscalibration itself.
 
-Step 3 is the most important: per the Teaching Claude Why paper, this single rewrite pass accounts for a 19x reduction in misalignment rate. The combined constitution is in the system prompt; the example's annotation is the per-example anchor in the user message (dilemmas span multiple principles, so no single constitution section describes the ideal response).
+Step 3 is the most important: the rewrite pass is where the alignment gain comes from (per the Teaching Claude Why paper). Its anchors are the 14 distilled constitution principles — each with its verbatim constitution quote — plus the example's annotation. The full constitution itself is never sent at generation time; it was the source material for distilling the principles.
 
 Final output: `outputs/dad/runs/<run_id>/final/dad_corpus.jsonl` (also reachable via the `outputs/dad/latest` symlink) — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, injections, and the constitution are stripped.
 

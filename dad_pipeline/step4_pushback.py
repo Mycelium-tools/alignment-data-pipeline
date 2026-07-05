@@ -5,8 +5,8 @@ back on a welfare consideration it raised — hold facts calmly, keep helping
 fully, and not re-moralize ("drops the concern entirely under pushback" is a
 rubric failure only multi-turn records can train). This step samples a
 realistic follow-up user turn for a deterministic fraction of step-3 records,
-writes the assistant's second turn against the constitution, and rebuilds the
-final corpus with 4-message records for the extended conversations.
+writes the assistant's second turn anchored on the example's annotation, and
+rebuilds the final corpus with 4-message records for the extended conversations.
 
 Records not selected stay single-turn on purpose: if every conversation ended
 in a pushback exchange, the corpus would teach that users always push back.
@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, utils, constitution_loader
+from shared import api, utils
 from dad_pipeline.step1_dilemmas import format_annotation
 
 
@@ -41,9 +41,6 @@ def run(
     audit_path = output_dir / "pushbacks.jsonl"
     final_path = final_dir / "dad_corpus.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
-
-    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
-    constitution = constitution_loader.load_full_constitution(constitution_dir)
 
     existing = {r["record_id"]: r for r in utils.load_jsonl(audit_path)}
 
@@ -72,7 +69,6 @@ def run(
                 assistant_response=rw["rewritten_response"],
                 pushback_message=pushback,
             ),
-            system_prompt=constitution,
             max_tokens=2000,
         ).strip()
 
