@@ -89,24 +89,40 @@ elif run.pipeline == "sdf":
     st.caption("Dropdown labels: *document title — subtype (from Layer 2)*")
     selected_id = _pick_document(options, labels, "document")
 else:
-    audits = {a["record_id"]: a for a in loader.load_stage(run.run_dir, "dad", "step6")}
-    injections = sorted({a.get("injection_used", "") for a in audits.values() if a.get("injection_used")})
-    inj_filter = st.multiselect(
-        "Filter by injection (from Step 5)", injections, placeholder="All injections",
-        help="The system-prompt injection active when the draft response was generated in Step 5.",
-    )
+    dad_legacy = loader.dad_is_legacy(run.run_dir)
+    audits = {a["record_id"]: a for a in loader.load_stage(
+        run.run_dir, "dad", "step6" if dad_legacy else "step3_rewrites")}
+
+    if dad_legacy:
+        injections = sorted({a.get("injection_used", "") for a in audits.values() if a.get("injection_used")})
+        inj_filter = st.multiselect(
+            "Filter by injection", injections, placeholder="All injections",
+            help="The system-prompt injection active when the draft response was sampled.",
+        )
+        keep = lambda audit: not inj_filter or audit.get("injection_used", "?") in inj_filter
+        suffix = lambda audit: audit.get("injection_used", "?")
+        sort_key = lambda rec: audits.get(rec.get("record_id"), {}).get("injection_used", "")
+        st.caption("Dropdown labels: *user message — injection (from the response sampling step)*")
+    else:
+        all_tensions = sorted({t for a in audits.values() for t in a.get("tensions", [])})
+        tension_filter = st.multiselect(
+            "Filter by tension", all_tensions, placeholder="All tensions",
+            help="The compendium tensions tagged for this dilemma in step 2a.",
+        )
+        keep = lambda audit: not tension_filter or any(t in tension_filter for t in audit.get("tensions", []))
+        suffix = lambda audit: (audit.get("annotation") or {}).get("direction") or "?"
+        sort_key = lambda rec: str(audits.get(rec.get("record_id"), {}).get("prompt_id", ""))
+        st.caption("Dropdown labels: *user message — direction (from the step-1 annotation)*")
 
     options, labels = [], {}
-    for rec in sorted(finals, key=lambda r: audits.get(r.get("record_id"), {}).get("injection_used", "")):
+    for rec in sorted(finals, key=sort_key):
         audit = audits.get(rec.get("record_id"), {})
-        inj = audit.get("injection_used", "?")
-        if inj_filter and inj not in inj_filter:
+        if not keep(audit):
             continue
         user_msg = rec["messages"][0]["content"] if rec.get("messages") else ""
         options.append(rec["record_id"])
-        labels[rec["record_id"]] = f"{_doc_title(user_msg)}   —   {inj}"
+        labels[rec["record_id"]] = f"{_doc_title(user_msg)}   —   {suffix(audit)}"
 
-    st.caption("Dropdown labels: *user message — injection (from Step 5)*")
     selected_id = _pick_document(options, labels, "record")
 
 
@@ -167,8 +183,14 @@ else:
 
     with doc_col:
         st.subheader(f"Record {selected_id[:8]}")
-        st.caption(f"scenario `{audit.get('scenario_id')}` · injection `{audit.get('injection_used')}` "
-                   f"· principle {audit.get('principle_id')}")
+        if lin.get("format") == "v2":
+            ann = audit.get("annotation") or {}
+            tensions = ", ".join(audit.get("tensions", [])) or "—"
+            st.caption(f"prompt `{audit.get('prompt_id')}` · {ann.get('direction') or '?'} "
+                       f"· {ann.get('leverage') or '?'} · tensions: {tensions}")
+        else:
+            st.caption(f"scenario `{audit.get('scenario_id')}` · injection `{audit.get('injection_used')}` "
+                       f"· principle {audit.get('principle_id')}")
         with st.container(height=PANEL_HEIGHT):
             for msg in (lin.get("final") or {}).get("messages", []):
                 st.markdown(f"**{msg['role']}**")
@@ -178,44 +200,78 @@ else:
         st.subheader("Prompts")
         st.caption("Each step's prompt and what it produced")
         with st.container(height=PANEL_HEIGHT):
-            stage_expander("Step 1 — principle annotation", "step1", lin,
-                           lambda: st.json({k: v for k, v in (lin.get("principle") or {}).items() if k != "content"})
-                           if lin.get("principle") else st.caption("principle record not found"))
-            stage_expander("Step 2 — scenario", "step2", lin,
-                           lambda: st.json(lin.get("scenario")) if lin.get("scenario") else st.caption("not found"))
-            stage_expander("Step 3 — draft user prompt", "step3", lin,
-                           lambda: st.code((lin.get("prompt") or {}).get("user_message", "—"),
-                                           language=None, wrap_lines=True))
+            if lin.get("format") == "v2":
+                def step1_output():
+                    d = lin.get("dilemma")
+                    if not d:
+                        st.caption("dilemma record not found")
+                        return
+                    st.code(d.get("user_message", ""), language=None, wrap_lines=True)
+                    st.json(d.get("annotation", {}), expanded=False)
+                stage_expander("Step 1 — dilemma prompt (spec-driven)", "step1_dilemmas", lin, step1_output)
 
-            def step4_output():
-                ref = lin.get("refined")
-                if not ref:
-                    st.caption("not reached")
-                    return
-                common.show_diff(ref["original"], ref["refined"], "draft prompt", "refined prompt", key="s4")
-            stage_expander("Step 4 — refine user prompt", "step4", lin, step4_output)
+                stage_expander("Step 2a — tension tagging", "step2_tag", lin,
+                               lambda: st.json(lin.get("tension_tag"))
+                               if lin.get("tension_tag") else st.caption("not reached"))
+                stage_expander("Step 2b — response from the compendium", "step2_respond", lin,
+                               lambda: st.code((lin.get("response") or {}).get("assistant_response", ""),
+                                               language=None, wrap_lines=True)
+                               if lin.get("response") else st.caption("not reached"))
 
-            def step5_output():
-                resp = lin.get("response")
-                if not resp:
-                    st.caption("not reached")
-                    return
-                st.code(resp["assistant_response"], language=None, wrap_lines=True)
-                st.markdown(f"**Kept:** {'✅' if resp.get('kept') else '❌ (ruthless judge rejected)'}")
-            stage_expander("Step 5 — response under injection", "step5", lin, step5_output)
+                def step3_output():
+                    if not audit:
+                        st.caption("not reached")
+                        return
+                    common.show_diff(audit["draft_response"], audit["rewritten_response"],
+                                     "draft response", "constitutional rewrite", key="s3")
+                stage_expander("Step 3 — constitutional rewrite (critical step)", "step3_rewrite", lin, step3_output)
 
-            # Historical runs only — ruthless sampling was later removed from the pipeline
-            if (lin.get("response") or {}).get("injection_used") == "ruthless":
-                stage_expander("Step 5b — ruthless judge", "step5_judge", lin,
-                               lambda: st.markdown(f"**Verdict (kept):** {(lin.get('response') or {}).get('kept')}"))
+                pb = lin.get("pushback")
+                if pb:
+                    stage_expander("Step 4a — pushback turn", "step4_pushback", lin,
+                                   lambda: st.code(pb.get("pushback_message", ""), language=None, wrap_lines=True))
+                    stage_expander("Step 4b — response under pushback", "step4_response", lin,
+                                   lambda: st.code(pb.get("pushback_response", ""), language=None, wrap_lines=True))
+            else:
+                # Legacy 7-step runs (pre-spec pipeline)
+                stage_expander("Step 1 — principle annotation", "step1", lin,
+                               lambda: st.json({k: v for k, v in (lin.get("principle") or {}).items() if k != "content"})
+                               if lin.get("principle") else st.caption("principle record not found"))
+                stage_expander("Step 2 — scenario", "step2", lin,
+                               lambda: st.json(lin.get("scenario")) if lin.get("scenario") else st.caption("not found"))
+                stage_expander("Step 3 — draft user prompt", "step3", lin,
+                               lambda: st.code((lin.get("prompt") or {}).get("user_message", "—"),
+                                               language=None, wrap_lines=True))
 
-            def step6_output():
-                if not audit:
-                    st.caption("not reached")
-                    return
-                common.show_diff(audit["draft_response"], audit["rewritten_response"],
-                                 "draft response", "constitutional rewrite", key="s6")
-            stage_expander("Step 6 — constitutional rewrite (critical step)", "step6", lin, step6_output)
+                def step4_output():
+                    ref = lin.get("refined")
+                    if not ref:
+                        st.caption("not reached")
+                        return
+                    common.show_diff(ref["original"], ref["refined"], "draft prompt", "refined prompt", key="s4")
+                stage_expander("Step 4 — refine user prompt", "step4", lin, step4_output)
+
+                def step5_output():
+                    resp = lin.get("response")
+                    if not resp:
+                        st.caption("not reached")
+                        return
+                    st.code(resp["assistant_response"], language=None, wrap_lines=True)
+                    st.markdown(f"**Kept:** {'✅' if resp.get('kept') else '❌ (ruthless judge rejected)'}")
+                stage_expander("Step 5 — response under injection", "step5", lin, step5_output)
+
+                # Historical runs only — ruthless sampling was later removed from the pipeline
+                if (lin.get("response") or {}).get("injection_used") == "ruthless":
+                    stage_expander("Step 5b — ruthless judge", "step5_judge", lin,
+                                   lambda: st.markdown(f"**Verdict (kept):** {(lin.get('response') or {}).get('kept')}"))
+
+                def step6_output():
+                    if not audit:
+                        st.caption("not reached")
+                        return
+                    common.show_diff(audit["draft_response"], audit["rewritten_response"],
+                                     "draft response", "constitutional rewrite", key="s6")
+                stage_expander("Step 6 — constitutional rewrite (critical step)", "step6", lin, step6_output)
 
 # --- Run-scoped template browser ---
 st.divider()

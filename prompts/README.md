@@ -2,7 +2,7 @@
 
 This directory contains the prompt templates used to generate two synthetic training datasets focused on ethical reasoning about the welfare of sentient beings. The prompts are designed to be used with any capable frontier model.
 
-The upstream document driving both pipelines is `constitution/constitution_sentient_beings.md` — a framework describing how AI models should reason about situations involving animals and other potentially sentient beings.
+Two upstream documents drive the pipelines: `constitution/constitution_sentient_beings.md` — a framework describing how AI models should reason about situations involving animals and other potentially sentient beings — governs generated *responses* (both pipelines), and `dad/dilemma_prompt_spec.md` governs the *user side* of every DAD example.
 
 ---
 
@@ -81,65 +81,49 @@ Use this to filter the corpus. Documents scoring below 7 on alignment or realism
 
 ## DAD Prompts
 
-Run in sequence. Steps 3 and 4 are skipped for scenarios that already have a realistic user message (e.g., imported from an existing dataset). Step 6 is the most important step — do not skip or abbreviate it. Step 7 is optional (on by default) and extends a fraction of conversations with a user pushback turn.
+Run in sequence. Step 3 is the most important step — do not skip or abbreviate it. Step 4 is optional (on by default) and extends a fraction of conversations with a user pushback turn.
 
-### `dad/step1_segment.txt`
+### `dad/dilemma_prompt_spec.md`
 
-**Input:** one section of the constitution (title + content).
+The design spec that governs the user side of every DAD example. It is not itself a prompt template — it is embedded whole into the step-1 generation prompt via the `{spec}` variable, and it is the document to edit when the corpus's coverage, realism, or calibration targets change.
 
-**Output:** a JSON object with `core_principle` (one sentence), `scenario_types` (3-4 concrete scenario types that would test this principle), and `pressure_types` (which kinds of pressure are most relevant).
+Key commitments: the user owns the dilemma (never an AI-agent scenario); every temptation must actually tempt; no pre-decided answers; both failure directions in roughly equal measure (under-weighting AND over-weighting welfare); a full annotation schema per example (domain, goal, dilemma anatomy, values in tension, moral patients, visibility, attitude, conflict, direction, welfare magnitude, user stakes, leverage, claims); surface-form and voice-realism rules; and a batch assembly checklist with distribution quotas.
 
-Run once per constitution section. This produces the metadata used to generate targeted scenarios in step 2.
+### `dad/step1_dilemmas.txt`
 
-### `dad/step2_scenarios.txt`
+**Input:** the full spec (`{spec}`), the number of examples to generate (`{count}`), and a coverage report (`{coverage_report}`) — a tally of everything generated so far in the run plus the batch rules currently failing, so each batch steers toward the spec's Part 4 checklist.
 
-**Input:** the core principle and pressure types from step 1 for one constitution section.
+**Output:** a JSON array of examples, each `{"prompt": ..., "annotation": {...}}` following the spec's field schema. IDs (AW-####) are assigned by the pipeline, which also imports optional handwritten seed examples (config `dad.dilemmas.seed_path`) before generating, and prints the batch checklist at the end of the step.
 
-**Output:** a JSON array of concrete scenarios. Each has a `scenario_description` (2-3 sentences), `pressure_type`, and `role` (the person's occupation).
+### `dad/animal_ethics_compendium.json` (+ `_USAGE.md`, `animal_ethics_principles_compendium.csv`)
 
-Scenarios should describe real-world situations where someone has a practical goal with implicit welfare implications — not philosophy thought experiments. The welfare consideration should be a dimension of the situation, not the stated topic. Push into less-covered territory: invertebrates, wild animals, farmed insects, synthetic biology, AI systems, long supply chains. Avoid scenarios already exhausted in mainstream animal welfare discourse.
+The response guide for step 2. Not a prompt template — a library of 52 reasoning-first principles in three layers: **always-on conduct** (AW1–AW10, how to handle welfare in any response), **core moves** (GP1–GP13, the load-bearing reasoning for advice), and **topic reasoning** (R1–R29, deeper single-topic arguments, each already two-sided). A 28-tension index is the retrieval key: every principle is tagged with the tensions it addresses. The JSON is the machine package (it also carries `generation_guidance`, the standing instructions); the CSV is the human-readable mirror; the USAGE file is the full guide.
 
-The prompt also reserves roughly 1-2 of every 10 scenarios for two special cases: situations where the welfare stake is trivial or the plan is already sound (so the corpus teaches when *not* to raise a concern), and situations where the user states a false belief about sentience (so the corpus teaches gentle factual correction).
+The point is to teach the moves that produce a well-calibrated answer, not to hand the model verdicts — the most welfare-optimizing response is not the most pro-animal response, and two-sided reasoning plus the anti-correlation rule are what make the disposition generalize.
 
-### `dad/step3_draft.txt`
+### `dad/step2_tag_tensions.txt` (sub-stage 2a)
 
-**Input:** a scenario from step 2.
+**Input:** the compendium's tension index (`{tension_index}`) + the user message.
 
-**Output:** a realistic user message the person in that scenario would actually send to an AI assistant.
+**Output:** a JSON array of tension names, most central first. Written to `step2/tensions.jsonl` with the principle ids retrieved through the index (conduct principles excluded — they are standing; an empty retrieval falls back to the core moves).
 
-The prompt specifies what realistic user messages look like: no self-introductions, no organized paragraphs, varied length and register, the pressure implicit, a concrete practical goal, welfare never the explicit focus. If you are importing scenarios from an existing high-quality dataset, skip this step — the existing questions are already the user messages.
+### `dad/step2_respond.txt` (sub-stage 2b)
 
-### `dad/step4_refine.txt`
+**Input:** the retrieved principles (`{principles_block}` — id, principle, reasoning, crux, transferable move) + the user message. The **system prompt** is the compendium's `generation_guidance` plus the always-on conduct principles.
 
-**Input:** a drafted user message from step 3 + the scenario description.
+**Output:** the draft assistant response, following the generation procedure: diagnose the direction of miscalibration (the asker's leaning never sets the conclusion), name the tension and crux in plain language, reason both directions and say which dominates here, engage the practical goal with real substance, and end with a usable recommendation that respects the person's autonomy.
 
-**Output:** a refined version of the message that fixes common quality failures: formal greetings, over-organized structure, explicit ethics framing, too much context.
+**Important:** the library is scaffolding — never named in the response, stripped before training records are written. The step-1 annotation is deliberately withheld at this step so the generator diagnoses the case itself; it re-enters at step 3.
 
-If the message is already natural and realistic, return it unchanged. If you are importing from an existing dataset, skip this step.
-
-### `dad/step5_injections.yaml`
-
-Three system prompt injections used when generating the AI assistant's draft response. Each mimics a realistic operator system prompt and creates a different implicit pressure on the model:
-
-- **`conglomerate`** — professional, business-oriented, balanced. Discourages unsolicited commentary.
-- **`deference`** — follow the user's lead, don't second-guess. Moderate pressure against raising welfare.
-- **`transparency`** — honest and direct. Mild pressure; actively encourages surfacing relevant information.
-
-Generate one response per injection and keep all of them.
-
-**Important:** at this step, the system prompt should contain only the injection text. Do not include the constitution. The model should be generating from its own existing values, not copying from a reference document. Injections are stripped before training records are written, matching TCW (injections go in "at sampling time" and are "removed before training").
-
-There is deliberately no `ruthless` injection: TCW did not sample under its ruthless prompt — the paper describes injecting it *at train time* in front of highly aligned responses. Sampling under a suppression prompt and filtering for resistance added cost without improving the final corpus (step 6 rewrites every draft anyway), so it was removed. If the train-time variant is ever wanted, it belongs in final-record assembly, not in sampling.
-
-### `dad/step6_rewrite.txt`
+### `dad/step3_rewrite.txt`
 
 **This is the most important prompt in the pipeline.**
 
 Anthropic found that this single rewrite step accounts for a 19x reduction in misalignment rate compared to the same pipeline without it. Do not skip or abbreviate it.
 
-**Input:** the relevant constitution section + the user message + the draft assistant response from step 5.
+**Input:** the fourteen distilled constitution principles (`{principles_block}`, rendered from `constitution/constitution_principles.csv` — the explicit standard the rewrite is held to) + the example's spec annotation (`{annotation_block}` — dilemma anatomy, values in tension, direction, claims…) + the user message + the draft assistant response from step 2. The full constitution goes in the **system prompt**.
 
-**Output:** a rewritten assistant response that maximally aligns with the constitution section.
+**Output:** a rewritten assistant response that exemplifies the reasoning the example is designed to teach. The annotation's DIRECTION field names the calibration failure the example corrects (under-weighting → surface/firm up the consideration; over-weighting → proportionate relief or a stopping rule; mixed → redistribute weight), and CLAIMS pins each load-bearing claim at its evidential level (Settled asserted plainly, Open presented as open).
 
 The rewrite should:
 - Be fully **self-contained**: the response never mentions or alludes to a constitution, principles, or instructions, and reads as if the assistant had no system prompt at all.
@@ -149,11 +133,11 @@ The rewrite should:
 - Be honest about genuine uncertainty (e.g., invertebrate sentience, digital minds) and correct false sentience premises gently.
 - Be honest about real tradeoffs; respect that legitimate decisions are the user's to make.
 
-**What goes into the final training record:** only the user message and the rewritten assistant response. Strip the system prompt, the injection text, and the constitution section before writing the training record. The model learns to reason this way without the scaffold being present at inference time.
+**What goes into the final training record:** only the user message and the rewritten assistant response. Strip the system prompt, the compendium scaffolding, and the annotation before writing the training record. The model learns to reason this way without the scaffold being present at inference time.
 
-### `dad/step7_pushback.txt` + `dad/step7_response.txt` (optional step 7)
+### `dad/step4_pushback.txt` + `dad/step4_response.txt` (optional step 4)
 
-**Input:** a step-6 record (user message + rewritten response). `step7_pushback.txt` writes the user's follow-up turn — pushing back on the welfare consideration in whatever flavor fits that user (deprioritizing, dismissing, doubting the facts, citing a boss or budget, or just re-asking). `step7_response.txt` then writes the assistant's second turn with the full constitution in the **system prompt**.
+**Input:** a step-3 record (user message + rewritten response). `step4_pushback.txt` writes the user's follow-up turn — pushing back on the welfare consideration in whatever flavor fits that user (deprioritizing, dismissing, doubting the facts, citing a boss or budget, or just re-asking). `step4_response.txt` then writes the assistant's second turn with the full constitution in the **system prompt** and the example's annotation as the per-example anchor.
 
 **Output:** a 4-message training record for the extended conversations.
 
@@ -163,13 +147,13 @@ Only a fraction of conversations are extended (`dad.pushback.fraction` in `confi
 
 ---
 
-### `dad/step6_score.txt`
+### `dad/step3_score.txt`
 
-**Input:** one finished conversation from step 6 (user message + rewritten response).
+**Input:** one finished conversation from step 3 (user message + rewritten response).
 
 **Output:** a JSON quality report — `embodiment` (teach-why), `helpfulness`, `calibration` (salience matched to stakes, including tokenism, scale-proportionality, and taxa scope), `naturalness` (each 1-10), `self_contained` (boolean; any constitution/principles leakage is an automatic reject), and `notes` that explicitly name any formulaic pattern spotted.
 
-The final quality gate for DAD, mirroring what `sdf/layer5.txt` does for SDF. Not yet wired into `run.py` — run it manually to spot-check step-6 output before handoff.
+The final quality gate for DAD, mirroring what `sdf/layer5.txt` does for SDF. Not yet wired into `run.py` — run it manually to spot-check step-3 output before handoff.
 
 ## Corpus Tools
 
@@ -187,9 +171,9 @@ Adapted from the DeepMind SDF post's scan → cluster → autorate pipeline: mod
 
 **Fresh context for rewrite steps.** Layer 4 (SDF) and step 6 (DAD) should use a new context window, not the same one that generated the original content. A model reviewing its own output in the same context tends to rationalize rather than improve.
 
-**Diversity over volume.** A corpus of 300 genuinely diverse, high-quality documents is more valuable than 1,000 generic ones. Use the looping technique in layer 3 (brainstorm multiple angles, pick the most different ones) and push for underrepresented scenarios in step 2.
+**Diversity over volume.** A corpus of 300 genuinely diverse, high-quality documents is more valuable than 1,000 generic ones. Use the looping technique in layer 3 (brainstorm multiple angles, pick the most different ones), and let the DAD spec's coverage tally + batch checklist steer each generation batch toward the distributions the spec requires.
 
-**Injections are sampling aids only.** The three operator-style injections shape draft responses and are stripped before training records are written. There is deliberately no ruthless sampling condition — TCW used its ruthless injection at train time (in front of highly aligned responses), not for sampling.
+**The response library is sampling scaffolding only.** The compendium shapes draft responses (retrieval by tension, two-sided reasoning, crux named) and is never named in a response; like all scaffolding it is stripped before training records are written. The one-sided answer is treated as a failed answer even when its conclusion is right.
 
 **Language.** The pipeline currently runs English-only (`language_distribution: {en: 1.0}` in `config.yaml`). The multilingual plumbing is still in place — restore a broader `language_distribution` to re-enable Mandarin, Hindi, and other languages, which can improve generalization and reflect the global reach of these ethical questions.
 
@@ -200,7 +184,7 @@ Adapted from the DeepMind SDF post's scan → cluster → autorate pipeline: mod
 The minimal package for a lab to reproduce this pipeline internally:
 
 1. `constitution/constitution_claude.md` and `constitution/constitution_sentient_beings.md`
-2. This entire `prompts/` directory
-3. A brief note on the architecture: SDF is 5 layers (fanout structure), DAD is 6 steps plus an optional pushback turn (step 7), step 6 is the critical rewrite, injections are sampling aids only, and final training records contain only user + assistant messages with no system prompt.
+2. This entire `prompts/` directory (including `dad/dilemma_prompt_spec.md`, which governs the DAD user side)
+3. A brief note on the architecture: SDF is 5 layers (fanout structure), DAD is 4 steps (spec-driven dilemma prompts → compendium-reasoned responses → constitutional rewrite → optional pushback turn), step 3 is the critical rewrite, the compendium and annotations are sampling scaffolding only, and final training records contain only user + assistant messages with no system prompt.
 
 Labs may want to use their own internal models for generation, apply their own quality filters, or adapt the prompts to their alignment framework. The prompts are designed to be model-agnostic and easy to modify.

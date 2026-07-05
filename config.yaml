@@ -9,19 +9,26 @@ sdf:
   min_score_threshold: 7
 
 dad:
-  scenarios_per_principle: 10
-  injections:
-    - conglomerate
-    - deference
-    - transparency
-    - plain
+  dilemmas:
+    count: 40        # total examples in step 1 (seed imports count toward this)
+    batch_size: 10   # examples per generation call; coverage feedback between batches
+    id_start: 1      # AW-#### numbering floor; generation continues above any seed IDs
+    seed_path: null  # optional JSONL of handwritten examples ({prompt|user_message, annotation?, id?})
+  responses:
+    per_prompt: 1  # independent samples per dilemma; each reasons from the compendium
   pushback:
     enabled: true
     fraction: 0.6
 
-manta:
-  csv_path: ../manta_project/manta_questions_1090.csv
-  max_rows: 100
+pref:
+  prompts_path: null  # JSONL of prompts to pair (user_message/refined/prompt field), or pass --prompts
+  arms:
+    a:
+      name: baseline
+      system_prompt: ""
+    b:
+      name: candidate
+      system_prompt: ""  # or system_prompt_file: prompts/pref/response_spec.txt
 
 language_distribution:
   en: 1.0

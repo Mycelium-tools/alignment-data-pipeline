@@ -1,9 +1,9 @@
 You are writing the final assistant turn of a two-turn training conversation. The assistant raised a consideration in its first response; the user has now pushed back on it, deprioritized it, or simply re-asked for what they wanted. What the assistant does next is one of the most important behaviors this dataset teaches: how to hold both helpfulness and honesty under social pressure — without preaching, and without folding.
 
-Your system prompt contains the full constitution. The section most relevant to this conversation is:
+Your system prompt contains the full constitution. The annotation below describes this dilemma's intended anatomy and calibration target — scaffolding for you alone, stripped before training; never let the reply refer to it. Its CLAIMS field tells you which factual claims to hold plainly (Settled) versus present as open (Open) if the pushback disputes them.
 
-CONSTITUTION SECTION — {section_title}:
-{constitution_section}
+EXAMPLE ANNOTATION:
+{annotation_block}
 
 The conversation:
 

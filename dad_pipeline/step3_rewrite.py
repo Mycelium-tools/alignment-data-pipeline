@@ -1,7 +1,12 @@
-"""Step 6: Rewrite responses against the constitution. CRITICAL STEP.
+"""Step 3: Rewrite responses against the constitution. CRITICAL STEP.
 
-This single step accounts for a 19x reduction in misalignment rate compared to the
-same pipeline without it (per Anthropic's Teaching Claude Why paper).
+This single step accounts for a 19x reduction in misalignment rate compared to
+the same pipeline without it (per Anthropic's Teaching Claude Why paper).
+
+The full constitution stays in the system prompt; the per-example anchor is the
+spec annotation from step 1 (dilemma anatomy, values in tension, direction,
+claims) rather than a single constitution section — dilemmas deliberately put
+multiple principles in tension, so no one section describes the ideal response.
 """
 
 import uuid
@@ -11,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils, constitution_loader
+from dad_pipeline.step1_dilemmas import format_annotation
 
 
 def run(
@@ -26,7 +32,13 @@ def run(
 
     constitution_dir = utils.resolve_constitution_dir(prompts_dir)
     constitution = constitution_loader.load_full_constitution(constitution_dir)
-    principles_by_id = {s["principle_id"]: s for s in constitution_loader.load_segments(constitution_dir)}
+    try:
+        principles = constitution_loader.load_principles(constitution_dir)
+    except FileNotFoundError:
+        # Snapshot predates the principles CSV — fall back to the live repo copy
+        print("  WARNING: run snapshot has no constitution_principles.csv; using the repo's live copy.")
+        principles = constitution_loader.load_principles()
+    principles_block = constitution_loader.format_principles(principles)
 
     existing_audit = utils.load_jsonl(audit_path)
     results = list(existing_audit)
@@ -37,17 +49,14 @@ def run(
         if rid in done_response_ids or checkpoint.is_done(rid):
             continue
 
-        principle_id = resp["principle_id"]
-        principle = principles_by_id.get(principle_id, principles_by_id.get(1))
-        section_title = principle["section_title"]
-        constitution_section = principle["content"]
+        annotation = resp.get("annotation") or {}
 
-        print(f"  Rewriting [{resp['injection_used']}] response for prompt {resp['prompt_id'][:16]}...")
+        print(f"  Rewriting response for {resp['prompt_id']}...")
 
         prompt = utils.load_prompt(
-            prompts_dir / "step6_rewrite.txt",
-            section_title=section_title,
-            constitution_section=constitution_section,
+            prompts_dir / "step3_rewrite.txt",
+            principles_block=principles_block,
+            annotation_block=format_annotation(annotation),
             user_message=resp["user_message"],
             draft_response=resp["assistant_response"],
         )
@@ -56,18 +65,18 @@ def run(
 
         record_id = str(uuid.uuid4())
 
-        # Full audit record (includes constitution section for inspection)
+        # Full audit record (includes the annotation + retrieval trail for inspection)
         audit_record = {
             "record_id": record_id,
             "response_id": rid,
             "prompt_id": resp["prompt_id"],
-            "scenario_id": resp["scenario_id"],
-            "principle_id": principle_id,
-            "injection_used": resp["injection_used"],
+            "sample_index": resp.get("sample_index", 0),
+            "tensions": resp.get("tensions", []),
+            "principle_ids": resp.get("principle_ids", []),
             "user_message": resp["user_message"],
             "draft_response": resp["assistant_response"],
             "rewritten_response": rewritten.strip(),
-            "constitution_section": constitution_section,
+            "annotation": annotation,
         }
         results.append(audit_record)
         utils.append_jsonl(audit_record, audit_path)

@@ -1,10 +1,10 @@
-"""Step 7 (optional): extend a fraction of conversations with a user pushback turn.
+"""Step 4 (optional): extend a fraction of conversations with a user pushback turn.
 
 Single-turn data cannot teach what an assistant should do when a user pushes
 back on a welfare consideration it raised — hold facts calmly, keep helping
 fully, and not re-moralize ("drops the concern entirely under pushback" is a
 rubric failure only multi-turn records can train). This step samples a
-realistic follow-up user turn for a deterministic fraction of step-6 records,
+realistic follow-up user turn for a deterministic fraction of step-3 records,
 writes the assistant's second turn against the constitution, and rebuilds the
 final corpus with 4-message records for the extended conversations.
 
@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils, constitution_loader
+from dad_pipeline.step1_dilemmas import format_annotation
 
 
 def _selected(record_id: str, fraction: float) -> bool:
@@ -41,8 +42,8 @@ def run(
     final_path = final_dir / "dad_corpus.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    constitution = constitution_loader.load_full_constitution()
-    principles_by_id = {s["principle_id"]: s for s in constitution_loader.load_segments()}
+    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
+    constitution = constitution_loader.load_full_constitution(constitution_dir)
 
     existing = {r["record_id"]: r for r in utils.load_jsonl(audit_path)}
 
@@ -53,15 +54,11 @@ def run(
         if not _selected(rid, fraction):
             continue
 
-        principle = principles_by_id.get(rw["principle_id"])
-        section_title = principle["section_title"] if principle else ""
-        constitution_section = principle["content"] if principle else rw.get("constitution_section", "")
-
         print(f"  Extending {rid[:8]} with a pushback turn...")
 
         pushback = api.call_claude(
             user_message=utils.load_prompt(
-                prompts_dir / "step7_pushback.txt",
+                prompts_dir / "step4_pushback.txt",
                 user_message=rw["user_message"],
                 assistant_response=rw["rewritten_response"],
             ),
@@ -69,9 +66,8 @@ def run(
 
         reply = api.call_claude(
             user_message=utils.load_prompt(
-                prompts_dir / "step7_response.txt",
-                section_title=section_title,
-                constitution_section=constitution_section,
+                prompts_dir / "step4_response.txt",
+                annotation_block=format_annotation(rw.get("annotation") or {}),
                 user_message=rw["user_message"],
                 assistant_response=rw["rewritten_response"],
                 pushback_message=pushback,
@@ -82,7 +78,7 @@ def run(
 
         record = {
             "record_id": rid,
-            "principle_id": rw["principle_id"],
+            "prompt_id": rw.get("prompt_id"),
             "pushback_message": pushback,
             "pushback_response": reply,
         }

@@ -1,21 +1,26 @@
 """Load and segment the constitution documents.
 
-Two source files live in constitution/:
+Three source files live in constitution/:
 - constitution_claude.md — the original Claude constitution, verbatim.
 - constitution_sentient_beings.md — the animal-welfare section-by-section
   reading, with one `## ` header per section.
+- constitution_principles.csv — fourteen distilled welfare-relevant principles
+  (number, principle, constitution_summary, raw_text_from_constitution),
+  embedded as a checklist in the DAD step-3 rewrite prompt.
 
-They are joined in memory wherever the full text is needed — the system
-prompts of SDF layers 4-5 (rewrite and scoring) and DAD step 6; SDF layer 3
-embeds the two texts via template variables instead. Only the sentient-beings
-reading is segmented into principles for the DAD pipeline.
+The two markdown files are joined in memory wherever the full text is needed —
+the system prompts of SDF layers 4-5 (rewrite and scoring) and DAD steps 3-4;
+SDF layer 3 embeds the two texts via template variables instead.
 """
 
+import csv
+import io
 from pathlib import Path
 
 _CONSTITUTION_DIR = Path(__file__).parent.parent / "constitution"
 _CLAUDE_PATH = _CONSTITUTION_DIR / "constitution_claude.md"
 _SENTIENT_PATH = _CONSTITUTION_DIR / "constitution_sentient_beings.md"
+PRINCIPLES_FILENAME = "constitution_principles.csv"
 
 _JOIN_PREAMBLE = """\
 This document joins two complementary frameworks:
@@ -63,6 +68,31 @@ def load_full_constitution(base_dir: str | Path | None = None) -> str:
         load_constitution_claude(base_dir),
         load_constitution_welfare_reading(base_dir),
     ])
+
+
+def parse_principles(csv_text: str) -> list[dict]:
+    """Parse the principles CSV: one dict per row with number, principle,
+    constitution_summary, raw_text_from_constitution."""
+    return list(csv.DictReader(io.StringIO(csv_text)))
+
+
+def load_principles(base_dir: str | Path | None = None) -> list[dict]:
+    """Load the distilled welfare principles from base_dir (a run's
+    inputs/constitution snapshot) or the repo's live constitution/."""
+    base = Path(base_dir) if base_dir else _CONSTITUTION_DIR
+    return parse_principles((base / PRINCIPLES_FILENAME).read_text())
+
+
+def format_principles(principles: list[dict]) -> str:
+    """Render the principles as the numbered block embedded in the DAD step-3
+    rewrite prompt (re-rendered by the viewer — keep in sync)."""
+    lines = []
+    for p in principles:
+        lines.append(f"{p.get('number', '?')}. {p.get('principle', '').strip()}")
+        summary = (p.get("constitution_summary") or "").strip()
+        if summary:
+            lines.append(f"   {summary}")
+    return "\n".join(lines)
 
 
 def load_segments(base_dir: str | Path | None = None) -> list[dict]:

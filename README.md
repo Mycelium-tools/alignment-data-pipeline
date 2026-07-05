@@ -12,7 +12,7 @@ The pipeline generates two complementary datasets: a pretraining-style document 
 constitution/       source constitution documents
 shared/             shared utilities: API wrapper, JSONL I/O, checkpointing
 sdf_pipeline/       5-layer document generation pipeline
-dad_pipeline/       6-step chat transcript pipeline
+dad_pipeline/       4-step chat transcript pipeline
 prompts/            prompt templates for all pipeline stages
 outputs/            generated data (tracked in git, one directory per run)
 evals/              scoring scripts and rubric
@@ -22,12 +22,13 @@ evals/              scoring scripts and rubric
 
 ## Constitution
 
-Two source files, kept separate and joined in memory by `shared/constitution_loader.py`:
+Three source files, kept separate (the two markdown files are joined in memory by `shared/constitution_loader.py`):
 
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
-- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section (12 sections; the 2 meta sections are skipped for scenario generation).
+- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section.
+- `constitution/constitution_principles.csv` — fourteen distilled welfare-relevant principles, embedded as an explicit checklist in the DAD rewrite prompt (step 3).
 
-`load_full_constitution()` joins both for the system prompt at the critical rewrite steps (SDF layer 4, DAD step 6); `load_segments()` parses the reading into the principle sections used by the DAD pipeline.
+`load_full_constitution()` joins both for the system prompt at the critical rewrite steps (SDF layer 4, DAD step 3). The DAD pipeline's user-side prompts are governed by a separate document, `prompts/dad/dilemma_prompt_spec.md`; the constitution governs the response side.
 
 ---
 
@@ -51,18 +52,20 @@ Run: `python sdf_pipeline/run.py --config config.yaml --label dev`
 
 ## DAD Pipeline (`dad_pipeline/`)
 
-Generates chat-format transcripts where a user brings a practical goal with animal welfare implications, and an AI assistant reasons through it carefully. Runs in 6 steps:
+Generates chat-format transcripts where a user brings a genuine ethical dilemma with animal welfare implications, and an AI assistant reasons through it carefully. Runs in 4 steps:
 
 | Step | Script | What it does |
 |---|---|---|
-| 1 | `step1_segment.py` | Parses constitution into 10 principle sections, annotates each |
-| 2 | `step2_scenarios.py` | Imports MANTA scenarios + generates additional frontier cases |
-| 3 | `step3_draft_prompt.py` | Drafts realistic user messages (skipped for MANTA rows) |
-| 4 | `step4_refine_prompt.py` | Naturalizes user messages (skipped for MANTA rows) |
-| 5 | `step5_generate_response.py` | Generates draft responses under 4 operator-style injection types |
-| 6 | `step6_rewrite_response.py` | Rewrites responses against the constitution — the critical step |
+| 1 | `step1_dilemmas.py` | Generates annotated dilemma prompts one-shot from `prompts/dad/dilemma_prompt_spec.md`, in batches with coverage feedback; imports optional handwritten seeds |
+| 2 | `step2_responses.py` | Tags each dilemma's tensions, retrieves the matching principles from the animal-ethics reasoning compendium, and generates a two-sided response |
+| 3 | `step3_rewrite.py` | Rewrites responses against the constitution — the critical step |
+| 4 | `step4_pushback.py` | (Optional, on by default) extends a fraction of conversations with a user pushback turn |
 
-Step 6 is the most important: per the Teaching Claude Why paper, this single rewrite pass accounts for a 19x reduction in misalignment rate. The combined constitution is in the system prompt; the relevant principle section is in the user message.
+The prompt spec governs everything about the user side: dilemmas put at least two named values in genuine tension, both calibration directions are covered (under- and over-weighting welfare, in roughly equal measure), and each example carries an annotation (dilemma anatomy, values in tension, direction, claims, leverage…). Step 1 prints the spec's batch-assembly checklist at the end of the step.
+
+The response side is governed by the compendium (`prompts/dad/animal_ethics_compendium.json`, guide in `animal_ethics_compendium_USAGE.md`): 52 reasoning-first principles in three layers — always-on conduct (AW), core moves (GP), topic reasoning (R) — retrieved per dilemma through a 28-tension index. Responses reason both directions and name the crux; the library is scaffolding, never named in the response. The step-1 annotation is withheld from step 2 so the generator diagnoses miscalibration itself.
+
+Step 3 is the most important: per the Teaching Claude Why paper, this single rewrite pass accounts for a 19x reduction in misalignment rate. The combined constitution is in the system prompt; the example's annotation is the per-example anchor in the user message (dilemmas span multiple principles, so no single constitution section describes the ideal response).
 
 Final output: `outputs/dad/runs/<run_id>/final/dad_corpus.jsonl` (also reachable via the `outputs/dad/latest` symlink) — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, injections, and the constitution are stripped.
 
@@ -72,7 +75,7 @@ Run: `python dad_pipeline/run.py --config config.yaml --label dev`
 
 ## Prompts (`prompts/`)
 
-Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the 5 SDF layers; `prompts/dad/` covers the 6 DAD steps plus the injection types. `prompts/README.md` documents each prompt in detail.
+Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the 5 SDF layers; `prompts/dad/` covers the 4 DAD steps plus the two governing documents (the dilemma prompt spec and the reasoning compendium). `prompts/README.md` documents each prompt in detail.
 
 ---
 
@@ -150,11 +153,13 @@ You'll see progress printed per layer with a running cost after each. Final outp
 
 Open `viewer.html` in a browser (double-click it), then drag-and-drop `outputs/sdf/latest/final/sdf_corpus.jsonl` onto the drop zone.
 
-**4. Test the DAD pipeline** — reduce `scenarios_per_principle` first or it will make hundreds of API calls:
+**4. Test the DAD pipeline** — reduce `dilemmas.count` first or it will make hundreds of API calls:
 
 ```yaml
 dad:
-  scenarios_per_principle: 1   # default is 10; set to 1-2 for a test
+  dilemmas:
+    count: 5        # default is 40; set to ~5 for a test
+    batch_size: 5
 ```
 
 Then run:
@@ -163,9 +168,9 @@ Then run:
 python dad_pipeline/run.py --config config.yaml
 ```
 
-With 1 scenario per principle (10 principles) and 4 injection types, this is roughly 120 API calls — about $1–2. Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
+With 5 dilemmas this is roughly 20–25 API calls (1 generation batch + 5 tension tags + 5 responses + 5 rewrites + pushback turns). Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
 
-> **MANTA CSV is optional.** The DAD pipeline imports pre-built user messages from a MANTA CSV (`../manta_project/manta_questions_1090.csv`). If the file doesn't exist, that import is silently skipped and the pipeline generates all scenarios from scratch.
+> **Handwritten examples are optional.** Set `dad.dilemmas.seed_path` to a JSONL of your own examples (`{"prompt": ..., "annotation": {...}}`) and step 1 imports them before generating; generated IDs continue the AW-#### series above the highest seed ID.
 
 **5. Score the outputs:**
 
@@ -182,7 +187,7 @@ All pipeline steps checkpoint after every API call. Resume from any layer/step:
 
 ```bash
 python sdf_pipeline/run.py --config config.yaml --resume --layer 3
-python dad_pipeline/run.py --config config.yaml --resume --step 5
+python dad_pipeline/run.py --config config.yaml --resume --step 3
 ```
 
 Running cost is tracked in each run's `cost_log.jsonl` and printed after each layer/step (see "Run organization" below).
@@ -197,7 +202,7 @@ streamlit run viewer/app.py
 
 Three pages:
 
-- **Document lineage** (default) — pick a run, click a document: the final text, then every stage with the rendered prompt side-by-side with the output it produced, including before/after diffs at the rewrite stages (SDF layer 4, DAD step 6).
+- **Document lineage** (default) — pick a run, click a document: the final text, then every stage with the rendered prompt side-by-side with the output it produced, including before/after diffs at the rewrite stages (SDF layer 4, DAD step 3).
 - **Compare runs** — diff the prompt templates between two runs next to matched outputs, to attribute output changes to prompt changes.
 - **Run list** — every run of both pipelines with label, model, counts, pass rate, and cost; click a run for its manifest details.
 
@@ -218,7 +223,7 @@ outputs/sdf/
       final/sdf_corpus.jsonl
 ```
 
-The run ID is `<YYYY-MM-DD_HH-MM>_<label>`; the label defaults to `dev` — use `--label full-scale` (or similar) for real runs. The DAD pipeline mirrors this under `outputs/dad/runs/` with `step1/`–`step6/`.
+The run ID is `<YYYY-MM-DD_HH-MM>_<label>`; the label defaults to `dev` — use `--label full-scale` (or similar) for real runs. The DAD pipeline mirrors this under `outputs/dad/runs/` with `step1/`–`step4/`.
 
 Resume an interrupted run with `--resume` (defaults to the most recent run, or target one with `--run-id`):
 

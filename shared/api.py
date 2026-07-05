@@ -111,7 +111,7 @@ def call_claude(
     Args:
         user_message: The user turn content.
         system_prompt: Optional system prompt.
-        injection: Optional text appended to the system prompt (e.g. injection type for DAD).
+        injection: Optional text appended to the system prompt.
         model: Model override; falls back to config value.
         max_tokens: Token limit override; falls back to config value.
 

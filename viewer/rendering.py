@@ -4,6 +4,7 @@ Templates come from the run's inputs/ snapshot when present; for pre-snapshot
 runs we fall back to `git show <commit>:prompts/...` (labeled "git" so the UI
 can badge it as reconstructed), and finally to "missing"."""
 
+import json
 import math
 import subprocess
 import sys
@@ -14,12 +15,15 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from dad_pipeline import compendium
+from dad_pipeline.step1_dilemmas import format_annotation
 from shared import constitution_loader
 from viewer.loader import REPO_ROOT, load_stage
 
 _CONSTITUTION_FILES = {
     "claude": "constitution_claude.md",
     "welfare": "constitution_sentient_beings.md",
+    "principles": "constitution_principles.csv",
 }
 
 
@@ -100,6 +104,8 @@ def list_templates(run_dir: Path, git_commit: str | None, pipeline: str) -> list
     templates = [get_template(run_dir, git_commit, n, pipeline) for n in names]
     templates.append(get_constitution(run_dir, git_commit, "claude"))
     templates.append(get_constitution(run_dir, git_commit, "welfare"))
+    if pipeline == "dad":
+        templates.append(get_constitution(run_dir, git_commit, "principles"))
     return templates
 
 
@@ -200,7 +206,103 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             r.warnings.append(f"Unknown SDF stage: {stage}")
         return r
 
-    # --- DAD ---
+    # --- DAD, current spec-driven pipeline (steps 1-4) ---
+    if stage == "step1_dilemmas":
+        dilemma = lineage.get("dilemma") or {}
+        if dilemma.get("source") == "seed":
+            r.is_llm_call = False
+            r.warnings.append("Handwritten seed example imported verbatim — no LLM call at this step.")
+            return r
+        spec_t = tpl("dilemma_prompt_spec.md")
+        batches = {b.get("batch"): b for b in load_stage(run_dir, "dad", "step1_batches")}
+        batch = batches.get(dilemma.get("batch")) or {}
+        if not batch:
+            r.warnings.append("Batch record not found — the coverage-report slot is shown empty.")
+        r.variables = {
+            "spec": spec_t.text or "",
+            "count": batch.get("requested", ""),
+            "coverage_report": batch.get("coverage_report", ""),
+        }
+        r.user = _format(tpl("step1_dilemmas.txt"), r.variables, r)
+        return r
+
+    if stage in ("step2_tag", "step2_respond"):
+        response = lineage.get("response") or {}
+        tag = lineage.get("tension_tag") or {}
+        comp_t = tpl(compendium.FILENAME)
+        comp = None
+        if comp_t.text:
+            try:
+                comp = json.loads(comp_t.text)
+            except json.JSONDecodeError:
+                r.warnings.append("Could not parse this run's animal_ethics_compendium.json.")
+        if comp is None:
+            r.warnings.append("Compendium unavailable — tension index / principles slots shown empty.")
+        user_message = response.get("user_message") or (lineage.get("dilemma") or {}).get("user_message", "")
+
+        if stage == "step2_tag":
+            r.variables = {
+                "tension_index": compendium.tension_index_block(comp) if comp else "",
+                "user_message": user_message,
+            }
+            r.user = _format(tpl("step2_tag_tensions.txt"), r.variables, r)
+            return r
+
+        ids = response.get("principle_ids") or tag.get("principle_ids") or []
+        r.variables = {
+            "principles_block": compendium.format_principles(comp, ids) if comp else "",
+            "user_message": user_message,
+        }
+        r.user = _format(tpl("step2_respond.txt"), r.variables, r)
+        if comp:
+            r.system = compendium.system_prompt(comp)
+        return r
+
+    if stage == "step3_rewrite":
+        audit = lineage.get("rewrite") or {}
+        principles_t = get_constitution(run_dir, commit, "principles")
+        r.template_sources.append(principles_t)
+        if principles_t.text is None:
+            r.warnings.append("constitution_principles.csv unavailable — the principles block is shown empty.")
+        principles_block = constitution_loader.format_principles(
+            constitution_loader.parse_principles(principles_t.text)) if principles_t.text else ""
+        r.variables = {
+            "principles_block": principles_block,
+            "annotation_block": format_annotation(audit.get("annotation") or {}),
+            "user_message": audit.get("user_message", ""),
+            "draft_response": audit.get("draft_response", ""),
+        }
+        r.user = _format(tpl("step3_rewrite.txt"), r.variables, r)
+        full = get_constitution(run_dir, commit, "full")
+        r.template_sources.append(full)
+        r.system = full.text
+        return r
+
+    if stage in ("step4_pushback", "step4_response"):
+        audit = lineage.get("rewrite") or {}
+        pb = lineage.get("pushback")
+        if pb is None:
+            r.is_llm_call = False
+            r.warnings.append("This record was not selected for a pushback turn.")
+            return r
+        r.variables = {
+            "user_message": audit.get("user_message", ""),
+            "assistant_response": audit.get("rewritten_response", ""),
+        }
+        if stage == "step4_pushback":
+            r.user = _format(tpl("step4_pushback.txt"), r.variables, r)
+            return r
+        r.variables.update({
+            "annotation_block": format_annotation(audit.get("annotation") or {}),
+            "pushback_message": pb.get("pushback_message", ""),
+        })
+        r.user = _format(tpl("step4_response.txt"), r.variables, r)
+        full = get_constitution(run_dir, commit, "full")
+        r.template_sources.append(full)
+        r.system = full.text
+        return r
+
+    # --- DAD, legacy 7-step pipeline ---
     scenario = lineage.get("scenario") or {}
     is_manta = scenario.get("source") == "manta"
 
