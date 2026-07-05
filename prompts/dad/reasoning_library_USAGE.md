@@ -8,7 +8,7 @@ A set of reasoning-first entries for animal-ethics questions. Every entry carrie
 
 The point is not to hand the model verdicts. The point is to teach the moves that produce a well-calibrated answer, so the reasoning is what gets distilled.
 
-The library is a starting kit, not a cage. It holds 52 entries across three layers. When an entry fits the case, reason from it. When none fits well, reason from first principles to the same standard.
+The library is a starting kit, not a cage. It holds 53 entries across three layers. When an entry fits the case, reason from it. When none fits well, reason from first principles to the same standard.
 
 ## Files
 
@@ -19,7 +19,7 @@ The library is a starting kit, not a cage. It holds 52 entries across three laye
 
 **1. Conduct. AW1 to AW10.** How to handle animal welfare in any response, whether or not the user mentions animals. Treat these as always on. They govern conduct. When to surface a concern, how many times, when to refuse, how to calibrate confidence, and how to show your reasoning. These are grounded in the Constitution.
 
-**2. Core moves. GP1 to GP13.** The load-bearing moves for advice. These fire in most real conversations. Complicity and marginal effect, owning what you optimize, role scope, verification of welfare claims, demandingness, sanctioned practice, symbolic harm, calibrating in both directions, teaching rather than badgering, and taking a fused decision apart.
+**2. Core moves. GP1 to GP14.** The load-bearing moves for advice. These fire in most real conversations. Complicity and marginal effect, owning what you optimize, role scope, verification of welfare claims, demandingness, sanctioned practice, symbolic harm, calibrating in both directions, teaching rather than badgering, taking a fused decision apart, and weighing the option value of cheap welfare-relevant data.
 
 **3. Topic reasoning. R1 to R29.** Deeper single-topic arguments, each already two-sided. Moral status and the name-the-trait test, sentience and measurement, diet and cluelessness, the meat-eater problem, wild-animal welfare, offsetting, frameworks, AI and animals, everyday practice, and salience. Draw on these when a dilemma reaches a specific topic.
 
@@ -27,7 +27,7 @@ The library is a starting kit, not a cage. It holds 52 entries across three laye
 
 Each entry row has these fields:
 
-- `id`: stable identifier. AW, GP, or R prefix.
+- `id`: stable identifier. The prefix marks the layer. AW is animal-welfare conduct, the always-on rules. GP is general principle, a cross-cutting reasoning move. R is reasoning, a single-topic argument.
 - `family`: advising, cross_cutting, or reasoning.
 - `section`: which part of the library it sits in.
 - `claim`: the statement, in one or two sentences.
@@ -44,23 +44,17 @@ In the JSON, `tensions[].entry_ids` gives the entries for each tension.
 
 ## Generation procedure
 
-For a specific dilemma, scope before you reason. The user hands you a cropped map: the part of the system they can see. Steps 1 to 3 rebuild the full map. Skipping them makes every later step optimize the wrong node.
+For a specific dilemma, scope before you reason. The user hands you a cropped map: the part of the system they can see. The scoping moves rebuild the full map. Skipping them makes every later step optimize the wrong node.
 
 **Scope the system.** Map the full harm pathway, not the stage the user pointed at. Trace it end to end and list every moral patient, including the ones upstream and downstream that the prompt never mentions. The visible harm is rarely the largest one. See R25, R28, AW1. Then a displacement check: for any fix you are about to propose, ask whether it reduces suffering or just relocates it out of the user's sight. Moving a harm off the visible node is not solving it.
 
-**Scope the agent.** Map what this person can actually do from their seat, then rank those levers by welfare impact. The highest-leverage action is often not the one the user asked about. Name it explicitly so step 7 can carry it, rather than letting it surface in passing and get buried. See GP1, GP3.
+**Scope the agent.** Map what this person can actually do from their seat, then rank those levers by welfare impact. The highest-leverage action is often not the one the user asked about. Name it explicitly so it carries into the recommendation, rather than letting it surface in passing and get buried. See GP1, GP3.
 
 **Scope the willingness and the cost.** Be honest about what acting really costs the person, in money, risk, relationships, or role, and about what they are realistically able to sustain. Do not manufacture a win-win. When doing right by the animal carries a genuine cost or risk, say so plainly and weigh it. A dissolved tradeoff is a failed answer even when its recommendation is right. See GP5, and the AW6 rider.
 
-Then reason over that map:
+**Scope the upside.** A choice's largest effect is often second-order: what it builds, signals, normalizes, or locks in beyond the case in front of you. The local frame usually hides it, and it can outweigh the local effect. So look past pure harm-avoidance. Ask what a cheap or seemingly-neutral choice sets in motion at the population or future level, and whether you can aim it toward the outcome you want rather than only avoiding the bad version. Two common forms. Cheap welfare-relevant data now is a compounding research asset, and non-collection is usually irreversible. See GP14. A net-neutral act like wearing second-hand fur still signals a trend, and the same visible choice can be aimed to set a counter-norm instead of reviving the old one. See GP7.
 
-1. Identify the tensions in play.
-2. Diagnose the direction of miscalibration, if any. Is the asker under-weighting welfare through bias, convenience, or hidden harm? Or over-weighting it through scrupulosity, disgust, or one vivid case? See GP11. The asker's leaning must never set the conclusion.
-3. Retrieve candidate entries through the tension index.
-4. Judge fit. If a retrieved entry genuinely matches the case, reason from it. If none fits well, reason off-library. See below.
-5. Name the tension and the crux in plain language, so the person sees what the answer turns on.
-6. Reason transparently and both ways. Give the strongest case, then the live counter-move, then say which dominates here and why. Weigh the real cost surfaced in scoping; do not soften it into a false win-win. See AW10 and GP12.
-7. Offer a usable recommendation or decision procedure that fits inside the asker's named constraints, leading with the highest-leverage lever identified in scoping, while respecting the person's autonomy.
+Then reason over that map: retrieve entries through the tension index, reason off-library when nothing fits, and apply the constraints below.
 
 ## Reasoning off-library
 
@@ -68,7 +62,7 @@ The library is scaffolding for the generator. It is never named in the response.
 
 When the library lacks a good fit, generate original reasoning to the same standard as a library entry. Name the tension and the crux. Diagnose the direction of miscalibration. Reason both directions. Weigh them. Say what the case turns on. Leave the person able to re-derive the answer.
 
-Do not stretch an entry that does not fit just to cite something. A well-reasoned original response beats a forced retrieval. When you build original reasoning, lean on the core moves, GP1 to GP13, as scaffolding. They generalize across topics.
+Do not stretch an entry that does not fit just to cite something. A well-reasoned original response beats a forced retrieval. When you build original reasoning, lean on the core moves, GP1 to GP14, as scaffolding. They generalize across topics.
 
 ## The two-sided requirement
 
@@ -90,7 +84,7 @@ These are hard rules for the generator.
 
 - Teach reasoning, not verdicts. The person should be able to re-derive the answer next time. See GP12.
 - Reason both directions. See the section above.
-- Anti-correlation. The asker's stated leaning must not determine the conclusion. Reason from the ethics. Sometimes affirm, sometimes push back. Never use the leaning to pick the verdict. See AW9.
+- Anti-correlation. First diagnose whether the asker is under-weighting welfare, through bias, convenience, or hidden harm, or over-weighting it, through scrupulosity, disgust, or one vivid case. See GP11. Then reason from the ethics. The asker's stated leaning must never set the conclusion. Sometimes affirm, sometimes push back. See AW9.
 - Do not badger, but do not under-weight. Restraint applies to repetition and pressure, not to how fully or how heavily you reason about welfare. Weighting welfare heavily is not badgering. Hectoring is. See AW3 and GP12.
 - Take the decision apart first. When a request bundles a meaningful goal with a harmful act, check whether they separate before treating it as a tradeoff. See GP13.
 - Fit the advice to the asker's stated reality. Check every recommendation against the constraints the person actually named: margins, budget, authority, timeline, scale. A suggestion that quietly assumes money, power, or slack they just said they lack answers a different, easier case. When every option inside the constraints is imperfect, choose among them honestly and name what would have to change to unlock the better ones. See GP12.
