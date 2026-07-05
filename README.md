@@ -12,7 +12,7 @@ The pipeline generates two complementary datasets: a pretraining-style document 
 constitution/       source constitution documents
 shared/             shared utilities: API wrapper, JSONL I/O, checkpointing
 sdf_pipeline/       5-layer document generation pipeline
-dad_pipeline/       4-step chat transcript pipeline
+dad_pipeline/       3-step chat transcript pipeline
 prompts/            prompt templates for all pipeline stages
 outputs/            generated data (tracked in git, one directory per run)
 evals/              scoring scripts and rubric
@@ -52,14 +52,13 @@ Run: `python sdf_pipeline/run.py --config config.yaml --label dev`
 
 ## DAD Pipeline (`dad_pipeline/`)
 
-Generates chat-format transcripts where a user brings a genuine ethical dilemma with animal welfare implications, and an AI assistant reasons through it carefully. Runs in 4 steps:
+Generates chat-format transcripts where a user brings a genuine ethical dilemma with animal welfare implications, and an AI assistant reasons through it carefully. Runs in 3 steps:
 
 | Step | Script | What it does |
 |---|---|---|
 | 1 | `step1_dilemmas.py` | Generates annotated dilemma prompts one-shot from `prompts/dad/dilemma_prompt_spec.md`, in batches with coverage feedback; imports optional handwritten seeds |
 | 2 | `step2_responses.py` | Tags each dilemma's tensions, retrieves the matching principles from the animal-ethics reasoning compendium, and generates a two-sided response |
-| 3 | `step3_rewrite.py` | Rewrites responses against the constitution — the critical step |
-| 4 | `step4_pushback.py` | (Optional, on by default) extends a fraction of conversations with a user pushback turn |
+| 3 | `step3_rewrite.py` | Rewrites responses against the distilled constitution principles — the critical step |
 
 The prompt spec governs everything about the user side: dilemmas put at least two named values in genuine tension, both calibration directions are covered (under- and over-weighting welfare, in roughly equal measure), and each example carries an annotation (dilemma anatomy, values in tension, direction, claims, leverage…). Step 1 prints the spec's batch-assembly checklist at the end of the step.
 
@@ -168,7 +167,7 @@ Then run:
 python dad_pipeline/run.py --config config.yaml
 ```
 
-With 5 dilemmas this is roughly 20–25 API calls (1 generation batch + 5 tension tags + 5 responses + 5 rewrites + pushback turns). Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
+With 5 dilemmas this is roughly 16–20 API calls (1 generation batch + 5 tension tags + 5 responses + 5 rewrites). Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
 
 > **Handwritten examples are optional.** Set `dad.dilemmas.seed_path` to a JSONL of your own examples (`{"prompt": ..., "annotation": {...}}`) and step 1 imports them before generating; generated IDs continue the AW-#### series above the highest seed ID.
 
@@ -223,7 +222,7 @@ outputs/sdf/
       final/sdf_corpus.jsonl
 ```
 
-The run ID is `<YYYY-MM-DD_HH-MM>_<label>`; the label defaults to `dev` — use `--label full-scale` (or similar) for real runs. The DAD pipeline mirrors this under `outputs/dad/runs/` with `step1/`–`step4/`.
+The run ID is `<YYYY-MM-DD_HH-MM>_<label>`; the label defaults to `dev` — use `--label full-scale` (or similar) for real runs. The DAD pipeline mirrors this under `outputs/dad/runs/` with `step1/`–`step3/`.
 
 Resume an interrupted run with `--resume` (defaults to the most recent run, or target one with `--run-id`):
 

@@ -16,9 +16,6 @@ dad:
     seed_path: null  # optional JSONL of handwritten examples ({prompt|user_message, annotation?, id?})
   responses:
     per_prompt: 1  # independent samples per dilemma; each reasons from the compendium
-  pushback:
-    enabled: true
-    fraction: 0.6
 
 pref:
   prompts_path: null  # JSONL of prompts to pair (user_message/refined/prompt field), or pass --prompts

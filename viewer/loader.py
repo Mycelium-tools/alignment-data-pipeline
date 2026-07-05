@@ -33,7 +33,6 @@ STAGE_FILES = {
         "step2_tensions": "step2/tensions.jsonl",
         "step2_responses": "step2/responses.jsonl",
         "step3_rewrites": "step3/rewrites.jsonl",
-        "step4_pushbacks": "step4/pushbacks.jsonl",
         # Legacy 7-step pipeline (runs made before the dilemma spec)
         "step1": "step1/principles.jsonl",
         "step2": "step2/scenarios.jsonl",
@@ -206,7 +205,6 @@ def dad_lineage(run_dir: Path, record_id: str) -> dict:
     responses = _index(load_stage(run_dir, "dad", "step2_responses"), "response_id")
     dilemmas = _index(load_stage(run_dir, "dad", "step1_dilemmas"), "prompt_id")
     tension_tags = _index(load_stage(run_dir, "dad", "step2_tensions"), "prompt_id")
-    pushbacks = _index(load_stage(run_dir, "dad", "step4_pushbacks"), "record_id")
 
     return {
         "format": "v2",
@@ -214,7 +212,6 @@ def dad_lineage(run_dir: Path, record_id: str) -> dict:
         "tension_tag": tension_tags.get(audit.get("prompt_id")),
         "response": responses.get(audit.get("response_id")),
         "rewrite": audit,
-        "pushback": pushbacks.get(record_id),
         "final": final,
     }
 

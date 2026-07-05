@@ -284,27 +284,6 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.user = _format(tpl("step3_rewrite.txt"), r.variables, r)
         return r
 
-    if stage in ("step4_pushback", "step4_response"):
-        audit = lineage.get("rewrite") or {}
-        pb = lineage.get("pushback")
-        if pb is None:
-            r.is_llm_call = False
-            r.warnings.append("This record was not selected for a pushback turn.")
-            return r
-        r.variables = {
-            "user_message": audit.get("user_message", ""),
-            "assistant_response": audit.get("rewritten_response", ""),
-        }
-        if stage == "step4_pushback":
-            r.user = _format(tpl("step4_pushback.txt"), r.variables, r)
-            return r
-        r.variables.update({
-            "annotation_block": format_annotation(audit.get("annotation") or {}),
-            "pushback_message": pb.get("pushback_message", ""),
-        })
-        r.user = _format(tpl("step4_response.txt"), r.variables, r)
-        return r
-
     # --- DAD, legacy 7-step pipeline ---
     scenario = lineage.get("scenario") or {}
     is_manta = scenario.get("source") == "manta"

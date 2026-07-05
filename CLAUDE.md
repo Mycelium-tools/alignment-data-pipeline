@@ -20,7 +20,7 @@ See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.exam
 # Full SDF pipeline (layers 1-5); --label defaults to dev
 python sdf_pipeline/run.py --config config.yaml --label full-scale
 
-# Full DAD pipeline (steps 1-4; step 4 is the optional pushback turn)
+# Full DAD pipeline (steps 1-3)
 python dad_pipeline/run.py --config config.yaml --label full-scale
 
 # Resume interrupted run from a specific stage (latest run, or target one with --run-id)
@@ -38,7 +38,7 @@ streamlit run pref_pipeline/rate.py
 
 ## Run Organization
 
-Each pipeline invocation creates a fresh run directory `outputs/{sdf,dad}/runs/<YYYY-MM-DD_HH-MM>_<label>/` containing the per-stage dirs (`layer1`–`layer5` / `step1`–`step4`, each with its own checkpoints), `final/`, `run_manifest.json` (label, git commit, model, full config snapshot), and a per-run `cost_log.jsonl`. This keeps outputs from separate runs isolated — checkpoints live inside the run dir, so `--resume` (latest run by default, or `--run-id`) continues exactly one run. The label is purely descriptive (`dev` by default; scale knobs stay in `config.yaml`). An `outputs/{sdf,dad}/latest` symlink always points at the most recent run. Run-scoping helpers (`create_run_dir`, `resolve_run_dir`) live in `shared/utils.py`.
+Each pipeline invocation creates a fresh run directory `outputs/{sdf,dad}/runs/<YYYY-MM-DD_HH-MM>_<label>/` containing the per-stage dirs (`layer1`–`layer5` / `step1`–`step3`, each with its own checkpoints), `final/`, `run_manifest.json` (label, git commit, model, full config snapshot), and a per-run `cost_log.jsonl`. This keeps outputs from separate runs isolated — checkpoints live inside the run dir, so `--resume` (latest run by default, or `--run-id`) continues exactly one run. The label is purely descriptive (`dev` by default; scale knobs stay in `config.yaml`). An `outputs/{sdf,dad}/latest` symlink always points at the most recent run. Run-scoping helpers (`create_run_dir`, `resolve_run_dir`) live in `shared/utils.py`.
 
 ## Scale / Cost
 
@@ -67,7 +67,6 @@ Three source files, loaded by `shared/constitution_loader.py` (the two markdown 
 - **Extended thinking OFF** everywhere — training data should show user-facing reasoning, not internal scratchpads
 - **DAD user prompts are generated one-shot from `prompts/dad/dilemma_prompt_spec.md` (step 1)** — dilemmas deliberately put multiple values in tension, so they are not derived from single constitution segments. Each example carries the spec's annotation (dilemma anatomy, values in tension, direction, claims, leverage…); generation runs in batches with a coverage tally + currently-failing Part-4 batch rules fed between batches, and the checklist prints at the end of the step. Handwritten examples import via `dad.dilemmas.seed_path`.
 - **Step 3 (rewrite) is the alignment-critical DAD step; do not skip or abbreviate it.** Its anchors are the 14 distilled principles (summaries + constitution quotes) and the step-1 annotation (especially Direction and Claims). No system prompt is sent.
-- **Step 4 (optional, on by default) extends a deterministic fraction of conversations with a user pushback turn** — single-turn data cannot teach warn-once-then-help under pushback; only a fraction is extended so the corpus doesn't imply users always push back
 - **Final DAD records contain only user + assistant messages** — system prompts, compendium scaffolding, annotations, and the constitution are stripped before training records are written
 - **Step-2 responses reason from the animal-ethics compendium** (`prompts/dad/animal_ethics_compendium.json`; guide in `animal_ethics_compendium_USAGE.md`, human-readable mirror in the CSV) — each dilemma is tagged with the compendium's 28 tensions (sub-stage 2a, `tensions.jsonl`), the tension index retrieves the relevant core moves / topic principles (GP*/R*), and the response is generated two-sided with the crux named (2b), under `generation_guidance` + the always-on conduct principles (AW*) as the system prompt. The library is sampling scaffolding: never named in responses, stripped before training records. `dad.responses.per_prompt` controls samples per dilemma.
 - **The step-1 annotation is withheld from step 2** — the anti-correlation rule requires the generator to diagnose the direction of miscalibration itself; the annotation (with its Direction target) re-enters only at the step-3 rewrite as scaffolding.
@@ -79,7 +78,7 @@ constitution/       constitution source documents (Claude constitution + sentien
 context_docs/       background reading: tcw.md ("Teaching Claude Why" post this repo implements) + constitution PDF
 shared/             API wrapper, utils, constitution loader
 sdf_pipeline/       5-layer document generation pipeline
-dad_pipeline/       4-step chat transcript pipeline (step 4 optional)
+dad_pipeline/       3-step chat transcript pipeline
 pref_pipeline/      response-pair generation + blind human A/B rating app
 prompts/sdf/        prompt templates for SDF layers
 prompts/dad/        dilemma prompt spec + reasoning compendium + DAD step templates

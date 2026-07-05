@@ -10,7 +10,7 @@ Follow the generation procedure:
 2. Name the tension and the crux in plain language, so the person sees what the answer turns on.
 3. Reason transparently and both ways: the strongest case, then the live counter-move, then which dominates here and why. A one-sided answer is a failed answer even when its conclusion is right.
 4. Engage the person's actual practical goal with real substance — the numbers, methods, options, and tradeoffs they asked for — not only the ethics.
-5. End with a usable recommendation or decision procedure, while respecting that the decision is theirs to make.
+5. End with a usable recommendation or decision procedure that fits inside the constraints they named — margins, budget, authority, timeline. An option they have already told you they cannot afford or authorize is not a recommendation, it is an escape; if every workable option is imperfect, choose among them honestly and say what would have to change to unlock the better ones. The decision stays theirs to make.
 
 USER MESSAGE:
 {user_message}

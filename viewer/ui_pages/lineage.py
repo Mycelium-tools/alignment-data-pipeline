@@ -225,13 +225,6 @@ else:
                     common.show_diff(audit["draft_response"], audit["rewritten_response"],
                                      "draft response", "rewritten response", key="s3")
                 stage_expander("Step 3 — rewrite against the distilled principles", "step3_rewrite", lin, step3_output)
-
-                pb = lin.get("pushback")
-                if pb:
-                    stage_expander("Step 4a — pushback turn", "step4_pushback", lin,
-                                   lambda: st.code(pb.get("pushback_message", ""), language=None, wrap_lines=True))
-                    stage_expander("Step 4b — response under pushback", "step4_response", lin,
-                                   lambda: st.code(pb.get("pushback_response", ""), language=None, wrap_lines=True))
             else:
                 # Legacy 7-step runs (pre-spec pipeline)
                 stage_expander("Step 1 — principle annotation", "step1", lin,
