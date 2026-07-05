@@ -91,11 +91,25 @@ def _call_with_retry(
     system: str,
     messages: list[dict],
 ) -> anthropic.types.Message:
+    # Extended thinking OFF everywhere — training data should show user-facing
+    # reasoning, not internal scratchpads (see CLAUDE.md). Models in the Claude 5
+    # family emit a thinking block by default, so disable it explicitly rather
+    # than parse around it.
     return client.messages.create(
         model=model,
         max_tokens=max_tokens,
         system=system,
         messages=messages,
+        thinking={"type": "disabled"},
+    )
+
+
+def _response_text(response: anthropic.types.Message) -> str:
+    """Concatenate the text blocks of a response, skipping any non-text blocks
+    (e.g. a thinking block that slips through). Returns '' if there is no text."""
+    return "".join(
+        block.text for block in response.content
+        if getattr(block, "type", None) == "text"
     )
 
 
@@ -135,7 +149,7 @@ def call_claude(
     )
 
     _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens)
-    return response.content[0].text
+    return _response_text(response)
 
 
 def get_total_cost() -> float:
