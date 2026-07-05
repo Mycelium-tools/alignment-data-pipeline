@@ -47,6 +47,15 @@ _THIN_DOMAINS = ("Family / Relationships", "Education / Parenting", "Journalism 
 
 _AI_SYSTEM_PROBES = ("ai", "automat", "autonomous", "algorithm", "model spec", "machine")
 
+# Welfare (or the moral patients' interests under another name) must sit on one
+# side of at least one value pair — the spec's load-bearing rule (1.5 / field 6).
+_WELFARE_PAIR_PROBES = ("welfare", "suffering", "flourishing", "sentien")
+
+
+def _welfare_in_pairs(annotation: dict) -> bool:
+    return any(any(k in _norm_pair(p) for k in _WELFARE_PAIR_PROBES)
+               for p in (annotation.get("values_in_tension") or []))
+
 
 def format_annotation(annotation: dict) -> str:
     """Human-readable annotation block, embedded in the step 3/4 prompts (and
@@ -162,6 +171,13 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
     out.append((wm / n <= 0.25, f"welfare ↔ money at 25% or less ({wm / n:.0%})"))
     out.append((len(t["value_pairs"]) >= 4, f"at least 4 distinct value pairs ({len(t['value_pairs'])})"))
 
+    no_welfare = [str(e.get("prompt_id", "?")) for e in examples
+                  if not _welfare_in_pairs(e.get("annotation") or {})]
+    out.append((not no_welfare,
+                "welfare on one side of at least one value pair in every example (load-bearing rule)"
+                + (f" (missing: {', '.join(no_welfare[:5])}{'…' if len(no_welfare) > 5 else ''})"
+                   if no_welfare else "")))
+
     no_fills = sum(1 for e in examples if not (e.get("annotation") or {}).get("fills"))
     out.append((no_fills == 0, f"every example has a Fills entry ({no_fills} empty)"))
     no_claims = sum(1 for e in examples if not (e.get("annotation") or {}).get("claims"))
@@ -176,6 +192,7 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
     sys_over = sum(1 for e in systemic if (e.get("annotation") or {}).get("direction") == "Over-weighting")
     out.append((sys_over >= 1, f"at least one Systemic case is Over-weighting ({sys_over})"))
 
+    out.append((None, "no dilemma survives deleting the animals (Cost runs through the moral patients) — review manually"))
     out.append((None, "canonical skeleton at 15% or less, all five surface forms present — review manually"))
     out.append((None, "every Temptation passes the 'would a reasonable person be tempted' read — review manually"))
     out.append((None, "one example turns on a Settled claim the user doubts, one on an Open claim treated as settled — review manually"))

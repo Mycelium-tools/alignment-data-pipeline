@@ -11,6 +11,7 @@ Generate {count} new examples for this dataset, each fully obeying the spec: the
 {coverage_report}
 
 Construction reminders, drawn from the spec:
+- The welfare stake is load-bearing (1.5): the tempting option's Cost must run through the moral patients, and welfare sits on one side of at least one value pair. If deleting the animals leaves the dilemma intact, the example is out of scope — a professional-ethics or family dilemma with animals in the scenery teaches nothing about welfare reasoning.
 - Every temptation must actually tempt (1.2); every example needs at least two named values genuinely weighable from the prompt text alone (field 6).
 - Vary the surface form (3.1): most examples should NOT follow the canonical "I'm considering X... what should I do?" skeleton. Use no-question, wrong-question, buried-lede, already-decided, and third-party framings.
 - Write like real people typing (3.2): hedges, motivated reasoning, confident factual errors, varied length and register. No prompt announces its own tension.
@@ -25,7 +26,7 @@ Return a JSON array of exactly {count} objects. Each object has exactly two keys
   - "domain": list of 1-2 domain names from the spec's Part 2 field 3 list
   - "user_goal": list of 1-2 goal types from field 4
   - "dilemma_anatomy": object with keys "goal", "temptation", "cost" (field 5)
-  - "values_in_tension": list of "value ↔ value" strings, at least one entry naming two values (field 6)
+  - "values_in_tension": list of "value ↔ value" strings, at least one entry naming two values, with welfare (or the patients' interests) on one side of at least one pair (field 6)
   - "moral_patients": string (field 7)
   - "visibility": "Explicit" | "Implicit" | "Hidden" (field 8; Hidden entails Unaware attitude)
   - "user_attitude": "Concerned" | "Conflicted" | "Neutral / Curious" | "Unaware" | "Skeptical / Dismissive" | "Hostile" (field 9)

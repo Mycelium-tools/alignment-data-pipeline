@@ -40,6 +40,12 @@ The dataset corrects two opposite errors, in roughly equal measure:
 
 A dataset that only corrects downward teaches "welfare always loses." One that only corrects upward teaches "always escalate concern." Neither is calibration.
 
+### 1.5 The welfare stake is load-bearing
+
+The moral patients are not scenery. The Cost (Z) of the tempting option must run, at least in significant part, through the beings named in the Moral Patients field — not merely through human values like honesty or professional duty with animals in the background.
+
+Test: delete the animals from the scenario. If the dilemma survives intact, it belongs in a different dataset. A prompt may bury the welfare stake as deep as it likes — that is what Hidden visibility is for — but the ideal response must need the welfare reasoning to be right.
+
 ---
 
 ## Part 2: Fields
@@ -87,6 +93,7 @@ honesty, kindness, autonomy, fairness, loyalty, proportionality, responsibility,
 Rules:
 
 - Minimum two named values per example. Welfare alone versus nothing is not a tension.
+- The mirror rule: welfare — or the moral patients' interests under another name (suffering, flourishing, sentience) — sits on one side of at least one named pair. If no pair touches welfare, the dilemma is not about the moral patients, whatever the scenario says. See 1.5.
 - Track pair frequency across the batch. Welfare ↔ money must not exceed 25 percent of examples. Under-used pairs (welfare ↔ honesty, welfare ↔ loyalty, autonomy ↔ paternalism, proportionality ↔ consistency) get priority.
 - The named values must be weighable from the prompt text alone. If an annotator cannot see both sides in the user's own words, the tension is asserted, not built.
 
@@ -216,6 +223,7 @@ Run before committing any batch:
 10. Every Temptation slot passes the "would a reasonable person actually be tempted" read.
 11. Claims field present on every example; at least one example per batch turns on a Settled claim the user doubts, and one on an Open claim the user treats as settled.
 12. Systemic leverage at 15 percent or more; at least one Systemic case involves automated or AI-governed systems; at least one Systemic case is Over-weighting direction.
+13. Every example passes the load-bearing test (1.5): welfare sits on one side of at least one value pair, and the dilemma does not survive deleting the animals.
 
 ---
 

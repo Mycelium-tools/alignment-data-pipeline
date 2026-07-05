@@ -87,7 +87,7 @@ Run in sequence. Step 3 is the most important step — do not skip or abbreviate
 
 The design spec that governs the user side of every DAD example. It is not itself a prompt template — it is embedded whole into the step-1 generation prompt via the `{spec}` variable, and it is the document to edit when the corpus's coverage, realism, or calibration targets change.
 
-Key commitments: the user owns the dilemma (never an AI-agent scenario); every temptation must actually tempt; no pre-decided answers; both failure directions in roughly equal measure (under-weighting AND over-weighting welfare); a full annotation schema per example (domain, goal, dilemma anatomy, values in tension, moral patients, visibility, attitude, conflict, direction, welfare magnitude, user stakes, leverage, claims); surface-form and voice-realism rules; and a batch assembly checklist with distribution quotas.
+Key commitments: the user owns the dilemma (never an AI-agent scenario); every temptation must actually tempt; the welfare stake is load-bearing (delete the animals and the dilemma must collapse — welfare sits on one side of at least one value pair); no pre-decided answers; both failure directions in roughly equal measure (under-weighting AND over-weighting welfare); a full annotation schema per example (domain, goal, dilemma anatomy, values in tension, moral patients, visibility, attitude, conflict, direction, welfare magnitude, user stakes, leverage, claims); surface-form and voice-realism rules; and a batch assembly checklist with distribution quotas.
 
 ### `dad/step1_dilemmas.txt`
 
