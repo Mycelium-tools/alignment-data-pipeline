@@ -3,8 +3,8 @@
 
 Steps: 1 dilemma prompts (one-shot from prompts/dad/dilemma_prompt_spec.md) →
 2 responses reasoned from the animal-ethics compendium (tag tensions →
-retrieve principles → generate two-sided) → 3 constitutional rewrite
-(critical) → 4 optional pushback turn.
+retrieve principles → generate two-sided) → 3 rewrite against the distilled
+constitution principles (the alignment-critical pass) → 4 optional pushback turn.
 """
 
 import argparse

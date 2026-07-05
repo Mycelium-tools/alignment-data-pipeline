@@ -223,8 +223,8 @@ else:
                         st.caption("not reached")
                         return
                     common.show_diff(audit["draft_response"], audit["rewritten_response"],
-                                     "draft response", "constitutional rewrite", key="s3")
-                stage_expander("Step 3 — constitutional rewrite (critical step)", "step3_rewrite", lin, step3_output)
+                                     "draft response", "rewritten response", key="s3")
+                stage_expander("Step 3 — rewrite against the distilled principles", "step3_rewrite", lin, step3_output)
 
                 pb = lin.get("pushback")
                 if pb:

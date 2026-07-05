@@ -40,6 +40,9 @@ class RenderedPrompt:
     is_llm_call: bool
     user: str | None = None
     system: str | None = None
+    # Shown when the system prompt is folded in the UI — say what the system
+    # prompt actually is for this stage, not a generic name.
+    system_label: str = "system prompt"
     variables: dict = field(default_factory=dict)
     template_sources: list[Template] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -196,11 +199,16 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             full = get_constitution(run_dir, commit, "full")
             r.template_sources.append(full)
             r.system = full.text
+            r.system_label = "system prompt (full constitution)"
 
         elif stage == "layer5":
             rw = lineage.get("rewrite") or {}
             r.variables = {"preamble": preamble, "document": rw.get("rewritten", "")}
             r.user = _format(tpl("layer5.txt"), r.variables, r)
+            full = get_constitution(run_dir, commit, "full")
+            r.template_sources.append(full)
+            r.system = full.text
+            r.system_label = "system prompt (full constitution)"
 
         else:
             r.warnings.append(f"Unknown SDF stage: {stage}")
@@ -256,6 +264,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.user = _format(tpl("step2_respond.txt"), r.variables, r)
         if comp:
             r.system = compendium.system_prompt(comp)
+            r.system_label = "system prompt (compendium generation guidance + conduct principles)"
         return r
 
     if stage == "step3_rewrite":
@@ -403,6 +412,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         full = get_constitution(run_dir, commit, "full")
         r.template_sources.append(full)
         r.system = full.text
+        r.system_label = "system prompt (full constitution)"
 
     else:
         r.warnings.append(f"Unknown DAD stage: {stage}")

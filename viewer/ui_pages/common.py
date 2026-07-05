@@ -84,7 +84,7 @@ def show_rendered_prompt(rendered, key: str = "", show_run_warnings: bool = True
 
     folded_all = {}
     if rendered.system:
-        sys_text, folded = fold_long_values(rendered.system, {"system prompt (full constitution)": rendered.system})
+        sys_text, folded = fold_long_values(rendered.system, {rendered.system_label: rendered.system})
         folded_all.update(folded)
         st.markdown("**System prompt**")
         st.code(sys_text, language=None, wrap_lines=True)
