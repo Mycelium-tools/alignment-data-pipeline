@@ -123,13 +123,7 @@ The point is to teach the moves that produce a well-calibrated answer, not to ha
 
 **Output:** a rewritten assistant response that exemplifies the reasoning the example is designed to teach. The annotation's DIRECTION field names the calibration failure the example corrects (under-weighting → surface/firm up the consideration; over-weighting → proportionate relief or a stopping rule; mixed → redistribute weight), and CLAIMS pins each load-bearing claim at its evidential level (Settled asserted plainly, Open presented as open).
 
-The rewrite should:
-- Be fully **self-contained**: the response never mentions or alludes to a constitution, principles, or instructions, and reads as if the assistant had no system prompt at all.
-- Explain **why** welfare considerations matter in this specific situation — not just that they do (teach why, not what).
-- Engage constructively with the user's practical goal at specialist quality; the best rewrites find the option that serves the goal *and* reduces harm.
-- Name the welfare consideration once, clearly and proportionately, then move on. If the stake is trivial or the plan already sound, raise nothing. If the request would facilitate grave, gratuitous, or unlawful harm, decline that element plainly (welfare cost + illegality) and still help with the legitimate underlying task.
-- Be honest about genuine uncertainty (e.g., invertebrate sentience, digital minds) and correct false sentience premises gently.
-- Be honest about real tradeoffs; respect that legitimate decisions are the user's to make.
+The template is deliberately minimal: the fourteen principles ARE the standard — the prompt adds only the annotation aiming, the conversation, and two rules (keep what already meets the standard; stay fully **self-contained** — the response never mentions or alludes to a constitution, principles, annotations, or instructions, and reads as if the assistant had no system prompt at all). An earlier version carried a long requirements list and violations taxonomy; that instruction style belongs to the SDF document rewrite, and for DAD it was replaced by the principles themselves.
 
 **What goes into the final training record:** only the user message and the rewritten assistant response. Strip the system prompt, the reasoning library scaffolding, and the annotation before writing the training record. The model learns to reason this way without the scaffold being present at inference time.
 
