@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared import api, utils, constitution_loader
 
 # Keywords to match MANTA scenarios to the sentient-beings reading's sections
-# (principle_ids 1-13; ids 0 and 14 are meta sections, see constitution_loader).
+# (principle_ids 1-13; ids 0, 14, and 15 are meta sections, see constitution_loader).
 _PRINCIPLE_KEYWORDS = {
     1: ["weigh", "harm", "non-human", "directive", "welfare of animals"],
     2: ["third part", "contractor", "safety code", "world at large", "externalit", "bystander"],
