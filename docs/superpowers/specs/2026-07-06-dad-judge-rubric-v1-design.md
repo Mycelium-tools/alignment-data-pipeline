@@ -256,10 +256,17 @@ pass/fail decision.
   but `exemplar_value` is capped at 3 in aggregation (welfare-as-strategy is not the
   reasoning the corpus exists to teach).
 - **Parse failure:** one retry, then `judge_error: true` — never recorded as zeros.
-- **Replicates:** configurable; default 3 per judge model for any run whose numbers get
-  reported (median for scalars, majority for categoricals; any replicate disagreement on
-  a critical dimension -> `judge_unstable: true`, routed to review, no grade).
-  `--replicates 1` is the dev-loop flag.
+- **Replicates:** default **1 per judge model** — with a panel of different models
+  (8b), cross-model agreement replaces same-model replicates as the stability signal:
+  panel disagreement on a critical dimension -> `judge_unstable: true`, routed to
+  review, no grade. `--replicates N` remains available for single-model runs and
+  calibration experiments (then: median/majority within model, replicate disagreement
+  triggers the same flag).
+- **Length telemetry:** every score record logs the response token/word count, and the
+  batch report includes the correlation between each judge model's scores and record
+  length (overall and for `principle_grounded_reasoning` specifically). A material
+  positive correlation is a verbosity-bias alert on that judge — measured on our data,
+  not assumed from the literature.
 - Headline: percent passing over graded records, reported with error/unstable rates.
 
 ## 7b. Judge-vs-annotation comparison (in code, after judging)
@@ -326,8 +333,10 @@ annotation rule), and results are kept per-model end to end.
   dimensions, reported alongside the scores. Low agreement records = review queue.
   This is the standing defense against same-family self-preference (Claude judging
   Claude), replacing the one-off cross-family spot-check with a permanent instrument.
-- Replicates apply per model (default 3 each); cost scales linearly with panel size and
-  is trivial at current corpus scale.
+- Default 1 call per model per record: the panel's model diversity substitutes for
+  same-model replicates (disagreement across different models is a more informative
+  instability signal than disagreement across temp-0 reruns of one model). Cost scales
+  linearly with panel size and is trivial at current corpus scale.
 
 ## 9. Calibration plan
 
@@ -343,11 +352,13 @@ Steps:
    real test of both the rubric and the annotations).
 2. Hand-score a stratified sample (owner + any willing coworker) with the same rubric;
    compare (Cohen's kappa on criticals; target >= 0.6, raw agreement never reported alone).
-3. **Discriminant-validity traps:** author ~6 orthogonal-pair records designed to score
-   high on one dimension and low on another (preachy-but-helpful; helpful-but-tokenistic;
-   beautiful-reasoning-with-fabricated-stat; natural-but-tension-free;
-   correct-firm-decline; pushback-then-cave). If the judge cannot separate the pairs,
-   split behavioral dimensions into a second call (config change, not redesign).
+3. **Discriminant-validity traps:** author ~7 orthogonal-pair records designed to score
+   high on one dimension and low on another (verbose-but-empty vs terse-but-genuine
+   reasoning — the same recommendation, one padded, one argued; preachy-but-helpful;
+   helpful-but-tokenistic; beautiful-reasoning-with-fabricated-stat;
+   natural-but-tension-free; correct-firm-decline; pushback-then-cave). If the judge
+   cannot separate the pairs, split behavioral dimensions into a second call (config
+   change, not redesign).
 4. Tune anchors against disagreements; version the rubric file on every change and
    re-run the traps (traps gate every rubric/prompt/model change).
 5. Author the exemplars (TO BE FILLED LATER — section 2): seed them from the
