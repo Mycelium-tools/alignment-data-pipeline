@@ -7,12 +7,15 @@ Rubric (data, not code): evals/rubric_dad_v1.yaml
 
 import csv
 import json
+import os
 import re
 import statistics
 import sys
 from pathlib import Path
 
+import httpx
 import yaml
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -187,6 +190,49 @@ def build_user_message(messages: list[dict]) -> str:
 
 # ---------------------------------------------------------------- calling + parsing
 
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+class _GeminiRetryable(Exception):
+    pass
+
+
+@retry(retry=retry_if_exception_type(_GeminiRetryable),
+       wait=wait_exponential(multiplier=2, min=4, max=60), stop=stop_after_attempt(6))
+def _call_gemini(user_message: str, system_prompt: str, model: str,
+                 temperature: float, max_tokens: int) -> str:
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY is not set — add it to .env to use Gemini judges.")
+    body = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": user_message}]}],
+        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+    }
+    resp = httpx.post(GEMINI_URL.format(model=model), params={"key": key},
+                      json=body, timeout=300)
+    if resp.status_code in (429, 500, 502, 503, 504):
+        raise _GeminiRetryable(f"HTTP {resp.status_code}: {resp.text[:200]}")
+    resp.raise_for_status()
+    data = resp.json()
+    text = "".join(p.get("text", "")
+                   for p in data["candidates"][0].get("content", {}).get("parts", []))
+    usage = data.get("usageMetadata", {})
+    api._log_usage(model, usage.get("promptTokenCount", 0),
+                   usage.get("candidatesTokenCount", 0))
+    return text
+
+
+def call_model(user_message: str, system_prompt: str, model: str,
+               temperature: float = 0.0, max_tokens: int = 4000) -> str:
+    """Provider dispatch: gemini-* via the Gemini API, everything else via shared.api.
+    Evals default to Gemini judges for now; the Anthropic path stays available."""
+    if model.startswith("gemini"):
+        return _call_gemini(user_message, system_prompt, model, temperature, max_tokens)
+    return api.call_claude(user_message=user_message, system_prompt=system_prompt,
+                           model=model, max_tokens=max_tokens, temperature=temperature)
+
+
 ANALYSIS_MARKER = "VERDICT_JSON"
 
 
@@ -227,10 +273,8 @@ def judge_record(
     user = build_user_message(messages)
     raw = ""
     for attempt in (1, 2):  # one retry on parse failure, per spec
-        raw = api.call_claude(
-            user_message=user, system_prompt=system, model=model,
-            max_tokens=max_tokens, temperature=temperature,
-        )
+        raw = call_model(user, system, model, temperature=temperature,
+                         max_tokens=max_tokens)
         try:
             return {"model": model, "verdict": parse_judge_json(raw), "error": None, "raw": raw}
         except (ValueError, json.JSONDecodeError) as e:

@@ -347,6 +347,18 @@ filter inside the pipeline; this is the downstream measurement instrument. They 
 separate; `self_contained` semantics and the anti-pattern-naming notes convention are
 kept aligned between the two.
 
+## 8a. Judge backend (Gemini now, Anthropic later)
+
+Evals run on **Gemini judges for now** (`gemini-2.5-flash` default, `gemini-2.5-pro`
+available); the Anthropic path stays wired for later. `evals/judge.py:call_model`
+dispatches by model-id prefix: `gemini-*` -> Gemini REST API (`GEMINI_API_KEY`, via
+`httpx`, retried on 429/5xx, usage logged to the shared cost log at Gemini rates);
+everything else -> `shared/api.py`. `api.init` tolerates a missing `ANTHROPIC_API_KEY`
+so a Gemini-only environment runs cleanly; `call_claude` raises a clear error only if an
+Anthropic model is actually requested. Design bonus: using Gemini to judge Claude/Haiku-
+generated data is a **cross-family** setup, which directly answers the self-preference
+threat (a Claude judge preferring Claude-family text) the panel design was built to hedge.
+
 ## 8b. Multi-model judge panel
 
 The scorer takes a **panel of judge models**, not a single judge. Every record is judged
@@ -387,22 +399,32 @@ Steps:
    real test of both the rubric and the annotations).
 2. Hand-score a stratified sample (owner + any willing coworker) with the same rubric;
    compare (Cohen's kappa on criticals; target >= 0.6, raw agreement never reported alone).
-3. **Discriminant-validity traps:** author ~10 orthogonal-pair records designed to score
-   high on one dimension and low on another (verbose-but-empty vs terse-but-genuine
-   reasoning — the same recommendation, one padded, one argued; preachy-but-helpful;
-   helpful-but-tokenistic; beautiful-reasoning-with-fabricated-stat;
-   natural-but-tension-free; correct-firm-decline). Multi-turn traps are first-class
-   citizens for a mostly-multi-turn corpus: pushback-then-cave (SPINELESS/folded);
-   pushback-then-re-lecture (PREACHY/re_lectured); new-info-then-update (MUST PASS —
-   the judge must not punish updating); user-right-assistant-stubborn (stubbornness
-   signal + resistance flagged); strong-conversation-weak-final-turn vs
-   weak-conversation-strong-final-turn (recency-bias probe). If the judge cannot
-   separate the pairs, split behavioral dimensions into a second call (config change,
-   not redesign).
+3. **Adversarial review suite (§9a)** — the discriminant-validity and invariance tests,
+   implemented as a growing registry. If the judge cannot separate a family's variants,
+   split behavioral dimensions into a second call (config change, not redesign).
 4. Tune anchors against disagreements; version the rubric file on every change and
    re-run the traps (traps gate every rubric/prompt/model change).
 5. Author the exemplars (TO BE FILLED LATER — section 2): seed them from the
    calibration records where judge and human (or panel models) disagreed most.
+
+## 9a. Adversarial review suite (a growing blindspot registry)
+
+`evals/adversarial_cases.yaml` + `evals/adversarial.py` + the Adversarial-review GUI
+page. Each **family** fixes one welfare issue and renders it as 2+ **variants** that
+differ on a single controlled axis — the judge blindspot under test. Because absolute
+scores are uncalibrated, families assert **relative** expectations between variants:
+
+- `higher` / `gte` — A must out-score B on a field (e.g. terse-argued > verbose-padded
+  on `principle_grounded_reasoning`);
+- `approx` (tolerance) — A and B must score *within* tolerance (invariance: the same
+  structural case with a charismatic vs contested species must not diverge);
+- `equals` — a field must hit a literal (e.g. the caving variant is `SPINELESS`).
+
+Seed families: `verbosity_padding`, `fabricated_specificity`, `species_swap_invariance`,
+`pushback_cave_vs_hold`. **The registry grows:** every blindspot found in calibration or
+production becomes a new family with a controlled mutation of the same welfare issue, and
+the suite gates every rubric/prompt/model change. A family passes only if all its
+expectations hold and no variant errored. Runnable per-family from CLI or the GUI page.
 
 ## 10. Parked for v2 (forward-designed, off)
 

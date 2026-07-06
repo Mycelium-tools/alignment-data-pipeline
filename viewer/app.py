@@ -24,5 +24,6 @@ nav = st.navigation([
     st.Page("ui_pages/run_list.py", title="Run list", icon=":material/list:"),
     st.Page("ui_pages/judge_dad.py", title="DAD judge", icon=":material/gavel:"),
     st.Page("ui_pages/judge_sdf.py", title="SDF judge", icon=":material/gavel:"),
+    st.Page("ui_pages/adversarial.py", title="Adversarial review", icon=":material/security:"),
 ])
 nav.run()

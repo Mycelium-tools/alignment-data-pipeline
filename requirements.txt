@@ -1,4 +1,5 @@
 anthropic>=0.96.0
+httpx  # direct dep: Gemini judge backend in evals/judge.py
 pandas
 pyyaml
 python-dotenv

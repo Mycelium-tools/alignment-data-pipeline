@@ -21,6 +21,7 @@ from viewer.ui_pages import common
 
 RUBRIC_PATH = judge.DEFAULT_RUBRIC_PATH
 KNOWN_MODELS = [
+    "gemini-2.5-flash", "gemini-2.5-pro",
     "claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5",
     "claude-opus-4-8", "claude-fable-5",
 ]
@@ -91,7 +92,7 @@ else:
         st.sidebar.error("Could not parse — paste a record JSON, a messages list, or USER:/ASSISTANT: text.")
     record_key = "pasted/" + hashlib.md5((pasted or "").encode()).hexdigest()[:8]
 
-panel = st.sidebar.multiselect("Judge panel", KNOWN_MODELS, default=["claude-haiku-4-5"],
+panel = st.sidebar.multiselect("Judge panel", KNOWN_MODELS, default=["gemini-2.5-flash"],
                                accept_new_options=True)
 run_clicked = st.sidebar.button(":material/gavel: Run the judge", type="primary",
                                 disabled=not (messages and panel))

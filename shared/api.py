@@ -36,6 +36,9 @@ _PRICING = {
     "claude-fable-5": (10.00, 50.00),
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-haiku-4-5-20251001": (1.00, 5.00),
+    # Gemini judges (evals): logged through the same cost log
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-pro": (1.25, 10.00),
 }
 _UNPRICED_WARNED: set = set()
 
@@ -44,7 +47,10 @@ def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = No
     global _config, _client, _cost_log_path
     with open(config_path) as f:
         _config = yaml.safe_load(f)
-    _client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    # Tolerate a missing Anthropic key: non-Anthropic judges (Gemini) can still run
+    # and log costs; call_claude raises a clear error only when actually called.
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    _client = anthropic.Anthropic(api_key=key) if key else None
     _cost_log_path = Path(cost_log_path or _config["outputs"]["cost_log"])
     _cost_log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -125,6 +131,11 @@ def call_claude(
         The assistant's response text.
     """
     client = _get_client()
+    if client is None:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY is not set — Anthropic models are unavailable. "
+            "Set it in .env, or use a Gemini judge (GEMINI_API_KEY)."
+        )
     resolved_model = model or _config.get("model", "claude-sonnet-4-6")
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
 
