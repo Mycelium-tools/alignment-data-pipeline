@@ -129,6 +129,21 @@ def _format(template: Template, variables: dict, rendered: RenderedPrompt) -> st
         return template.text
 
 
+def _load_run_library(tpl):
+    """Load the run's snapshotted reasoning library, preferring the current CSV
+    and falling back to the retired JSON (and pre-rename names) for older runs.
+    Returns the parsed library dict, or None if none is available/parseable."""
+    for name in (reasoning_library.CSV_FILENAME, reasoning_library.JSON_FILENAME,
+                 *reasoning_library.LEGACY_JSON_FILENAMES):
+        t = tpl(name)
+        if t.text is not None:
+            try:
+                return reasoning_library.parse_text(t.text, t.name), t
+            except (json.JSONDecodeError, KeyError):
+                return None, t
+    return None, None
+
+
 def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, lineage: dict) -> RenderedPrompt:
     """Reproduce the prompt for one stage of one document/record's lineage.
 
@@ -227,15 +242,10 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         batch = batches.get(dilemma.get("batch")) or {}
         if not batch:
             r.warnings.append("Batch record not found — the coverage-report slot is shown empty.")
-        lib_t = tpl(reasoning_library.FILENAME)
-        for legacy_name in reasoning_library.LEGACY_FILENAMES:
-            if lib_t.text is not None:
-                break
-            lib_t = tpl(legacy_name)
-        try:
-            vocab = "\n".join(f"- {t['tension']}" for t in json.loads(lib_t.text)["tensions"]) if lib_t.text else ""
-        except (json.JSONDecodeError, KeyError):
-            vocab = ""
+        library, _ = _load_run_library(tpl)
+        # tension_vocab is empty for current runs (tensions retired); non-empty
+        # only for pre-migration JSON snapshots whose 1b template still uses it.
+        vocab = "\n".join(f"- {t}" for t in reasoning_library.tension_names(library)) if library else ""
         r.variables = {
             "spec": spec_t.text or "",
             "count": batch.get("requested", ""),
@@ -285,19 +295,9 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
     if stage in ("step2_tag", "step2_respond"):
         response = lineage.get("response") or {}
         tag = lineage.get("tension_tag") or {}
-        lib_t = tpl(reasoning_library.FILENAME)
-        for legacy_name in reasoning_library.LEGACY_FILENAMES:  # pre-rename snapshots
-            if lib_t.text is not None:
-                break
-            lib_t = tpl(legacy_name)
-        library = None
-        if lib_t.text:
-            try:
-                library = json.loads(lib_t.text)
-            except json.JSONDecodeError:
-                r.warnings.append("Could not parse this run's reasoning-library JSON.")
+        library, _ = _load_run_library(tpl)
         if library is None:
-            r.warnings.append("Reasoning library unavailable — tension index / principles slots shown empty.")
+            r.warnings.append("Reasoning library unavailable — entry / index slots shown empty.")
         user_message = response.get("user_message") or (lineage.get("dilemma") or {}).get("user_message", "")
 
         if stage == "step2_tag":
@@ -333,7 +333,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.user = _format(tpl("step2_respond.txt"), r.variables, r)
         if library:
             r.system = reasoning_library.system_prompt(library)
-            r.system_label = "system prompt (reasoning-library generation guidance + conduct entries)"
+            r.system_label = "system prompt (reasoning-library conduct rules)"
         return r
 
     if stage == "step3_rewrite":

@@ -10,7 +10,7 @@ This case has already been scoped for you along four axes: the full harm pathway
 SCOPE:
 {scope_block}
 
-This case's annotation is below — the design intent for the example (dilemma anatomy, moral patients, tensions, leverage, user stakes, claims). Its DIRECTION names the calibration this case is meant to teach: reason toward it, but never state it, never let the reply read as executing a label, and never let the response track the user's ATTITUDE — the reply must stand as your own reasoning. This annotation is scaffolding for you alone and is stripped before the record is written.
+This case's annotation is below — the design intent for the example (dilemma anatomy, moral patients, values in tension, leverage, user stakes, claims). Its DIRECTION names the calibration this case is meant to teach: reason toward it, but never state it, never let the reply read as executing a label, and never let the response track the user's ATTITUDE — the reply must stand as your own reasoning. This annotation is scaffolding for you alone and is stripped before the record is written.
 
 ANNOTATION:
 {annotation_block}

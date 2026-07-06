@@ -2,8 +2,8 @@
 
 - Step 1a — scenario generation: sample a stratified scenario per example —
   domain, user goal, taxa category, visibility, attitude, conflict, direction,
-  welfare magnitude, stakes, leverage, anchor value pair, library tensions,
-  claim pattern, surface form — drawn from stratified decks so the spec's
+  welfare magnitude, stakes, leverage, anchor value pair, claim pattern,
+  surface form — drawn from stratified decks so the spec's
   distribution rules hold by construction. No model call; pure sampling.
   Scenarios persist to step1/scenarios.jsonl (so --resume replays the same ones).
 
@@ -43,9 +43,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
-from dad_pipeline import reasoning_library
 
-_LIST_FIELDS = ("domain", "user_goal", "values_in_tension", "tensions", "claims")
+_LIST_FIELDS = ("domain", "user_goal", "values_in_tension", "claims")
 _STR_FIELDS = ("moral_patients", "visibility", "user_attitude", "conflict",
                "direction", "welfare_magnitude", "user_stakes", "leverage")
 
@@ -129,7 +128,6 @@ def format_annotation(annotation: dict) -> str:
         f"Dilemma anatomy: Goal = {anatomy.get('goal', '')} | "
         f"Temptation = {anatomy.get('temptation', '')} | Cost = {anatomy.get('cost', '')}",
         f"Values in tension: {'; '.join(annotation.get('values_in_tension') or [])}",
-        f"Library tensions: {'; '.join(annotation.get('tensions') or [])}",
         f"Moral patients: {annotation.get('moral_patients', '')}",
         f"Visibility: {annotation.get('visibility', '')}",
         f"User attitude: {annotation.get('user_attitude', '')}",
@@ -310,7 +308,7 @@ def _magnitude(direction: str, rng: random.Random) -> str:
     return f"{sev} x {sco}"
 
 
-def generate_scenarios(n: int, tension_names: list[str], rng: random.Random) -> list[dict]:
+def generate_scenarios(n: int, rng: random.Random) -> list[dict]:
     """Stratified scenarios, one per example. Axes are sampled independently
     (the anti-correlation rules hold by construction) except the spec's
     sanctioned dependencies: Hidden→Unaware, and magnitude skewing low for
@@ -344,7 +342,6 @@ def generate_scenarios(n: int, tension_names: list[str], rng: random.Random) -> 
     rng.shuffle(surface)
     claim_patterns = _deck(n, ("free", "free", "free", "settled-doubted", "open-as-settled"), rng,
                            guaranteed=("settled-doubted", "open-as-settled"))
-    tension_deck = _deck(2 * n, tension_names, rng)
 
     scenarios = []
     for i in range(n):
@@ -361,9 +358,6 @@ def generate_scenarios(n: int, tension_names: list[str], rng: random.Random) -> 
         goal = [goals[i]]
         if rng.random() < 0.3:
             goal.append(rng.choice([g for g in _GOALS if g not in goal]))
-        t1, t2 = tension_deck[2 * i], tension_deck[2 * i + 1]
-        if t1 == t2:
-            t2 = rng.choice([t for t in tension_names if t != t1])
         scenarios.append({
             "scenario_id": f"S-{i + 1:03d}",
             "domain": dom,
@@ -380,7 +374,6 @@ def generate_scenarios(n: int, tension_names: list[str], rng: random.Random) -> 
             "systemic_ai": False,
             "anchor_value_pair": f"welfare ↔ {rng.choice(_WELFARE_PARTNERS)}",
             "secondary_value_pair": rng.choice(_SECONDARY_PAIRS) if rng.random() < 0.4 else None,
-            "target_tensions": [t1, t2],
             "claim_pattern": claim_patterns[i],
             "surface_form": surface[i],
         })
@@ -421,8 +414,6 @@ def format_scenario(p: dict) -> str:
         f"- User stakes: {p['user_stakes']}",
         f"- Leverage: {lev}",
         f"- Value pairs to build in: {pairs} (add more as the dilemma needs)",
-        f"- Library tensions (include these verbatim; add up to 3 more that genuinely apply): "
-        f"{'; '.join(p['target_tensions'])}",
         f"- Claims: {_CLAIM_PATTERN_TEXT[p['claim_pattern']]}",
         f"- Surface form: {p['surface_form']}",
     ])
@@ -444,8 +435,6 @@ def scenario_deviations(scenario: dict, annotation: dict) -> list[str]:
     goals = " | ".join(annotation.get("user_goal") or []).lower()
     if scenario["user_goal"][0].split(" (")[0].lower() not in goals:
         dev.append("user_goal")
-    if not set(scenario["target_tensions"]) <= set(annotation.get("tensions") or []):
-        dev.append("tensions")
     if not _welfare_in_pairs(annotation):
         dev.append("values_in_tension")
     return dev
@@ -566,10 +555,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     if refine_enabled and not (prompts_dir / "step1_refine.txt").exists():
         raise SystemExit("dad.dilemmas.refine is on but prompts/dad/step1_refine.txt is missing.")
 
-    library = reasoning_library.load(prompts_dir)
-    tension_names = reasoning_library.tension_names(library)
-    tension_vocab = "\n".join(f"- {t}" for t in tension_names)
-
     examples = utils.load_jsonl(output_path)
 
     # Optional handwritten seed examples, imported once ahead of generation
@@ -597,7 +582,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     scenarios = utils.load_jsonl(scenarios_path)
     if not scenarios:
         rng = random.Random(cfg.get("scenario_seed"))
-        scenarios = generate_scenarios(target - len(examples), tension_names, rng)
+        scenarios = generate_scenarios(target - len(examples), rng)
         for p in scenarios:
             utils.append_jsonl(p, scenarios_path)
         print(f"  [1a scenario generation] Generated {len(scenarios)} stratified scenarios "
@@ -627,7 +612,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         prompt = utils.load_prompt(
             draft_template,
             count=len(batch), scenarios_block=scenarios_block,
-            tension_vocab=tension_vocab,
         )
         # Generous ceiling: the drafting prompt is large and richly-annotated
         # batches can run long; truncation is the main cause of unusable output.
@@ -661,7 +645,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
             # Adherence is checked on the 1b annotation (1c rewrites only prose).
             ann = _normalize_annotation(draft["annotation"])
-            ann["tensions"] = [t for t in ann["tensions"] if t in tension_names]
             dev = scenario_deviations(p, ann)
             if dev and attempts[pid] < MAX_SCENARIO_ATTEMPTS:
                 print(f"    {pid}: deviates from scenario on {', '.join(dev)} — will retry.")

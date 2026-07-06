@@ -1,6 +1,6 @@
 You are scoping an animal-welfare advice dilemma before any response is written. The user hands you a cropped map — the part of the system they can see. Your job is to rebuild the full map so the later response optimizes the right thing, not the node the user happened to point at. Skipping this makes every later step optimize the wrong node.
 
-Much of the scoping is already recorded in the case's annotation (Dilemma Anatomy, Moral Patients, tensions, Leverage, User Stakes, Direction, Claims). Build on it rather than re-deriving.
+Much of the scoping is already recorded in the case's annotation (Dilemma Anatomy, Moral Patients, Values in Tension, Leverage, User Stakes, Direction, Claims). Build on it rather than re-deriving.
 
 USER MESSAGE:
 {user_message}

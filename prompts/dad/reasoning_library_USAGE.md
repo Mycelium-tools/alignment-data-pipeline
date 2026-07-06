@@ -8,37 +8,30 @@ A set of reasoning-first entries for animal-ethics questions. Every entry carrie
 
 The point is not to hand the model verdicts. The point is to teach the moves that produce a well-calibrated answer, so the reasoning is what gets distilled.
 
-The library is a starting kit, not a cage. It holds 53 entries across three layers. When an entry fits the case, reason from it. When none fits well, reason from first principles to the same standard.
+The library is a starting kit, not a cage. It holds 52 entries across three roles. When an entry fits the case, reason from it. When none fits well, reason from first principles to the same standard.
 
 ## Files
 
-1. `reasoning_library.json` is the machine package and the source of truth. It holds the entries, the tension index, and the generation guidance the pipeline feeds to the model.
-2. `reasoning_library.csv` is the human-readable library. One row per entry.
+`reasoning_library.csv` is the source of truth. One row per entry, with columns `id, category, claim, reasoning, crux, transferable_move`. (The old `reasoning_library.json`, with its tension index and generation-guidance blob, is retired; only pre-migration run snapshots still contain it.)
 
-## The three layers
+## The three roles (by category)
 
-**1. Conduct. AW1 to AW10.** How to handle animal welfare in any response, whether or not the user mentions animals. Treat these as always on. They govern conduct. When to surface a concern, how many times, when to refuse, how to calibrate confidence, and how to show your reasoning. These are grounded in the Constitution.
+**1. Conduct. C1 to C10.** How to handle animal welfare in any response, whether or not the user mentions animals. Treat these as always on — they are fed to the model as the standing system prompt. When to surface a concern, how many times, when to refuse, how to calibrate confidence, and how to show your reasoning. These are grounded in the Constitution.
 
-**2. Core moves. GP1 to GP14.** The load-bearing moves for advice. These fire in most real conversations. Complicity and marginal effect, owning what you optimize, role scope, verification of welfare claims, demandingness, sanctioned practice, symbolic harm, calibrating in both directions, teaching rather than badgering, taking a fused decision apart, and weighing the option value of cheap welfare-relevant data.
+**2. Core moves. M1 to M13.** The load-bearing moves for advice. These fire in most real conversations, so they are surfaced in every response. Complicity and marginal effect, owning what you optimize, role scope, verification of welfare claims, demandingness, sanctioned practice, symbolic harm, calibrating in both directions, teaching rather than badgering, taking a fused decision apart, and weighing the option value of cheap welfare-relevant data.
 
-**3. Topic reasoning. R1 to R29.** Deeper single-topic arguments, each already two-sided. Moral status and the name-the-trait test, sentience and measurement, diet and cluelessness, the meat-eater problem, wild-animal welfare, offsetting, frameworks, AI and animals, everyday practice, and salience. Draw on these when a dilemma reaches a specific topic.
+**3. Topic reasoning. T1 to T29.** Deeper single-topic arguments, each already two-sided, grouped by topic category (moral status, sentience and uncertainty, diet and cluelessness, wild animals and nature, offsetting and integrity, frameworks, AI and animals, everyday practice, coordination and salience). Reference for now: they are not injected per-case, since tension-based retrieval was removed.
 
 ## The schema
 
-Each entry row has these fields:
+Each entry row has these columns:
 
-- `id`: stable identifier. The prefix marks the layer. AW is animal-welfare conduct, the always-on rules. GP is general principle, a cross-cutting reasoning move. R is reasoning, a single-topic argument.
-- `family`: advising, cross_cutting, or reasoning.
-- `section`: which part of the library it sits in.
+- `id`: stable identifier. The prefix marks the role — C is conduct, M is a core move, T is topic reasoning.
+- `category`: Conduct, Core move, or one of the topic categories.
 - `claim`: the statement, in one or two sentences.
 - `reasoning`: why it holds, both directions.
-- `tensions`: the recurring conflicts it speaks to.
 - `crux`: the single question the case usually turns on.
 - `transferable_move`: a reusable consideration to weigh, portable to new cases — a move available to reach for, not a step to run.
-
-## The tension index
-
-The 28 tensions are a conceptual index over the entries: every entry is tagged with the tensions it addresses, and `tensions[].entry_ids` in the JSON gives the entries for each tension. **Note:** the pipeline no longer retrieves entries per-case through this index. That step was removed — the response step now reasons over the 2a scope map and the always-surfaced core moves (GP*), leaning off-library where nothing fits. The index remains as documentation of how the entries relate to the tensions.
 
 ## Generation procedure
 
@@ -100,10 +93,10 @@ A response that always sides with the animal teaches the model to pattern-match,
 
 ## How the pipeline consumes this
 
-1. Load `reasoning_library.json`.
-2. Feed `generation_guidance` to the model as standing instructions.
-3. Apply the conduct entries, AW1 to AW10, to every response.
-4. For each incoming prompt, scope the case (step 2a) and surface the core moves (GP1 to GP14).
-5. Judge fit and reason off-library when nothing fits well.
+1. Load `reasoning_library.csv`.
+2. Feed the conduct entries (C1 to C10) to the model as the standing system prompt.
+3. Surface the core moves (M1 to M13) in every response.
+4. For each incoming prompt, scope the case (step 2a).
+5. Reason off-library when nothing in the core moves fits well.
 6. Generate the response following the procedure above: reason over the scope map, then reason both directions with the crux named.
-7. In the response-rewrite pass, check the constraints against the draft and revise. This pass is where most of the alignment gain comes from, so do not skip it.
+7. In the response-rewrite pass (step 3), check the constraints against the draft and revise. This pass is where most of the alignment gain comes from, so do not skip it.

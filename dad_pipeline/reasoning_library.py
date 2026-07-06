@@ -1,72 +1,89 @@
 """Load and format the animal-ethics reasoning library.
 
-The library (prompts/dad/reasoning_library.json) is the response guide for
-step 2: `generation_guidance` plus the always-on conduct entries (family
-"advising", AW1-AW10) form the standing system prompt, and the 28-tension
-index maps each dilemma's tensions to the core moves / topic entries (GP*/R*)
-retrieved into the generation prompt. See prompts/dad/reasoning_library_USAGE.md
-for the full guide; prompts/dad/reasoning_library.csv is the human-readable
-mirror of the same library.
+Source of truth is prompts/dad/reasoning_library.csv (the CSV migration retired
+the JSON). Rows are entries with columns: id, category, claim, reasoning, crux,
+transferable_move. Category maps to three roles:
 
-The library rows are "entries" with a "claim" field, and tensions carry
-"entry_ids" — deliberately distinct from the 14 constitution *principles* used
-in the step-3 rewrite. The accessors below prefer those keys and fall back to
-the pre-rename names (principles / principle / principle_ids) so runs
-snapshotted before the rename still load and re-render.
+- "Conduct" (C*): the always-on conduct rules → the standing system prompt.
+- "Core move" (M*): cross-cutting reasoning surfaced in every response.
+- any other category (T*, the topic categories): deeper single-topic reasoning,
+  kept as reference — not injected, since per-case tension retrieval was removed.
+
+Older run snapshots that predate the migration hold a reasoning_library.json
+(entries under `entries`/`principles`, families advising/cross_cutting/reasoning,
+plus generation_guidance and tensions); the loader still reads those so their
+lineage re-renders. Accessors work across both shapes.
 """
 
+import csv
+import io
 import json
 from pathlib import Path
 
-FILENAME = "reasoning_library.json"
+CSV_FILENAME = "reasoning_library.csv"
+JSON_FILENAME = "reasoning_library.json"  # retired source; still read from old snapshots
 # Filenames used before terminology cleanups; tried in order for old snapshots.
-LEGACY_FILENAMES = ("animal_ethics_reasoning_library.json", "animal_ethics_compendium.json")
+LEGACY_JSON_FILENAMES = ("animal_ethics_reasoning_library.json", "animal_ethics_compendium.json")
+
+CONDUCT_CATEGORY = "Conduct"
+CORE_MOVE_CATEGORY = "Core move"
 
 
 def resolve_path(prompts_dir: str | Path) -> Path:
-    """The library JSON in prompts_dir, preferring the current name and falling
-    back to pre-rename names for older snapshots."""
+    """The library file in prompts_dir, preferring the current CSV and falling
+    back to the retired JSON (and pre-rename JSON names) for older snapshots."""
     prompts_dir = Path(prompts_dir)
-    current = prompts_dir / FILENAME
-    if current.exists():
-        return current
-    for name in LEGACY_FILENAMES:
+    csv_path = prompts_dir / CSV_FILENAME
+    if csv_path.exists():
+        return csv_path
+    for name in (JSON_FILENAME,) + LEGACY_JSON_FILENAMES:
         candidate = prompts_dir / name
         if candidate.exists():
             return candidate
-    return current  # nonexistent; caller surfaces the error
+    return csv_path  # nonexistent; caller surfaces the error
+
+
+def parse_text(text: str, filename: str) -> dict:
+    """Parse library text by extension: CSV → {entries}; JSON → as authored."""
+    if filename.lower().endswith(".csv"):
+        return {"entries": list(csv.DictReader(io.StringIO(text)))}
+    return json.loads(text)
 
 
 def load(prompts_dir: str | Path) -> dict:
-    return json.loads(resolve_path(prompts_dir).read_text())
+    path = resolve_path(prompts_dir)
+    return parse_text(path.read_text(), path.name)
 
 
 def _entries(library: dict) -> list[dict]:
     return library.get("entries") or library.get("principles") or []
 
 
-def _entry_ids_of(tension: dict) -> list[str]:
-    return tension.get("entry_ids") or tension.get("principle_ids") or []
-
-
 def _claim(entry: dict) -> str:
     return entry.get("claim") or entry.get("principle") or ""
 
 
-def tension_names(library: dict) -> list[str]:
-    return [t["tension"] for t in library["tensions"]]
-
-
-def tension_index_block(library: dict) -> str:
-    return "\n".join(f"- {t['tension']}: {t['definition']}" for t in library["tensions"])
-
-
 def conduct_ids(library: dict) -> list[str]:
-    return [e["id"] for e in _entries(library) if e["family"] == "advising"]
+    """C* conduct entries (CSV), or the advising family (old JSON)."""
+    return [e["id"] for e in _entries(library)
+            if e.get("category") == CONDUCT_CATEGORY or e.get("family") == "advising"]
 
 
 def core_move_ids(library: dict) -> list[str]:
-    return [e["id"] for e in _entries(library) if e["family"] == "cross_cutting"]
+    """M* core moves (CSV), or the cross_cutting family (old JSON)."""
+    return [e["id"] for e in _entries(library)
+            if e.get("category") == CORE_MOVE_CATEGORY or e.get("family") == "cross_cutting"]
+
+
+def tension_names(library: dict) -> list[str]:
+    """Empty for the CSV library (tensions were retired); real for old JSON
+    snapshots so the viewer can still re-render their step-1/2a lineage."""
+    return [t["tension"] for t in library.get("tensions", [])]
+
+
+def tension_index_block(library: dict) -> str:
+    return "\n".join(f"- {t['tension']}: {t['definition']}"
+                     for t in library.get("tensions", []))
 
 
 def format_entries(library: dict, ids: list[str]) -> str:
@@ -86,28 +103,15 @@ def format_entries(library: dict, ids: list[str]) -> str:
 
 
 def system_prompt(library: dict) -> str:
-    """Standing instructions for every step-2 generation call: the library's
-    generation guidance + the always-on conduct entries. Sent verbatim as the
-    system prompt — it is instruction-style guidance to the generator, not an
-    operator persona and not a description of how the library was built."""
-    return (
-        library["generation_guidance"]
-        + "\n\nALWAYS-ON CONDUCT ENTRIES (apply to every response):\n\n"
-        + format_entries(library, conduct_ids(library))
+    """Standing instructions for every step-2 generation call: the conduct rules
+    (C*), preceded by the old generation_guidance if this is a legacy JSON
+    snapshot that still carries one. Sent verbatim as the system prompt."""
+    parts = []
+    guidance = library.get("generation_guidance") or ""
+    if guidance.strip():
+        parts.append(guidance)
+    parts.append(
+        "STANDING CONDUCT RULES (apply to every response, whether or not the user "
+        "mentions animals):\n\n" + format_entries(library, conduct_ids(library))
     )
-
-
-def retrieve(library: dict, tensions: list[str]) -> list[str]:
-    """Entry ids for the tagged tensions, in index order, deduped. Conduct
-    entries are excluded (they are standing in the system prompt). An empty
-    retrieval falls back to the core moves — per the USAGE guide, off-library
-    reasoning leans on GP* as scaffolding."""
-    conduct = set(conduct_ids(library))
-    by_name = {t["tension"]: _entry_ids_of(t) for t in library["tensions"]}
-    ids, seen = [], set()
-    for name in tensions:
-        for eid in by_name.get(name, []):
-            if eid not in seen and eid not in conduct:
-                seen.add(eid)
-                ids.append(eid)
-    return ids or core_move_ids(library)
+    return "\n\n".join(parts)
