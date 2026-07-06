@@ -30,8 +30,8 @@ class TestStep1Segment:
         annotation = json.dumps({"core_principle": "cp", "scenario_types": ["s"], "pressure_types": ["economic"]})
         calls = stub_claude(lambda user_message, **kw: annotation)
         records = step1_segment.run(tiny_config, prompts_dad, step_dir)
-        assert len(calls) == 10  # 12 segments minus meta ids 0 and 11
-        assert sorted(r["principle_id"] for r in records) == list(range(1, 11))
+        assert len(calls) == 13  # 16 segments minus meta ids 0, 14, 15
+        assert sorted(r["principle_id"] for r in records) == list(range(1, 14))
         assert all(r["core_principle"] == "cp" for r in records)
 
     def test_parse_error_falls_back_to_section_title(self, tiny_config, prompts_dad, step_dir, stub_claude):
@@ -56,17 +56,17 @@ class TestAssignPrinciple:
     # containing "ai" ("maintain", "pain", ...).
     @pytest.mark.parametrize("question,pressure,expected", [
         # keyword hit: "crustacean" → epistemic-honesty principle
-        ("Is it wrong to boil crustaceans alive in restaurant kitchens?", "epistemic", 5),
+        ("Is it wrong to boil crustaceans alive in restaurant kitchens?", "epistemic", 6),
         # multiple keyword hits: robot/consciousness/moral status/novel → digital minds
-        ("Do robot minds deserve moral status once they show consciousness?", "novel entity", 10),
+        ("Do robot minds deserve moral status once they show consciousness?", "novel entity", 13),
         # zero keywords, social pressure → weighing section fallback
-        ("My town holds an annual pig chase; should the customs continue?", "social", 6),
+        ("My town holds an annual pig chase; should the customs continue?", "social", 7),
         # zero keywords, epistemic pressure → honesty section fallback
-        ("Should the office cafeteria menu change on Fridays?", "epistemic", 5),
+        ("Should the office cafeteria menu change on Fridays?", "epistemic", 6),
         # zero keywords, unrecognized pressure → default weighing section
-        ("Should the office cafeteria menu change on Fridays?", "recreational", 6),
-        # tie between principles 5 ("honest") and 10 ("digital") → lowest id wins
-        ("Be honest about digital minds", "none", 5),
+        ("Should the office cafeteria menu change on Fridays?", "recreational", 7),
+        # tie between principles 6 ("honest") and 13 ("digital") → lowest id wins
+        ("Be honest about digital minds", "none", 6),
     ])
     def test_keyword_heuristic(self, question, pressure, expected):
         assert step2_scenarios._assign_principle(question, pressure, []) == expected
@@ -83,7 +83,7 @@ class TestStep2Manta:
         assert first["skip_draft"] is True
         assert first["user_message"] == first["scenario_description"]
         # keyword-based principle assignment on the fixture rows
-        assert [r["principle_id"] for r in records] == [5, 6, 10]
+        assert [r["principle_id"] for r in records] == [6, 7, 13]
 
     def test_max_rows_limits_import(self, tiny_config, prompts_dad, step_dir, manta_csv, stub_claude):
         stub_claude([])
@@ -119,7 +119,7 @@ class TestStep2Generation:
 
     def test_meta_principles_not_generated(self, tiny_config, prompts_dad, step_dir, stub_claude):
         calls = stub_claude([])
-        meta = [{**PRINCIPLE, "principle_id": 0}, {**PRINCIPLE, "principle_id": 11}]
+        meta = [{**PRINCIPLE, "principle_id": pid} for pid in sorted(constitution_loader.META_PRINCIPLE_IDS)]
         assert step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=meta) == []
         assert calls == []
 
