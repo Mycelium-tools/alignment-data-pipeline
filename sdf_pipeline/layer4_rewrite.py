@@ -1,6 +1,6 @@
 """Layer 4: Rewrite documents against the constitution."""
 
-import json
+import re
 import sys
 from pathlib import Path
 
@@ -14,42 +14,33 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     constitution = constitution_loader.load_full_constitution(utils.resolve_constitution_dir(prompts_dir))
-    preamble = utils.load_prompt(prompts_dir / "preamble.txt")
     existing = utils.load_jsonl(output_path)
     results = list(existing)
 
-    for draft in drafts:
-        doc_id = draft["doc_id"]
-        if checkpoint.is_done(doc_id):
-            continue
+    pending = [d for d in drafts if not checkpoint.is_done(d["doc_id"])]
 
-        print(f"  Rewriting {doc_id[:8]}...")
+    def rewrite_document(draft: dict) -> dict:
         prompt = utils.load_prompt(
             prompts_dir / "layer4.txt",
-            preamble=preamble,
             document=draft["content"],
         )
 
         raw = api.call_claude(user_message=prompt, system_prompt=constitution, max_tokens=6000)
 
-        # Parse JSON response
-        text = raw.strip()
-        if text.startswith("```"):
-            text = "\n".join(text.split("\n")[1:])
-        if text.endswith("```"):
-            text = "\n".join(text.split("\n")[:-1])
+        # Review notes come first, then the document inside <improved_document> tags
+        match = re.search(r"<improved_document>(.*?)</improved_document>", raw, flags=re.DOTALL)
+        if match:
+            rewritten = match.group(1).strip()
+            review_notes = raw[: match.start()].strip()
+        else:
+            review_notes = "Parse error — no <improved_document> tags; kept original draft."
+            rewritten = draft["content"]
+        if not rewritten:
+            review_notes = "Parse error — empty rewrite; kept original draft."
+            rewritten = draft["content"]
 
-        try:
-            parsed = json.loads(text.strip())
-            review_notes = parsed.get("review_notes", "")
-            rewritten = parsed.get("rewritten", draft["content"])
-        except json.JSONDecodeError:
-            # If JSON parsing fails, use the raw text as the rewritten content
-            review_notes = "Parse error — used raw output."
-            rewritten = raw
-
-        record = {
-            "doc_id": doc_id,
+        return {
+            "doc_id": draft["doc_id"],
             "subtype_id": draft["subtype_id"],
             "type_id": draft["type_id"],
             "language": draft["language"],
@@ -57,9 +48,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
             "rewritten": rewritten,
             "review_notes": review_notes,
         }
+
+    workers = config.get("workers", 1)
+    for record in utils.parallel_map(rewrite_document, pending, workers):
+        print(f"  Rewrote {record['doc_id'][:8]}")
         results.append(record)
         utils.append_jsonl(record, output_path)
-        checkpoint.mark_done(doc_id)
+        checkpoint.mark_done(record["doc_id"])
 
     print(f"  Total rewrites: {len(results)}")
     return results

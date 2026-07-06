@@ -6,10 +6,27 @@ import random
 import re
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime
 
 import yaml
+
+
+def parallel_map(fn, items: list, workers: int):
+    """Map fn over items with a thread pool, yielding results in input order.
+
+    fn must be side-effect free (API call + parsing only): because results come
+    back in input order, callers can zip() them with items and keep all file
+    writes and checkpoint marks on their own thread. If a call ultimately fails,
+    the exception surfaces here; items already yielded are safely checkpointed
+    and --resume picks up the rest.
+    """
+    if workers <= 1 or len(items) <= 1:
+        yield from map(fn, items)
+        return
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        yield from pool.map(fn, items)
 
 
 def ensure_dir(path: str | Path) -> Path:

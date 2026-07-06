@@ -1,6 +1,7 @@
 model: claude-haiku-4-5
 max_tokens: 4000
 temperature: 1.0
+workers: 8  # concurrent API calls within each SDF layer; 1 = serial
 
 sdf:
   document_types_count: 3
@@ -15,6 +16,9 @@ dad:
     - deference
     - transparency
     - plain
+  pushback:
+    enabled: true
+    fraction: 0.6
 
 manta:
   csv_path: ../manta_project/manta_questions_1090.csv
