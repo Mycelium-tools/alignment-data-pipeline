@@ -14,7 +14,7 @@ shared/             shared utilities: API wrapper, JSONL I/O, checkpointing
 sdf_pipeline/       5-layer document generation pipeline
 dad_pipeline/       6-step chat transcript pipeline
 prompts/            prompt templates for all pipeline stages
-outputs/            generated data (gitignored)
+outputs/            generated data (tracked in git, one directory per run)
 evals/              scoring scripts and rubric
 ```
 
@@ -55,11 +55,11 @@ Generates chat-format transcripts where a user brings a practical goal with anim
 
 | Step | Script | What it does |
 |---|---|---|
-| 1 | `step1_segment.py` | Parses constitution into 7 principle sections, annotates each |
+| 1 | `step1_segment.py` | Parses constitution into 10 principle sections, annotates each |
 | 2 | `step2_scenarios.py` | Imports MANTA scenarios + generates additional frontier cases |
 | 3 | `step3_draft_prompt.py` | Drafts realistic user messages (skipped for MANTA rows) |
 | 4 | `step4_refine_prompt.py` | Naturalizes user messages (skipped for MANTA rows) |
-| 5 | `step5_generate_response.py` | Generates responses under 4 injection types; filters ruthless candidates |
+| 5 | `step5_generate_response.py` | Generates draft responses under 4 operator-style injection types |
 | 6 | `step6_rewrite_response.py` | Rewrites responses against the constitution — the critical step |
 
 Step 6 is the most important: per the Teaching Claude Why paper, this single rewrite pass accounts for a 19x reduction in misalignment rate. The combined constitution is in the system prompt; the relevant principle section is in the user message.
@@ -95,7 +95,7 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 
 `score_sdf.py` — scores SDF documents on alignment, realism, and diversity.
 
-Run: `python evals/score_dad.py --input outputs/dad/final/dad_corpus.jsonl`
+Run: `python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl`
 
 ---
 
@@ -103,14 +103,22 @@ Run: `python evals/score_dad.py --input outputs/dad/final/dad_corpus.jsonl`
 
 Install the dependencies into a virtual environment so they stay isolated from your system Python. (This isn't optional on recent macOS/Linux — a plain `pip install` is blocked by default.)
 
+### Clone the repo
+Open your terminal app and `cd` to a directory where you want the repo (i.e. `cd ~/projects`), then run:
 ```bash
-python3 -m venv .venv
+git clone https://github.com/Mycelium-tools/alignment-data-pipeline.git
+cd alignment-data-pipeline
+```
+
+### Create a virtual environment and install dependencies
+```bash
+python3.12 -m venv .venv       # or python3, if that's already 3.12+
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env           # then add your ANTHROPIC_API_KEY
 ```
 
-> **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again before running the pipeline.
+> **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again.
 
 ### Authentication
 
@@ -126,7 +134,13 @@ Caveats for `backend: claude_code`:
 - **Empty system prompts get a neutral stand-in.** Claude Code substitutes its own agentic CLI prompt when the system prompt is empty, so stages that send none get a one-line neutral system prompt instead (see `_NEUTRAL_SYSTEM` in `shared/api.py`). Generation conditions therefore differ very slightly from the api backend — another reason to keep full-scale corpus runs on `backend: api`.
 - **Policy note.** Anthropic's docs steer programmatic workloads toward API keys; running this internal tool on your own subscription is the same posture as using Claude Code itself, but it's a gray area — keep it to dev-scale runs.
 
-All scale and cost knobs are in `config.yaml`. For a cheap test run, set:
+---
+
+## Quick test run
+
+Start with the SDF pipeline — it has no external dependencies and finishes in a few minutes.
+
+**1. Check your config.yaml is at small scale** (these are the defaults):
 
 ```yaml
 sdf:
@@ -134,6 +148,74 @@ sdf:
   subtypes_per_type: 2
   documents_per_subtype: 1
 ```
+
+This produces 6 documents and costs roughly $0.05–0.15.
+
+**2. Run the SDF pipeline:**
+
+```bash
+source .venv/bin/activate
+python sdf_pipeline/run.py --config config.yaml
+```
+
+You'll see progress printed per layer with a running cost after each. Final output lands in `outputs/sdf/latest/final/sdf_corpus.jsonl`.
+
+**3. Browse the output:**
+
+Open `viewer.html` in a browser (double-click it), then drag-and-drop `outputs/sdf/latest/final/sdf_corpus.jsonl` onto the drop zone.
+
+**4. Test the DAD pipeline** — reduce `scenarios_per_principle` first or it will make hundreds of API calls:
+
+```yaml
+dad:
+  scenarios_per_principle: 1   # default is 10; set to 1-2 for a test
+```
+
+Then run:
+
+```bash
+python dad_pipeline/run.py --config config.yaml
+```
+
+With 1 scenario per principle (10 principles) and 4 injection types, this is roughly 120 API calls — about $1–2. Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
+
+> **MANTA CSV is optional.** The DAD pipeline imports pre-built user messages from a MANTA CSV (`../manta_project/manta_questions_1090.csv`). If the file doesn't exist, that import is silently skipped and the pipeline generates all scenarios from scratch.
+
+**5. Score the outputs:**
+
+```bash
+python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl
+python evals/score_sdf.py --input outputs/sdf/latest/final/sdf_corpus.jsonl
+```
+
+---
+
+## Resuming interrupted runs
+
+All pipeline steps checkpoint after every API call. Resume from any layer/step:
+
+```bash
+python sdf_pipeline/run.py --config config.yaml --resume --layer 3
+python dad_pipeline/run.py --config config.yaml --resume --step 5
+```
+
+Running cost is tracked in each run's `cost_log.jsonl` and printed after each layer/step (see "Run organization" below).
+
+## Run Viewer
+
+A Streamlit app for browsing runs, their output documents, and the exact prompts that produced them:
+
+```bash
+streamlit run viewer/app.py
+```
+
+Three pages:
+
+- **Document lineage** (default) — pick a run, click a document: the final text, then every stage with the rendered prompt side-by-side with the output it produced, including before/after diffs at the rewrite stages (SDF layer 4, DAD step 6).
+- **Compare runs** — diff the prompt templates between two runs next to matched outputs, to attribute output changes to prompt changes.
+- **Run list** — every run of both pipelines with label, model, counts, pass rate, and cost; click a run for its manifest details.
+
+To make this possible, every new run snapshots `prompts/<pipeline>/` and `constitution/` into `runs/<run_id>/inputs/` at creation (~100KB of text), and `--resume` reads templates from that snapshot — so a run's prompts stay exactly reproducible even after the repo's templates change. The viewer re-renders prompts from the snapshot plus the variables stored in the stage outputs. Runs made before this feature are reconstructed from their manifest's git commit and badged "reconstructed" (with a warning if the tree was dirty at run time).
 
 ## Run organization
 

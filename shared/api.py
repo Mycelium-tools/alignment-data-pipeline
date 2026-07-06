@@ -12,6 +12,8 @@ Select via the `backend` key in config.yaml. See README "Authentication".
 import os
 import json
 import re
+import sys
+import threading
 from pathlib import Path
 from datetime import datetime
 
@@ -31,14 +33,25 @@ _config: dict = {}
 _client: anthropic.Anthropic | None = None
 _cost_log_path: Path | None = None
 _backend: str = "api"
+# call_claude may run from worker threads (utils.parallel_map); the Anthropic
+# client is thread-safe, but appends to the cost log must be serialized.
+_cost_log_lock = threading.Lock()
 
 # Pricing per million tokens (input, output) for known models
+# Prices per million tokens (input, output). Keys must cover every model id
+# (or alias) that can appear in config.yaml — unknown models fall back to
+# Sonnet rates WITH A WARNING, which can badly misstate real spend (a Haiku
+# run was overreported 3x this way). The Anthropic console is the source of
+# truth for billing; this log is for per-stage breakdowns.
 _PRICING = {
     "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-sonnet-5": (3.00, 15.00),
     "claude-opus-4-8": (5.00, 25.00),
+    "claude-fable-5": (10.00, 50.00),
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-haiku-4-5-20251001": (1.00, 5.00),
 }
+_UNPRICED_WARNED: set = set()
 
 _BACKENDS = ("api", "claude_code")
 
@@ -93,8 +106,21 @@ def _log_usage(
     output_tokens: int,
     cost_usd: float | None = None,
 ) -> None:
+    # claude_code passes Claude Code's own reported cost; the api backend leaves
+    # cost_usd=None, so we price it from _PRICING with a loud fallback on unknown
+    # models (a mispriced run shouldn't hide in the log).
     if cost_usd is None:
-        prices = _PRICING.get(model, (3.00, 15.00))
+        prices = _PRICING.get(model)
+        if prices is None:
+            if model not in _UNPRICED_WARNED:
+                _UNPRICED_WARNED.add(model)
+                print(
+                    f"  WARNING: model {model!r} is not in shared/api.py _PRICING — "
+                    "estimating cost at Sonnet rates ($3/$15 per MTok). Add the model "
+                    "to _PRICING for accurate cost logs.",
+                    file=sys.stderr,
+                )
+            prices = (3.00, 15.00)
         cost_usd = (input_tokens / 1_000_000) * prices[0] + (output_tokens / 1_000_000) * prices[1]
     record = {
         "timestamp": datetime.utcnow().isoformat(),
@@ -106,7 +132,7 @@ def _log_usage(
         "output_tokens": output_tokens,
         "cost_usd": round(cost_usd, 6),
     }
-    with open(_cost_log_path, "a") as f:
+    with _cost_log_lock, open(_cost_log_path, "a") as f:
         f.write(json.dumps(record) + "\n")
 
 
