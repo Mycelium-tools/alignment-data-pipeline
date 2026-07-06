@@ -34,7 +34,8 @@ never as words put into the constitution's mouth.
 
 # Sections of the reading that describe the document itself rather than a
 # principle usable for scenario generation (scope note, closing humility note).
-META_PRINCIPLE_IDS = {0, 11}
+# Must track the reading's section order: 0 = scope, 14 = closing note.
+META_PRINCIPLE_IDS = {0, 14}
 
 
 def _paths(base_dir: str | Path | None = None) -> tuple[Path, Path]:
@@ -70,7 +71,7 @@ def load_segments(base_dir: str | Path | None = None) -> list[dict]:
 
     Returns:
         List of {"section_title", "content", "principle_id"} dicts, one per
-        section, with principle_id assigned in file order (0-11).
+        section, with principle_id assigned in file order (0-14).
     """
     segments, current_title, current_lines = [], None, []
     for line in load_constitution_welfare_reading(base_dir).splitlines():
