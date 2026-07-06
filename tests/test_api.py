@@ -21,6 +21,10 @@ class TestSafetyNet:
         with pytest.raises(AssertionError, match="API call attempted"):
             api.call_claude("hello")
 
+    # pytest-socket warns as well as raises when it blocks name resolution.
+    # The warning IS the guard working, so silence exactly it (and nothing
+    # else) to keep the suite's warning summary clean.
+    @pytest.mark.filterwarnings("ignore:A test tried to use socket.getaddrinfo:UserWarning")
     def test_sockets_are_blocked(self):
         with pytest.raises(pytest_socket.SocketBlockedError):
             socket.create_connection(("127.0.0.1", 9), timeout=0.1)
