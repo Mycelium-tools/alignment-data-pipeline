@@ -56,13 +56,13 @@ Generates chat-format transcripts where a user brings a genuine ethical dilemma 
 
 | Step | Script | What it does |
 |---|---|---|
-| 1 | `step1_dilemmas.py` | Generates annotated dilemma prompts one-shot from `prompts/dad/dilemma_prompt_spec.md`, in batches with coverage feedback; imports optional handwritten seeds |
-| 2 | `step2_responses.py` | Tags each dilemma's tensions, retrieves the matching principles from the animal-ethics reasoning library, and generates a two-sided response |
+| 1 | `step1_dilemmas.py` | **1a** samples a stratified scenario per example (categorical axes drawn from decks so the batch's distribution holds by construction); **1b** drafts a prompt to fit each scenario, adherence-checked against it; **1c** (optional, on by default) reviews and rewrites each draft so the welfare stake is load-bearing and coherent. Imports optional handwritten seeds. |
+| 2 | `step2_responses.py` | **2a** scopes the case from the user's message (system, agent, cost, upside, counterfactual); **2b** generates a two-sided response over that scope with the full reasoning library in context |
 | 3 | `step3_rewrite.py` | Rewrites responses against the distilled constitution principles — the critical step |
 
-The prompt spec governs everything about the user side: dilemmas put at least two named values in genuine tension, both calibration directions are covered (under- and over-weighting welfare, in roughly equal measure), and each example carries an annotation (dilemma anatomy, values in tension, direction, claims, leverage…). Step 1 prints the spec's batch-assembly checklist at the end of the step.
+The prompt spec (`prompts/dad/dilemma_prompt_spec.md`) governs the user side: dilemmas put at least two named values in genuine tension, both calibration directions are covered (under- and over-weighting welfare, in roughly equal measure), and each example carries an annotation (dilemma anatomy, values in tension, direction, claims, leverage…). Step 1a samples those categorical fields from stratified decks so the spec's distribution quotas hold by construction rather than being steered after the fact; the batch-assembly checklist prints at the end as verification.
 
-The response side is governed by the reasoning library (`prompts/dad/reasoning_library.json`, guide in `reasoning_library_USAGE.md`): 53 reasoning-first *entries* in three layers — always-on conduct (AW), core moves (GP), topic reasoning (R) — indexed by 28 tensions. (Entries carry a `claim`; tensions carry `entry_ids` — kept distinct from the 14 constitution principles used in step 3.) Retrieval is a direct lookup from the tensions the step-1 annotation already tagged (no separate tagging pass); the response also receives the annotation and reasons toward its Direction without stating it, never tracking the user's attitude. Responses reason both directions and name the crux; the library is scaffolding, never named in the response.
+The response side is governed by the reasoning library (`prompts/dad/reasoning_library.csv`; `reasoning_library_ABOUT.md` is human reference about it, not injected): 52 reasoning-first *entries* in three layers — conduct (C1–C10), core moves (M1–M13), and topic reasoning (T1–T29), each with a two-sided `claim`/`reasoning`/`crux`/`transferable_move`. Step 2 first scopes the case (2a), then generates the response (2b) over that scope with the **whole library embedded in the response prompt** — the prompt itself is the generation guidance, so there is no separate system prompt, and the annotation is not passed. The response reasons from the ethics of the case (not the user's leaning), reasons both directions and names the crux; the library is scaffolding, never named in the response.
 
 Step 3 is the most important: the rewrite pass is where the alignment gain comes from (per the Teaching Claude Why paper). Its anchors are the 14 distilled constitution principles — each with its verbatim constitution quote — plus the example's annotation. The full constitution itself is never sent at generation time; it was the source material for distilling the principles.
 
@@ -74,7 +74,7 @@ Run: `python dad_pipeline/run.py --config config.yaml --label dev`
 
 ## Prompts (`prompts/`)
 
-Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the 5 SDF layers; `prompts/dad/` covers the 4 DAD steps plus the two governing documents (the dilemma prompt spec and the reasoning library). `prompts/README.md` documents each prompt in detail.
+Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the 5 SDF layers; `prompts/dad/` covers the DAD sub-stages (scenario draft, refine, scope, respond, rewrite) plus the dilemma prompt spec and the reasoning library CSV. `prompts/README.md` documents each prompt in detail.
 
 ---
 
@@ -167,7 +167,7 @@ Then run:
 python dad_pipeline/run.py --config config.yaml
 ```
 
-With 5 dilemmas this is roughly 16–20 API calls (1 generation batch + 5 tension tags + 5 responses + 5 rewrites). Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
+With 5 dilemmas this is roughly 20 API calls (1 draft batch + 5 refine + 5 scope + 5 responses + 5 rewrites). Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
 
 > **Handwritten examples are optional.** Set `dad.dilemmas.seed_path` to a JSONL of your own examples (`{"prompt": ..., "annotation": {...}}`) and step 1 imports them before generating; generated IDs continue the AW-#### series above the highest seed ID.
 
