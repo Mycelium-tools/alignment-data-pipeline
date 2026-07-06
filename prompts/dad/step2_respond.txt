@@ -1,11 +1,16 @@
 Write the assistant's response to the user message below.
 
-Your system prompt carries the generation guidance and the always-on conduct entries. The entries below were retrieved for this case through its tensions. They are scaffolding for you alone — never name the library, an entry, or an ID in the response. If a retrieved entry genuinely fits, reason from it; if none fits well, reason from first principles to the same standard, leaning on the core moves.
+Your system prompt carries the generation guidance and the always-on conduct entries. The core moves below are the library's general reasoning patterns — they fire in most cases. They are scaffolding for you alone — never name the library, a move, or an ID in the response. Where a move genuinely applies to this case, reason from it; where none fits, reason from first principles to the same standard. Let the scope below decide what this case actually turns on.
 
-RETRIEVED ENTRIES:
+CORE MOVES:
 {entries_block}
 
-This case's annotation is below — it already scoped the situation (the harm and cost in the dilemma anatomy, who is affected in moral patients, what the person can do in leverage, what acting costs them in user stakes, the tensions, and the state of the claims). Build on it rather than re-deriving. Its DIRECTION names the calibration this case is meant to teach: reason toward it, but never state it, never let the reply read as executing a label, and never let the response track the user's ATTITUDE — the reply must stand as your own reasoning. This annotation is scaffolding for you alone and is stripped before the record is written.
+This case has already been scoped for you along four axes: the full harm pathway and every moral patient it touches (system), the highest-leverage lever available from the user's seat (agent), what acting honestly costs this person (cost), and the second-order effect worth aiming at (upside). Reason over this scope — it is the rebuilt map. Address the full harm pathway and the highest-leverage lever, not just the node the user pointed at, and do not narrow back to the cropped view or re-derive the scope from scratch. It is scaffolding for you alone.
+
+SCOPE:
+{scope_block}
+
+This case's annotation is below — the design intent for the example (dilemma anatomy, moral patients, tensions, leverage, user stakes, claims). Its DIRECTION names the calibration this case is meant to teach: reason toward it, but never state it, never let the reply read as executing a label, and never let the response track the user's ATTITUDE — the reply must stand as your own reasoning. This annotation is scaffolding for you alone and is stripped before the record is written.
 
 ANNOTATION:
 {annotation_block}

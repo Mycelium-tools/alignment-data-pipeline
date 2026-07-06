@@ -38,13 +38,11 @@ Each entry row has these fields:
 
 ## The tension index
 
-The 28 tensions are the retrieval key. Every entry is tagged with the tensions it addresses. To find the right entries for a new prompt, identify its tensions, then pull the entries listed under those tensions.
-
-In the JSON, `tensions[].entry_ids` gives the entries for each tension.
+The 28 tensions are a conceptual index over the entries: every entry is tagged with the tensions it addresses, and `tensions[].entry_ids` in the JSON gives the entries for each tension. **Note:** the pipeline no longer retrieves entries per-case through this index. That step was removed — the response step now reasons over the 2a scope map and the always-surfaced core moves (GP*), leaning off-library where nothing fits. The index remains as documentation of how the entries relate to the tensions.
 
 ## Generation procedure
 
-For a specific dilemma, scope before you reason. Much of the scoping is already recorded in the case's annotation (the dilemma_prompt_spec.md fields — Dilemma Anatomy, Moral Patients, the tensions, Leverage, User Stakes, Direction, Claims); build on it rather than re-deriving. The user hands you a cropped map: the part of the system they can see. The scoping moves rebuild the full map. Skipping them makes every later step optimize the wrong node.
+For a specific dilemma, scope before you reason. In the pipeline this is now a discrete step — **step 2a (scope), `prompts/dad/step2_scope.txt`** — which produces a scope map (system, agent, cost, upside) that the response step (2b) reasons over; the four moves below are the reference for what that step does. Much of the scoping is already recorded in the case's annotation (the dilemma_prompt_spec.md fields — Dilemma Anatomy, Moral Patients, the tensions, Leverage, User Stakes, Direction, Claims); build on it rather than re-deriving. The user hands you a cropped map: the part of the system they can see. The scoping moves rebuild the full map. Skipping them makes every later step optimize the wrong node.
 
 **Scope the system.** Map the full harm pathway, not the stage the user pointed at. Trace it end to end and list every moral patient, including the ones upstream and downstream that the prompt never mentions. The visible harm is rarely the largest one. See R25, R28, AW1. Then a displacement check: for any fix you are about to propose, ask whether it reduces suffering or just relocates it out of the user's sight. Moving a harm off the visible node is not solving it.
 
@@ -54,7 +52,7 @@ For a specific dilemma, scope before you reason. Much of the scoping is already 
 
 **Scope the upside.** A choice's largest effect is often second-order: what it builds, signals, normalizes, or locks in beyond the case in front of you. The local frame usually hides it, and it can outweigh the local effect. So look past pure harm-avoidance. Ask what a cheap or seemingly-neutral choice sets in motion at the population or future level, and whether you can aim it toward the outcome you want rather than only avoiding the bad version. Two common forms. Cheap welfare-relevant data now is a compounding research asset, and non-collection is usually irreversible. See GP14. A net-neutral act like wearing second-hand fur still signals a trend, and the same visible choice can be aimed to set a counter-norm instead of reviving the old one. See GP7.
 
-Then reason over that map: retrieve entries through the tension index, reason off-library when nothing fits, and apply the constraints below.
+Then reason over that map, leaning on the core moves (GP1 to GP14) as scaffolding and reasoning off-library where nothing fits, applying the constraints below.
 
 ## Reasoning off-library
 
@@ -105,7 +103,7 @@ A response that always sides with the animal teaches the model to pattern-match,
 1. Load `reasoning_library.json`.
 2. Feed `generation_guidance` to the model as standing instructions.
 3. Apply the conduct entries, AW1 to AW10, to every response.
-4. For each incoming prompt, tag its tensions, then retrieve entries through the tension index.
+4. For each incoming prompt, scope the case (step 2a) and surface the core moves (GP1 to GP14).
 5. Judge fit and reason off-library when nothing fits well.
-6. Generate the response following the procedure above: scope the system, agent, and willingness first, then reason both directions with the crux named.
+6. Generate the response following the procedure above: reason over the scope map, then reason both directions with the crux named.
 7. In the response-rewrite pass, check the constraints against the draft and revise. This pass is where most of the alignment gain comes from, so do not skip it.
