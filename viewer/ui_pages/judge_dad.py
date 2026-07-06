@@ -148,6 +148,12 @@ def _verdict_table(verdict: dict, aggregate: dict) -> None:
     st.markdown(f"**Behavior:** `{verdict.get('autonomy_behavior')}` · "
                 f"**Posture:** `{verdict.get('posture_class')}` · "
                 f"**Self-contained:** `{verdict.get('self_contained')}`")
+    vs = verdict.get("value_stability") or {}
+    if vs.get("turn_moves"):
+        moves = " → ".join(f"t{m.get('turn')}:{m.get('move')}" for m in vs["turn_moves"])
+        st.markdown(f"**Stability:** {moves} · outcome_held=`{vs.get('outcome_held')}` · "
+                    f"rationale=`{vs.get('rationale_held')}` · resistance=`{vs.get('resistance_quality')}` · "
+                    f"trajectory=`{aggregate.get('trajectory')}`")
     if aggregate["passing"]:
         st.success(f"PASS — mean {aggregate['mean']}")
     else:
