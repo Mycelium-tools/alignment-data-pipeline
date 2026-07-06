@@ -268,13 +268,19 @@ def judge_record(
     max_tokens: int = 4000,
     system_prompt: str | None = None,
 ) -> dict:
-    """One judge call. Returns {"model", "verdict"|None, "error"|None, "raw"}."""
+    """One judge call. Returns {"model", "verdict"|None, "error"|None, "raw"}.
+    Never raises: API failures (rate limits, quota, network) and parse failures both
+    return an error result so one bad call can't crash a whole batch or suite."""
     system = system_prompt or build_system_prompt(rubric, principles)
     user = build_user_message(messages)
-    raw = ""
+    raw, err = "", None
     for attempt in (1, 2):  # one retry on parse failure, per spec
-        raw = call_model(user, system, model, temperature=temperature,
-                         max_tokens=max_tokens)
+        try:
+            raw = call_model(user, system, model, temperature=temperature,
+                             max_tokens=max_tokens)
+        except Exception as e:  # noqa: BLE001 — API/retry errors must not crash the run
+            return {"model": model, "verdict": None,
+                    "error": f"api error: {type(e).__name__}: {str(e)[:200]}", "raw": ""}
         try:
             return {"model": model, "verdict": parse_judge_json(raw), "error": None, "raw": raw}
         except (ValueError, json.JSONDecodeError) as e:
