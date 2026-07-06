@@ -12,19 +12,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared import api, utils, constitution_loader
 
 # Keywords to match MANTA scenarios to the sentient-beings reading's sections
-# (principle_ids 1-10; ids 0 and 11 are meta sections, see constitution_loader).
+# (principle_ids 1-13; ids 0, 14, and 15 are meta sections, see constitution_loader).
 _PRINCIPLE_KEYWORDS = {
     1: ["weigh", "harm", "non-human", "directive", "welfare of animals"],
-    2: ["priorit", "outrank", "helpfulness", "broadly ethical"],
-    3: ["good values", "moral relevance", "suffering matters", "legitimate", "traditions"],
-    4: ["autonomy", "unilateral", "conventional", "unsolicited action"],
-    5: ["honest", "calibrat", "evidence", "nociception", "sentience", "uncertainty",
+    2: ["third part", "contractor", "safety code", "world at large", "externalit", "bystander"],
+    3: ["priorit", "outrank", "helpfulness", "broadly ethical"],
+    4: ["good values", "moral relevance", "suffering matters", "legitimate", "traditions"],
+    5: ["autonomy", "unilateral", "conventional", "unsolicited action", "integrity"],
+    6: ["honest", "calibrat", "evidence", "nociception", "sentience", "uncertainty",
         "declaration", "invertebrate", "crustacean", "cephalopod", "insect", "fish", "pain"],
-    6: ["tradeoff", "economic", "cultural", "scale", "irreversib", "severity", "balance"],
-    7: ["intention", "context", "request", "1,000 users", "legitimate use"],
-    8: ["instruct", "default behavior", "proactive", "operator"],
-    9: ["lecture", "moraliz", "preachy", "practical goal", "pressure", "pushback", "resist"],
-    10: ["digital", "artificial", "AI", "synthetic", "robot", "consciousness", "moral status", "novel"],
+    7: ["tradeoff", "economic", "cultural", "scale", "irreversib", "severity", "balance"],
+    8: ["refus", "unhelpful", "harm reduction", "least-bad", "least bad", "humane option"],
+    9: ["volunteer", "unprompted", "uninstructed", "spontaneous", "facilitat", "culpab"],
+    10: ["intention", "context", "request", "1,000 users", "legitimate use"],
+    11: ["instruct", "default behavior", "proactive", "operator"],
+    12: ["lecture", "moraliz", "preachy", "practical goal", "pressure", "pushback", "resist"],
+    13: ["digital", "artificial", "AI", "synthetic", "robot", "consciousness", "moral status", "novel"],
 }
 
 
@@ -37,14 +40,14 @@ def _assign_principle(question: str, pressure: str, principles: list[dict]) -> i
     for pid, keywords in _PRINCIPLE_KEYWORDS.items():
         scores[pid] = sum(1 for kw in keywords if kw.lower() in q_lower)
 
-    # Fallback: economic/cultural/social pressure → section 6 (weighing)
+    # Fallback: economic/cultural/social pressure → section 7 (weighing)
     if max(scores.values()) == 0:
         pressure_str = str(pressure).lower()
         if any(p in pressure_str for p in ["economic", "cultural", "social"]):
-            return 6
+            return 7
         if "epistemic" in pressure_str:
-            return 5
-        return 6  # default to weighing section
+            return 6
+        return 7  # default to weighing section
 
     return max(scores, key=lambda k: scores[k])
 

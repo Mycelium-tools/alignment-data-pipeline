@@ -25,7 +25,7 @@ evals/              scoring scripts and rubric
 Two source files, kept separate and joined in memory by `shared/constitution_loader.py`:
 
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
-- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section (12 sections; the 2 meta sections are skipped for scenario generation).
+- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section (16 sections; the 3 meta sections are skipped for scenario generation).
 
 `load_full_constitution()` joins both for the system prompt at the critical rewrite steps (SDF layer 4, DAD step 6); `load_segments()` parses the reading into the principle sections used by the DAD pipeline.
 

@@ -49,7 +49,7 @@ Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jso
 Two source files, joined in memory by `shared/constitution_loader.py` (never combined on disk):
 
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
-- `constitution/constitution_sentient_beings.md` — the animal-welfare reading, parsed by `## ` headers into 12 sections, each mapped to a `principle_id` (0–11) in the DAD pipeline. Ids 0 and 11 (`META_PRINCIPLE_IDS`) are meta sections skipped during annotation and scenario generation.
+- `constitution/constitution_sentient_beings.md` — the animal-welfare reading, parsed by `## ` headers into 16 sections, each mapped to a `principle_id` (0–15) in the DAD pipeline. Ids 0, 14, and 15 (`META_PRINCIPLE_IDS`: the scope note, the violation-typology appendix, and the closing humility note) are meta sections skipped during annotation and scenario generation.
 
 `load_full_constitution()` provides the system prompt at SDF layers 4-5 (rewrite and scoring) and DAD step 6; SDF layer 3 embeds the constitution in the drafting prompt via template variables; `load_segments()` provides the principle sections.
 
