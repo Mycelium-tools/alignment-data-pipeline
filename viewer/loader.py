@@ -28,8 +28,10 @@ STAGE_FILES = {
     },
     "dad": {
         # Current spec-driven pipeline (steps 1-4)
+        "step1_scenarios": "step1/scenarios.jsonl",
         "step1_dilemmas": "step1/dilemmas.jsonl",
         "step1_batches": "step1/batches.jsonl",
+        "step2_scopes": "step2/scopes.jsonl",
         "step2_tensions": "step2/tensions.jsonl",
         "step2_responses": "step2/responses.jsonl",
         "step3_rewrites": "step3/rewrites.jsonl",
@@ -205,13 +207,47 @@ def dad_lineage(run_dir: Path, record_id: str) -> dict:
     responses = _index(load_stage(run_dir, "dad", "step2_responses"), "response_id")
     dilemmas = _index(load_stage(run_dir, "dad", "step1_dilemmas"), "prompt_id")
     tension_tags = _index(load_stage(run_dir, "dad", "step2_tensions"), "prompt_id")
+    scenarios = _index(load_stage(run_dir, "dad", "step1_scenarios"), "scenario_id")
+    scope_recs = _index(load_stage(run_dir, "dad", "step2_scopes"), "prompt_id")
 
+    dilemma = dilemmas.get(audit.get("prompt_id"))
     return {
         "format": "v2",
-        "dilemma": dilemmas.get(audit.get("prompt_id")),
+        "dilemma": dilemma,
+        "scenario": scenarios.get((dilemma or {}).get("scenario_id")),
+        "scope": scope_recs.get(audit.get("prompt_id")),
         "tension_tag": tension_tags.get(audit.get("prompt_id")),
         "response": responses.get(audit.get("response_id")),
         "rewrite": audit,
+        "final": final,
+    }
+
+
+def dad_lineage_by_prompt(run_dir: Path, prompt_id: str) -> dict:
+    """Lineage keyed by step-1 prompt_id, built forward through whatever stages
+    exist. Used to view incomplete runs (e.g. --stop-after 1, before responses
+    are generated); returns the same shape as dad_lineage with later stages None
+    when not reached."""
+    dilemmas = _index(load_stage(run_dir, "dad", "step1_dilemmas"), "prompt_id")
+    tension_tags = _index(load_stage(run_dir, "dad", "step2_tensions"), "prompt_id")
+    scenarios = _index(load_stage(run_dir, "dad", "step1_scenarios"), "scenario_id")
+    scope_recs = _index(load_stage(run_dir, "dad", "step2_scopes"), "prompt_id")
+    responses = [r for r in load_stage(run_dir, "dad", "step2_responses")
+                 if r.get("prompt_id") == prompt_id]
+    rewrite = next((a for a in load_stage(run_dir, "dad", "step3_rewrites")
+                    if a.get("prompt_id") == prompt_id), None)
+    final = None
+    if rewrite:
+        final = _index(load_final(run_dir, "dad"), "record_id").get(rewrite.get("record_id"))
+    dilemma = dilemmas.get(prompt_id)
+    return {
+        "format": "v2",
+        "dilemma": dilemma,
+        "scenario": scenarios.get((dilemma or {}).get("scenario_id")),
+        "scope": scope_recs.get(prompt_id),
+        "tension_tag": tension_tags.get(prompt_id),
+        "response": responses[0] if responses else None,
+        "rewrite": rewrite,
         "final": final,
     }
 

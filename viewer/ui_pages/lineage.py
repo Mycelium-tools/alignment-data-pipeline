@@ -62,7 +62,23 @@ def _pick_document(options: list[str], labels: dict[str, str], noun: str) -> str
 
 # --- Document selection ---
 selected_id = None
-if not finals:
+dad_by_prompt = False  # incomplete DAD run: enumerate step-1 prompts, not final records
+if run.pipeline == "dad" and not finals:
+    dilemmas = loader.load_stage(run.run_dir, "dad", "step1_dilemmas")
+    if dilemmas:
+        dad_by_prompt = True
+        st.info("No responses generated yet — showing the step-1 dilemma prompts.")
+        options, labels = [], {}
+        for d in dilemmas:
+            pid = d.get("prompt_id")
+            options.append(pid)
+            direction = (d.get("annotation") or {}).get("direction") or "?"
+            labels[pid] = f"{_doc_title(d.get('user_message'))}   —   {direction}"
+        st.caption("Dropdown labels: *user message — direction (from the step-1 annotation)*")
+        selected_id = _pick_document(options, labels, "prompt")
+    else:
+        st.info("No dilemmas generated in this run yet.")
+elif not finals:
     st.info("No final corpus in this run yet (incomplete run).")
 elif run.pipeline == "sdf":
     subtypes = {s["subtype_id"]: s for s in loader.load_stage(run.run_dir, "sdf", "layer2")}
@@ -137,7 +153,7 @@ def stage_expander(title: str, stage: str, lineage: dict, output_fn):
 
 # --- Side-by-side: document (left) vs prompts (right) ---
 if selected_id is None:
-    if finals:
+    if finals or dad_by_prompt:
         st.caption("Click a document above to open it.")
 elif run.pipeline == "sdf":
     lin = loader.sdf_lineage(run.run_dir, selected_id)
@@ -176,43 +192,88 @@ elif run.pipeline == "sdf":
                            lambda: st.json((lin["score"] or {}).get("scores", {}))
                            if lin["score"] else st.caption("not reached"))
 else:
-    lin = loader.dad_lineage(run.run_dir, selected_id)
+    lin = (loader.dad_lineage_by_prompt(run.run_dir, selected_id) if dad_by_prompt
+           else loader.dad_lineage(run.run_dir, selected_id))
     audit = lin.get("rewrite") or {}
+    dilemma = lin.get("dilemma") or {}
     st.divider()
     doc_col, prompts_col = st.columns(2)
 
     with doc_col:
-        st.subheader(f"Record {selected_id[:8]}")
+        st.subheader(f"{'Prompt' if dad_by_prompt else 'Record'} {selected_id[:8]}")
         if lin.get("format") == "v2":
-            ann = audit.get("annotation") or {}
-            tensions = ", ".join(audit.get("tensions", [])) or "—"
-            st.caption(f"prompt `{audit.get('prompt_id')}` · {ann.get('direction') or '?'} "
+            ann = audit.get("annotation") or dilemma.get("annotation") or {}
+            pid = audit.get("prompt_id") or dilemma.get("prompt_id") or selected_id
+            tensions = ", ".join(audit.get("tensions") or ann.get("tensions") or []) or "—"
+            st.caption(f"prompt `{pid}` · {ann.get('direction') or '?'} "
                        f"· {ann.get('leverage') or '?'} · tensions: {tensions}")
         else:
             st.caption(f"scenario `{audit.get('scenario_id')}` · injection `{audit.get('injection_used')}` "
                        f"· principle {audit.get('principle_id')}")
         with st.container(height=PANEL_HEIGHT):
-            for msg in (lin.get("final") or {}).get("messages", []):
-                st.markdown(f"**{msg['role']}**")
-                st.code(msg["content"], language=None, wrap_lines=True)
+            messages = (lin.get("final") or {}).get("messages", [])
+            if messages:
+                for msg in messages:
+                    st.markdown(f"**{msg['role']}**")
+                    st.code(msg["content"], language=None, wrap_lines=True)
+            else:
+                # Incomplete run: no final response yet — show the dilemma prompt itself.
+                st.markdown("**user** *(dilemma prompt — no response generated yet)*")
+                st.code(dilemma.get("user_message", ""), language=None, wrap_lines=True)
+                st.json(dilemma.get("annotation", {}), expanded=False)
 
     with prompts_col:
         st.subheader("Prompts")
         st.caption("Each step's prompt and what it produced")
         with st.container(height=PANEL_HEIGHT):
             if lin.get("format") == "v2":
-                def step1_output():
-                    d = lin.get("dilemma")
+                # Step 1a — scenario generation: pure sampling, no model call.
+                with st.expander("Step 1a — scenario generation (sampled, no model call)"):
+                    sc = lin.get("scenario")
+                    if sc:
+                        st.caption("Stratified categorical assignment for this example, drawn by the "
+                                   "sampler — no LLM call.")
+                        st.json(sc, expanded=False)
+                    else:
+                        st.caption("scenario record not found (older run, or pre-scenario snapshot)")
+
+                def step1b_output():
+                    d = lin.get("dilemma") or {}
                     if not d:
                         st.caption("dilemma record not found")
                         return
-                    st.code(d.get("user_message", ""), language=None, wrap_lines=True)
+                    # the 1b draft is draft_user_message when 1c ran, else the stored user_message
+                    st.code(d.get("draft_user_message") or d.get("user_message", ""),
+                            language=None, wrap_lines=True)
                     st.json(d.get("annotation", {}), expanded=False)
-                stage_expander("Step 1 — dilemma prompt (spec-driven)", "step1_dilemmas", lin, step1_output)
+                stage_expander("Step 1b — first attempt (draft)", "step1_dilemmas", lin, step1b_output)
 
-                stage_expander("Step 2a — tensions (from annotation)", "step2_tag", lin,
-                               lambda: st.json(lin.get("tension_tag"))
-                               if lin.get("tension_tag") else st.caption("not reached"))
+                def step1c_output():
+                    d = lin.get("dilemma") or {}
+                    if d.get("draft_user_message") is None:
+                        st.caption("not run (dad.dilemmas.refine was off for this run)")
+                        return
+                    if d.get("refine_notes"):
+                        st.info(f"Notes: {d['refine_notes']}")
+                    common.show_diff(d["draft_user_message"], d.get("user_message", ""),
+                                     "1b draft", "1c refined", key="s1c")
+                stage_expander("Step 1c — review & rewrite (optional)", "step1_refine", lin, step1c_output)
+
+                def step2_scope_output():
+                    sc = (lin.get("scope") or {}).get("scope")
+                    if sc:
+                        st.json(sc, expanded=True)
+                    else:
+                        st.caption("not reached")
+                stage_expander("Step 2a — scope the case (system, agent, cost, upside)",
+                               "step2_scope", lin, step2_scope_output)
+
+                # Tension retrieval was removed from the pipeline; still shown for
+                # older runs that recorded it, so their lineage stays complete.
+                if lin.get("tension_tag"):
+                    stage_expander("Tensions (retrieval — earlier pipeline)", "step2_tag", lin,
+                                   lambda: st.json(lin.get("tension_tag")))
+
                 stage_expander("Step 2b — response from the reasoning library", "step2_respond", lin,
                                lambda: st.code((lin.get("response") or {}).get("assistant_response", ""),
                                                language=None, wrap_lines=True)

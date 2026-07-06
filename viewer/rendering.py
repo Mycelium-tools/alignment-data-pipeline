@@ -16,7 +16,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dad_pipeline import reasoning_library
-from dad_pipeline.step1_dilemmas import format_annotation
+from dad_pipeline.step1_dilemmas import format_annotation, format_scenario
+from dad_pipeline.step2_responses import format_scope
 from shared import constitution_loader
 from viewer.loader import REPO_ROOT, load_stage
 
@@ -238,10 +239,47 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.variables = {
             "spec": spec_t.text or "",
             "count": batch.get("requested", ""),
+            # scenarios_block for current runs; profiles_block for pre-rename
+            # snapshots; coverage_report for older reactive-steering snapshots —
+            # the run's own template picks whichever it references.
+            "scenarios_block": batch.get("scenarios_block") or batch.get("profiles_block", ""),
+            "profiles_block": batch.get("profiles_block", ""),
             "coverage_report": batch.get("coverage_report", ""),
             "tension_vocab": vocab,
         }
         r.user = _format(tpl("step1_dilemmas.txt"), r.variables, r)
+        return r
+
+    if stage == "step1_refine":
+        dilemma = lineage.get("dilemma") or {}
+        scenario = lineage.get("scenario") or {}
+        # 1c reviews the 1b draft; draft_user_message is present only when refine ran.
+        draft = dilemma.get("draft_user_message")
+        if draft is None:
+            r.is_llm_call = False
+            r.warnings.append("This run did not use the 1c review pass (dad.dilemmas.refine was off).")
+            return r
+        r.variables = {
+            "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",
+            "draft_prompt": draft,
+            "annotation_block": format_annotation(dilemma.get("annotation") or {}),
+        }
+        r.user = _format(tpl("step1_refine.txt"), r.variables, r)
+        return r
+
+    if stage == "step2_scope":
+        dilemma = lineage.get("dilemma") or {}
+        if not lineage.get("scope"):
+            r.is_llm_call = False
+            r.warnings.append("This run has no scope stage (predates the step-2 scoping pass).")
+            return r
+        response = lineage.get("response") or {}
+        annotation = response.get("annotation") or dilemma.get("annotation") or {}
+        r.variables = {
+            "user_message": response.get("user_message") or dilemma.get("user_message", ""),
+            "annotation_block": format_annotation(annotation),
+        }
+        r.user = _format(tpl("step2_scope.txt"), r.variables, r)
         return r
 
     if stage in ("step2_tag", "step2_respond"):
@@ -286,6 +324,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.variables = {
             "entries_block": block,
             "annotation_block": format_annotation(annotation),
+            "scope_block": format_scope((lineage.get("scope") or {}).get("scope") or {}),
             # pre-rename snapshots' step2_respond.txt uses {principles_block};
             # supplying both keys lets either template version format cleanly
             "principles_block": block,
