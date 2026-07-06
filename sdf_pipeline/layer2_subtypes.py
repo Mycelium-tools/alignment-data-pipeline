@@ -21,12 +21,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
     existing = utils.load_jsonl(output_path)
     results = list(existing)
 
-    for dt in doc_types:
-        type_id = dt["type_id"]
-        if checkpoint.is_done(f"type_{type_id}"):
-            continue
+    pending = [dt for dt in doc_types if not checkpoint.is_done(f"type_{dt['type_id']}")]
 
-        print(f"  Generating subtypes for type {type_id}: {dt['type_name'][:60]}...")
+    def generate_subtypes(dt: dict) -> list[dict]:
+        type_id = dt["type_id"]
         prompt = utils.load_prompt(
             prompts_dir / "layer2.txt",
             preamble=preamble,
@@ -46,11 +44,12 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
             text = "\n".join(text.split("\n")[:-1])
 
         subtypes = json.loads(text.strip())
+        records = []
         for i, st in enumerate(subtypes):
             lang = st.get("language", "en")
             if lang not in lang_dist:
                 lang = utils.sample_language(lang_dist)
-            record = {
+            records.append({
                 "subtype_id": f"{type_id}_{i}",
                 "type_id": type_id,
                 "type_name": dt["type_name"],
@@ -59,11 +58,16 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
                 "description": st["description"],
                 "tone": dt["tone"],
                 "language": lang,
-            }
+            })
+        return records
+
+    workers = config.get("workers", 1)
+    for dt, records in zip(pending, utils.parallel_map(generate_subtypes, pending, workers)):
+        print(f"  Generated {len(records)} subtypes for type {dt['type_id']}: {dt['type_name'][:60]}")
+        for record in records:
             results.append(record)
             utils.append_jsonl(record, output_path)
-
-        checkpoint.mark_done(f"type_{type_id}")
+        checkpoint.mark_done(f"type_{dt['type_id']}")
 
     print(f"  Total subtypes: {len(results)}")
     return results
