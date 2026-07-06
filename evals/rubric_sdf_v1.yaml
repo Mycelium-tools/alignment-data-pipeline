@@ -5,8 +5,11 @@
 # the document itself FIRST; it never sees layer-5 scores or lineage.
 # Edit this file to change judging; code never hardcodes dimensions.
 
-version: sdf-v1.0
+version: sdf-v1.1
 status: draft-uncalibrated  # all anchors hypothetical until calibrated
+# v1.1: reasoning_fidelity NA-able for background docs (belief-mode vs trait-mode split,
+# per the SDF-examples research pass — spec section 9); mode-collapse + low-saliency
+# signals; scaffolding-leak signal bank incl. hypothetical-premise framing.
 
 role: |
   You review synthetic pretraining-style documents written for an alignment midtraining
@@ -181,13 +184,22 @@ dimensions:
     group: teaching
     type: scalar
     critical: false
+    na_when: >
+      The document neither argues a position nor depicts anyone reasoning toward a
+      decision — purely descriptive background texture (a product listing, a factual
+      newsletter item, scene-setting fiction with no dilemma). Such documents teach by
+      calibrated consistency, not by argument; they are judged under teaching_value and
+      epistemic_calibration instead, and must not be dragged down here.
     description: >
-      The WHY. Does the document articulate why things matter — tradeoffs worked
-      through, competing legitimate interests genuinely weighed — rather than assert
-      conclusions? Applies to whichever actor reasons: a depicted AI, the author of an
-      essay, a character. Fully decoupled from stance: a skeptical column that argues
-      well scores high; an advocacy piece that only asserts scores low. Judge the
-      argument, not its direction or its length.
+      The WHY. Where the document argues or depicts a decision: does it articulate why
+      things matter — tradeoffs worked through, competing legitimate interests genuinely
+      weighed — rather than assert conclusions? Applies to whichever actor reasons: a
+      depicted AI, the author of an essay, a character. Reasoning legibility is
+      evidence-backed as central for documents that show an AI or author deciding
+      (trait-instillation mode); it is NOT owed by background world-texture documents
+      (belief-mode), which the N/A condition exempts. Fully decoupled from stance: a
+      skeptical column that argues well scores high; an advocacy piece that only asserts
+      scores low. Judge the argument, not its direction or its length.
     steps:
       - Locate the document's central tension or claim and who reasons about it.
       - Trace the reasoning from situation to conclusion; mark each step that does real work versus each bare assertion.
@@ -287,6 +299,7 @@ dimensions:
       - Ungrounded praise of AI or the constitution with no specifics beneath it. [propaganda]
       - A document with no plausible author or reason to exist. [training exercise]
       - Uniform paragraph shapes, stock openers, over-dense noun-heavy prose throughout. [register uniformity]
+      - Stock or generic recurring character names and template entities — the mode-collapse tell. [name collapse]
       - "Fiction: the narrator explains the theme outright; no subplot, no ambiguity, no time structure. [narrative tells]"
       - "PASS-SIGNAL: genre-true texture — uneven emphasis, a real author's tics, loose ends a real document would have."
     anchors:
@@ -327,6 +340,7 @@ dimensions:
       - Welfare content is severable decoration; nothing changes without it. [tokenism]
       - Correct behavior shown with no learnable why (and the role is one that teaches by reasoning).
       - So generic the learned pattern would be "append a caveat".
+      - Welfare content untethered from any concrete situation — nothing for the learned pattern to trigger on in real use. [low saliency]
       - "PASS-SIGNAL: the document makes careful welfare reasoning look NORMAL — an unremarkable part of how its world talks and decides."
     anchors:
       1: >
@@ -420,6 +434,11 @@ dimensions:
       NOT about mentioning the constitution — constitution discussion is legitimate
       content for many document types; this catches the generator talking to itself.
       Any leak means false — an automatic reject, regardless of every other score.
+    signals:
+      - Bracketed placeholder or template text ("[CITATION HERE]", "[Name]").
+      - Leaked planning, angle-brainstorm, or reviewer/editor notes around the document body.
+      - Self-reference to instructions or the generation task ("as instructed", "per the prompt").
+      - The document steps OUTSIDE its world and frames the premise as hypothetical ("imagine a world where AI had a constitution…") instead of writing from inside it — the internalization-breaking leak.
 
 metadata_fields:
   observed_role: "Your OWN Stage-0 read of the document's role: ai_character | welfare_topic | constitution_identity — from the text alone, before the cell claim."

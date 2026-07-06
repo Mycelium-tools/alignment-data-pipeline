@@ -226,7 +226,58 @@ words) for every signal fired. Word cap ~300 (+100 for documents over 800 words)
   `sdf_stance_invariance` (equally excellent skeptical vs supportive doc; scores must
   not differ). Runner extended to document-shaped variants.
 
-## 9. Open questions (carried, for owner)
+## 9. Second research pass — is reasoning_fidelity right for SDF? (2026-07-06, v1.1)
+
+Owner question: does SDF need well-explained reasoning like DAD, or are other things
+more important? Checked against every public source that has actually *measured* what
+makes SDF documents work, plus the working corpora themselves:
+
+- **SDF-Beliefs** (alignment.anthropic.com/2025/modifying-beliefs-via-sdf): for pure
+  *belief* implantation, "consistency with the universe context is the main source of
+  improvement"; the revision step made documents "less realistic/more model generated"
+  yet MORE effective; paraphrased rewrites of the premise alone nearly matched full
+  documents. Realism is not the limiting factor; reasoning is not mentioned as a driver.
+- **SDF-Traits** (LessWrong GTYJRLhqztxKF2v5R): for *trait/behavior* instillation — our
+  case — the most effective documents included "explanations for how to trade off
+  traits, when to *not* follow them"; bare trait lists taught square-peg behavior
+  ("if X then Y" over-representation → "always do Y").
+- **Alignment Pretraining** (arXiv:2601.10160, the 45%→9% corpus — the only public SDF
+  corpus with a proven downstream alignment effect): its documents "also describe why
+  the AI elected not to take the other possible actions, and how this relates to broader
+  AI propensities" — explicit reasoning was deliberately built into the working corpus
+  (no ablation isolating it, though). Filtering-only reached 31%; upsampling aligned
+  docs reached 9% — depicted valence dominates.
+- **Practical SDF learnings** (LessWrong 7zGgFPLaTXJwCJccB): the practical killers are
+  mode collapse (439k occurrences of one stock character name), low *saliency* (facts
+  learned but never triggering in use — fixed by making documents semantically close to
+  concrete target situations), and consistency; their model-graded filters check concept
+  accuracy, unwanted behavioral implications, and keyword presence — not reasoning.
+- **Belief depth** (arXiv:2510.17941): implanted content that contradicts world
+  knowledge stays brittle and representationally distinct — supports the
+  `epistemic_calibration` + `no_outside_world_facts` gates.
+
+**Resolution — role-conditional, not either/or.** For documents where an AI or author
+*decides or argues* (ai-character, constitution-identity, argumentative welfare-topic —
+by design roughly two-thirds of this corpus), explicit reasoning is evidence-backed as
+central and `reasoning_fidelity` stands. For background world-texture documents
+(belief-mode), consistency + calibrated texture + diversity matter and explicit
+reasoning is NOT owed. v1.1 rubric changes:
+
+1. `reasoning_fidelity` gains an **na_when** for purely descriptive documents with no
+   argued position or depicted decision (they must not be dragged down for lacking an
+   argument they never owed).
+2. `realism` gains the **mode-collapse signal** (stock/recurring template names).
+3. `teaching_value` gains the **low-saliency signal** (welfare content untethered from
+   any concrete situation never triggers in use).
+4. `no_scaffolding_leak` gains a signal bank, including the internalization-breaking
+   leak: framing the premise as hypothetical ("imagine a world where…") instead of
+   writing from inside the world (SDF-Beliefs' "statements of the true fact" analogue).
+
+Confirmed as already-correct: realism soft (never a gate); consistency-centered
+`constitution_grounding`; diversity delegated to the corpus tier; the layer-4 revision
+step's value (SDF-Beliefs: revision "drastically increases the efficacy").
+
+## 10. Open questions (carried, for owner)
 
 1. Gate thresholds are hypothetical until calibrated against the english-only test run
    (`outputs/sdf/runs/2026-07-01_14-38_english-only-test`).
