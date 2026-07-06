@@ -121,10 +121,10 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, manta_c
     assert (run_dir / "inputs" / "constitution").is_dir()
 
     corpus = utils.load_jsonl(run_dir / "final" / "dad_corpus.jsonl")
-    # 13 prompts (3 MANTA + 10 generated) x 2 sampling conditions
-    # (deference + plain), all kept -> 26 records; pushback fraction 1.0
-    # extends every one to a 4-message conversation
-    assert len(corpus) == 26
+    # 16 prompts (3 MANTA + 13 generated, one per non-meta principle) x 2
+    # sampling conditions (deference + plain), all kept -> 32 records;
+    # pushback fraction 1.0 extends every one to a 4-message conversation
+    assert len(corpus) == 32
     for record in corpus:
         assert set(record.keys()) == {"record_id", "messages"}
         assert [m["role"] for m in record["messages"]] == ["user", "assistant", "user", "assistant"]
@@ -140,6 +140,6 @@ def test_dad_resume_at_step6_makes_no_calls(tiny_config_file, outputs_root, mant
     _run_main(monkeypatch, dad_run.main, tiny_config_file, "--resume", "--step", "6")
     assert calls == []
     corpus = utils.load_jsonl(outputs_root / "dad" / "latest" / "final" / "dad_corpus.jsonl")
-    assert len(corpus) == 26
+    assert len(corpus) == 32
     # step 7 re-runs on resume too; its checkpoints keep the pushback turns
     assert all(len(r["messages"]) == 4 for r in corpus)

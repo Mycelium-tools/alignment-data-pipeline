@@ -5,9 +5,9 @@ from shared import constitution_loader
 
 def test_load_segments_assigns_sequential_principle_ids():
     segments = constitution_loader.load_segments()
-    # CLAUDE.md contract: 12 sections mapped to principle_ids 0-11
-    assert len(segments) == 12
-    assert [s["principle_id"] for s in segments] == list(range(12))
+    # CLAUDE.md contract: 16 sections mapped to principle_ids 0-15
+    assert len(segments) == 16
+    assert [s["principle_id"] for s in segments] == list(range(16))
 
 
 def test_segments_have_nonempty_titles_and_content():
