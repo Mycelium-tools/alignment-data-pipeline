@@ -70,7 +70,14 @@ def record_rating(run_dir: Path, pair: dict, rater: str, choice: str, note: str 
 
 def rebuild_preferences(run_dir: Path) -> int:
     """Rebuild final/preferences.jsonl from all decisive ratings (ties and
-    both_bad carry no chosen/rejected signal and are skipped)."""
+    both_bad carry no chosen/rejected signal and are skipped).
+
+    NOTE: this emits one record per decisive rating with no aggregation across
+    raters. If two raters disagree on a pair, the file will contain two
+    contradictory chosen/rejected records for the same prompt. That is fine for
+    A/B spec analysis (the intended use), but the file must NOT be fed to
+    preference training verbatim without a majority-vote / dedup pass first.
+    """
     pairs = {p["pair_id"]: p for p in load_pairs(run_dir)}
     records = []
     for r in load_ratings(run_dir):

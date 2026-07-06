@@ -30,14 +30,14 @@ _DEFAULT_ARMS = {
 
 
 def _load_prompts(path: Path) -> list[dict]:
-    """Load prompts from JSONL, accepting user_message (handwritten sets,
-    step-2 scenarios), refined (DAD step 4), or prompt as the text field."""
+    """Load prompts from JSONL, accepting user_message (handwritten sets, DAD
+    step-1 dilemmas) or prompt as the text field."""
     records = utils.load_jsonl(path)
     prompts = []
     for i, r in enumerate(records):
-        text = (r.get("user_message") or r.get("refined") or r.get("prompt") or "").strip()
+        text = (r.get("user_message") or r.get("prompt") or "").strip()
         if not text:
-            print(f"  WARNING: record {i} has no user_message/refined/prompt text, skipping.")
+            print(f"  WARNING: record {i} has no user_message/prompt text, skipping.")
             continue
         pid = str(r.get("prompt_id") or r.get("scenario_id") or f"row{i:04d}")
         prompts.append({"prompt_id": pid, "user_message": text})
@@ -65,9 +65,11 @@ def _resolve_arms(config: dict, root: Path) -> dict:
     return arms
 
 
-def _left_arm(pair_id: str) -> str:
-    """Deterministic blinded side assignment, stable across resumes."""
-    return "a" if int(hashlib.md5(pair_id.encode()).hexdigest(), 16) % 2 == 0 else "b"
+def _left_arm(pair_id: str, salt: str = "") -> str:
+    """Deterministic blinded side assignment, stable across resumes. Salting with
+    the run id varies the ordering across runs, so a rater doing two studies on
+    the same prompt set doesn't see the same left/right layout each time."""
+    return "a" if int(hashlib.md5(f"{salt}:{pair_id}".encode()).hexdigest(), 16) % 2 == 0 else "b"
 
 
 def main() -> None:
@@ -147,7 +149,7 @@ def main() -> None:
             "arm_names": {k: arms[k]["name"] for k in ("a", "b")},
             "response_a": responses["a"],
             "response_b": responses["b"],
-            "left_arm": _left_arm(pair_id),
+            "left_arm": _left_arm(pair_id, salt=run_dir.name),
         }
         utils.append_jsonl(record, pairs_path)
         checkpoint.mark_done(pair_id)

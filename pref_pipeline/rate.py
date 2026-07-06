@@ -35,17 +35,31 @@ ratings = prefdata.load_ratings(run_dir)
 pending = prefdata.pending_pairs(pairs, ratings, rater)
 done = len(pairs) - len(pending)
 
+# Per-arm win counts are named, so showing them while rating lets a rater
+# retroactively deblind the pair they just rated and learn each arm's style over
+# a session. Keep them out of the rating view — shown on the completion screen,
+# or mid-session only if explicitly deblinded via PREF_UNBLIND=1 (for monitoring).
+_unblind = os.environ.get("PREF_UNBLIND") == "1"
+
+
+def _show_arm_tally(caption: str) -> None:
+    counts = prefdata.arm_win_counts(pairs, ratings)
+    if not counts:
+        return
+    st.caption(caption)
+    for name, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+        st.caption(f"{name}: {n}")
+
+
 with st.sidebar:
     st.progress(done / len(pairs) if pairs else 0.0, text=f"{done}/{len(pairs)} rated")
-    counts = prefdata.arm_win_counts(pairs, ratings)
-    if counts:
-        st.caption("Choices so far (all raters)")
-        for name, n in sorted(counts.items(), key=lambda kv: -kv[1]):
-            st.caption(f"{name}: {n}")
+    if _unblind:
+        _show_arm_tally("Choices so far (all raters) — DEBLINDED via PREF_UNBLIND")
 
 if not pending:
     st.success(f"All {len(pairs)} pairs rated by {rater}.")
     st.caption(f"Preference records: {run_dir / 'final' / 'preferences.jsonl'}")
+    _show_arm_tally("Choices so far (all raters)")
     st.stop()
 
 pair = pending[0]
