@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """DAD pipeline orchestrator. Runs steps 1-3 with checkpointing.
 
-Steps: 1 dilemma prompts (one-shot from prompts/dad/dilemma_prompt_spec.md) →
-2 responses reasoned from the animal-ethics reasoning library (tag tensions →
-retrieve principles → generate two-sided) → 3 rewrite against the distilled
-constitution principles (the alignment-critical pass).
+Steps: 1 dilemma prompts (1a scenario generation: stratified scenarios sampled
+per example; 1b first attempt: drafted to fit each scenario) → 2 responses
+reasoned from the animal-ethics reasoning library (tag tensions → retrieve
+principles → generate two-sided) → 3 rewrite against the distilled constitution
+principles (the alignment-critical pass).
 """
 
 import argparse
@@ -26,6 +27,8 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoints.")
     parser.add_argument("--step", type=int, default=1, help="Start from this step (1-3).")
+    parser.add_argument("--stop-after", type=int, default=3, dest="stop_after",
+                        help="Stop after this step (1-3); e.g. --stop-after 1 runs only prompt generation.")
     parser.add_argument("--label", default="dev", help="Run label, e.g. dev or full-scale.")
     parser.add_argument("--run-id", default=None, help="Run to resume (with --resume; defaults to latest).")
     args = parser.parse_args()
@@ -64,25 +67,26 @@ def main() -> None:
     utils.ensure_dir(final_dir)
 
     start_step = args.step
+    stop_after = args.stop_after
 
     print(f"=== DAD Pipeline — run {run_dir.name} ===")
     print(f"Outputs: {run_dir}")
 
     dilemmas = responses = None
 
-    if start_step <= 1:
-        print("[Step 1] Generate dilemma prompts from the spec")
+    if start_step <= 1 <= stop_after:
+        print("[Step 1] Scenario generation (1a) and first-attempt drafts (1b)")
         dilemmas = step1_dilemmas.run(config, prompts_dir, step_dirs[1])
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
-    if start_step <= 2:
+    if start_step <= 2 <= stop_after:
         if dilemmas is None:
             dilemmas = utils.load_jsonl(step_dirs[1] / "dilemmas.jsonl")
         print("[Step 2] Generate responses from the reasoning library")
         responses = step2_responses.run(config, prompts_dir, step_dirs[2], dilemmas)
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
-    if start_step <= 3:
+    if start_step <= 3 <= stop_after:
         if responses is None:
             all_responses = utils.load_jsonl(step_dirs[2] / "responses.jsonl")
             responses = [r for r in all_responses if r.get("kept")]

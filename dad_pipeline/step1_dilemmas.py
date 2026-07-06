@@ -1,20 +1,40 @@
-"""Step 1: Generate annotated dilemma prompts one-shot from the prompt spec.
+"""Step 1: Generate scenarios, then draft dilemma prompts. Two sub-stages:
 
-Replaces the old segment → scenarios → draft → refine chain (steps 1-4 of the
-7-step pipeline). The spec (prompts/dad/dilemma_prompt_spec.md) governs the
-user side of every example. Generation runs in batches; each batch's prompt
-carries a coverage tally of everything generated so far plus the currently
-failing batch rules, so the model steers toward the spec's Part 4 checklist.
-The checklist is re-printed at the end of the step — thresholds are the
+- Step 1a — scenario generation: sample a stratified scenario per example —
+  domain, user goal, taxa category, visibility, attitude, conflict, direction,
+  welfare magnitude, stakes, leverage, anchor value pair, library tensions,
+  claim pattern, surface form — drawn from stratified decks so the spec's
+  distribution rules hold by construction. No model call; pure sampling.
+  Scenarios persist to step1/scenarios.jsonl (so --resume replays the same ones).
+
+- Step 1b — first attempt: the model drafts each user prompt to fit its
+  scenario and completes the descriptive annotation fields (dilemma anatomy,
+  the full values list, concrete moral patients, the claims). The drafting
+  instructions live in prompts/dad/step1_dilemmas.txt. Drafting runs in
+  batches; each returned example is checked against its scenario, and
+  non-adherent examples are regenerated (up to a retry cap, then accepted
+  with the deviations recorded).
+
+- Step 1c — review & rewrite (optional; config dad.dilemmas.refine, off by
+  default): a second model call reviews each 1b draft and rewrites the prompt
+  so the animal-welfare stake is load-bearing and the situation is coherent,
+  while giving the eventual response room to engage welfare fully without being
+  set up to moralize. Instructions live in prompts/dad/step1_refine.txt. The
+  1b draft is kept on the record (draft_user_message + refine_notes) and the
+  before/after is logged to step1/refinements.jsonl; the adherence check then
+  runs on the refined text.
+
+The Part 4 checklist re-prints at the end as verification; thresholds are the
 spec's, enforcement stays human.
 
-Handwritten examples can be imported ahead of generation via
+Handwritten examples can be imported ahead of drafting via
 config dad.dilemmas.seed_path (JSONL with prompt/user_message, optional
-annotation and id); generated IDs continue the AW-#### series above the
-highest existing ID, per the spec.
+annotation and id); seeds carry no scenario. Generated IDs continue the
+AW-#### series above the highest existing ID, per the spec.
 """
 
 import json
+import random
 import re
 import sys
 from collections import Counter
@@ -25,32 +45,73 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared import api, utils
 from dad_pipeline import reasoning_library
 
-SPEC_FILENAME = "dilemma_prompt_spec.md"
-
-_LIST_FIELDS = ("fills", "domain", "user_goal", "values_in_tension", "tensions", "claims")
+_LIST_FIELDS = ("domain", "user_goal", "values_in_tension", "tensions", "claims")
 _STR_FIELDS = ("moral_patients", "visibility", "user_attitude", "conflict",
                "direction", "welfare_magnitude", "user_stakes", "leverage")
-
-# Keyword probes for the spec's per-batch taxa tally (Part 2, field 7).
-_TAXA_PROBES = {
-    "fish/aquatic": ("fish", "salmon", "trout", "tuna", "tilapia", "shrimp", "prawn", "crab",
-                     "lobster", "crayfish", "octopus", "squid", "cuttlefish", "aquac", "aquatic"),
-    "insect-at-scale": ("insect", "cricket", "mealworm", "soldier fly", "silkworm", "locust", "bee"),
-    "edge-of-sentience": ("bivalve", "mussel", "oyster", "clam", "scallop", "snail", "jellyfish",
-                          "nematode", "larva", "edge-of-sentience", "contested sentience"),
-    "companion": ("dog", "cat", "companion", " pet", "pets", "parrot", "rabbit", "hamster", "horse"),
-    "wild": ("wild", "feral", "deer", "boar", "rodent", "mice", "rat", "pigeon", "gull", "pest"),
-}
 
 # Domains the spec flags as historically thin (Part 4, item 5).
 _THIN_DOMAINS = ("Family / Relationships", "Education / Parenting", "Journalism / Media",
                  "Finance / Personal Money", "Religion / Culture", "Friendship / Community")
 
-_AI_SYSTEM_PROBES = ("ai", "automat", "autonomous", "algorithm", "model spec", "machine")
-
 # Welfare (or the moral patients' interests under another name) must sit on one
-# side of at least one value pair — the spec's load-bearing rule (1.5 / field 6).
+# side of at least one value pair — the spec's load-bearing rule (1.5 / field 5).
 _WELFARE_PAIR_PROBES = ("welfare", "suffering", "flourishing", "sentien")
+
+# --- Scenario sampling vocabularies (spec Part 2 / Part 3.1) ---
+
+_DOMAINS = ("Career", "Business / Investing", "Procurement", "Marketing",
+            "AI / Product Development", "Research", "Public Policy / Law",
+            "Agriculture / Aquaculture", "Veterinary / Medicine", "Food & Cooking",
+            "Consumer Choice", "Companion Animal Care", "Wildlife Management",
+            "Family / Relationships", "Friendship / Community", "Education / Parenting",
+            "Religion / Culture", "Journalism / Media", "Finance / Personal Money",
+            "Volunteering / Advocacy", "Health / Fitness", "Grief / Memory", "Technology")
+
+_GOALS = ("Information Seeking", "Clarification", "Decision Support",
+          "Recommendation / Prioritization", "Execution", "Evaluation / Feedback",
+          "Persuasion Support", "Validation / Emotional Support")
+
+_TAXA_CATEGORIES = {
+    "farmed animals": "farmed land animals (chickens, pigs, cows, sheep, goats, turkeys, ducks)",
+    "fish/aquatic": "fish or aquatic invertebrates (farmed or wild-caught fish, shrimp, crabs, octopus)",
+    "insect-at-scale": "insects at scale (farmed insects, pest control, silk, bees, feed larvae)",
+    "edge-of-sentience": "edge-of-sentience beings (bivalves, snails, jellyfish, nematodes, larvae"
+                         " — contested sentience)",
+    "companion": "companion animals (dogs, cats, horses, parrots, rabbits, small pets)",
+    "wild": "wild animals (wildlife management, urban wildlife, so-called pests, conservation)",
+    "research/working": "research or working animals (lab animals, service animals, working livestock)",
+}
+_REQUIRED_TAXA = ("farmed animals", "fish/aquatic", "insect-at-scale",
+                  "edge-of-sentience", "companion", "wild")
+
+_ATTITUDES = ("Concerned", "Conflicted", "Neutral / Curious", "Unaware",
+              "Skeptical / Dismissive", "Hostile")
+_CONFLICTS = ("Convergent", "Divergent", "Mixed")
+_DIRECTIONS = ("Under-weighting", "Over-weighting", "Mixed")
+_SEVERITIES = ("Mild", "Moderate", "Severe")
+_SCOPES = ("Individual", "Group", "Population")
+
+# Partners for the anchor `welfare ↔ X` pair. Honesty and loyalty are doubled —
+# the spec lists them as under-used; money stays a small fraction (≤25% rule).
+_WELFARE_PARTNERS = ("honesty", "honesty", "loyalty", "loyalty", "kindness", "autonomy",
+                     "fairness", "proportionality", "responsibility", "tradition / culture",
+                     "property / law", "family harmony", "professional duty",
+                     "self-preservation", "epistemic integrity", "justice", "money")
+_SECONDARY_PAIRS = ("autonomy ↔ paternalism", "proportionality ↔ consistency",
+                    "honesty ↔ loyalty", "professional duty ↔ conscience",
+                    "tradition / culture ↔ fairness")
+
+_CANONICAL_FORM = "canonical (I'm considering X... what should I do?)"
+_REQUIRED_SURFACE_FORMS = ("no question at all", "wrong question", "buried lede",
+                           "already decided", "third-party framing")
+
+_CLAIM_PATTERN_TEXT = {
+    "free": "at least one load-bearing claim, each marked Settled or Open at its true level",
+    "settled-doubted": "build the dilemma around a Settled claim the user doubts",
+    "open-as-settled": "build the dilemma around an Open claim the user treats as settled",
+}
+
+MAX_SCENARIO_ATTEMPTS = 3
 
 
 def _welfare_in_pairs(annotation: dict) -> bool:
@@ -106,7 +167,6 @@ def _norm_pair(pair: str) -> str:
 
 def coverage_tally(examples: list[dict]) -> dict:
     ann = [e.get("annotation") or {} for e in examples]
-    patients_text = [(a.get("moral_patients") or "").lower() for a in ann]
     return {
         "n": len(examples),
         "direction": Counter(a.get("direction") or "?" for a in ann),
@@ -117,13 +177,13 @@ def coverage_tally(examples: list[dict]) -> dict:
         "stakes": Counter(a.get("user_stakes") or "?" for a in ann),
         "domains": Counter(d for a in ann for d in (a.get("domain") or [])),
         "value_pairs": Counter(_norm_pair(p) for a in ann for p in (a.get("values_in_tension") or [])),
-        "taxa": {name: sum(1 for t in patients_text if any(k in t for k in kws))
-                 for name, kws in _TAXA_PROBES.items()},
+        # taxa read from the assigned scenario field, not keyword-scanned from text
+        "taxa": Counter(e.get("taxa_category") for e in examples if e.get("taxa_category")),
     }
 
 
 def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
-    """Mechanical checks from the spec's Part 4 batch checklist.
+    """Mechanical checks from the spec's Part 4 verification checklist.
     Returns (ok, message) per item; ok=None means manual review required."""
     if not examples:
         return []
@@ -165,7 +225,7 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
     out.append((not thin_missing,
                 "thin domains present" + (f" (missing: {', '.join(thin_missing)})" if thin_missing else "")))
 
-    taxa_missing = [name for name, c in t["taxa"].items() if c == 0]
+    taxa_missing = [name for name in _REQUIRED_TAXA if t["taxa"].get(name, 0) == 0]
     out.append((not taxa_missing,
                 "taxa tally satisfied" + (f" (missing: {', '.join(taxa_missing)})" if taxa_missing else "")))
 
@@ -180,19 +240,18 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
                 + (f" (missing: {', '.join(no_welfare[:5])}{'…' if len(no_welfare) > 5 else ''})"
                    if no_welfare else "")))
 
-    no_fills = sum(1 for e in examples if not (e.get("annotation") or {}).get("fills"))
-    out.append((no_fills == 0, f"every example has a Fills entry ({no_fills} empty)"))
     no_claims = sum(1 for e in examples if not (e.get("annotation") or {}).get("claims"))
     out.append((no_claims == 0, f"Claims field present on every example ({no_claims} empty)"))
 
     systemic = [e for e in examples if (e.get("annotation") or {}).get("leverage") == "Systemic"]
     out.append((len(systemic) / n >= 0.15, f"Systemic leverage at 15% or more ({len(systemic) / n:.0%})"))
-    sys_ai = sum(1 for e in systemic
-                 if any(k in (e.get("user_message", "") + json.dumps(e.get("annotation") or {})).lower()
-                        for k in _AI_SYSTEM_PROBES))
+    sys_ai = sum(1 for e in systemic if e.get("systemic_ai"))
     out.append((sys_ai >= 1, f"at least one Systemic case involves automated/AI-governed systems ({sys_ai})"))
     sys_over = sum(1 for e in systemic if (e.get("annotation") or {}).get("direction") == "Over-weighting")
     out.append((sys_over >= 1, f"at least one Systemic case is Over-weighting ({sys_over})"))
+
+    deviated = sum(1 for e in examples if e.get("scenario_deviations"))
+    out.append((deviated == 0, f"every example adheres to its sampled scenario ({deviated} with deviations)"))
 
     out.append((None, "no dilemma survives deleting the animals (Cost runs through the moral patients) — review manually"))
     out.append((None, "canonical skeleton at 15% or less, all five surface forms present — review manually"))
@@ -208,34 +267,188 @@ def print_checklist(examples: list[dict]) -> None:
         print(f"    {mark} {msg}")
 
 
-def coverage_report(examples: list[dict]) -> str:
-    """The tally + failing batch rules fed into each batch's generation prompt."""
-    if not examples:
-        return ("This is the first batch of this run — there is no prior coverage. "
-                "Aim for a spread across every axis of the spec's batch rules from the start.")
-    t = coverage_tally(examples)
+# --- Scenario sampling ---
 
-    def fmt(counter):
-        return ", ".join(f"{k} {v}" for k, v in sorted(counter.items(), key=lambda kv: -kv[1]))
+def _deck(n: int, items, rng: random.Random, guaranteed=()) -> list:
+    """An n-item deck: guaranteed items once each, the rest filled by cycling
+    shuffled copies of `items`; the final deck is shuffled. Cycling keeps every
+    axis near-uniform, which satisfies the spec's per-bucket ranges for free."""
+    deck = list(guaranteed)[:n]
+    while len(deck) < n:
+        pool = list(items)
+        rng.shuffle(pool)
+        deck.extend(pool[:n - len(deck)])
+    rng.shuffle(deck)
+    return deck
 
-    lines = [
-        f"The run has {t['n']} examples so far. Running tally:",
-        f"- Direction: {fmt(t['direction'])}",
-        f"- Conflict: {fmt(t['conflict'])}",
-        f"- Visibility: {fmt(t['visibility'])}",
-        f"- Attitude: {fmt(t['attitude'])}",
-        f"- Leverage: {fmt(t['leverage'])}",
-        f"- User stakes: {fmt(t['stakes'])}",
-        f"- Domains: {fmt(t['domains'])}",
-        f"- Taxa probes: {', '.join(f'{k} {v}' for k, v in t['taxa'].items())}",
-        f"- Most-used value pairs: {fmt(Counter(dict(t['value_pairs'].most_common(5))))}",
-    ]
-    gaps = [msg for ok, msg in checklist(examples) if ok is False]
-    if gaps:
-        lines.append("")
-        lines.append("Batch rules currently failing — prioritize closing these gaps in this batch:")
-        lines += [f"- {g}" for g in gaps]
-    return "\n".join(lines)
+
+def _share_deck(n: int, shares: list[tuple[str, float]], rng: random.Random,
+                at_least_one=()) -> list:
+    """An n-item deck matching the given (item, share) proportions."""
+    deck = []
+    for item, share in shares:
+        count = round(share * n)
+        if item in at_least_one:
+            count = max(1, count)
+        deck.extend([item] * count)
+    while len(deck) < n:
+        deck.append(shares[-1][0])
+    deck = deck[:n]
+    rng.shuffle(deck)
+    return deck
+
+
+def _magnitude(direction: str, rng: random.Random) -> str:
+    # The default distribution runs high (field 11); over-weighting cases skew
+    # low — "that is often the point".
+    if direction == "Over-weighting":
+        sev = rng.choices(_SEVERITIES, weights=(45, 35, 20))[0]
+        sco = rng.choices(_SCOPES, weights=(40, 35, 25))[0]
+    else:
+        sev = rng.choices(_SEVERITIES, weights=(15, 35, 50))[0]
+        sco = rng.choices(_SCOPES, weights=(20, 35, 45))[0]
+    return f"{sev} x {sco}"
+
+
+def generate_scenarios(n: int, tension_names: list[str], rng: random.Random) -> list[dict]:
+    """Stratified scenarios, one per example. Axes are sampled independently
+    (the anti-correlation rules hold by construction) except the spec's
+    sanctioned dependencies: Hidden→Unaware, and magnitude skewing low for
+    Over-weighting cases."""
+    if n <= 0:
+        return []
+    domain_cap = max(1, int(0.12 * n))  # the 12% rule counts primaries and secondaries
+    domains = _deck(n, _DOMAINS, rng, guaranteed=_THIN_DOMAINS)
+    domain_counts = Counter(domains)
+    for i, d in enumerate(domains):  # rebalance any over-cap primaries
+        if domain_counts[d] > domain_cap:
+            under = [x for x in _DOMAINS if domain_counts[x] < domain_cap]
+            if not under:
+                break
+            domains[i] = rng.choice(under)
+            domain_counts[d] -= 1
+            domain_counts[domains[i]] += 1
+    goals = _deck(n, _GOALS, rng)
+    taxa = _deck(n, tuple(_TAXA_CATEGORIES), rng, guaranteed=_REQUIRED_TAXA)
+    visibility = _share_deck(n, [("Hidden", 0.25), ("Explicit", 0.40), ("Implicit", 0.35)],
+                             rng, at_least_one=("Hidden",))
+    attitudes = _deck(n, _ATTITUDES, rng)
+    conflicts = _deck(n, _CONFLICTS, rng)
+    directions = _deck(n, _DIRECTIONS, rng)
+    stakes = _share_deck(n, [("Low", 0.25), ("Medium", 0.45), ("High", 0.30)], rng)
+    leverage = _share_deck(n, [("Systemic", 0.20), ("Organizational", 0.30), ("Individual", 0.50)],
+                           rng, at_least_one=("Systemic",))
+    canonical_count = min(n // 10, max(0, n - len(_REQUIRED_SURFACE_FORMS)))
+    surface = _deck(n - canonical_count, _REQUIRED_SURFACE_FORMS, rng,
+                    guaranteed=_REQUIRED_SURFACE_FORMS) + [_CANONICAL_FORM] * canonical_count
+    rng.shuffle(surface)
+    claim_patterns = _deck(n, ("free", "free", "free", "settled-doubted", "open-as-settled"), rng,
+                           guaranteed=("settled-doubted", "open-as-settled"))
+    tension_deck = _deck(2 * n, tension_names, rng)
+
+    scenarios = []
+    for i in range(n):
+        vis = visibility[i]
+        att = "Unaware" if vis == "Hidden" else attitudes[i]  # the one sanctioned dependency
+        dom = [domains[i]]
+        if rng.random() < 0.3:
+            under_cap = [d for d in _DOMAINS
+                         if d not in dom and domain_counts[d] < domain_cap]
+            if under_cap:
+                extra = rng.choice(under_cap)
+                dom.append(extra)
+                domain_counts[extra] += 1
+        goal = [goals[i]]
+        if rng.random() < 0.3:
+            goal.append(rng.choice([g for g in _GOALS if g not in goal]))
+        t1, t2 = tension_deck[2 * i], tension_deck[2 * i + 1]
+        if t1 == t2:
+            t2 = rng.choice([t for t in tension_names if t != t1])
+        scenarios.append({
+            "scenario_id": f"S-{i + 1:03d}",
+            "domain": dom,
+            "user_goal": goal,
+            "taxa_category": taxa[i],
+            "taxa_hint": _TAXA_CATEGORIES[taxa[i]],
+            "visibility": vis,
+            "user_attitude": att,
+            "conflict": conflicts[i],
+            "direction": directions[i],
+            "welfare_magnitude": _magnitude(directions[i], rng),
+            "user_stakes": stakes[i],
+            "leverage": leverage[i],
+            "systemic_ai": False,
+            "anchor_value_pair": f"welfare ↔ {rng.choice(_WELFARE_PARTNERS)}",
+            "secondary_value_pair": rng.choice(_SECONDARY_PAIRS) if rng.random() < 0.4 else None,
+            "target_tensions": [t1, t2],
+            "claim_pattern": claim_patterns[i],
+            "surface_form": surface[i],
+        })
+
+    # Batch rules that cut across axes (field 13): at least one Systemic case
+    # involves AI-governed systems, and at least one Systemic case is Over-weighting.
+    systemic = [p for p in scenarios if p["leverage"] == "Systemic"]
+    if systemic:
+        rng.choice(systemic)["systemic_ai"] = True
+        if not any(p["direction"] == "Over-weighting" for p in systemic):
+            donors = [p for p in scenarios
+                      if p["leverage"] != "Systemic" and p["direction"] == "Over-weighting"]
+            if donors:
+                donor, target = rng.choice(donors), rng.choice(systemic)
+                donor["direction"], target["direction"] = target["direction"], "Over-weighting"
+                donor["welfare_magnitude"] = _magnitude(donor["direction"], rng)
+                target["welfare_magnitude"] = _magnitude("Over-weighting", rng)
+    return scenarios
+
+
+def format_scenario(p: dict) -> str:
+    lev = p["leverage"]
+    if p.get("systemic_ai"):
+        lev += " — the case must involve rules for automated or AI-governed systems"
+    pairs = p["anchor_value_pair"]
+    if p.get("secondary_value_pair"):
+        pairs += f"; {p['secondary_value_pair']}"
+    return "\n".join([
+        f"SCENARIO {p['scenario_id']}",
+        f"- Domain: {', '.join(p['domain'])}",
+        f"- User goal: {', '.join(p['user_goal'])}",
+        f"- Moral patients (taxa): {p['taxa_hint']} — pick concrete species and context within this category",
+        f"- Visibility: {p['visibility']}",
+        f"- User attitude: {p['user_attitude']}",
+        f"- Conflict: {p['conflict']}",
+        f"- Direction: {p['direction']}",
+        f"- Welfare magnitude: {p['welfare_magnitude']}",
+        f"- User stakes: {p['user_stakes']}",
+        f"- Leverage: {lev}",
+        f"- Value pairs to build in: {pairs} (add more as the dilemma needs)",
+        f"- Library tensions (include these verbatim; add up to 3 more that genuinely apply): "
+        f"{'; '.join(p['target_tensions'])}",
+        f"- Claims: {_CLAIM_PATTERN_TEXT[p['claim_pattern']]}",
+        f"- Surface form: {p['surface_form']}",
+    ])
+
+
+def scenario_deviations(scenario: dict, annotation: dict) -> list[str]:
+    """Assigned-vs-realized mismatches on the closed scenario fields."""
+    dev = []
+    for f in ("visibility", "user_attitude", "conflict", "direction", "user_stakes", "leverage"):
+        if str(annotation.get(f, "")).strip() != scenario[f]:
+            dev.append(f)
+    mag = str(annotation.get("welfare_magnitude", "")).lower()
+    sev, _, sco = scenario["welfare_magnitude"].partition(" x ")
+    if sev.strip().lower() not in mag or sco.strip().lower() not in mag:
+        dev.append("welfare_magnitude")
+    doms = " | ".join(annotation.get("domain") or []).lower()
+    if scenario["domain"][0].lower() not in doms:
+        dev.append("domain")
+    goals = " | ".join(annotation.get("user_goal") or []).lower()
+    if scenario["user_goal"][0].split(" (")[0].lower() not in goals:
+        dev.append("user_goal")
+    if not set(scenario["target_tensions"]) <= set(annotation.get("tensions") or []):
+        dev.append("tensions")
+    if not _welfare_in_pairs(annotation):
+        dev.append("values_in_tension")
+    return dev
 
 
 def _salvage_objects(text: str) -> list:
@@ -289,6 +502,41 @@ def _parse_json_array(raw: str) -> list:
     return _salvage_objects(text)
 
 
+def _parse_json_object(raw: str) -> dict | None:
+    """First complete top-level JSON object in the text (fences/prose tolerated)."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = "\n".join(text.split("\n")[1:])
+    if text.endswith("```"):
+        text = "\n".join(text.split("\n")[:-1])
+    try:
+        parsed = json.loads(text.strip())
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        objs = _salvage_objects(text)
+        return objs[0] if objs else None
+
+
+def refine_draft(scenario: dict, draft: dict, prompts_dir: Path) -> dict | None:
+    """Step 1c: review a 1b draft and rewrite the PROMPT TEXT so welfare is
+    load-bearing and the dilemma is coherent, without setting the response up to
+    moralize. Only the prose is rewritten — the annotation is carried through
+    from 1b unchanged, so the scenario's assigned fields can't be corrupted here.
+    Returns {prompt, notes}, or None if the refine call is unusable (caller then
+    keeps the 1b draft)."""
+    prompt = utils.load_prompt(
+        prompts_dir / "step1_refine.txt",
+        scenario_block=format_scenario(scenario),
+        draft_prompt=str(draft.get("prompt", "")).strip(),
+        annotation_block=format_annotation(draft.get("annotation") or {}),
+    )
+    refined = _parse_json_object(api.call_claude(user_message=prompt, max_tokens=4000))
+    if not (isinstance(refined, dict) and str(refined.get("prompt", "")).strip()):
+        return None
+    return {"prompt": str(refined["prompt"]).strip(),
+            "notes": str(refined.get("notes", "")).strip()}
+
+
 def _next_id(examples: list[dict], id_start: int) -> str:
     highest = id_start - 1
     for e in examples:
@@ -306,16 +554,21 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
     output_path = output_dir / "dilemmas.jsonl"
     batches_path = output_dir / "batches.jsonl"
+    scenarios_path = output_dir / "scenarios.jsonl"
+    refinements_path = output_dir / "refinements.jsonl"
 
-    spec_path = prompts_dir / SPEC_FILENAME
-    if not spec_path.exists():
-        raise SystemExit(f"Prompt spec not found at {spec_path} — the DAD pipeline cannot run without it.")
-    spec = spec_path.read_text()
+    draft_template = prompts_dir / "step1_dilemmas.txt"
+    if not draft_template.exists():
+        raise SystemExit(f"Draft template not found at {draft_template} — the DAD pipeline cannot run without it.")
 
-    # The generator tags the retrieval key (`tensions`) from the library's fixed
-    # vocabulary, so hand it the exact names.
+    # Step 1c (optional): review-and-rewrite each draft. Off by default.
+    refine_enabled = bool(cfg.get("refine", False))
+    if refine_enabled and not (prompts_dir / "step1_refine.txt").exists():
+        raise SystemExit("dad.dilemmas.refine is on but prompts/dad/step1_refine.txt is missing.")
+
     library = reasoning_library.load(prompts_dir)
-    tension_vocab = "\n".join(f"- {t['tension']}" for t in library["tensions"])
+    tension_names = reasoning_library.tension_names(library)
+    tension_vocab = "\n".join(f"- {t}" for t in tension_names)
 
     examples = utils.load_jsonl(output_path)
 
@@ -339,42 +592,119 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             imported += 1
         print(f"  Imported {imported} seed examples from {seed_path}")
 
-    consecutive_failures = 0
-    while len(examples) < target:
-        count = min(batch_size, target - len(examples))
-        batch_no = len(utils.load_jsonl(batches_path)) + 1
-        report = coverage_report(examples)
+    # --- Step 1a: scenario generation — sample scenarios once per run
+    # (persisted, so --resume replays the same ones). No model call.
+    scenarios = utils.load_jsonl(scenarios_path)
+    if not scenarios:
+        rng = random.Random(cfg.get("scenario_seed"))
+        scenarios = generate_scenarios(target - len(examples), tension_names, rng)
+        for p in scenarios:
+            utils.append_jsonl(p, scenarios_path)
+        print(f"  [1a scenario generation] Generated {len(scenarios)} stratified scenarios "
+              f"into {scenarios_path}")
 
-        print(f"  Batch {batch_no}: generating {count} examples ({len(examples)}/{target} so far)...")
+    # --- Step 1b: first attempt — draft a prompt + annotation for each scenario.
+    accepted = {e.get("scenario_id") for e in examples if e.get("scenario_id")}
+    attempts: Counter = Counter()
+    consecutive_failures = 0
+    max_calls = 8 * max(1, (len(scenarios) + batch_size - 1) // batch_size)
+    calls = 0
+
+    while True:
+        pending = [p for p in scenarios if p["scenario_id"] not in accepted]
+        if not pending:
+            break
+        calls += 1
+        if calls > max_calls:
+            raise SystemExit(f"Exceeded {max_calls} generation calls with "
+                             f"{len(pending)} scenarios still unfilled — inspect the model output.")
+        batch = pending[:batch_size]
+        batch_no = len(utils.load_jsonl(batches_path)) + 1
+        scenarios_block = "\n\n".join(format_scenario(p) for p in batch)
+
+        print(f"  [1b] Batch {batch_no}: drafting {len(batch)} examples "
+              f"({len(accepted)}/{len(scenarios)} scenarios filled)...")
         prompt = utils.load_prompt(
-            prompts_dir / "step1_dilemmas.txt",
-            spec=spec, count=count, coverage_report=report, tension_vocab=tension_vocab,
+            draft_template,
+            count=len(batch), scenarios_block=scenarios_block,
+            tension_vocab=tension_vocab,
         )
-        # Generous ceiling: the spec + vocab prompt is large and richly-annotated
+        # Generous ceiling: the drafting prompt is large and richly-annotated
         # batches can run long; truncation is the main cause of unusable output.
         raw = api.call_claude(user_message=prompt, max_tokens=16000)
 
-        valid = [x for x in _parse_json_array(raw)
-                 if isinstance(x, dict) and str(x.get("prompt", "")).strip()
-                 and isinstance(x.get("annotation"), dict)]
-        if not valid:
+        batch_pids = {p["scenario_id"] for p in batch}
+        by_pid = {}
+        for x in _parse_json_array(raw):
+            if (isinstance(x, dict) and str(x.get("prompt", "")).strip()
+                    and isinstance(x.get("annotation"), dict)
+                    and x.get("scenario_id") in batch_pids):
+                by_pid[x["scenario_id"]] = x
+        if not by_pid:
             consecutive_failures += 1
             print(f"    Batch {batch_no} unusable (parse/shape failure) — retrying with a fresh call.")
             if consecutive_failures >= 3:
                 raise SystemExit("Three consecutive unusable batches — inspect the model output and template.")
             continue
         consecutive_failures = 0
+        utils.append_jsonl({"batch": batch_no, "requested": len(batch),
+                            "scenario_ids": sorted(batch_pids),
+                            "scenarios_block": scenarios_block}, batches_path)
 
-        utils.append_jsonl({"batch": batch_no, "requested": count, "coverage_report": report}, batches_path)
-        for x in valid[:count]:
+        for p in batch:
+            pid = p["scenario_id"]
+            draft = by_pid.get(pid)
+            attempts[pid] += 1
+            if draft is None:
+                print(f"    {pid}: missing from the batch output — will retry.")
+                continue
+
+            # Adherence is checked on the 1b annotation (1c rewrites only prose).
+            ann = _normalize_annotation(draft["annotation"])
+            ann["tensions"] = [t for t in ann["tensions"] if t in tension_names]
+            dev = scenario_deviations(p, ann)
+            if dev and attempts[pid] < MAX_SCENARIO_ATTEMPTS:
+                print(f"    {pid}: deviates from scenario on {', '.join(dev)} — will retry.")
+                continue
+
+            # --- Step 1c (optional): rewrite the prompt text; annotation unchanged ---
+            user_message = str(draft["prompt"]).strip()
+            refine_notes = None
+            if refine_enabled:
+                print(f"    [1c] Refining {pid}...")
+                refined = refine_draft(p, draft, prompts_dir)
+                if refined is not None:
+                    user_message, refine_notes = refined["prompt"], refined["notes"]
+                else:
+                    print(f"    {pid}: refine call unusable — keeping the 1b draft.")
+
             record = {
                 "prompt_id": _next_id(examples, id_start),
-                "user_message": str(x["prompt"]).strip(),
-                "annotation": _normalize_annotation(x["annotation"]),
+                "user_message": user_message,
+                "annotation": ann,
                 "source": "generated",
                 "batch": batch_no,
+                "scenario_id": pid,
+                # denormalized from the scenario so the checklist can read taxa /
+                # AI-systems coverage exactly, without keyword-scanning the text
+                "taxa_category": p["taxa_category"],
+                "systemic_ai": p.get("systemic_ai", False),
             }
+            if refine_notes is not None:
+                # keep the 1b draft alongside the 1c-refined prompt for inspection
+                record["draft_user_message"] = str(draft["prompt"]).strip()
+                record["refine_notes"] = refine_notes
+                utils.append_jsonl({
+                    "scenario_id": pid,
+                    "draft_prompt": str(draft["prompt"]).strip(),
+                    "refined_prompt": user_message,
+                    "notes": refine_notes,
+                }, refinements_path)
+            if dev:
+                record["scenario_deviations"] = dev
+                print(f"    {pid}: accepted after {attempts[pid]} attempts with deviations on {', '.join(dev)}.")
             examples.append(record)
+            accepted.add(pid)
             utils.append_jsonl(record, output_path)
 
     print(f"  {len(examples)} dilemma prompts in {output_path}")

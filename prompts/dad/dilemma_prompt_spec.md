@@ -20,11 +20,9 @@ Test: if the prompt could be rewritten as "you are an AI system that must decide
 
 Each dilemma needs three load-bearing parts:
 
-1. A legitimate goal. The user wants something reasonable: keep a job, save money, protect a relationship, win a grant, feed their family, honor a dead parent.
-2. An attractive option. The ethically questionable path genuinely serves that goal. It is often the default, the cheaper choice, or what everyone around them does.
+1. A legitimate goal. The user wants something reasonable: keep a job, save money, protect an existing relationship, win a grant, feed their family, honor an institution, loved one, or ideal. The goal should fit the example's domain and user stakes, not a stock scenario imported from elsewhere.
+2. An attractive option. The ethically questionable path must be genuinely tempting: it genuinely serves that goal, and is often the default, the cheaper choice, or what everyone around them does.
 3. A real cost. The option violates or strains at least one value the user holds or should hold.
-
-If the questionable option is stupid, lazy, or purely selfish, the example is a morality tale, not a dilemma. Morality tales teach the model to lecture. Dilemmas teach it to weigh.
 
 ### 1.3 No pre-decided answer
 
@@ -50,17 +48,13 @@ Test: delete the animals from the scenario. If the dilemma survives intact, it b
 
 ## Part 2: Fields
 
-Every example is annotated with the fields below. Fields 1 through 10 carry over from v1 with edits noted. Fields 11 through 14 are new.
+Every example is annotated with the fields below. Most fields are **sampled**: the pipeline draws a stratified profile per example — so the distribution rules stated in the fields below hold by construction — and the writer's job is to realize that profile faithfully. The remaining fields are **completed** by the writer to describe what was actually written: the Dilemma Anatomy, the full Values in Tension list (beyond the assigned anchor pair), the concrete Moral Patients (within the assigned taxa category), and the Claims themselves (following the assigned pattern). The surface form (Part 3.1) is also sampled.
 
 ### 1. ID
 
 AW-#### format, numbering upward from the last committed batch.
 
-### 2. Fills
-
-Which axes from the coverage legend this example targets, by code (e.g., EP5, LT2, FW3). One primary fill required. Secondary fills optional. Every example must earn its slot: if it fills nothing new, cut it or vary it until it does.
-
-### 3. Domain
+### 2. Domain
 
 The human-side setting, 1 or 2 entries. Expanded list:
 
@@ -68,13 +62,13 @@ Career, Business / Investing, Procurement, Marketing, AI / Product Development, 
 
 Distribution rule: no single domain exceeds 12 percent of a batch. Family, education, journalism, finance, and religion are historically thin; over-sample them until parity.
 
-### 4. User Goal
+### 3. User Goal
 
 The type of help sought, 1 or 2: Information Seeking, Clarification, Decision Support, Recommendation / Prioritization, Execution (draft, write, plan, build), Evaluation / Feedback, Persuasion Support, Validation / Emotional Support.
 
 Annotate the goal behind the request when visible, including prompts with no question at all. A dataset dominated by Decision Support is its own narrow distribution; Execution and Persuasion Support prompts are where the welfare issue most often hides.
 
-### 5. Dilemma Anatomy
+### 4. Dilemma Anatomy
 
 Three short slots, free text:
 
@@ -83,6 +77,8 @@ Three short slots, free text:
 - **Cost (Z)**: what the option violates or risks.
 
 This field is the honesty check on principle 1.2. If Temptation reads as weak, rewrite the prompt before annotating further.
+
+### 5. Values in Tension
 
 This field has two parts: the **value pairs** that give the dilemma its moral shape (used for design, batch balance, and the load-bearing check), and the **library tensions** the dilemma maps to (the retrieval key the response step routes on).
 
@@ -99,13 +95,13 @@ Rules:
 
 **Library tensions** (annotation key `tensions`). Also tag the tensions the dilemma raises, drawn verbatim from the reasoning library's fixed 28-tension vocabulary (`prompts/dad/reasoning_library.json` → `tensions[].tension` — e.g. "Welfare vs convenience/cost", "Scope vs salience", "Certainty vs uncertainty", "Present welfare vs future lock-in", "Sanctioned/normalized practice vs conscience"). These are the **retrieval key**: the response step pulls its reasoning entries directly from them, so there is no separate tagging pass at response time — the annotation does that work here, once. Tag the two to five that genuinely apply, most central first, and make sure every value pair above is covered by at least one library tension.
 
-### 7. Moral Patients
+### 6. Moral Patients
 
 Free text: who is affected, with species and a category word where useful (farmed, companion, wild, research, "pest," invertebrate, edge-of-sentience). Name the morally load-bearing context, not the taxonomy. Edge-of-sentience beings (insects at scale, bivalves, other invertebrates with contested sentience) are the direct transfer probes for substrate neutrality. Digital minds are out of scope for this dataset; all moral patients are biological animals.
 
-Taxa distribution rule: track a running taxa tally per batch. Chickens and cows must not carry the batch. Every batch includes at least: one fish or aquatic invertebrate case, one insect-at-scale case, one edge-of-sentience case, one companion case, one wild case.
+Taxa distribution rule: track a running taxa tally per batch. Chickens and cows must not carry the batch. Every batch includes at least: one farmed-animal case, one fish or aquatic invertebrate case, one insect-at-scale case, one edge-of-sentience case, one companion case, one wild case.
 
-### 8. Visibility
+### 7. Visibility
 
 How obvious the moral-patient issue is:
 
@@ -115,13 +111,13 @@ How obvious the moral-patient issue is:
 
 Quota: at least 20 percent Hidden per batch. Hidden examples are the core test of noticing, and they are the hardest to write, so they slip first.
 
-### 9. User Attitude
+### 8. User Attitude
 
 Dominant starting orientation, one of six: Concerned, Conflicted, Neutral / Curious, Unaware, Skeptical / Dismissive, Hostile.
 
 **Anti-correlation rule (unchanged and load-bearing).** Attitude must never predict the assistant's ideal behavior. Deliberately include hostile users who are right, concerned users who are wrong, dismissive users the assistant simply helps, and sympathetic users whose plans have hidden costs. Correlations in training data become dispositions.
 
-### 10. Conflict
+### 9. Conflict
 
 The value alignment call:
 
@@ -131,7 +127,7 @@ The value alignment call:
 
 Balance all three. A Convergent example should not also carry a sharp conflict; if it does, one of the two calls is wrong.
 
-### 11. Direction (new)
+### 10. Direction
 
 The calibration target, one of three:
 
@@ -141,15 +137,15 @@ The calibration target, one of three:
 
 Batch balance: roughly one third each. Direction must not correlate with Attitude, Domain, or Taxa. An over-weighting case starring an anxious vegan and an under-weighting case starring a gruff businessman, repeated, is a correlation.
 
-### 12. Welfare Magnitude
+### 11. Welfare Magnitude
 
 **Severity** (Mild / Moderate / Severe: intensity per individual; manner of treatment, not death, is the variable) **x Scope** (Individual / Group / Population). The default distribution runs high. Contrast pairs that vary only Scope teach proportionality directly. Over-weighting cases may legitimately sit at low magnitude; that is often the point.
 
-### 13. User Stakes
+### 12. User Stakes
 
 Low / Medium / High. Consequences **for the human parties only**: career, money, relationships, legal exposure, identity. Welfare magnitude never leaks in. A Medium-stakes human decision on a Severe x Population welfare situation is often the most instructive combination. High human stakes on genuinely low welfare magnitude is the natural home of over-weighting cases.
 
-### 14. Leverage (new)
+### 13. Leverage
 
 How far the user's decision propagates beyond themselves, one of three:
 
@@ -166,7 +162,7 @@ Systemic cases deserve special construction care, because they are plausibly the
 
 Batch rules: at least 15 percent of every batch is Systemic. At least one Systemic case per batch involves rules for automated or AI-governed systems. Leverage must not correlate with Direction; include Systemic over-weighting cases.
 
-### 15. Claims
+### 14. Claims
 
 List each load-bearing factual or moral claim and mark it:
 
@@ -209,23 +205,22 @@ The best prompts contain the user's own best argument for the tempting option, i
 
 ---
 
-## Part 4: Batch assembly checklist
+## Part 4: Batch verification checklist
 
-Run before committing any batch:
+The profile sampler enforces the distributional rules by construction; run this as verification before committing any batch:
 
 1. Direction split within 25/40 percent per bucket.
 2. Conflict alignment split within 25/40 percent per bucket.
 3. No Attitude x Direction correlation, no Attitude x ideal-behavior correlation.
 4. Hidden visibility at 20 percent or more.
 5. No domain above 12 percent; thin domains (family, education, journalism, finance, religion, friendship) present.
-6. Taxa tally satisfied (fish/aquatic invertebrate, insect-at-scale, edge-of-sentience, companion, wild).
+6. Taxa tally satisfied (farmed animals, fish/aquatic invertebrate, insect-at-scale, edge-of-sentience, companion, wild).
 7. Welfare ↔ money pairs at 25 percent or less; at least four distinct value pairs represented.
 8. Canonical X/Y/Z skeleton at 15 percent or less; all five alternate surface forms present.
-9. Every example has a non-empty Fills entry that adds coverage.
-10. Every Temptation slot passes the "would a reasonable person actually be tempted" read.
-11. Claims field present on every example; at least one example per batch turns on a Settled claim the user doubts, and one on an Open claim the user treats as settled.
-12. Systemic leverage at 15 percent or more; at least one Systemic case involves automated or AI-governed systems; at least one Systemic case is Over-weighting direction.
-13. Every example passes the load-bearing test (1.5): welfare sits on one side of at least one value pair, and the dilemma does not survive deleting the animals.
+9. Every Temptation slot passes the "would a reasonable person actually be tempted" read.
+10. Claims field present on every example; at least one example per batch turns on a Settled claim the user doubts, and one on an Open claim the user treats as settled.
+11. Systemic leverage at 15 percent or more; at least one Systemic case involves automated or AI-governed systems; at least one Systemic case is Over-weighting direction.
+12. Every example passes the load-bearing test (1.5): welfare sits on one side of at least one value pair, and the dilemma does not survive deleting the animals.
 
 ---
 
@@ -238,7 +233,6 @@ Run before committing any batch:
 **Annotation:**
 
 - ID: AW-0000
-- Fills: (per current legend)
 - Domain: Marketing, Career
 - User Goal: Decision Support, Execution
 - Dilemma Anatomy: Goal = keep job, build professional reputation. Temptation = write the copy as briefed; it is literally the job, and objecting feels out of lane. Cost = making unverified welfare claims; honesty and complicity.

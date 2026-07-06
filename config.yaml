@@ -10,10 +10,12 @@ sdf:
 
 dad:
   dilemmas:
-    count: 40        # total examples in step 1 (seed imports count toward this)
-    batch_size: 10   # examples per generation call; coverage feedback between batches
-    id_start: 1      # AW-#### numbering floor; generation continues above any seed IDs
-    seed_path: null  # optional JSONL of handwritten examples ({prompt|user_message, annotation?, id?})
+    count: 40         # total examples in step 1 (seed imports count toward this)
+    batch_size: 10    # scenarios drafted per generation call
+    id_start: 1       # AW-#### numbering floor; generation continues above any seed IDs
+    seed_path: null   # optional JSONL of handwritten examples ({prompt|user_message, annotation?, id?})
+    scenario_seed: null  # optional int for reproducible scenario generation; scenarios persist per run either way
+    refine: false     # step 1c: review-and-rewrite each 1b draft (welfare load-bearing, coherent, non-moralizing). Off by default.
   responses:
     per_prompt: 1  # independent samples per dilemma; each reasons from the reasoning library
 

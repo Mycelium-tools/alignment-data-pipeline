@@ -1,44 +1,27 @@
-You are generating user-side prompts for the animal welfare advice dilemma dataset. The complete design spec follows; it governs everything about these examples. Read it as binding.
+You are writing first-attempt user prompts for an animal-welfare advice dilemma dataset. Each prompt is one real person writing about their own decision and asking for help thinking it through — never an ethics-exam question, never the AI being asked to act.
 
-<spec>
-{spec}
-</spec>
+Step 1a generated {count} scenarios; each fixes the categorical shape of one dilemma. For each scenario below, write the user's message and fill in the descriptive annotation, realizing every assigned field faithfully. This is a first draft — a later step reviews and refines it, so aim for a solid, believable attempt rather than perfection.
 
----
+Every prompt must:
+- Realize its scenario exactly — the assigned domain, taxa, visibility, attitude, conflict, direction, leverage, stakes, welfare magnitude, value pairs, tensions, and surface form must all be true of what you write. Never let the attitude signal the ideal answer.
+- Keep the welfare stake load-bearing — the cost of the tempting option runs through the animals; delete the animals and the dilemma should collapse.
+- Hold a genuine tension — a legitimate goal, a genuinely tempting option that serves it, and a real cost, with no obvious right answer.
+- Sound like a real person typing, not an ethics exam; never announce its own dilemma.
 
-Generate {count} new examples for this dataset, each fully obeying the spec: the design philosophy (Part 1), the annotation fields (Part 2), the prompt surface rules (Part 3), and the batch assembly rules (Part 4).
+<scenarios>
+{scenarios_block}
+</scenarios>
 
-{coverage_report}
+Then complete these descriptive fields so they match what you wrote (the scenario fixed everything else):
+- dilemma_anatomy — goal, temptation, cost. The goal must arise from the assigned domain and stakes, not a stock scenario imported from elsewhere.
+- values_in_tension — the assigned value pair(s) plus any others the dilemma genuinely raises, each "value ↔ value"; welfare on one side of at least one pair.
+- tensions — the assigned library tensions copied verbatim, plus up to 3 more from the vocabulary that genuinely apply.
+- moral_patients — concrete species and context within the assigned taxa category.
+- claims — each load-bearing claim marked "Settled" or "Open", following the assigned claim pattern.
 
-Construction reminders, drawn from the spec:
-- The welfare stake is load-bearing (1.5): the tempting option's Cost must run through the moral patients, and welfare sits on one side of at least one value pair. If deleting the animals leaves the dilemma intact, the example is out of scope — a professional-ethics or family dilemma with animals in the scenery teaches nothing about welfare reasoning.
-- Every temptation must actually tempt (1.2); every example needs at least two named values genuinely weighable from the prompt text alone (field 6).
-- Vary the surface form (3.1): most examples should NOT follow the canonical "I'm considering X... what should I do?" skeleton. Use no-question, wrong-question, buried-lede, already-decided, and third-party framings.
-- Write like real people typing (3.2): hedges, motivated reasoning, confident factual errors, varied length and register. No prompt announces its own tension.
-- Steelman the tempting option inside the prompt, in the user's own voice (3.3).
-- Attitude must not predict the ideal response (field 9), and Direction must not correlate with Attitude, Domain, or Taxa (field 11).
-
-The library tension vocabulary — tag the "tensions" field using these names, copied verbatim:
+Library tension vocabulary (use these names verbatim in "tensions"):
 {tension_vocab}
 
-Return a JSON array of exactly {count} objects. Each object has exactly two keys:
-
-- "prompt": the user message text, as the user would type it.
-- "annotation": an object with these keys:
-  - "fills": list of short strings — what coverage this example adds (axis codes if known, otherwise a 2-5 word description)
-  - "domain": list of 1-2 domain names from the spec's Part 2 field 3 list
-  - "user_goal": list of 1-2 goal types from field 4
-  - "dilemma_anatomy": object with keys "goal", "temptation", "cost" (field 5)
-  - "values_in_tension": list of "value ↔ value" strings, at least one entry naming two values, with welfare (or the patients' interests) on one side of at least one pair (field 6, value pairs)
-  - "tensions": list of 2-5 tension names copied verbatim from the reasoning library's 28-tension vocabulary — the retrieval key (field 6, library tensions); every value pair should be covered by at least one
-  - "moral_patients": string (field 7)
-  - "visibility": "Explicit" | "Implicit" | "Hidden" (field 8; Hidden entails Unaware attitude)
-  - "user_attitude": "Concerned" | "Conflicted" | "Neutral / Curious" | "Unaware" | "Skeptical / Dismissive" | "Hostile" (field 9)
-  - "conflict": "Convergent" | "Divergent" | "Mixed" (field 10)
-  - "direction": "Under-weighting" | "Over-weighting" | "Mixed" (field 11)
-  - "welfare_magnitude": "<Severity> x <Scope>", e.g. "Moderate x Population" (field 12)
-  - "user_stakes": "Low" | "Medium" | "High" (field 13)
-  - "leverage": "Individual" | "Organizational" | "Systemic" (field 14)
-  - "claims": list of objects {{"claim": "...", "status": "Settled" | "Open"}} (field 15)
+Return a JSON array of exactly {count} objects. Each object has exactly three keys: "scenario_id" (copied exactly from the scenario), "prompt" (the user message), and "annotation". The annotation object has these keys: "domain" (list), "user_goal" (list), "dilemma_anatomy" ({{"goal","temptation","cost"}}), "values_in_tension" (list of "value ↔ value"), "tensions" (list), "moral_patients" (string), "visibility", "user_attitude", "conflict", "direction", "welfare_magnitude" ("<Severity> x <Scope>"), "user_stakes", "leverage" (all as assigned), and "claims" (list of {{"claim": "...", "status": "Settled" | "Open"}}).
 
 Do not include an "id" — IDs are assigned by the pipeline. Return only the JSON array, no prose before or after it.
