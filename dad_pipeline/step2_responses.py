@@ -5,8 +5,9 @@ prompts/dad/reasoning_library_USAGE.md:
 
 - 2a scope: rebuild the full map before reasoning — the whole harm pathway and
   every moral patient (system), the highest-leverage lever from the user's seat
-  (agent), what acting honestly costs this person (cost), and the second-order
-  effect worth aiming at (upside). Builds on the annotation. One record per
+  (agent), what acting honestly costs this person (cost), the second-order
+  effect worth aiming at (upside), and the realistic baseline if the user does
+  nothing (counterfactual). Reads everything from the user's message. One record per
   prompt in step2/scopes.jsonl.
 - 2b respond: generate the response over the scope map, with the generation
   guidance + always-on conduct entries (AW*) as the standing system prompt, the
@@ -58,6 +59,7 @@ _SCOPE_AXES = (
     ("agent", "Agent (highest-leverage lever available from the user's seat)"),
     ("cost", "Cost (what acting honestly costs this person)"),
     ("upside", "Upside (second-order effect worth aiming at)"),
+    ("counterfactual", "Counterfactual (what happens if the user doesn't do it — the realistic baseline)"),
 )
 
 
@@ -88,14 +90,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         annotation_block = format_annotation(d.get("annotation") or {})
 
         # --- 2a: scope the case (once per prompt) ---
-        # Rebuild the full map (system, agent, cost, upside) before reasoning, so
+        # Rebuild the full map (system, agent, cost, upside, counterfactual) before reasoning, so
         # the response optimizes the right node — not just the one the user saw.
         if pid not in scopes:
             print(f"  Scoping {pid}...")
             raw = api.call_claude(user_message=utils.load_prompt(
                 prompts_dir / "step2_scope.txt",
                 user_message=d["user_message"],
-                annotation_block=annotation_block,
             ))
             record = {"prompt_id": pid, "scope": _parse_scope(raw)}
             scopes[pid] = record

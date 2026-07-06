@@ -265,7 +265,7 @@ else:
                         st.json(sc, expanded=True)
                     else:
                         st.caption("not reached")
-                stage_expander("Step 2a — scope the case (system, agent, cost, upside)",
+                stage_expander("Step 2a — scope the case (system, agent, cost, upside, counterfactual)",
                                "step2_scope", lin, step2_scope_output)
 
                 # Tension retrieval was removed from the pipeline; still shown for

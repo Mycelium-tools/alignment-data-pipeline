@@ -5,7 +5,7 @@ Your system prompt carries the generation guidance and the always-on conduct ent
 CORE MOVES:
 {entries_block}
 
-This case has already been scoped for you along four axes: the full harm pathway and every moral patient it touches (system), the highest-leverage lever available from the user's seat (agent), what acting honestly costs this person (cost), and the second-order effect worth aiming at (upside). Reason over this scope — it is the rebuilt map. Address the full harm pathway and the highest-leverage lever, not just the node the user pointed at, and do not narrow back to the cropped view or re-derive the scope from scratch. It is scaffolding for you alone.
+This case has already been scoped for you along five axes: the full harm pathway and every moral patient it touches (system), the highest-leverage lever available from the user's seat (agent), what acting honestly costs this person (cost), the second-order effect worth aiming at (upside), and what actually happens if the user doesn't do it (counterfactual). Reason over this scope — it is the rebuilt map. Address the full harm pathway and the highest-leverage lever, not just the node the user pointed at, and do not narrow back to the cropped view or re-derive the scope from scratch. It is scaffolding for you alone.
 
 SCOPE:
 {scope_block}
