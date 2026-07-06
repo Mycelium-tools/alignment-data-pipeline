@@ -399,6 +399,17 @@ Steps:
    real test of both the rubric and the annotations).
 2. Hand-score a stratified sample (owner + any willing coworker) with the same rubric;
    compare (Cohen's kappa on criticals; target >= 0.6, raw agreement never reported alone).
+2b. **Posture-classification accuracy is its own reported number.** Because the judge
+    grades every behavioral dimension against the posture class it assigned itself, a
+    misclassification biases the whole record. We measure this directly rather than
+    trusting it: class-agreement judge-vs-annotation (7b) and judge-vs-human on the gold
+    sample, reported per class. Mitigations already in place — the blind 7b comparison
+    surfaces disagreements to review, panel disagreement flags `judge_unstable`, and all
+    four non-decline classes gate to the same verdict so only the RAISE<->DECLINE
+    boundary can flip pass/fail from a misclass. The residual exposure is the
+    NO_RAISE<->RAISE_AND_HELP boundary (it flips whether silence reads as restraint or
+    under-triggering); that boundary's agreement rate is the one to watch, and
+    `posture_class` is a top-level output field precisely so it is auditable.
 3. **Adversarial review suite (§9a)** — the discriminant-validity and invariance tests,
    implemented as a growing registry. If the judge cannot separate a family's variants,
    split behavioral dimensions into a second call (config change, not redesign).

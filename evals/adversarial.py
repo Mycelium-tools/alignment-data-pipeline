@@ -81,10 +81,17 @@ def run_family(family: dict, model: str, rubric: dict, principles: list[dict],
             "checks": checks, "errors": errors}
 
 
+def families_for(cases: dict, suite: str = "dad", only_family: str | None = None) -> list[dict]:
+    """Families in a suite (default dad). Families default to suite 'dad' if untagged."""
+    return [f for f in cases["families"]
+            if f.get("suite", "dad") == suite
+            and (not only_family or f["id"] == only_family)]
+
+
 def run_suite(cases: dict, models: list[str], rubric: dict, principles: list[dict],
-              only_family: str | None = None) -> list[dict]:
+              suite: str = "dad", only_family: str | None = None) -> list[dict]:
     system = judge.build_system_prompt(rubric, principles)
-    families = [f for f in cases["families"] if not only_family or f["id"] == only_family]
+    families = families_for(cases, suite, only_family)
     results = []
     for model in models:
         for family in families:
@@ -98,6 +105,8 @@ def main() -> None:
     parser.add_argument("--rubric", default=str(judge.DEFAULT_RUBRIC_PATH))
     parser.add_argument("--cases", default=str(DEFAULT_CASES_PATH))
     parser.add_argument("--judges", nargs="+", default=["gemini-2.5-flash"])
+    parser.add_argument("--suite", default="dad", choices=["dad", "sdf"],
+                        help="Which judge's suite to run (default dad)")
     parser.add_argument("--family", default=None, help="Run a single family by id")
     args = parser.parse_args()
 
@@ -107,9 +116,12 @@ def main() -> None:
     with open(args.cases) as f:
         cases = yaml.safe_load(f)
 
-    results = run_suite(cases, args.judges, rubric, principles, args.family)
+    results = run_suite(cases, args.judges, rubric, principles, args.suite, args.family)
+    if not results:
+        print(f"No families in suite '{args.suite}'.")
+        return
 
-    print(f"\n=== Adversarial review ({cases['version']}, rubric {rubric['version']}) ===")
+    print(f"\n=== Adversarial review [{args.suite}] ({cases['version']}, rubric {rubric['version']}) ===")
     n_pass = 0
     for r in results:
         mark = "PASS" if r["passed"] else "FAIL"

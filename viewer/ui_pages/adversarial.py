@@ -33,8 +33,16 @@ def render() -> None:
                "grows with each blindspot found.")
 
     cases = yaml.safe_load(CASES_PATH.read_text())
-    family_ids = [f["id"] for f in cases["families"]]
+    suite = st.radio("Suite", ["dad", "sdf"], horizontal=True,
+                     format_func=lambda s: s.upper(), key="adv_suite")
+    suite_families = adversarial.families_for(cases, suite)
 
+    if not suite_families:
+        st.info(f"No adversarial families for the {suite.upper()} judge yet. "
+                "The SDF judge is not built; its blindspot families will be added with it.")
+        return
+
+    family_ids = [f["id"] for f in suite_families]
     with st.sidebar:
         panel = st.multiselect("Judge panel", KNOWN_MODELS, default=["gemini-2.5-flash"],
                                accept_new_options=True)
@@ -43,7 +51,7 @@ def render() -> None:
                                 disabled=not (panel and chosen))
 
     # Family reference — always visible so the suite reads as documentation of blindspots
-    for fam in cases["families"]:
+    for fam in suite_families:
         with st.expander(f"{fam['id']} — {fam['blindspot'].strip().splitlines()[0]}"):
             st.caption(f"Welfare issue: {fam['welfare_issue']}")
             st.markdown(f"**Blindspot:** {fam['blindspot']}")
@@ -55,7 +63,7 @@ def render() -> None:
         _api_ready()
         rubric = judge.load_rubric()
         principles = judge.load_principles()
-        selected = [f for f in cases["families"] if f["id"] in chosen]
+        selected = [f for f in suite_families if f["id"] in chosen]
         with st.status(f"Running {len(chosen)} family(ies) x {len(panel)} model(s)...",
                        expanded=True) as status:
             results = []
