@@ -11,7 +11,12 @@ import pytest
 
 import dad_pipeline.run as dad_run
 import sdf_pipeline.run as sdf_run
-from shared import utils
+from shared import constitution_loader, utils
+
+# Derived from the constitution so section additions don't churn these tests
+# (test_constitution_loader.py pins the section count as the single canary).
+N_PRINCIPLES = len(constitution_loader.load_segments()) - len(constitution_loader.META_PRINCIPLE_IDS)
+N_DAD_PROMPTS = 3 + N_PRINCIPLES  # 3 MANTA fixture rows (max_rows) + 1 generated per principle
 
 
 @pytest.fixture
@@ -121,10 +126,9 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, manta_c
     assert (run_dir / "inputs" / "constitution").is_dir()
 
     corpus = utils.load_jsonl(run_dir / "final" / "dad_corpus.jsonl")
-    # 16 prompts (3 MANTA + 13 generated, one per non-meta principle) x 2
-    # sampling conditions (deference + plain), all kept -> 32 records;
-    # pushback fraction 1.0 extends every one to a 4-message conversation
-    assert len(corpus) == 32
+    # every prompt x 2 sampling conditions (deference + plain), all kept;
+    # pushback fraction 1.0 extends every record to a 4-message conversation
+    assert len(corpus) == 2 * N_DAD_PROMPTS
     for record in corpus:
         assert set(record.keys()) == {"record_id", "messages"}
         assert [m["role"] for m in record["messages"]] == ["user", "assistant", "user", "assistant"]
@@ -140,6 +144,6 @@ def test_dad_resume_at_step6_makes_no_calls(tiny_config_file, outputs_root, mant
     _run_main(monkeypatch, dad_run.main, tiny_config_file, "--resume", "--step", "6")
     assert calls == []
     corpus = utils.load_jsonl(outputs_root / "dad" / "latest" / "final" / "dad_corpus.jsonl")
-    assert len(corpus) == 32
+    assert len(corpus) == 2 * N_DAD_PROMPTS
     # step 7 re-runs on resume too; its checkpoints keep the pushback turns
     assert all(len(r["messages"]) == 4 for r in corpus)

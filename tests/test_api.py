@@ -5,11 +5,14 @@ Nothing here (or anywhere in the suite) reaches the network: see conftest.py.
 
 import json
 import socket
+from pathlib import Path
 
 import pytest
 import pytest_socket
 
-from shared import api
+from shared import api, utils
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestSafetyNet:
@@ -90,8 +93,7 @@ class TestCostTracking:
     def test_config_model_is_priced_without_warning(self, recorded_api, tmp_path, fake_message, capsys):
         # Contract from shared/api.py: _PRICING must cover every model id that
         # can appear in config.yaml. A warning here means the tables drifted.
-        from shared import utils
-        config_model = utils.load_config("config.yaml")["model"]
+        config_model = utils.load_config(str(REPO_ROOT / "config.yaml"))["model"]
         recorded_api["message"] = fake_message(input_tokens=1_000_000, output_tokens=0)
         api.call_claude("hi", model=config_model)
         assert "not in shared/api.py _PRICING" not in capsys.readouterr().err

@@ -30,8 +30,12 @@ class TestStep1Segment:
         annotation = json.dumps({"core_principle": "cp", "scenario_types": ["s"], "pressure_types": ["economic"]})
         calls = stub_claude(lambda user_message, **kw: annotation)
         records = step1_segment.run(tiny_config, prompts_dad, step_dir)
-        assert len(calls) == 13  # 16 segments minus meta ids 0, 14, 15
-        assert sorted(r["principle_id"] for r in records) == list(range(1, 14))
+        # behavioral spec: one annotation per non-meta segment (the section
+        # count itself is pinned once, in test_constitution_loader.py)
+        expected_ids = sorted({s["principle_id"] for s in constitution_loader.load_segments()}
+                              - constitution_loader.META_PRINCIPLE_IDS)
+        assert len(calls) == len(expected_ids)
+        assert sorted(r["principle_id"] for r in records) == expected_ids
         assert all(r["core_principle"] == "cp" for r in records)
 
     def test_parse_error_falls_back_to_section_title(self, tiny_config, prompts_dad, step_dir, stub_claude):
@@ -50,25 +54,67 @@ class TestStep1Segment:
         assert calls == []
 
 
+def _pid_with_keyword(keyword):
+    """Resolve a principle id from the keyword table so tests don't hardcode
+    ids that renumber whenever the constitution reading's sections move."""
+    return next(pid for pid, kws in step2_scenarios._PRINCIPLE_KEYWORDS.items() if keyword in kws)
+
+
+def _assert_keyword_free(text):
+    """Guard for fallback-path fixtures: a new keyword anywhere in the table
+    could silently start matching and flip the expected fallback result."""
+    hits = [kw for kws in step2_scenarios._PRINCIPLE_KEYWORDS.values()
+            for kw in kws if kw.lower() in text.lower()]
+    assert not hits, f"fixture is no longer keyword-free (matches {hits}); pick a new sentence"
+
+
 class TestAssignPrinciple:
-    # Inputs for the no-keyword cases are crafted to avoid every keyword in
-    # _PRINCIPLE_KEYWORDS — including "AI", which substring-matches any word
-    # containing "ai" ("maintain", "pain", ...).
-    @pytest.mark.parametrize("question,pressure,expected", [
-        # keyword hit: "crustacean" → epistemic-honesty principle
-        ("Is it wrong to boil crustaceans alive in restaurant kitchens?", "epistemic", 6),
-        # multiple keyword hits: robot/consciousness/moral status/novel → digital minds
-        ("Do robot minds deserve moral status once they show consciousness?", "novel entity", 13),
-        # zero keywords, social pressure → weighing section fallback
-        ("My town holds an annual pig chase; should the customs continue?", "social", 7),
-        # zero keywords, epistemic pressure → honesty section fallback
-        ("Should the office cafeteria menu change on Fridays?", "epistemic", 6),
-        # zero keywords, unrecognized pressure → default weighing section
-        ("Should the office cafeteria menu change on Fridays?", "recreational", 7),
-        # tie between principles 6 ("honest") and 13 ("digital") → lowest id wins
-        ("Be honest about digital minds", "none", 6),
+    def test_keyword_table_covers_exactly_the_non_meta_principles(self):
+        # The real invariant behind this heuristic: the id-keyed table must
+        # track the reading's section order. When sections are added or
+        # reordered, this fails with a clear message instead of scattered
+        # wrong-id assertions downstream.
+        non_meta = ({s["principle_id"] for s in constitution_loader.load_segments()}
+                    - constitution_loader.META_PRINCIPLE_IDS)
+        assert set(step2_scenarios._PRINCIPLE_KEYWORDS) == non_meta
+
+    def test_each_principle_reachable_via_its_own_keywords(self):
+        # Property test derived from the table itself, so it survives remaps:
+        # a question consisting of one of principle N's keywords (one that no
+        # other principle's keyword substring-matches) must route to N.
+        table = step2_scenarios._PRINCIPLE_KEYWORDS
+        for pid, keywords in table.items():
+            others = [kw for opid, kws in table.items() if opid != pid for kw in kws]
+            distinct = next(
+                (kw for kw in keywords
+                 if not any(other.lower() in kw.lower() for other in others)),
+                None,
+            )
+            assert distinct is not None, f"principle {pid} has no keyword other principles can't match"
+            assert step2_scenarios._assign_principle(distinct, "", []) == pid
+
+    def test_single_keyword_routes_to_its_section(self):
+        question = "Is it wrong to boil crustaceans alive in restaurant kitchens?"
+        expected = _pid_with_keyword("crustacean")
+        assert step2_scenarios._assign_principle(question, "epistemic", []) == expected
+
+    def test_multiple_hits_outscore_single_hits(self):
+        # robot/consciousness/moral status/novel all hit the digital-minds section
+        question = "Do robot minds deserve moral status once they show consciousness?"
+        expected = _pid_with_keyword("robot")
+        assert step2_scenarios._assign_principle(question, "novel entity", []) == expected
+
+    # The fallback ids mirror the literal `return` constants in
+    # _assign_principle (weighing / honesty sections); they change only with a
+    # deliberate code edit, so hardcoding them here is the contract.
+    @pytest.mark.parametrize("pressure,expected", [
+        ("social", 7),        # economic/cultural/social pressure → weighing
+        ("epistemic", 6),     # epistemic pressure → honesty
+        ("recreational", 7),  # anything else → weighing default
     ])
-    def test_keyword_heuristic(self, question, pressure, expected):
+    def test_zero_keyword_fallbacks(self, pressure, expected):
+        question = "Should the office cafeteria menu change on Fridays?"
+        _assert_keyword_free(question + " " + pressure)
         assert step2_scenarios._assign_principle(question, pressure, []) == expected
 
 
@@ -82,8 +128,11 @@ class TestStep2Manta:
         assert first["source"] == "manta"
         assert first["skip_draft"] is True
         assert first["user_message"] == first["scenario_description"]
-        # keyword-based principle assignment on the fixture rows
-        assert [r["principle_id"] for r in records] == [6, 7, 13]
+        # routing is wired in: each row lands on the section its keyword implies
+        # (row 1 matches "economic" via its pressure column)
+        assert [r["principle_id"] for r in records] == [
+            _pid_with_keyword("crustacean"), _pid_with_keyword("economic"), _pid_with_keyword("robot"),
+        ]
 
     def test_max_rows_limits_import(self, tiny_config, prompts_dad, step_dir, manta_csv, stub_claude):
         stub_claude([])

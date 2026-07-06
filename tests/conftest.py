@@ -16,6 +16,7 @@ reached the real ``_call_with_retry``, tenacity would sleep 4-60s per attempt.
 """
 
 import random
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,7 +30,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 @pytest.fixture(autouse=True)
 def _seed_rng():
-    """Reseed the global RNG before every test so runs are repeatable."""
+    """Reseed the global RNG before every test so runs are repeatable.
+
+    Note: seeding does NOT make draws deterministic across worker threads
+    (parallel_map interleaves them) — a test that needs exact draws in a
+    parallel stage must inject its own rng (e.g. sample_language(dist, rng=...)).
+    """
     random.seed(0)
 
 
@@ -63,6 +69,7 @@ def stub_claude(monkeypatch):
     def install(responses):
         calls = []
         queue = list(responses) if isinstance(responses, list) else None
+        busy = threading.Lock()
 
         def fake(user_message, system_prompt="", injection="", model=None, max_tokens=None):
             calls.append({
@@ -72,16 +79,26 @@ def stub_claude(monkeypatch):
                 "model": model,
                 "max_tokens": max_tokens,
             })
-            if queue is not None:
+            if queue is None:
+                return responses(
+                    user_message,
+                    system_prompt=system_prompt,
+                    injection=injection,
+                    model=model,
+                    max_tokens=max_tokens,
+                )
+            # FIFO queues assume serial calls: a parallel stage (workers > 1
+            # with 2+ pending items) interleaves pops and maps responses to
+            # the wrong items nondeterministically. Fail loudly instead.
+            assert busy.acquire(blocking=False), (
+                "queue-based stub_claude called concurrently — use a callable "
+                "dispatcher for stages that fan out via parallel_map"
+            )
+            try:
                 assert queue, "stub_claude queue exhausted — more API calls than canned responses"
                 return queue.pop(0)
-            return responses(
-                user_message,
-                system_prompt=system_prompt,
-                injection=injection,
-                model=model,
-                max_tokens=max_tokens,
-            )
+            finally:
+                busy.release()
 
         monkeypatch.setattr(api, "call_claude", fake)
         return calls
