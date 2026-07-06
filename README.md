@@ -112,7 +112,7 @@ cd alignment-data-pipeline
 
 ### Create a virtual environment and install dependencies
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv       # or python3, if that's already 3.12+
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env           # then add your ANTHROPIC_API_KEY
