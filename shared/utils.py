@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, UTC
 
 import yaml
 
@@ -204,7 +204,7 @@ class Checkpoint:
         if key not in self._completed:
             self._completed.add(key)
             self._data["completed"] = list(self._completed)
-            self._data["last_updated"] = datetime.utcnow().isoformat()
+            self._data["last_updated"] = datetime.now(UTC).isoformat()
             ensure_dir(self.path.parent)
             with open(self.path, "w") as f:
                 json.dump(self._data, f)
