@@ -23,10 +23,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
+from dad_pipeline import reasoning_library
 
 SPEC_FILENAME = "dilemma_prompt_spec.md"
 
-_LIST_FIELDS = ("fills", "domain", "user_goal", "values_in_tension", "claims")
+_LIST_FIELDS = ("fills", "domain", "user_goal", "values_in_tension", "tensions", "claims")
 _STR_FIELDS = ("moral_patients", "visibility", "user_attitude", "conflict",
                "direction", "welfare_magnitude", "user_stakes", "leverage")
 
@@ -67,6 +68,7 @@ def format_annotation(annotation: dict) -> str:
         f"Dilemma anatomy: Goal = {anatomy.get('goal', '')} | "
         f"Temptation = {anatomy.get('temptation', '')} | Cost = {anatomy.get('cost', '')}",
         f"Values in tension: {'; '.join(annotation.get('values_in_tension') or [])}",
+        f"Library tensions: {'; '.join(annotation.get('tensions') or [])}",
         f"Moral patients: {annotation.get('moral_patients', '')}",
         f"Visibility: {annotation.get('visibility', '')}",
         f"User attitude: {annotation.get('user_attitude', '')}",
@@ -279,6 +281,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         raise SystemExit(f"Prompt spec not found at {spec_path} — the DAD pipeline cannot run without it.")
     spec = spec_path.read_text()
 
+    # The generator tags the retrieval key (`tensions`) from the library's fixed
+    # vocabulary, so hand it the exact names.
+    library = reasoning_library.load(prompts_dir)
+    tension_vocab = "\n".join(f"- {t['tension']}" for t in library["tensions"])
+
     examples = utils.load_jsonl(output_path)
 
     # Optional handwritten seed examples, imported once ahead of generation
@@ -310,7 +317,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         print(f"  Batch {batch_no}: generating {count} examples ({len(examples)}/{target} so far)...")
         prompt = utils.load_prompt(
             prompts_dir / "step1_dilemmas.txt",
-            spec=spec, count=count, coverage_report=report,
+            spec=spec, count=count, coverage_report=report, tension_vocab=tension_vocab,
         )
         raw = api.call_claude(user_message=prompt, max_tokens=8000)
 

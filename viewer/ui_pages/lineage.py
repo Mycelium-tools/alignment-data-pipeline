@@ -210,7 +210,7 @@ else:
                     st.json(d.get("annotation", {}), expanded=False)
                 stage_expander("Step 1 — dilemma prompt (spec-driven)", "step1_dilemmas", lin, step1_output)
 
-                stage_expander("Step 2a — tension tagging", "step2_tag", lin,
+                stage_expander("Step 2a — tensions (from annotation)", "step2_tag", lin,
                                lambda: st.json(lin.get("tension_tag"))
                                if lin.get("tension_tag") else st.caption("not reached"))
                 stage_expander("Step 2b — response from the reasoning library", "step2_respond", lin,

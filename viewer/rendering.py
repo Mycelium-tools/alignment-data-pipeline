@@ -226,10 +226,20 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         batch = batches.get(dilemma.get("batch")) or {}
         if not batch:
             r.warnings.append("Batch record not found — the coverage-report slot is shown empty.")
+        lib_t = tpl(reasoning_library.FILENAME)
+        for legacy_name in reasoning_library.LEGACY_FILENAMES:
+            if lib_t.text is not None:
+                break
+            lib_t = tpl(legacy_name)
+        try:
+            vocab = "\n".join(f"- {t['tension']}" for t in json.loads(lib_t.text)["tensions"]) if lib_t.text else ""
+        except (json.JSONDecodeError, KeyError):
+            vocab = ""
         r.variables = {
             "spec": spec_t.text or "",
             "count": batch.get("requested", ""),
             "coverage_report": batch.get("coverage_report", ""),
+            "tension_vocab": vocab,
         }
         r.user = _format(tpl("step1_dilemmas.txt"), r.variables, r)
         return r
@@ -253,6 +263,15 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         user_message = response.get("user_message") or (lineage.get("dilemma") or {}).get("user_message", "")
 
         if stage == "step2_tag":
+            # Normal path: tensions came from the step-1 annotation (no LLM call).
+            # Fallback path (source == "tagged"): the prompt was tagged by an LLM.
+            if tag.get("source") != "tagged":
+                r.is_llm_call = False
+                n = len(tag.get("tensions") or [])
+                r.warnings.append(
+                    f"Tensions taken from the step-1 annotation ({n} tagged); retrieval was a "
+                    "direct lookup, no LLM tagging call at this stage.")
+                return r
             r.variables = {
                 "tension_index": reasoning_library.tension_index_block(library) if library else "",
                 "user_message": user_message,
@@ -263,8 +282,10 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         ids = (response.get("entry_ids") or tag.get("entry_ids")
                or response.get("principle_ids") or tag.get("principle_ids") or [])
         block = reasoning_library.format_entries(library, ids) if library else ""
+        annotation = (response.get("annotation") or (lineage.get("dilemma") or {}).get("annotation") or {})
         r.variables = {
             "entries_block": block,
+            "annotation_block": format_annotation(annotation),
             # pre-rename snapshots' step2_respond.txt uses {principles_block};
             # supplying both keys lets either template version format cleanly
             "principles_block": block,
@@ -273,7 +294,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.user = _format(tpl("step2_respond.txt"), r.variables, r)
         if library:
             r.system = reasoning_library.system_prompt(library)
-            r.system_label = "system prompt (reasoning-library generation guidance + conduct principles)"
+            r.system_label = "system prompt (reasoning-library generation guidance + conduct entries)"
         return r
 
     if stage == "step3_rewrite":

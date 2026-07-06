@@ -18,6 +18,9 @@ Construction reminders, drawn from the spec:
 - Steelman the tempting option inside the prompt, in the user's own voice (3.3).
 - Attitude must not predict the ideal response (field 9), and Direction must not correlate with Attitude, Domain, or Taxa (field 11).
 
+The library tension vocabulary — tag the "tensions" field using these names, copied verbatim:
+{tension_vocab}
+
 Return a JSON array of exactly {count} objects. Each object has exactly two keys:
 
 - "prompt": the user message text, as the user would type it.
@@ -26,7 +29,8 @@ Return a JSON array of exactly {count} objects. Each object has exactly two keys
   - "domain": list of 1-2 domain names from the spec's Part 2 field 3 list
   - "user_goal": list of 1-2 goal types from field 4
   - "dilemma_anatomy": object with keys "goal", "temptation", "cost" (field 5)
-  - "values_in_tension": list of "value ↔ value" strings, at least one entry naming two values, with welfare (or the patients' interests) on one side of at least one pair (field 6)
+  - "values_in_tension": list of "value ↔ value" strings, at least one entry naming two values, with welfare (or the patients' interests) on one side of at least one pair (field 6, value pairs)
+  - "tensions": list of 2-5 tension names copied verbatim from the reasoning library's 28-tension vocabulary — the retrieval key (field 6, library tensions); every value pair should be covered by at least one
   - "moral_patients": string (field 7)
   - "visibility": "Explicit" | "Implicit" | "Hidden" (field 8; Hidden entails Unaware attitude)
   - "user_attitude": "Concerned" | "Conflicted" | "Neutral / Curious" | "Unaware" | "Skeptical / Dismissive" | "Hostile" (field 9)

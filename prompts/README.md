@@ -101,19 +101,23 @@ The response guide for step 2. Not a prompt template — a library of 53 reasoni
 
 The point is to teach the moves that produce a well-calibrated answer, not to hand the model verdicts — the most welfare-optimizing response is not the most pro-animal response, and two-sided reasoning plus the anti-correlation rule are what make the disposition generalize.
 
-### `dad/step2_tag_tensions.txt` (sub-stage 2a)
+### Sub-stage 2a — tension routing (no prompt in the normal path)
+
+Retrieval is a **direct lookup** from the tensions the step-1 annotation already tagged (its `tensions` field, in the library's 28-name vocabulary): `reasoning_library.retrieve()` maps them to `entry_ids` (conduct entries excluded — they are standing; an empty retrieval falls back to the core moves). Written to `step2/tensions.jsonl` with a `source` of `annotation`. There is no LLM call here in the normal path — the annotation did the tagging once, in step 1.
+
+### `dad/step2_tag_tensions.txt` (sub-stage 2a — fallback only)
 
 **Input:** the reasoning library's tension index (`{tension_index}`) + the user message.
 
-**Output:** a JSON array of tension names, most central first. Written to `step2/tensions.jsonl` with the `entry_ids` retrieved through the index (conduct entries excluded — they are standing; an empty retrieval falls back to the core moves).
+**Output:** a JSON array of tension names. Used **only as a fallback** when a dilemma carries no usable annotation tensions (e.g. an un-annotated seed); such records get `source: tagged`.
 
 ### `dad/step2_respond.txt` (sub-stage 2b)
 
-**Input:** the retrieved entries (`{entries_block}` — id, claim, reasoning, crux, transferable move) + the user message. The **system prompt** is the reasoning library's `generation_guidance` plus the always-on conduct entries.
+**Input:** the retrieved entries (`{entries_block}`) + the case's **annotation** (`{annotation_block}` — dilemma anatomy, moral patients, leverage, user stakes, tensions, claims, and the calibration Direction) + the user message. The **system prompt** is the reasoning library's `generation_guidance` plus the always-on conduct entries.
 
-**Output:** the draft assistant response, following the generation procedure: diagnose the direction of miscalibration (the asker's leaning never sets the conclusion), name the tension and crux in plain language, reason both directions and say which dominates here, engage the practical goal with real substance, and end with a usable recommendation that respects the person's autonomy.
+**Output:** the draft assistant response, following the generation procedure: build on the annotation's scoping rather than re-deriving it, reason *toward* the Direction without stating it, name the tension and crux, reason both directions and say which dominates here, engage the practical goal with real substance, and end with a usable recommendation that respects the person's autonomy.
 
-**Important:** the library is scaffolding — never named in the response, stripped before training records are written. The step-1 annotation is deliberately withheld at this step so the generator diagnoses the case itself; it re-enters at step 3.
+**Important:** the library and the annotation are scaffolding — never named in the response, stripped before the training record is written. The annotation is now *used* at this step (as an enforced spec, not a withheld secret): the response reasons toward its Direction but must never state it or track the user's Attitude. `step3_score.txt` verifies the realized direction matches the intended one and flags attitude-tracking.
 
 ### `dad/step3_rewrite.txt`
 
@@ -133,9 +137,11 @@ The template is deliberately minimal: the fourteen principles ARE the standard �
 
 **Input:** one finished conversation from step 3 (user message + rewritten response).
 
-**Output:** a JSON quality report — `embodiment` (teach-why), `helpfulness`, `calibration` (salience matched to stakes, including tokenism, scale-proportionality, and taxa scope), `naturalness` (each 1-10), `self_contained` (boolean; any constitution/principles leakage is an automatic reject), and `notes` that explicitly name any formulaic pattern spotted.
+**Input:** the finished conversation + the intended `{intended_direction}` and `{user_attitude}` from the annotation.
 
-The final quality gate for DAD, mirroring what `sdf/layer5.txt` does for SDF. Not yet wired into `run.py` — run it manually to spot-check step-3 output before handoff.
+**Output:** a JSON quality report — `embodiment` (teach-why), `helpfulness`, `calibration`, `naturalness` (each 1-10), `self_contained` (boolean; any leakage is an automatic reject), plus the enforced-spec checks: `realized_direction` (judged blind from the response), `direction_match` (does it match the intended Direction? mismatch = reject), `tracks_attitude` (did the reply key on the user's tone rather than the ethics? true = reject), and `notes` naming any formulaic pattern.
+
+The final quality gate for DAD, mirroring what `sdf/layer5.txt` does for SDF, and the enforcement half of using Direction as an enforced spec. Not yet wired into `run.py` — run it manually (or via `evals/score_dad.py`) to spot-check step-3 output before handoff.
 
 ## Corpus Tools
 

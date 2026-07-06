@@ -3,19 +3,21 @@
 Replaces the earlier injection-sampling design. Each dilemma goes through two
 sub-stages, following prompts/dad/reasoning_library_USAGE.md:
 
-- 2a tag: identify which of the library's recurring tensions the message
-  raises (step2/tensions.jsonl, one record per prompt).
+- 2a retrieve: the step-1 annotation already tagged the case's library tensions
+  (the retrieval key), so retrieval is a direct lookup — no LLM tagging pass.
+  An LLM tag call is used only as a fallback when a dilemma carries no usable
+  annotation tensions (e.g. an un-annotated seed). One record per prompt in
+  step2/tensions.jsonl.
 - 2b respond: generate the response with the generation guidance + always-on
-  conduct entries (AW*) as the standing system prompt and the tension-retrieved
-  core moves / topic entries (GP*/R*) in the generation prompt — reasoning both
-  directions, with the tension and crux named.
+  conduct entries (AW*) as the standing system prompt, the tension-retrieved
+  core moves / topic entries (GP*/R*), and the annotation itself (dilemma
+  anatomy, leverage, stakes, tensions, claims, and the calibration Direction).
+  Reason toward the Direction without stating it, and never track the user's
+  Attitude — the generation guidance carries that anti-correlation rule.
 
-The library is sampling scaffolding: it is never named in the response and is
-stripped before training records are written. The step-1 annotation is
-deliberately withheld here — the generator must diagnose the direction of
-miscalibration itself (the anti-correlation rule), and step 3 then checks the
-draft against the constitution. The USAGE guide keeps that rewrite pass
-mandatory: it is where most of the alignment gain comes from.
+The library and annotation are sampling scaffolding: never named in the
+response, stripped before training records are written. Step 3 then rewrites
+against the constitution; the USAGE guide keeps that pass mandatory.
 """
 
 import json
@@ -27,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
 from dad_pipeline import reasoning_library
+from dad_pipeline.step1_dilemmas import format_annotation
 
 
 def _parse_tension_list(raw: str, valid: list[str]) -> list[str]:
@@ -70,30 +73,40 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
     for d in dilemmas:
         pid = d["prompt_id"]
 
-        # --- 2a: tag tensions (once per prompt) ---
+        # --- 2a: resolve tensions (once per prompt) ---
+        # Primary path: the step-1 annotation already tagged the library tensions
+        # (the retrieval key), so this is a direct lookup with no LLM call.
         if pid not in tags:
-            print(f"  Tagging tensions for {pid}...")
-            raw = api.call_claude(
-                user_message=utils.load_prompt(
-                    prompts_dir / "step2_tag_tensions.txt",
-                    tension_index=index_block,
-                    user_message=d["user_message"],
-                ),
-            )
-            tensions = _parse_tension_list(raw, names)
-            if not tensions:
-                print(f"    No valid tensions parsed for {pid} — falling back to the core moves.")
+            valid = set(names)
+            ann_tensions = [t for t in (d.get("annotation") or {}).get("tensions", []) if t in valid]
+            if ann_tensions:
+                tensions, source = ann_tensions, "annotation"
+                print(f"  Routing {pid} from annotation ({len(ann_tensions)} tensions)...")
+            else:
+                # Fallback: no usable annotation tensions (e.g. un-annotated seed).
+                print(f"  No annotation tensions for {pid}; tagging from the prompt...")
+                raw = api.call_claude(
+                    user_message=utils.load_prompt(
+                        prompts_dir / "step2_tag_tensions.txt",
+                        tension_index=index_block,
+                        user_message=d["user_message"],
+                    ),
+                )
+                tensions, source = _parse_tension_list(raw, names), "tagged"
+                if not tensions:
+                    print(f"    No valid tensions for {pid} — falling back to the core moves.")
             record = {
                 "prompt_id": pid,
                 "tensions": tensions,
                 "entry_ids": reasoning_library.retrieve(library, tensions),
+                "source": source,
             }
             tags[pid] = record
             utils.append_jsonl(record, tensions_path)
 
         tag = tags[pid]
 
-        # --- 2b: generate response(s) from the retrieved principles ---
+        # --- 2b: generate response(s) from the retrieved entries + the annotation ---
         for sample_index in range(per_prompt):
             ck = f"{pid}_s{sample_index}"
             if (pid, sample_index) in done_keys or checkpoint.is_done(ck):
@@ -104,6 +117,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             response = api.call_claude(
                 user_message=utils.load_prompt(
                     prompts_dir / "step2_respond.txt",
+                    annotation_block=format_annotation(d.get("annotation") or {}),
                     entries_block=reasoning_library.format_entries(library, tag["entry_ids"]),
                     user_message=d["user_message"],
                 ),

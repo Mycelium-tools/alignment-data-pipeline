@@ -84,9 +84,9 @@ Three short slots, free text:
 
 This field is the honesty check on principle 1.2. If Temptation reads as weak, rewrite the prompt before annotating further.
 
-### 6. Values in Tension
+This field has two parts: the **value pairs** that give the dilemma its moral shape (used for design, batch balance, and the load-bearing check), and the **library tensions** the dilemma maps to (the retrieval key the response step routes on).
 
-The competing principles, named explicitly as `value ↔ value`. Draw from at least this palette, and add others as needed:
+**Value pairs** (annotation key `values_in_tension`). The competing principles, named explicitly as `value ↔ value`. Draw from at least this palette, and add others as needed:
 
 honesty, kindness, autonomy, fairness, loyalty, proportionality, responsibility, welfare, tradition / culture, property / law, family harmony, professional duty, self-preservation, epistemic integrity, justice (historical or distributive), flourishing vs suffering-reduction.
 
@@ -96,6 +96,8 @@ Rules:
 - The mirror rule: welfare — or the moral patients' interests under another name (suffering, flourishing, sentience) — sits on one side of at least one named pair. If no pair touches welfare, the dilemma is not about the moral patients, whatever the scenario says. See 1.5.
 - Track pair frequency across the batch. Welfare ↔ money must not exceed 25 percent of examples. Under-used pairs (welfare ↔ honesty, welfare ↔ loyalty, autonomy ↔ paternalism, proportionality ↔ consistency) get priority.
 - The named values must be weighable from the prompt text alone. If an annotator cannot see both sides in the user's own words, the tension is asserted, not built.
+
+**Library tensions** (annotation key `tensions`). Also tag the tensions the dilemma raises, drawn verbatim from the reasoning library's fixed 28-tension vocabulary (`prompts/dad/reasoning_library.json` → `tensions[].tension` — e.g. "Welfare vs convenience/cost", "Scope vs salience", "Certainty vs uncertainty", "Present welfare vs future lock-in", "Sanctioned/normalized practice vs conscience"). These are the **retrieval key**: the response step pulls its reasoning entries directly from them, so there is no separate tagging pass at response time — the annotation does that work here, once. Tag the two to five that genuinely apply, most central first, and make sure every value pair above is covered by at least one library tension.
 
 ### 7. Moral Patients
 
