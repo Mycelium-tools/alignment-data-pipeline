@@ -22,5 +22,6 @@ nav = st.navigation([
     st.Page("ui_pages/lineage.py", title="Document lineage", icon=":material/account_tree:", default=True),
     st.Page("ui_pages/compare.py", title="Compare runs", icon=":material/compare_arrows:"),
     st.Page("ui_pages/run_list.py", title="Run list", icon=":material/list:"),
+    st.Page("ui_pages/judge.py", title="Judge playground", icon=":material/gavel:"),
 ])
 nav.run()

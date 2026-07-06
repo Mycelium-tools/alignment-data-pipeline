@@ -90,12 +90,17 @@ def _call_with_retry(
     max_tokens: int,
     system: str,
     messages: list[dict],
+    temperature: float | None = None,
 ) -> anthropic.types.Message:
+    kwargs = {}
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     return client.messages.create(
         model=model,
         max_tokens=max_tokens,
         system=system,
         messages=messages,
+        **kwargs,
     )
 
 
@@ -105,6 +110,7 @@ def call_claude(
     injection: str = "",
     model: str | None = None,
     max_tokens: int | None = None,
+    temperature: float | None = None,
 ) -> str:
     """Call Claude and return the response text.
 
@@ -132,6 +138,7 @@ def call_claude(
         max_tokens=resolved_max,
         system=full_system,
         messages=[{"role": "user", "content": user_message}],
+        temperature=temperature,
     )
 
     _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens)
