@@ -55,7 +55,12 @@ _UNPRICED_WARNED: set = set()
 
 _BACKENDS = ("api", "claude_code")
 
-_LIMIT_PATTERN = re.compile(r"usage limit|rate limit|limit reached", re.IGNORECASE)
+# Matches only subscription-window exhaustion (Claude Code reports this as
+# "Claude AI usage limit reached|<reset-timestamp>"), which must abort rather
+# than retry. Deliberately narrow: a transient CLI "rate limit" hiccup should
+# fall through to the retried ClaudeCodeError path, so we don't match bare
+# "rate limit" / "limit reached" here.
+_LIMIT_PATTERN = re.compile(r"usage limit", re.IGNORECASE)
 
 # Claude Code treats an empty --system-prompt as unset and substitutes its own
 # agentic CLI prompt, which leaks tool/codebase behavior into generated text.
