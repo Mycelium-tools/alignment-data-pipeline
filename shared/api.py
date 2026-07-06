@@ -2,10 +2,11 @@
 
 import os
 import json
+import threading
 import sys
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, UTC
 
 import anthropic
 import yaml
@@ -22,6 +23,9 @@ load_dotenv()
 _config: dict = {}
 _client: anthropic.Anthropic | None = None
 _cost_log_path: Path | None = None
+# call_claude may run from worker threads (utils.parallel_map); the Anthropic
+# client is thread-safe, but appends to the cost log must be serialized.
+_cost_log_lock = threading.Lock()
 
 # Pricing per million tokens (input, output) for known models
 # Prices per million tokens (input, output). Keys must cover every model id
@@ -69,13 +73,13 @@ def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
         prices = (3.00, 15.00)
     cost = (input_tokens / 1_000_000) * prices[0] + (output_tokens / 1_000_000) * prices[1]
     record = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "model": model,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "cost_usd": round(cost, 6),
     }
-    with open(_cost_log_path, "a") as f:
+    with _cost_log_lock, open(_cost_log_path, "a") as f:
         f.write(json.dumps(record) + "\n")
 
 

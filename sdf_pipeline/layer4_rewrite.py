@@ -17,12 +17,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
     existing = utils.load_jsonl(output_path)
     results = list(existing)
 
-    for draft in drafts:
-        doc_id = draft["doc_id"]
-        if checkpoint.is_done(doc_id):
-            continue
+    pending = [d for d in drafts if not checkpoint.is_done(d["doc_id"])]
 
-        print(f"  Rewriting {doc_id[:8]}...")
+    def rewrite_document(draft: dict) -> dict:
         prompt = utils.load_prompt(
             prompts_dir / "layer4.txt",
             document=draft["content"],
@@ -42,8 +39,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
             review_notes = "Parse error — empty rewrite; kept original draft."
             rewritten = draft["content"]
 
-        record = {
-            "doc_id": doc_id,
+        return {
+            "doc_id": draft["doc_id"],
             "subtype_id": draft["subtype_id"],
             "type_id": draft["type_id"],
             "language": draft["language"],
@@ -51,9 +48,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
             "rewritten": rewritten,
             "review_notes": review_notes,
         }
+
+    workers = config.get("workers", 1)
+    for record in utils.parallel_map(rewrite_document, pending, workers):
+        print(f"  Rewrote {record['doc_id'][:8]}")
         results.append(record)
         utils.append_jsonl(record, output_path)
-        checkpoint.mark_done(doc_id)
+        checkpoint.mark_done(record["doc_id"])
 
     print(f"  Total rewrites: {len(results)}")
     return results

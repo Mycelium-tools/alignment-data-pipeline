@@ -1,9 +1,10 @@
 name: CI
 
-# Minimal starting-point CI: proves dependencies install and the code
-# byte-compiles (catches syntax errors, broken imports at parse time, and
-# dependency-resolution breakage). Grow the `smoke` job into real tests over
-# time. Needs no secrets, so it runs on fork PRs too — unlike the Claude review.
+# The `smoke` job is the required merge-gate check: it proves dependencies
+# install, the code byte-compiles, and the offline test suite passes. It
+# references no secrets (ANTHROPIC_API_KEY does not exist in this job, so the
+# tests cannot make an authenticated API call even if every in-suite guard
+# failed) and therefore runs on fork PRs too — unlike the Claude review.
 on:
   pull_request:
   push:
@@ -28,3 +29,6 @@ jobs:
 
       - name: Byte-compile (syntax check)
         run: python -m compileall -q shared sdf_pipeline dad_pipeline evals
+
+      - name: Run offline test suite
+        run: pytest
