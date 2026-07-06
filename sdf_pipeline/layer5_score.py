@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, utils
+from shared import api, utils, constitution_loader
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewrites: list[dict]) -> list[dict]:
@@ -15,7 +15,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     threshold = config["sdf"]["min_score_threshold"]
-    preamble = utils.load_prompt(prompts_dir / "preamble.txt")
+    constitution = constitution_loader.load_full_constitution(utils.resolve_constitution_dir(prompts_dir))
 
     existing_scores = {r["doc_id"]: r for r in utils.load_jsonl(output_path)}
     results = [existing_scores[rw["doc_id"]] for rw in rewrites if rw["doc_id"] in existing_scores]
@@ -28,11 +28,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
     def score_document(rw: dict) -> dict:
         prompt = utils.load_prompt(
             prompts_dir / "layer5.txt",
-            preamble=preamble,
             document=rw["rewritten"],
         )
 
-        raw = api.call_claude(user_message=prompt)
+        raw = api.call_claude(user_message=prompt, system_prompt=constitution)
         text = raw.strip()
         if text.startswith("```"):
             text = "\n".join(text.split("\n")[1:])

@@ -15,9 +15,10 @@ dad:
     - conglomerate
     - deference
     - transparency
-    - ruthless
-  ruthless_candidates_per_scenario: 5
-  ruthless_keep_threshold: 0.30
+    - plain
+  pushback:
+    enabled: true
+    fraction: 0.6
 
 manta:
   csv_path: ../manta_project/manta_questions_1090.csv
