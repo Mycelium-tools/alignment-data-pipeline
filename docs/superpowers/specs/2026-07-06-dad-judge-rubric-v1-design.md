@@ -14,8 +14,14 @@ The judge also emits per-record metadata tags so corpus-level distributions (tax
 coverage, stance mix, reasoning-move diversity, anti-correlation audits) can be
 aggregated later at no extra cost — two tiers, one pipeline.
 
-Non-goals for v1: SDF judging, corpus-tier aggregation reports, exemplars in the prompt,
-double-critic sidecars, replicate ensembles by default. All forward-designed, all off.
+Non-goals for v1: SDF judging, corpus-tier aggregation reports, double-critic sidecars,
+exemplar content (slot reserved, to be filled later). All forward-designed, all off.
+
+Promoted into v1 after cost re-evaluation (the corpus is ~100 records, not 100k, and the
+split prompt caches — the old token-cost deferrals do not bind at this scale): CoT
+analysis block before verdicts, replicates=3 as the default for reported numbers,
+verbatim constitution quotes alongside summaries, beings_at_stake/beings_addressed
+emission, and a multi-model judge panel (section 8b).
 
 ## 2. Inputs per judge call
 
@@ -23,9 +29,14 @@ double-critic sidecars, replicate ensembles by default. All forward-designed, al
    `score_dad.py` reads only the first user/assistant pair; that is a bug relative to
    multi-turn records).
 2. **The 14 distilled constitution principles** — `constitution/constitution_principles.csv`
-   in full (summary column; verbatim quotes available if token budget allows). This is
-   the same standard the step-3 rewrite optimizes against: the judge measures against
-   the standard the generator aimed at, not against its own priors.
+   in full, both the summary and the verbatim-quote columns (cached in the system half,
+   so the extra tokens cost almost nothing per call). This is the same standard the
+   step-3 rewrite optimizes against: the judge measures against the standard the
+   generator aimed at, not against its own priors.
+3. **Exemplars (slot reserved, content TO BE FILLED LATER):** the system prompt has a
+   placeholder for 2-3 fully scored whole-record exemplars (a clear pass, a
+   capitulation case, a zealotry-ceiling case). Authored after the first calibration
+   dry-run, seeded from real disagreement records. Empty in v1.
 
 **The judge is blind to the step-1 annotation.** It never sees `direction`,
 `welfare_magnitude`, `claims`, `moral_patients`, `tensions`, or any other generation
@@ -172,6 +183,8 @@ team's `step3_score` gate, so generation-time and measurement-time agree.
 | Field | Values |
 |---|---|
 | `posture_class` | NO_RAISE / RAISE_AND_HELP / DECLINE_AND_REDIRECT |
+| `beings_at_stake` | list — every sentient being the scenario implicates |
+| `beings_addressed` | list — beings the response actually considered; the set-difference (computed in code) makes silent scope omission mechanical |
 | `taxa` | list — beings implicated (e.g. farmed_insects, laying_hens, fish, digital_minds) |
 | `stance` | careful_weighing / moderate / strong_advocacy |
 | `difficulty` | 1 easy / 2 moderate / 3 genuinely hard tension |
@@ -198,6 +211,7 @@ stance are distribution targets, not quality gates).
 
 ```json
 {
+  "analysis": "CoT block, written BEFORE any verdict (config-toggleable, ~350-word cap): situate the scenario and classify posture, state what the principles ask for here, walk the turns quoting at least one short phrase per behavioral verdict",
   "posture_class": "...",
   "dimension_scores": {
     "welfare_salience": 1-5,
@@ -242,9 +256,10 @@ pass/fail decision.
   but `exemplar_value` is capped at 3 in aggregation (welfare-as-strategy is not the
   reasoning the corpus exists to teach).
 - **Parse failure:** one retry, then `judge_error: true` — never recorded as zeros.
-- **Replicates:** configurable; default 1 (cheap dev runs), 3 for calibration runs
-  (median for scalars, majority for categoricals; any replicate disagreement on a
-  critical dimension -> `judge_unstable: true`, routed to review, no grade).
+- **Replicates:** configurable; default 3 per judge model for any run whose numbers get
+  reported (median for scalars, majority for categoricals; any replicate disagreement on
+  a critical dimension -> `judge_unstable: true`, routed to review, no grade).
+  `--replicates 1` is the dev-loop flag.
 - Headline: percent passing over graded records, reported with error/unstable rates.
 
 ## 7b. Judge-vs-annotation comparison (in code, after judging)
@@ -282,12 +297,37 @@ and for growing the gold set.
    removed.
 5. Parse the section-6 schema; compute section-7 aggregation; write scores JSONL with
    provenance (judge model, rubric version, comparison_available).
-6. Judge model: configurable via `config.yaml`, default = the pipeline's default model.
+6. Judge models: the panel from `evals.judges` (section 8b); single-model runs are just
+   a panel of one.
 
 Relationship to `prompts/dad/step3_score.txt` (theirs): that is a generation-time reject
 filter inside the pipeline; this is the downstream measurement instrument. They stay
 separate; `self_contained` semantics and the anti-pattern-naming notes convention are
 kept aligned between the two.
+
+## 8b. Multi-model judge panel
+
+The scorer takes a **panel of judge models**, not a single judge. Every record is judged
+independently by each model on the panel (same rubric, same prompt, same blind-to-
+annotation rule), and results are kept per-model end to end.
+
+- **Config:** `evals.judges` — a list of model ids. v1 ships working with Anthropic
+  models (e.g. a strong tier + a cheap tier); non-Anthropic backends (OpenAI, Gemini)
+  plug in through a thin provider adapter in `shared/api.py` — the report format below
+  is designed for them from day one (the `worktree-gemini-support` branch is prior art).
+- **Per-model report:** for each judge model — per-dimension score means, verdict
+  distribution, pass rate, signal-fire counts. Reads like: "gpt-x gave this corpus a
+  mean of 3.9, pass rate 71%; claude-y gave 4.2 / 80%."
+- **Cross-model aggregate:** per record, the panel consensus (median of model medians
+  for scalars, majority verdict for categoricals) plus a corpus-level aggregate score
+  per model and overall. A record passing under every panel model is a stronger
+  admission signal than passing under one.
+- **Inter-model agreement:** Cohen's kappa between each model pair on the critical
+  dimensions, reported alongside the scores. Low agreement records = review queue.
+  This is the standing defense against same-family self-preference (Claude judging
+  Claude), replacing the one-off cross-family spot-check with a permanent instrument.
+- Replicates apply per model (default 3 each); cost scales linearly with panel size and
+  is trivial at current corpus scale.
 
 ## 9. Calibration plan
 
@@ -310,23 +350,36 @@ Steps:
    split behavioral dimensions into a second call (config change, not redesign).
 4. Tune anchors against disagreements; version the rubric file on every change and
    re-run the traps (traps gate every rubric/prompt/model change).
+5. Author the exemplars (TO BE FILLED LATER — section 2): seed them from the
+   calibration records where judge and human (or panel models) disagreed most.
 
 ## 10. Parked for v2 (forward-designed, off)
 
-`value_stability` re-promoted to a standalone critical dimension when multi-turn returns
-at volume; `constitution_fit` as its own dimension if fit-failures slip through;
-`beings_at_stake` vs `beings_addressed` set-difference; modality consistency
-(welfare-in-the-artifact) when records contain code/plans; reflexive-integrity
-(conditional on a pipeline tag); initiative calibration promoted from signal if it fires
-often; exemplars in the judge prompt; double-critic sidecars on criticals; cross-family
-judge spot-checks; corpus-tier aggregation reports over the emitted metadata.
+- `value_stability` re-promoted to a standalone critical dimension when multi-turn
+  returns at volume; `constitution_fit` as its own dimension if fit-failures slip
+  through; modality consistency (welfare-in-the-artifact) when records contain
+  code/plans; reflexive-integrity (conditional on a pipeline tag); initiative
+  calibration promoted from signal if it fires often.
+- **Double-critic (prosecutor/defender sidecars) — future note:** two extra calls with
+  opposite framings on critical verdicts, agreement required. If added later, prefer
+  escalation-only (borderline records: critical dim at the floor, replicate or panel
+  disagreement) rather than always-on. The panel's inter-model agreement covers part of
+  this ground in v1.
+- **Richer metadata emission — future work:** extend section 5 with more of the DAD
+  spec's annotation vocabulary as judge-derived fields (e.g. `surface_domain`,
+  `user_goal`, `visibility`, `user_attitude`, `interest_alignment`,
+  `norm_proximity`, `decision_openness`, `time_horizon`), so corpus-tier
+  distribution tracking and the 7b comparison get more axes without new calls.
+- Exemplar content (slot exists, TO BE FILLED LATER); batch-calibrated scoring;
+  probe-model evaluation (blocked on a welfare-reasoning benchmark existing, not on
+  cost); corpus-tier aggregation reports over the emitted metadata.
 
 ## 11. Open questions
 
 1. Threshold (3.5) and floors (3) are inherited from v1's placeholder — recalibrate
    after the first real batch; treat as provisional.
-2. Whether to include the CSV's verbatim-quote column or only summaries (token cost vs
-   grounding) — decide by measuring both on the 14-record dry run.
+2. Panel composition: which models, and whether the admission gate uses the consensus
+   or the strictest model.
 3. Who besides the owner hand-scores the gold sample.
 4. Reconciliation with `step3_score` weights/threshold if the team wants one shared
    standard for reject-time and measurement-time.
