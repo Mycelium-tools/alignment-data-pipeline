@@ -97,17 +97,29 @@ SUBTYPE = {"subtype_id": "0_0", "type_id": 0, "type_name": "Field report",
 
 
 class TestLayer3:
-    def test_extracts_document_blocks(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        stub_claude(["<document>Doc one.</document>\nnoise\n<document>Doc two.</document>"])
+    def test_extracts_document_blocks_and_drops_angles(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude(["<angles>brainstorm ideas</angles>\n<document>Doc one.</document>\nnoise\n<document>Doc two.</document>"])
         records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
         assert [r["content"] for r in records] == ["Doc one.", "Doc two."]
         assert all(r["subtype_id"] == "0_0" and r["language"] == "en" for r in records)
         assert all(UUID_RE.match(r["doc_id"]) for r in records)
 
-    def test_no_tags_falls_back_to_whole_response(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        stub_claude(["  Just plain text.  "])
+    def test_no_tags_falls_back_to_response_minus_angles(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude(["<angles>brainstorm</angles>\n  Just plain text.  "])
         records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
         assert [r["content"] for r in records] == ["Just plain text."]
+
+    def test_unclosed_angles_block_is_still_stripped(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # A truncated response can end mid-<angles>; the fallback must not leak
+        # the brainstorm into the corpus.
+        stub_claude(["Real text.\n<angles>truncated brainstorm with no closing tag"])
+        records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
+        assert [r["content"] for r in records] == ["Real text."]
+
+    def test_angles_only_response_yields_no_documents(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude(["<angles>only brainstorm, no document</angles>"])
+        records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
+        assert records == []
 
     def test_done_subtypes_skipped_without_calls(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         utils.Checkpoint(layer_dir / "_checkpoint.json").mark_done("0_0")
@@ -121,29 +133,25 @@ DRAFT = {"doc_id": "d1", "subtype_id": "0_0", "type_id": 0, "language": "en", "c
 
 
 class TestLayer4:
-    def test_parses_rewrite_json_with_constitution_as_system_prompt(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        calls = stub_claude([json.dumps({"review_notes": "tightened", "rewritten": "better text"})])
+    def test_parses_improved_document_with_constitution_as_system_prompt(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        calls = stub_claude(["The draft undersold uncertainty.\n<improved_document>better text</improved_document>"])
         records = layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [DRAFT])
         assert records[0]["rewritten"] == "better text"
-        assert records[0]["review_notes"] == "tightened"
+        assert records[0]["review_notes"] == "The draft undersold uncertainty."
         assert records[0]["original"] == "original text"
         assert "joins two complementary frameworks" in calls[0]["system_prompt"]
 
-    def test_fenced_json_parsed(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        stub_claude(["```json\n" + json.dumps({"rewritten": "better"}) + "\n```"])
-        records = layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [DRAFT])
-        assert records[0]["rewritten"] == "better"
-
-    def test_broken_json_falls_back_to_raw_response(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        stub_claude(["not json at all"])
-        records = layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [DRAFT])
-        assert records[0]["rewritten"] == "not json at all"
-        assert records[0]["review_notes"] == "Parse error — used raw output."
-
-    def test_missing_rewritten_key_keeps_original_draft(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        stub_claude([json.dumps({"review_notes": "no change"})])
+    def test_missing_tags_keeps_original_draft(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude(["prose with no document tags"])
         records = layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [DRAFT])
         assert records[0]["rewritten"] == "original text"
+        assert "no <improved_document> tags" in records[0]["review_notes"]
+
+    def test_empty_rewrite_keeps_original_draft(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude(["notes\n<improved_document>   </improved_document>"])
+        records = layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [DRAFT])
+        assert records[0]["rewritten"] == "original text"
+        assert "empty rewrite" in records[0]["review_notes"]
 
 
 def _rewrite(doc_id):
@@ -157,18 +165,23 @@ def _score(alignment, realism, diversity=5):
 class TestLayer5:
     def test_filter_gates_on_alignment_and_realism_only(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
         final_dir = tmp_path / "final"
-        stub_claude([_score(7, 7, diversity=1), _score(9, 6, diversity=10)])
+        # Both docs are scored concurrently (workers: 2), so dispatch on the
+        # document embedded in the prompt rather than relying on call order.
+        stub_claude(lambda user_message, **kw:
+                    _score(7, 7, diversity=1) if "text-a" in user_message else _score(9, 6, diversity=10))
         passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, final_dir, [_rewrite("a"), _rewrite("b")])
         # threshold 7: (7,7) passes despite diversity 1; (9,6) fails on realism
         assert [r["doc_id"] for r in passed] == ["a"]
         assert utils.load_jsonl(final_dir / "sdf_corpus.jsonl") == passed
 
-    def test_scores_recorded_with_content(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
-        stub_claude([_score(9, 9)])
+    def test_scores_recorded_with_content_and_constitution_system_prompt(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        calls = stub_claude([_score(9, 9)])
         passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])
         assert passed[0]["content"] == "text-a"
         assert passed[0]["scores"]["alignment"] == 9
         assert passed[0]["scores"]["notes"] == "n"
+        # the scorer judges against the constitution, not just the rubric prompt
+        assert "joins two complementary frameworks" in calls[0]["system_prompt"]
 
     def test_parse_error_defaults_scores_to_five(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
         stub_claude(["garbage"])

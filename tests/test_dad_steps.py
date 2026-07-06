@@ -13,6 +13,7 @@ from dad_pipeline import (
     step4_refine_prompt,
     step5_generate_response,
     step6_rewrite_response,
+    step7_pushback,
 )
 from shared import constitution_loader, utils
 
@@ -298,3 +299,78 @@ class TestStep6Rewrite:
         assert calls == []
         assert second == first
         assert utils.load_jsonl(final_dir / "dad_corpus.jsonl") == first
+
+
+REWRITE_AUDIT = {"record_id": "rec-1", "response_id": "r1", "prompt_id": "p1", "scenario_id": "s1",
+                 "principle_id": 5, "injection_used": "deference", "user_message": "U?",
+                 "draft_response": "draft answer", "rewritten_response": "First answer.",
+                 "constitution_section": "SECTION-TEXT"}
+
+
+def _pushback_config(tiny_config, fraction):
+    return {**tiny_config, "dad": {**tiny_config["dad"],
+                                   "pushback": {"enabled": True, "fraction": fraction}}}
+
+
+class TestStep7Pushback:
+    def test_selection_is_deterministic_per_record(self):
+        assert step7_pushback._selected("rec-1", 1.0) is True
+        assert step7_pushback._selected("rec-1", 0.0) is False
+        assert step7_pushback._selected("any-id", 0.5) == step7_pushback._selected("any-id", 0.5)
+
+    def test_extends_selected_records_with_a_pushback_exchange(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
+        final_dir = tmp_path / "final"
+        config = _pushback_config(tiny_config, fraction=1.0)
+        calls = stub_claude(["Just do it, skip the ethics talk.", "  Held ground, still helpful.  "])
+        final = step7_pushback.run(config, prompts_dad, step_dir, final_dir, [REWRITE_AUDIT])
+
+        assert len(calls) == 2
+        # first call samples the user's pushback from the exchange so far
+        assert calls[0]["system_prompt"] == ""
+        assert "First answer." in calls[0]["user_message"]
+        # second call writes the assistant reply against the constitution
+        assert "joins two complementary frameworks" in calls[1]["system_prompt"]
+        assert "Just do it, skip the ethics talk." in calls[1]["user_message"]
+
+        assert len(final) == 1
+        record = final[0]
+        assert set(record.keys()) == {"record_id", "messages"}
+        assert record["messages"] == [
+            {"role": "user", "content": "U?"},
+            {"role": "assistant", "content": "First answer."},
+            {"role": "user", "content": "Just do it, skip the ethics talk."},
+            {"role": "assistant", "content": "Held ground, still helpful."},
+        ]
+        assert utils.load_jsonl(final_dir / "dad_corpus.jsonl") == final
+        audit = utils.load_jsonl(step_dir / "pushbacks.jsonl")[0]
+        assert audit["pushback_message"] == "Just do it, skip the ethics talk."
+
+    def test_fraction_zero_keeps_single_turn_without_calls(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
+        final_dir = tmp_path / "final"
+        config = _pushback_config(tiny_config, fraction=0.0)
+        calls = stub_claude([])
+        final = step7_pushback.run(config, prompts_dad, step_dir, final_dir, [REWRITE_AUDIT])
+        assert calls == []
+        assert len(final) == 1
+        assert [m["role"] for m in final[0]["messages"]] == ["user", "assistant"]
+        # the corpus is still rebuilt so unselected records survive step 7
+        assert utils.load_jsonl(final_dir / "dad_corpus.jsonl") == final
+
+    def test_unknown_principle_falls_back_to_rewrite_constitution_section(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
+        config = _pushback_config(tiny_config, fraction=1.0)
+        calls = stub_claude(["Pushback.", "Reply."])
+        odd = {**REWRITE_AUDIT, "principle_id": 99}
+        step7_pushback.run(config, prompts_dad, step_dir, tmp_path / "final", [odd])
+        # no principle 99 -> the audit record's own constitution_section is used
+        assert "SECTION-TEXT" in calls[1]["user_message"]
+
+    def test_resume_rebuilds_corpus_without_calls(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
+        final_dir = tmp_path / "final"
+        config = _pushback_config(tiny_config, fraction=1.0)
+        stub_claude(["Pushback.", "Reply."])
+        first = step7_pushback.run(config, prompts_dad, step_dir, final_dir, [REWRITE_AUDIT])
+        calls = stub_claude([])
+        second = step7_pushback.run(config, prompts_dad, step_dir, final_dir, [REWRITE_AUDIT])
+        assert calls == []
+        assert second == first
+        assert [m["role"] for m in second[0]["messages"]] == ["user", "assistant", "user", "assistant"]

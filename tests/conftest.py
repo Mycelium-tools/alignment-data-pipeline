@@ -40,6 +40,7 @@ def _api_guard(monkeypatch):
     monkeypatch.setattr(api, "_config", {})
     monkeypatch.setattr(api, "_client", None)
     monkeypatch.setattr(api, "_cost_log_path", None)
+    monkeypatch.setattr(api, "_UNPRICED_WARNED", set())
 
     def _blocked(*args, **kwargs):
         raise AssertionError(
@@ -118,6 +119,7 @@ def tiny_config(tmp_path):
         "model": "claude-haiku-4-5",
         "max_tokens": 4000,
         "temperature": 1.0,
+        "workers": 2,
         "sdf": {
             "document_types_count": 2,
             "subtypes_per_type": 1,
@@ -127,6 +129,9 @@ def tiny_config(tmp_path):
         "dad": {
             "scenarios_per_principle": 1,
             "injections": ["deference", "plain"],
+            # fraction 1.0 keeps step 7 deterministic (uuid record_ids would make
+            # a partial fraction select a random-looking subset per run)
+            "pushback": {"enabled": True, "fraction": 1.0},
         },
         "manta": {"csv_path": str(tmp_path / "manta.csv"), "max_rows": 3},
         "language_distribution": {"en": 1.0},

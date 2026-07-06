@@ -1,12 +1,39 @@
-"""Tests for shared/utils.py: JSONL I/O, prompts, RNG, run dirs, checkpoints."""
+"""Tests for shared/utils.py: JSONL I/O, prompts, RNG, run dirs, checkpoints,
+and the parallel_map helper the SDF layers fan out on."""
 
 import json
 import random
 import re
+import time
 
 import pytest
 
 from shared import utils
+
+
+class TestParallelMap:
+    @pytest.mark.parametrize("workers", [1, 4])
+    def test_maps_all_items(self, workers):
+        assert list(utils.parallel_map(lambda x: x * 2, [1, 2, 3], workers)) == [2, 4, 6]
+
+    def test_results_come_back_in_input_order(self):
+        # First item finishes last; order must still follow the input, because
+        # callers zip() results with items to write files and mark checkpoints.
+        def slow_first(x):
+            if x == 0:
+                time.sleep(0.02)
+            return x
+
+        assert list(utils.parallel_map(slow_first, [0, 1, 2, 3], workers=4)) == [0, 1, 2, 3]
+
+    def test_worker_exception_propagates(self):
+        def boom(x):
+            if x == 2:
+                raise ValueError("worker failed")
+            return x
+
+        with pytest.raises(ValueError, match="worker failed"):
+            list(utils.parallel_map(boom, [1, 2, 3], workers=2))
 
 
 class TestJsonl:

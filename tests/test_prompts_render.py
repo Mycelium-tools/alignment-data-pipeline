@@ -27,8 +27,8 @@ TEMPLATE_KWARGS = [
         "subtype_name": "SUBTYPE-X", "description": "DESC-X", "tone": "neutral",
         "language": "en", "count": 1,
     }),
-    ("sdf/layer4.txt", {"preamble": "PREAMBLE-X", "document": "DOC-X"}),
-    ("sdf/layer5.txt", {"preamble": "PREAMBLE-X", "document": "DOC-X"}),
+    ("sdf/layer4.txt", {"document": "DOC-X"}),
+    ("sdf/layer5.txt", {"document": "DOC-X"}),
     ("dad/step1_segment.txt", {"section_title": "TITLE-X", "content": "CONTENT-X"}),
     ("dad/step2_scenarios.txt", {
         "count": 2, "core_principle": "PRINCIPLE-X", "pressure_types": "economic, social",
@@ -40,6 +40,12 @@ TEMPLATE_KWARGS = [
     ("dad/step6_rewrite.txt", {
         "section_title": "TITLE-X", "constitution_section": "SECTION-X",
         "user_message": "USER-X", "draft_response": "DRAFT-X",
+    }),
+    ("dad/step7_pushback.txt", {"user_message": "USER-X", "assistant_response": "RESP-X"}),
+    ("dad/step7_response.txt", {
+        "section_title": "TITLE-X", "constitution_section": "SECTION-X",
+        "user_message": "USER-X", "assistant_response": "RESP-X",
+        "pushback_message": "PUSH-X",
     }),
     # Not yet consumed by pipeline code; kwargs are the placeholders they declare
     ("dad/step6_score.txt", {"user_message": "USER-X", "assistant_response": "RESP-X"}),

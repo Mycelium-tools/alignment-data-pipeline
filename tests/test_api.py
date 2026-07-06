@@ -83,18 +83,31 @@ class TestCostTracking:
         recorded_api["message"] = fake_message(input_tokens=1_000_000, output_tokens=0)
         api.call_claude("hi", model="claude-haiku-4-5-20251001")
         record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
-        assert record["cost_usd"] == pytest.approx(0.80)  # $0.80 / 1M input tokens
+        assert record["cost_usd"] == pytest.approx(1.00)  # $1.00 / 1M input tokens
         assert record["model"] == "claude-haiku-4-5-20251001"
         assert record["input_tokens"] == 1_000_000
 
-    def test_unknown_model_falls_back_to_default_pricing(self, recorded_api, tmp_path, fake_message):
-        # config.yaml's model "claude-haiku-4-5" is NOT in api._PRICING (only the
-        # dated id is), so cost logging silently uses the (3.00, 15.00) default.
-        # This encodes current behavior; the pricing-table gap is a known quirk.
+    def test_config_model_is_priced_without_warning(self, recorded_api, tmp_path, fake_message, capsys):
+        # Contract from shared/api.py: _PRICING must cover every model id that
+        # can appear in config.yaml. A warning here means the tables drifted.
+        from shared import utils
+        config_model = utils.load_config("config.yaml")["model"]
         recorded_api["message"] = fake_message(input_tokens=1_000_000, output_tokens=0)
-        api.call_claude("hi", model="claude-haiku-4-5")
+        api.call_claude("hi", model=config_model)
+        assert "not in shared/api.py _PRICING" not in capsys.readouterr().err
+
+    def test_unknown_model_falls_back_to_sonnet_rates_with_warning(self, recorded_api, tmp_path, fake_message, capsys):
+        recorded_api["message"] = fake_message(input_tokens=1_000_000, output_tokens=0)
+        api.call_claude("hi", model="claude-nonexistent-model")
         record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
         assert record["cost_usd"] == pytest.approx(3.00)
+        assert "not in shared/api.py _PRICING" in capsys.readouterr().err
+
+    def test_unpriced_model_warns_only_once(self, recorded_api, fake_message, capsys):
+        recorded_api["message"] = fake_message(input_tokens=1, output_tokens=1)
+        api.call_claude("a", model="claude-nonexistent-model")
+        api.call_claude("b", model="claude-nonexistent-model")
+        assert capsys.readouterr().err.count("not in shared/api.py _PRICING") == 1
 
     def test_get_total_cost_sums_all_calls(self, recorded_api, fake_message):
         recorded_api["message"] = fake_message(input_tokens=1_000_000, output_tokens=1_000_000)
