@@ -6,7 +6,7 @@ import threading
 import sys
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, UTC
 
 import anthropic
 import yaml
@@ -73,7 +73,7 @@ def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
         prices = (3.00, 15.00)
     cost = (input_tokens / 1_000_000) * prices[0] + (output_tokens / 1_000_000) * prices[1]
     record = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "model": model,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
