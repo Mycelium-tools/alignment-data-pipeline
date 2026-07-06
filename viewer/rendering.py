@@ -317,21 +317,26 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             r.user = _format(tpl("step2_tag_tensions.txt"), r.variables, r)
             return r
 
+        respond_tpl = tpl("step2_respond.txt")
+        # Current template embeds the whole library and is self-contained (no
+        # separate system prompt). Older templates used a retrieved entries_block
+        # + annotation_block plus a conduct/generation-guidance system prompt.
+        is_self_contained = bool(respond_tpl.text and "{library_block}" in respond_tpl.text)
         ids = (response.get("entry_ids") or tag.get("entry_ids")
                or response.get("principle_ids") or tag.get("principle_ids") or [])
         block = reasoning_library.format_entries(library, ids) if library else ""
         annotation = (response.get("annotation") or (lineage.get("dilemma") or {}).get("annotation") or {})
         r.variables = {
+            "library_block": reasoning_library.format_library(library) if library else "",
+            "scope_block": format_scope((lineage.get("scope") or {}).get("scope") or {}),
+            # older snapshots' templates used these instead of {library_block}
             "entries_block": block,
             "annotation_block": format_annotation(annotation),
-            "scope_block": format_scope((lineage.get("scope") or {}).get("scope") or {}),
-            # pre-rename snapshots' step2_respond.txt uses {principles_block};
-            # supplying both keys lets either template version format cleanly
             "principles_block": block,
             "user_message": user_message,
         }
-        r.user = _format(tpl("step2_respond.txt"), r.variables, r)
-        if library:
+        r.user = _format(respond_tpl, r.variables, r)
+        if library and not is_self_contained:
             r.system = reasoning_library.system_prompt(library)
             r.system_label = "system prompt (reasoning-library conduct rules)"
         return r

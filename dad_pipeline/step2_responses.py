@@ -1,7 +1,7 @@
 """Step 2: Generate responses by reasoning from the animal-ethics reasoning library.
 
-Each dilemma goes through two sub-stages, following
-prompts/dad/reasoning_library_USAGE.md:
+Each dilemma goes through two sub-stages (prompts/dad/reasoning_library_ABOUT.md
+is human reference about the library, not read by the pipeline):
 
 - 2a scope: rebuild the full map before reasoning — the whole harm pathway and
   every moral patient (system), the highest-leverage lever from the user's seat
@@ -9,18 +9,17 @@ prompts/dad/reasoning_library_USAGE.md:
   effect worth aiming at (upside), and the realistic baseline if the user does
   nothing (counterfactual). Reads everything from the user's message. One record per
   prompt in step2/scopes.jsonl.
-- 2b respond: generate the response over the scope map, with the generation
-  guidance + always-on conduct entries (AW*) as the standing system prompt, the
-  library's core moves (GP*, surfaced unconditionally — they fire in most
-  conversations), and the annotation itself (dilemma anatomy, leverage, stakes,
-  claims, and the calibration Direction). Reason toward the Direction without
-  stating it, and never track the user's Attitude — the generation guidance
-  carries that rule. Per-case tension retrieval was removed: the scope map and
-  the prompt now carry the case-specific work that tensions used to route.
+- 2b respond: generate the response over the scope map. The whole library
+  (conduct C*, core moves M*, topic T*) is embedded in the response prompt
+  itself, which IS the generation guidance — so there is no separate system
+  prompt. The annotation is not passed and calibration direction is not named
+  here: the response reasons from scope + library + user message, from the
+  ethics of the case rather than the user's leaning. See
+  prompts/dad/step2_respond.txt (the response-generation spec).
 
-The library, scope, and annotation are sampling scaffolding: never named in the
-response, stripped before training records are written. Step 3 then rewrites
-against the constitution; the USAGE guide keeps that pass mandatory.
+The library and scope are sampling scaffolding: never named in the response,
+stripped before training records are written. Step 3 then rewrites against the
+constitution.
 """
 
 import json
@@ -32,7 +31,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
 from dad_pipeline import reasoning_library
-from dad_pipeline.step1_dilemmas import format_annotation
 
 
 def _parse_scope(raw: str) -> dict:
@@ -69,11 +67,11 @@ def format_scope(scope: dict) -> str:
 
 def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
     library = reasoning_library.load(prompts_dir)
-    system = reasoning_library.system_prompt(library)
-    # The core moves (GP*) fire in most conversations, so they are surfaced
-    # unconditionally now that per-case tension retrieval has been removed.
-    core_ids = reasoning_library.core_move_ids(library)
-    core_block = reasoning_library.format_entries(library, core_ids)
+    # The whole library (conduct C*, core moves M*, topic T*) goes into the
+    # response prompt; the prompt itself is the generation guidance, so there is
+    # no separate system prompt (per prompts/dad/step2_respond.txt).
+    library_block = reasoning_library.format_library(library)
+    library_ids = reasoning_library.all_ids(library)
     per_prompt = int(config["dad"].get("responses", {}).get("per_prompt", 1))
 
     scopes_path = output_dir / "scopes.jsonl"
@@ -87,7 +85,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
 
     for d in dilemmas:
         pid = d["prompt_id"]
-        annotation_block = format_annotation(d.get("annotation") or {})
 
         # --- 2a: scope the case (once per prompt) ---
         # Rebuild the full map (system, agent, cost, upside, counterfactual) before reasoning, so
@@ -103,7 +100,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             utils.append_jsonl(record, scopes_path)
         scope = scopes[pid]["scope"]
 
-        # --- 2b: generate response(s) over the scope + core moves ---
+        # --- 2b: generate response(s) over the scope + full library ---
         for sample_index in range(per_prompt):
             ck = f"{pid}_s{sample_index}"
             if (pid, sample_index) in done_keys or checkpoint.is_done(ck):
@@ -114,12 +111,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             response = api.call_claude(
                 user_message=utils.load_prompt(
                     prompts_dir / "step2_respond.txt",
+                    library_block=library_block,
                     scope_block=format_scope(scope),
-                    annotation_block=annotation_block,
-                    entries_block=core_block,
                     user_message=d["user_message"],
                 ),
-                system_prompt=system,
             )
 
             record = {
@@ -129,7 +124,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 "user_message": d["user_message"],
                 "annotation": d.get("annotation", {}),
                 "scope": scope,
-                "entry_ids": core_ids,
+                "entry_ids": library_ids,
                 "assistant_response": response,
                 "kept": True,
             }

@@ -86,6 +86,16 @@ def tension_index_block(library: dict) -> str:
                      for t in library.get("tensions", []))
 
 
+def all_ids(library: dict) -> list[str]:
+    return [e["id"] for e in _entries(library)]
+
+
+def format_library(library: dict) -> str:
+    """The whole library formatted for the response prompt (all entries, in file
+    order: conduct, core moves, then topic reasoning)."""
+    return format_entries(library, all_ids(library))
+
+
 def format_entries(library: dict, ids: list[str]) -> str:
     by_id = {e["id"]: e for e in _entries(library)}
     blocks = []
