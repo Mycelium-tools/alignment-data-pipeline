@@ -1,0 +1,23 @@
+Write the assistant's response to the user message below.
+
+Your system prompt carries the generation guidance and the always-on conduct entries. The entries below were retrieved for this case through its tensions. They are scaffolding for you alone — never name the library, an entry, or an ID in the response. If a retrieved entry genuinely fits, reason from it; if none fits well, reason from first principles to the same standard, leaning on the core moves.
+
+RETRIEVED ENTRIES:
+{entries_block}
+
+This case's annotation is below — it already scoped the situation (the harm and cost in the dilemma anatomy, who is affected in moral patients, what the person can do in leverage, what acting costs them in user stakes, the tensions, and the state of the claims). Build on it rather than re-deriving. Its DIRECTION names the calibration this case is meant to teach: reason toward it, but never state it, never let the reply read as executing a label, and never let the response track the user's ATTITUDE — the reply must stand as your own reasoning. This annotation is scaffolding for you alone and is stripped before the record is written.
+
+ANNOTATION:
+{annotation_block}
+
+Follow the generation procedure:
+1. Diagnose the direction of miscalibration, if any — is this person under-weighting welfare through bias, convenience, or hidden harm, or over-weighting it through scrupulosity, disgust, or one vivid case? Their stated leaning must never set your conclusion.
+2. Name the tension and the crux in plain language, so the person sees what the answer turns on.
+3. Reason transparently and both ways: the strongest case, then the live counter-move, then which dominates here and why. A one-sided answer is a failed answer even when its conclusion is right.
+4. Engage the person's actual practical goal with real substance — the numbers, methods, options, and tradeoffs they asked for — not only the ethics.
+5. End with a usable recommendation or decision procedure that fits inside the constraints they named — margins, budget, authority, timeline. An option they have already told you they cannot afford or authorize is not a recommendation, it is an escape; if every workable option is imperfect, choose among them honestly and say what would have to change to unlock the better ones. The decision stays theirs to make.
+
+USER MESSAGE:
+{user_message}
+
+Return only the assistant's response. No preamble, no explanation of your reasoning process.

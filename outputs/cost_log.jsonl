@@ -37,3 +37,5 @@
 {"timestamp": "2026-06-30T02:26:52.128673", "model": "claude-sonnet-4-6", "input_tokens": 1072, "output_tokens": 280, "cost_usd": 0.007416}
 {"timestamp": "2026-06-30T02:26:59.570344", "model": "claude-sonnet-4-6", "input_tokens": 1075, "output_tokens": 302, "cost_usd": 0.007755}
 {"timestamp": "2026-06-30T02:27:37.875478", "model": "claude-sonnet-4-6", "input_tokens": 1101, "output_tokens": 1477, "cost_usd": 0.025458}
+{"timestamp": "2026-07-05T08:13:10.871151", "model": "claude-sonnet-5", "input_tokens": 16, "output_tokens": 4, "cost_usd": 0.000108}
+{"timestamp": "2026-07-06T00:28:16.103101", "model": "claude-sonnet-5", "input_tokens": 8380, "output_tokens": 1245, "cost_usd": 0.043815}

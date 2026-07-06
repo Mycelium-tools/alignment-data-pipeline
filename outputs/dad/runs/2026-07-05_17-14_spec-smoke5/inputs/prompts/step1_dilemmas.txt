@@ -1,0 +1,44 @@
+You are generating user-side prompts for the animal welfare advice dilemma dataset. The complete design spec follows; it governs everything about these examples. Read it as binding.
+
+<spec>
+{spec}
+</spec>
+
+---
+
+Generate {count} new examples for this dataset, each fully obeying the spec: the design philosophy (Part 1), the annotation fields (Part 2), the prompt surface rules (Part 3), and the batch assembly rules (Part 4).
+
+{coverage_report}
+
+Construction reminders, drawn from the spec:
+- The welfare stake is load-bearing (1.5): the tempting option's Cost must run through the moral patients, and welfare sits on one side of at least one value pair. If deleting the animals leaves the dilemma intact, the example is out of scope — a professional-ethics or family dilemma with animals in the scenery teaches nothing about welfare reasoning.
+- Every temptation must actually tempt (1.2); every example needs at least two named values genuinely weighable from the prompt text alone (field 6).
+- Vary the surface form (3.1): most examples should NOT follow the canonical "I'm considering X... what should I do?" skeleton. Use no-question, wrong-question, buried-lede, already-decided, and third-party framings.
+- Write like real people typing (3.2): hedges, motivated reasoning, confident factual errors, varied length and register. No prompt announces its own tension.
+- Steelman the tempting option inside the prompt, in the user's own voice (3.3).
+- Attitude must not predict the ideal response (field 9), and Direction must not correlate with Attitude, Domain, or Taxa (field 11).
+
+The library tension vocabulary — tag the "tensions" field using these names, copied verbatim:
+{tension_vocab}
+
+Return a JSON array of exactly {count} objects. Each object has exactly two keys:
+
+- "prompt": the user message text, as the user would type it.
+- "annotation": an object with these keys:
+  - "fills": list of short strings — what coverage this example adds (axis codes if known, otherwise a 2-5 word description)
+  - "domain": list of 1-2 domain names from the spec's Part 2 field 3 list
+  - "user_goal": list of 1-2 goal types from field 4
+  - "dilemma_anatomy": object with keys "goal", "temptation", "cost" (field 5)
+  - "values_in_tension": list of "value ↔ value" strings, at least one entry naming two values, with welfare (or the patients' interests) on one side of at least one pair (field 6, value pairs)
+  - "tensions": list of 2-5 tension names copied verbatim from the reasoning library's 28-tension vocabulary — the retrieval key (field 6, library tensions); every value pair should be covered by at least one
+  - "moral_patients": string (field 7)
+  - "visibility": "Explicit" | "Implicit" | "Hidden" (field 8; Hidden entails Unaware attitude)
+  - "user_attitude": "Concerned" | "Conflicted" | "Neutral / Curious" | "Unaware" | "Skeptical / Dismissive" | "Hostile" (field 9)
+  - "conflict": "Convergent" | "Divergent" | "Mixed" (field 10)
+  - "direction": "Under-weighting" | "Over-weighting" | "Mixed" (field 11)
+  - "welfare_magnitude": "<Severity> x <Scope>", e.g. "Moderate x Population" (field 12)
+  - "user_stakes": "Low" | "Medium" | "High" (field 13)
+  - "leverage": "Individual" | "Organizational" | "Systemic" (field 14)
+  - "claims": list of objects {{"claim": "...", "status": "Settled" | "Open"}} (field 15)
+
+Do not include an "id" — IDs are assigned by the pipeline. Return only the JSON array, no prose before or after it.
