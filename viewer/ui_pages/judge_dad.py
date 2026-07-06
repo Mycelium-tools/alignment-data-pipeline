@@ -25,8 +25,8 @@ KNOWN_MODELS = [
     "claude-opus-4-8", "claude-fable-5",
 ]
 
-st.title("Judge playground")
-st.caption("Pick a record (or paste one), edit the rubric, run the panel, diff the verdicts.")
+st.title("DAD judge")
+st.caption("Pick a DAD record (or paste one), edit the rubric, run the panel, diff the verdicts.")
 
 
 # ---------------------------------------------------------------- inputs
