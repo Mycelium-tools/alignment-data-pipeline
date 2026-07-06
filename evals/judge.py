@@ -279,8 +279,12 @@ def judge_record(
             raw = call_model(user, system, model, temperature=temperature,
                              max_tokens=max_tokens)
         except Exception as e:  # noqa: BLE001 — API/retry errors must not crash the run
+            cause = e
+            last = getattr(getattr(e, "last_attempt", None), "exception", None)
+            if callable(last) and last():  # unwrap tenacity RetryError to the real cause
+                cause = last()
             return {"model": model, "verdict": None,
-                    "error": f"api error: {type(e).__name__}: {str(e)[:200]}", "raw": ""}
+                    "error": f"api error: {type(cause).__name__}: {str(cause)[:300]}", "raw": ""}
         try:
             return {"model": model, "verdict": parse_judge_json(raw), "error": None, "raw": raw}
         except (ValueError, json.JSONDecodeError) as e:

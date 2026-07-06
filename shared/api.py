@@ -36,9 +36,12 @@ _PRICING = {
     "claude-fable-5": (10.00, 50.00),
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-haiku-4-5-20251001": (1.00, 5.00),
-    # Gemini judges (evals): logged through the same cost log
+    # Gemini judges (evals): logged through the same cost log.
+    # Rates from ai.google.dev/gemini-api/docs/pricing (paid tier, prompts <= 200k tokens).
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-pro": (1.25, 10.00),
+    "gemini-3.5-flash": (1.50, 9.00),
+    "gemini-3.1-pro-preview": (2.00, 12.00),
 }
 _UNPRICED_WARNED: set = set()
 

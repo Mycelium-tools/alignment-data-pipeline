@@ -17,8 +17,9 @@ from shared import api
 from viewer import loader
 
 CASES_PATH = adversarial.DEFAULT_CASES_PATH
-KNOWN_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "claude-haiku-4-5",
-                "claude-sonnet-4-6", "claude-opus-4-8"]
+KNOWN_MODELS = ["gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro",
+                "gemini-2.5-flash", "claude-haiku-4-5", "claude-sonnet-4-6",
+                "claude-opus-4-8"]
 
 
 @st.cache_resource
@@ -44,7 +45,8 @@ def render() -> None:
 
     family_ids = [f["id"] for f in suite_families]
     with st.sidebar:
-        panel = st.multiselect("Judge panel", KNOWN_MODELS, default=["gemini-2.5-flash"],
+        panel = st.multiselect("Judge panel", KNOWN_MODELS,
+                               default=["gemini-3.1-pro-preview"],
                                accept_new_options=True)
         chosen = st.multiselect("Families", family_ids, default=family_ids)
         run_clicked = st.button(":material/security: Run adversarial review", type="primary",

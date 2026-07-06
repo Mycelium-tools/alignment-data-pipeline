@@ -93,7 +93,7 @@ def main() -> None:
     parser.add_argument("--input", required=True, help="Path to dad_corpus.jsonl")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--rubric", default=str(judge.DEFAULT_RUBRIC_PATH))
-    parser.add_argument("--judges", nargs="+", default=["gemini-2.5-flash"],
+    parser.add_argument("--judges", nargs="+", default=["gemini-3.1-pro-preview"],
                         help="Judge model ids (panel); gemini-* and claude-* both work")
     parser.add_argument("--limit", type=int, default=None, help="Max records to judge")
     parser.add_argument("--temperature", type=float, default=0.0)

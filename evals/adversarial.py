@@ -104,7 +104,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--rubric", default=str(judge.DEFAULT_RUBRIC_PATH))
     parser.add_argument("--cases", default=str(DEFAULT_CASES_PATH))
-    parser.add_argument("--judges", nargs="+", default=["gemini-2.5-flash"])
+    parser.add_argument("--judges", nargs="+", default=["gemini-3.1-pro-preview"])
     parser.add_argument("--suite", default="dad", choices=["dad", "sdf"],
                         help="Which judge's suite to run (default dad)")
     parser.add_argument("--family", default=None, help="Run a single family by id")

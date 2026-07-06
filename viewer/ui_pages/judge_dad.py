@@ -20,7 +20,7 @@ from viewer import loader
 
 RUBRIC_PATH = judge.DEFAULT_RUBRIC_PATH
 KNOWN_MODELS = [
-    "gemini-2.5-flash", "gemini-2.5-pro",
+    "gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash",
     "claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5",
     "claude-opus-4-8", "claude-fable-5",
 ]
@@ -89,12 +89,26 @@ def _verdict_table(verdict: dict, aggregate: dict) -> None:
             st.json(meta)
 
 
+def _saved_verdicts(run_dir, record_id: str) -> list[dict]:
+    """Verdict rows for one record from all CLI scoring runs (judge/<version>/verdicts.jsonl)."""
+    rows = []
+    judge_root = Path(run_dir) / "final" / "judge"
+    if judge_root.is_dir():
+        for vfile in sorted(judge_root.glob("*/verdicts.jsonl")):
+            for line in vfile.read_text().splitlines():
+                row = json.loads(line)
+                if row.get("record_id") == record_id:
+                    row["_rubric_dir"] = vfile.parent.name
+                    rows.append(row)
+    return rows
+
+
 def render() -> None:
     st.caption("Pick a DAD record (or paste one), edit the rubric, run the panel, diff the verdicts.")
 
     # -------------------------------------------------------------- inputs
     source = st.sidebar.radio("Record source", ["From a run", "Paste a conversation"])
-    messages, record_key = None, None
+    messages, record_key, saved = None, None, []
 
     if source == "From a run":
         runs = [r for r in loader.list_runs() if r.pipeline == "dad"]
@@ -115,6 +129,7 @@ def render() -> None:
                 rid = st.sidebar.selectbox("Record", list(labels), format_func=labels.get)
                 rec = next(r for r in finals if r["record_id"] == rid)
                 messages, record_key = rec["messages"], f"{run_id}/{rid[:8]}"
+                saved = _saved_verdicts(run.run_dir, rid)
     else:
         pasted = st.sidebar.text_area(
             "Conversation", height=260,
@@ -125,7 +140,8 @@ def render() -> None:
             st.sidebar.error("Could not parse — paste a record JSON, a messages list, or USER:/ASSISTANT: text.")
         record_key = "pasted/" + hashlib.md5((pasted or "").encode()).hexdigest()[:8]
 
-    panel = st.sidebar.multiselect("Judge panel", KNOWN_MODELS, default=["gemini-2.5-flash"],
+    panel = st.sidebar.multiselect("Judge panel", KNOWN_MODELS,
+                                   default=["gemini-3.1-pro-preview"],
                                    accept_new_options=True)
     run_clicked = st.sidebar.button(":material/gavel: Run the judge", type="primary",
                                     disabled=not (messages and panel))
@@ -164,6 +180,23 @@ def render() -> None:
             for m in messages:
                 st.markdown(f"**{m['role'].upper()}**")
                 st.code(m["content"], language=None, wrap_lines=True)
+
+    # ---------------------------------------------------- saved verdicts (CLI runs)
+    if saved:
+        st.subheader(f"Saved verdicts for this record ({len(saved)})")
+        st.caption("Written by evals/score_dad.py — browse past judge output without re-calling the API.")
+        for row in saved:
+            for res in row["panel"]["results"]:
+                label = f"{row['_rubric_dir']} · {res['model']}"
+                with st.expander(label, expanded=False):
+                    if res.get("verdict"):
+                        _verdict_table(res["verdict"], res.get("aggregate")
+                                       or judge.aggregate(res["verdict"], judge.load_rubric()))
+                    else:
+                        st.error(res.get("error") or "no verdict")
+            if row.get("annotation_comparison"):
+                with st.expander(f"{row['_rubric_dir']} · judge vs annotation (7b)"):
+                    st.json(row["annotation_comparison"])
 
     # -------------------------------------------------------------- run + display
     history = st.session_state.setdefault("judge_history", [])
