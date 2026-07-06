@@ -2,6 +2,7 @@
 """SDF pipeline orchestrator. Runs layers 1-5 with checkpointing."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -31,7 +32,9 @@ def main() -> None:
     config = utils.load_config(args.config)
 
     root = Path(__file__).parent.parent
-    runs_root = root / "outputs" / "sdf" / "runs"
+    # PIPELINE_OUTPUT_ROOT redirects all run output (used by the test suite)
+    outputs_root = Path(os.environ.get("PIPELINE_OUTPUT_ROOT", root / "outputs"))
+    runs_root = outputs_root / "sdf" / "runs"
 
     if args.resume:
         run_dir = utils.resolve_run_dir(runs_root, args.run_id)

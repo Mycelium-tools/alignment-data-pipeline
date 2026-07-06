@@ -9,7 +9,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, UTC
 
 import yaml
 
@@ -77,10 +77,11 @@ def load_config(path: str = "config.yaml") -> dict:
         return yaml.safe_load(f)
 
 
-def sample_language(distribution: dict[str, float]) -> str:
+def sample_language(distribution: dict[str, float], rng: random.Random | None = None) -> str:
+    chooser = rng or random
     languages = list(distribution.keys())
     weights = list(distribution.values())
-    return random.choices(languages, weights=weights, k=1)[0]
+    return chooser.choices(languages, weights=weights, k=1)[0]
 
 
 def new_run_id(label: str) -> str:
@@ -232,7 +233,7 @@ class Checkpoint:
         if key not in self._completed:
             self._completed.add(key)
             self._data["completed"] = list(self._completed)
-            self._data["last_updated"] = datetime.utcnow().isoformat()
+            self._data["last_updated"] = datetime.now(UTC).isoformat()
             ensure_dir(self.path.parent)
             with open(self.path, "w") as f:
                 json.dump(self._data, f)

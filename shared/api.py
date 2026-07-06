@@ -15,7 +15,7 @@ import re
 import sys
 import threading
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, UTC
 
 import anthropic
 import yaml
@@ -132,7 +132,7 @@ def _log_usage(
             prices = (3.00, 15.00)
         cost_usd = (input_tokens / 1_000_000) * prices[0] + (output_tokens / 1_000_000) * prices[1]
     record = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "model": model,
         # For claude_code, cost_usd is notional (what the call would have cost
         # at API prices) — actual billing is the contributor's subscription.
