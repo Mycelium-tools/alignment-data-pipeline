@@ -6,6 +6,7 @@ import random
 import re
 import shutil
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime
@@ -182,6 +183,34 @@ def resolve_run_dir(runs_root: str | Path, run_id: str | None = None) -> Path:
     if not runs:
         raise SystemExit(f"No runs found under {runs_root} — nothing to resume.")
     return runs[-1]
+
+
+def warn_if_backend_changed(run_dir: str | Path, live_config: dict) -> None:
+    """On --resume, warn if the live config's `backend` differs from the one the
+    run started with (recorded in run_manifest.json).
+
+    Switching mid-run is allowed — flipping to `api` after hitting the
+    claude_code usage limit is the documented recovery — but it mixes generation
+    semantics and cost accounting within one run, so surface it rather than
+    letting it happen silently.
+    """
+    manifest_path = Path(run_dir) / "run_manifest.json"
+    if not manifest_path.is_file():
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return
+    started = (manifest.get("config") or {}).get("backend", "api")
+    current = live_config.get("backend", "api")
+    if started != current:
+        print(
+            f"  WARNING: this run started on backend {started!r} but config.yaml now says "
+            f"{current!r}. Resuming will finish it under a different backend (mixed generation "
+            "semantics and cost accounting in one run). Each cost_log.jsonl row is tagged with "
+            "its backend.",
+            file=sys.stderr,
+        )
 
 
 class Checkpoint:

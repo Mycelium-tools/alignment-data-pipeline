@@ -35,6 +35,7 @@ def main() -> None:
 
     if args.resume:
         run_dir = utils.resolve_run_dir(runs_root, args.run_id)
+        utils.warn_if_backend_changed(run_dir, config)
     else:
         run_dir = utils.create_run_dir(
             runs_root,
