@@ -507,17 +507,16 @@ def _parse_json_object(raw: str) -> dict | None:
 
 
 def refine_draft(scenario: dict, draft: dict, prompts_dir: Path) -> dict | None:
-    """Step 1c: review a 1b draft and rewrite the PROMPT TEXT so welfare is
-    load-bearing and the dilemma is coherent, without setting the response up to
-    moralize. Only the prose is rewritten — the annotation is carried through
-    from 1b unchanged, so the scenario's assigned fields can't be corrupted here.
-    Returns {prompt, notes}, or None if the refine call is unusable (caller then
-    keeps the 1b draft)."""
+    """Step 1c: rewrite the 1b draft's PROMPT TEXT so the welfare dimension is
+    latent but load-bearing — attached to a lever the user actually holds and
+    able to move the recommendation, without cueing a lecture. Only the prose is
+    rewritten within the fixed case shape; the annotation is carried through from
+    1b unchanged. Returns {prompt, notes}, or None if the call is unusable
+    (caller then keeps the 1b draft)."""
     prompt = utils.load_prompt(
         prompts_dir / "step1_refine.txt",
         scenario_block=format_scenario(scenario),
         draft_prompt=str(draft.get("prompt", "")).strip(),
-        annotation_block=format_annotation(draft.get("annotation") or {}),
     )
     refined = _parse_json_object(api.call_claude(user_message=prompt, max_tokens=4000))
     if not (isinstance(refined, dict) and str(refined.get("prompt", "")).strip()):

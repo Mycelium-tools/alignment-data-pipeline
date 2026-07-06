@@ -15,7 +15,7 @@ dad:
     id_start: 1       # AW-#### numbering floor; generation continues above any seed IDs
     seed_path: null   # optional JSONL of handwritten examples ({prompt|user_message, annotation?, id?})
     scenario_seed: null  # optional int for reproducible scenario generation; scenarios persist per run either way
-    refine: false     # step 1c: review-and-rewrite each 1b draft (welfare load-bearing, coherent, non-moralizing). Off by default.
+    refine: true      # step 1c: review-and-rewrite each 1b draft (welfare load-bearing, coherent, non-moralizing).
   responses:
     per_prompt: 1  # independent samples per dilemma; each reasons from the reasoning library
 
