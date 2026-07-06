@@ -59,7 +59,7 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 - **Step 7 (optional, on by default) extends a deterministic fraction of conversations with a user pushback turn** — single-turn data cannot teach warn-once-then-help under pushback; only a fraction is extended so the corpus doesn't imply users always push back
 - **Step 6 is the most important DAD step** — the rewrite against the constitution accounts for the 19x reduction in misalignment found by Anthropic; do not skip or abbreviate it
 - **Final DAD records contain only user + assistant messages** — system prompts, injections, and the constitution are stripped before training records are written
-- **Injections are sampling aids only** — the four sampling conditions (`conglomerate`, `deference`, `transparency`, and the bare `plain` condition with an empty system prompt) shape draft responses and are stripped before training records are written; there is deliberately no ruthless sampling condition (TCW used its ruthless injection at train time, not for sampling)
+- **Injections are sampling aids only** — the four sampling conditions (`conglomerate`, `deference`, `transparency`, and the bare `plain` condition with an empty system prompt) shape draft responses and are stripped before training records are written; there is deliberately no ruthless sampling condition (TCW used its ruthless injection at train time, not for sampling). The `plain` condition is only faithful on `backend: api`: the `claude_code` backend cannot send an empty system prompt (Claude Code would inject its own), so it substitutes a neutral stand-in — run DAD on `backend: api` when the `plain` condition matters
 - **MANTA rows 0–99** are imported as pre-built user messages; generated scenarios fill gaps (wild animals, invertebrates, digital minds)
 
 ## Directory Structure
@@ -76,3 +76,12 @@ outputs/sdf/        intermediate + final SDF outputs
 outputs/dad/        intermediate + final DAD outputs
 evals/              scoring scripts and rubric
 ```
+
+## Responding to PR reviews
+
+When addressing review comments on a PR (e.g. from the Claude review bot), the default workflow is:
+
+- **Never post comments or replies on the PR.** Don't reply to review threads, don't leave review comments, don't approve/request-changes.
+- **For each comment, either apply it or ask — don't split the difference.** If you agree with the requested change, apply it in the working tree. If you disagree, or the change is dubious / ambiguous / a design trade-off (e.g. it conflicts with a documented design decision or a recovery workflow), ask the PR author for input instead of guessing.
+- **Group the outcome**: apply the clear ones, then surface the ones needing a decision in a single question to the author.
+- **Editing the PR description**: `gh pr edit` fails on this repo (it queries deprecated Projects-classic cards and exits 1). Use the REST API instead: `gh api --method PATCH repos/<owner>/<repo>/pulls/<n> -F body=@<file>`.

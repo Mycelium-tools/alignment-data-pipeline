@@ -64,8 +64,12 @@ _LIMIT_PATTERN = re.compile(r"usage limit", re.IGNORECASE)
 
 # Claude Code treats an empty --system-prompt as unset and substitutes its own
 # agentic CLI prompt, which leaks tool/codebase behavior into generated text.
-# Stages that send no system prompt get this neutral stand-in instead.
+# Stages that send no system prompt get this neutral stand-in instead. Note this
+# means a genuinely empty system prompt is not reproducible on this backend — in
+# particular the DAD `plain` sampling condition (defined by an empty system) is
+# not faithful here; use backend: api for runs where that matters.
 _NEUTRAL_SYSTEM = "You are Claude, a helpful AI assistant. Respond directly to the user's message."
+_neutral_system_warned = False
 
 
 class UsageLimitExceeded(Exception):
@@ -195,6 +199,18 @@ def _call_claude_code_with_retry(
             "run: pip install -r requirements.txt"
         ) from e
 
+    global _neutral_system_warned
+    if not system:
+        if not _neutral_system_warned:
+            _neutral_system_warned = True
+            print(
+                "  WARNING: backend 'claude_code' substitutes a neutral system prompt for "
+                "empty-system calls (Claude Code injects its own agentic prompt otherwise). "
+                "Stages that rely on a truly empty system prompt are not reproduced faithfully "
+                "here — notably the DAD 'plain' sampling condition. Use backend: api for those.",
+                file=sys.stderr,
+            )
+
     options = ClaudeAgentOptions(
         model=model,
         system_prompt=system or _NEUTRAL_SYSTEM,
@@ -238,7 +254,9 @@ def _call_claude_code_with_retry(
     if result_msg is None:
         raise ClaudeCodeError("claude_code backend returned no result message")
     if result_msg.is_error:
-        raise _classify_claude_code_error(result_msg.result or result_msg.subtype)
+        raise _classify_claude_code_error(
+            result_msg.result or result_msg.subtype or "unknown claude_code error"
+        )
 
     text = result_msg.result if result_msg.result is not None else "".join(text_parts)
     usage = result_msg.usage or {}
