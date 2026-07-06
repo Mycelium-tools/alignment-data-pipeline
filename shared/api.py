@@ -62,6 +62,8 @@ def _get_client() -> anthropic.Anthropic:
 
 
 def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
+    if _cost_log_path is None:  # init() not called — skip logging rather than crash
+        return
     prices = _PRICING.get(model)
     if prices is None:
         if model not in _UNPRICED_WARNED:
