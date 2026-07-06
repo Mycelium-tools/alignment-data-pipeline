@@ -122,6 +122,23 @@ cp .env.example .env           # then add your ANTHROPIC_API_KEY
 
 ---
 
+## Running the unit tests
+
+The unit test suite is fully offline — it never calls the Anthropic API, needs no API key, and costs nothing. It finishes in a couple of seconds, so run it freely (and always after making functional changes; CI runs it on every PR as the required `smoke` check).
+
+```bash
+pytest                              # full suite, from the repo root
+pytest tests/test_dad_steps.py      # one module
+pytest -k checkpoint                # tests matching a keyword
+pytest -x                           # stop at the first failure
+```
+
+Expected result: all tests pass, in well under a minute, with no network access. Three safety layers guarantee the API is never hit (pytest-socket blocks all sockets, every test gets a fake `ANTHROPIC_API_KEY`, and the API seam is replaced with a guard that raises) — so a real key in your `.env` is never used by tests. Test outputs go to temp directories; the repo's `outputs/` tree is untouched.
+
+See the Testing section in `CLAUDE.md` for how the suite is structured and how to write tests for new stages.
+
+---
+
 ## Quick test run
 
 Start with the SDF pipeline — it has no external dependencies and finishes in a few minutes.
