@@ -144,7 +144,7 @@ else:
 
 def stage_expander(title: str, stage: str, lineage: dict, output_fn):
     """One stage: the rendered prompt, then the output it produced."""
-    with st.expander(title):
+    with st.expander(f":blue[{title}]"):
         rendered = rendering.render_prompt(run.pipeline, stage, run.run_dir, manifest, lineage)
         common.show_rendered_prompt(rendered, key=stage, show_run_warnings=False)
         st.markdown("##### Output at this stage")
@@ -228,7 +228,7 @@ else:
         with st.container(height=PANEL_HEIGHT):
             if lin.get("format") == "v2":
                 # Step 1a — scenario generation: pure sampling, no model call.
-                with st.expander("Step 1a — scenario generation (sampled, no model call)"):
+                with st.expander(":blue[Step 1a — scenario generation (sampled, no model call)]"):
                     sc = lin.get("scenario")
                     if sc:
                         st.caption("Stratified categorical assignment for this example, drawn by the "
