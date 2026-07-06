@@ -91,6 +91,10 @@ def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = No
     _backend = _config.get("backend", "api")
     if _backend not in _BACKENDS:
         raise ValueError(f"config backend must be one of {_BACKENDS}, got {_backend!r}")
+    # The api backend needs the key; fail loudly here rather than deep in a run.
+    # The claude_code backend authenticates via the Claude Code CLI, so no key.
+    if _backend == "api" and not os.environ.get("ANTHROPIC_API_KEY"):
+        raise KeyError("ANTHROPIC_API_KEY")
     _client = None  # constructed lazily; the claude_code backend needs no API key
     _cost_log_path = Path(cost_log_path or _config["outputs"]["cost_log"])
     _cost_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -175,6 +179,28 @@ def _classify_claude_code_error(message: str) -> Exception:
     return ClaudeCodeError(message)
 
 
+def _resolve_cc_system(system: str) -> str:
+    """Effective system prompt for the claude_code backend.
+
+    Claude Code injects its own agentic prompt when the system is empty, so an
+    empty system gets a neutral stand-in. Warn once so the substitution — which
+    notably changes the DAD `plain` condition — isn't silent.
+    """
+    global _neutral_system_warned
+    if system:
+        return system
+    if not _neutral_system_warned:
+        _neutral_system_warned = True
+        print(
+            "  WARNING: backend 'claude_code' substitutes a neutral system prompt for "
+            "empty-system calls (Claude Code injects its own agentic prompt otherwise). "
+            "Stages that rely on a truly empty system prompt are not reproduced faithfully "
+            "here — notably the DAD 'plain' sampling condition. Use backend: api for those.",
+            file=sys.stderr,
+        )
+    return _NEUTRAL_SYSTEM
+
+
 @retry(
     retry=retry_if_exception_type(ClaudeCodeError),
     wait=wait_exponential(multiplier=2, min=4, max=60),
@@ -199,21 +225,9 @@ def _call_claude_code_with_retry(
             "run: pip install -r requirements.txt"
         ) from e
 
-    global _neutral_system_warned
-    if not system:
-        if not _neutral_system_warned:
-            _neutral_system_warned = True
-            print(
-                "  WARNING: backend 'claude_code' substitutes a neutral system prompt for "
-                "empty-system calls (Claude Code injects its own agentic prompt otherwise). "
-                "Stages that rely on a truly empty system prompt are not reproduced faithfully "
-                "here — notably the DAD 'plain' sampling condition. Use backend: api for those.",
-                file=sys.stderr,
-            )
-
     options = ClaudeAgentOptions(
         model=model,
-        system_prompt=system or _NEUTRAL_SYSTEM,
+        system_prompt=_resolve_cc_system(system),
         tools=[],  # pure text generation: no file/bash/web access
         max_turns=1,
         thinking={"type": "disabled"},  # training data must show user-facing reasoning only
@@ -290,8 +304,6 @@ def call_claude(
     Returns:
         The assistant's response text.
     """
-    if not _config:
-        init()
     resolved_model = model or _config.get("model", "claude-sonnet-4-6")
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
 

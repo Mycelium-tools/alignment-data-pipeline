@@ -47,6 +47,8 @@ def _api_guard(monkeypatch):
     monkeypatch.setattr(api, "_client", None)
     monkeypatch.setattr(api, "_cost_log_path", None)
     monkeypatch.setattr(api, "_UNPRICED_WARNED", set())
+    monkeypatch.setattr(api, "_backend", "api")
+    monkeypatch.setattr(api, "_neutral_system_warned", False)
 
     def _blocked(*args, **kwargs):
         raise AssertionError(

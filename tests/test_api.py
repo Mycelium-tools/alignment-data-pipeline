@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import pytest_socket
+import yaml
 
 from shared import api, utils
 
@@ -128,3 +129,99 @@ class TestCostTracking:
     def test_get_total_cost_missing_file_is_zero(self, monkeypatch, tmp_path):
         monkeypatch.setattr(api, "_cost_log_path", tmp_path / "never-written.jsonl")
         assert api.get_total_cost() == 0.0
+
+
+class TestBackendSelection:
+    def test_init_defaults_to_api_backend(self, tiny_config_file):
+        api.init(str(tiny_config_file))  # tiny_config has no `backend` key
+        assert api._backend == "api"
+
+    def test_init_reads_claude_code_backend(self, tiny_config, tmp_path):
+        tiny_config["backend"] = "claude_code"
+        path = tmp_path / "cc.yaml"
+        path.write_text(yaml.safe_dump(tiny_config))
+        api.init(str(path))
+        assert api._backend == "claude_code"
+
+    def test_init_rejects_unknown_backend(self, tiny_config, tmp_path):
+        tiny_config["backend"] = "bogus"
+        path = tmp_path / "bad.yaml"
+        path.write_text(yaml.safe_dump(tiny_config))
+        with pytest.raises(ValueError, match="backend"):
+            api.init(str(path))
+
+    def test_claude_code_backend_needs_no_key(self, tiny_config, tmp_path, monkeypatch):
+        # The whole point of claude_code: it authenticates via the CLI, not a key.
+        monkeypatch.delenv("ANTHROPIC_API_KEY")
+        tiny_config["backend"] = "claude_code"
+        path = tmp_path / "cc.yaml"
+        path.write_text(yaml.safe_dump(tiny_config))
+        api.init(str(path))  # must NOT raise, unlike the api backend
+        assert api._backend == "claude_code"
+
+
+class TestClassifyClaudeCodeError:
+    # Window exhaustion must abort the run (non-retryable); a transient CLI
+    # hiccup must fall through to the retried ClaudeCodeError path.
+    @pytest.mark.parametrize("message", [
+        "Claude AI usage limit reached|1751400000",
+        "You have reached your usage limit",
+    ])
+    def test_usage_limit_is_non_retryable(self, message):
+        err = api._classify_claude_code_error(message)
+        assert isinstance(err, api.UsageLimitExceeded)
+        assert not isinstance(err, api.ClaudeCodeError)  # tenacity won't retry it
+        assert "--resume" in str(err)
+
+    @pytest.mark.parametrize("message", [
+        "rate limit exceeded, retry shortly",
+        "429 rate limit reached",  # 'limit reached' must NOT be caught as window exhaustion
+        "spawn ENOENT",
+        "unknown claude_code error",
+    ])
+    def test_transient_error_is_retryable(self, message):
+        assert isinstance(api._classify_claude_code_error(message), api.ClaudeCodeError)
+
+
+class TestResolveClaudeCodeSystem:
+    def test_nonempty_system_passes_through_silently(self, capsys):
+        assert api._resolve_cc_system("real system") == "real system"
+        assert capsys.readouterr().err == ""
+
+    def test_empty_system_gets_neutral_stand_in(self, capsys):
+        assert api._resolve_cc_system("") == api._NEUTRAL_SYSTEM
+
+    def test_empty_system_warns_only_once(self, capsys):
+        api._resolve_cc_system("")
+        api._resolve_cc_system("")
+        assert capsys.readouterr().err.count("neutral system prompt") == 1
+
+
+class TestClaudeCodeDispatch:
+    """call_claude routes to the claude_code path and logs its reported cost.
+
+    _call_claude_code_with_retry is stubbed so no CLI subprocess is spawned;
+    the api seam (_call_with_retry) stays the _blocked raiser from _api_guard,
+    so this also proves the claude_code path never touches the API client.
+    """
+
+    def test_dispatches_and_logs_notional_cost(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(api, "_backend", "claude_code")
+        monkeypatch.setattr(api, "_cost_log_path", tmp_path / "cost.jsonl")
+        seen = {}
+
+        def fake_cc(model, system, user_message):
+            seen.update(model=model, system=system, user_message=user_message)
+            return ("cc-response", 111, 22, 0.004)
+
+        monkeypatch.setattr(api, "_call_claude_code_with_retry", fake_cc)
+
+        out = api.call_claude("hi", system_prompt="sys", injection="inj", model="claude-haiku-4-5")
+
+        assert out == "cc-response"
+        # system prompt + injection assembled the same way as the api path
+        assert seen == {"model": "claude-haiku-4-5", "system": "sys\n\ninj", "user_message": "hi"}
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert record["backend"] == "claude_code"
+        assert record["cost_usd"] == pytest.approx(0.004)  # Claude Code's own cost, logged verbatim
+        assert record["input_tokens"] == 111 and record["output_tokens"] == 22
