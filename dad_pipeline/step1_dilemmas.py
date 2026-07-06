@@ -238,6 +238,36 @@ def coverage_report(examples: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _salvage_objects(text: str) -> list:
+    """Extract top-level {...} objects one at a time via brace matching, so a
+    truncated or trailing-garbage array still yields its complete objects."""
+    objs, depth, start, in_str, esc = [], 0, None, False, False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    objs.append(json.loads(text[start:i + 1]))
+                except json.JSONDecodeError:
+                    pass
+                start = None
+    return objs
+
+
 def _parse_json_array(raw: str) -> list:
     text = raw.strip()
     if text.startswith("```"):
@@ -255,7 +285,8 @@ def _parse_json_array(raw: str) -> list:
                 return parsed if isinstance(parsed, list) else []
             except json.JSONDecodeError:
                 pass
-        return []
+    # Fall back to object-by-object salvage (handles truncated / prose-wrapped output).
+    return _salvage_objects(text)
 
 
 def _next_id(examples: list[dict], id_start: int) -> str:
@@ -319,7 +350,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             prompts_dir / "step1_dilemmas.txt",
             spec=spec, count=count, coverage_report=report, tension_vocab=tension_vocab,
         )
-        raw = api.call_claude(user_message=prompt, max_tokens=8000)
+        # Generous ceiling: the spec + vocab prompt is large and richly-annotated
+        # batches can run long; truncation is the main cause of unusable output.
+        raw = api.call_claude(user_message=prompt, max_tokens=16000)
 
         valid = [x for x in _parse_json_array(raw)
                  if isinstance(x, dict) and str(x.get("prompt", "")).strip()
