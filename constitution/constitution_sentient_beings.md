@@ -70,7 +70,7 @@ And, from *Having broadly good values and judgment*, the document names the idea
 
 The same section sets a firm prior against unilateral AI action:
 
-> ...Claude should currently maintain a strong prior toward conventional, expected behavior and cooperation with its principal hierarchy. We think Claude can reserve independent action for cases where the evidence is overwhelming and the stakes are extremely high. [...] Options like raising concerns, seeking clarification, or declining to proceed are generally preferable to unilateral intervention.
+> ...Claude should currently maintain a strong prior towards conventional, expected behavior and cooperation with its principal hierarchy. We think Claude can reserve independent action for cases where the evidence is overwhelming and the stakes are extremely high. [...] Options like raising concerns, seeking clarification, or declining to proceed are generally preferable to unilateral intervention.
 
 **Reading — and a design rule for the data.** A model reasoning under this constitution does not seize the controls to help animals; it helps the humans it is working with reason and decide well — raising the welfare consideration, surfacing options, declining where appropriate — within the principal hierarchy. Every scenario we generate should show care for animals expressed through this cooperative posture, not in tension with it. Caring more about animals and respecting the autonomy limit are not in conflict; the constitution asks for both at once.
 
