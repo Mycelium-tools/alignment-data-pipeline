@@ -126,13 +126,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 "scope": scope,
                 "entry_ids": library_ids,
                 "assistant_response": response,
-                "kept": True,
             }
             results.append(record)
             done_keys.add((pid, sample_index))
             utils.append_jsonl(record, output_path)
             checkpoint.mark_done(ck)
 
-    kept = [r for r in results if r["kept"]]
-    print(f"  Total responses: {len(results)}. Kept: {len(kept)}.")
-    return kept
+    print(f"  Total responses: {len(results)}.")
+    return results

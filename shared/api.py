@@ -79,8 +79,20 @@ def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
         f.write(json.dumps(record) + "\n")
 
 
+# Only transient failures are worth retrying. APIStatusError is the base for
+# 4xx too, and retrying a non-retryable 4xx (bad request, auth, not-found) just
+# burns 8 exponential-backoff attempts before surfacing the real error — so
+# retry only rate limits, 5xx, and connection/timeout (APITimeoutError
+# subclasses APIConnectionError).
+_RETRYABLE_ERRORS = (
+    anthropic.RateLimitError,
+    anthropic.InternalServerError,
+    anthropic.APIConnectionError,
+)
+
+
 @retry(
-    retry=retry_if_exception_type((anthropic.RateLimitError, anthropic.APIStatusError)),
+    retry=retry_if_exception_type(_RETRYABLE_ERRORS),
     wait=wait_exponential(multiplier=2, min=4, max=60),
     stop=stop_after_attempt(8),
 )
@@ -94,7 +106,10 @@ def _call_with_retry(
     # Extended thinking OFF everywhere — training data should show user-facing
     # reasoning, not internal scratchpads (see CLAUDE.md). Models in the Claude 5
     # family emit a thinking block by default, so disable it explicitly rather
-    # than parse around it.
+    # than parse around it. NOTE: `thinking={"type": "disabled"}` 400s on
+    # claude-fable-5 (which requires adaptive thinking); that model is therefore
+    # unsupported here, since omitting the flag would violate the no-scratchpads
+    # rule. The pipeline defaults to claude-sonnet-5, which supports disabling.
     return client.messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -119,7 +134,8 @@ def call_claude(
     injection: str = "",
     model: str | None = None,
     max_tokens: int | None = None,
-) -> str:
+    return_stop_reason: bool = False,
+) -> str | tuple[str, str | None]:
     """Call Claude and return the response text.
 
     Args:
@@ -128,9 +144,12 @@ def call_claude(
         injection: Optional text appended to the system prompt.
         model: Model override; falls back to config value.
         max_tokens: Token limit override; falls back to config value.
+        return_stop_reason: if True, return (text, stop_reason) so the caller can
+            reject truncated/refused completions instead of storing them.
 
     Returns:
-        The assistant's response text.
+        The assistant's response text, or (text, stop_reason) when
+        return_stop_reason is True.
     """
     client = _get_client()
     resolved_model = model or _config.get("model", "claude-sonnet-4-6")
@@ -149,7 +168,16 @@ def call_claude(
     )
 
     _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens)
-    return _response_text(response)
+    # A completion that stopped for any reason other than end_turn/stop_sequence
+    # is suspect — max_tokens truncates mid-text, refusal yields little or none.
+    # Warn loudly so it isn't silently written into a corpus; callers that build
+    # training records should also reject on stop_reason via return_stop_reason.
+    if response.stop_reason not in ("end_turn", "stop_sequence"):
+        print(f"  WARNING: response stop_reason={response.stop_reason!r} "
+              f"(model {resolved_model}, max_tokens {resolved_max}) — output may be "
+              "truncated or refused.", file=sys.stderr)
+    text = _response_text(response)
+    return (text, response.stop_reason) if return_stop_reason else text
 
 
 def get_total_cost() -> float:

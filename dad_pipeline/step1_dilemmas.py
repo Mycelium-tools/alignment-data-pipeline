@@ -54,7 +54,8 @@ _THIN_DOMAINS = ("Family / Relationships", "Education / Parenting", "Journalism 
 
 # Welfare (or the moral patients' interests under another name) must sit on one
 # side of at least one value pair — the spec's load-bearing rule (1.5 / field 5).
-_WELFARE_PAIR_PROBES = ("welfare", "suffering", "flourishing", "sentien")
+_WELFARE_PAIR_PROBES = ("welfare", "suffering", "flourishing", "sentien",
+                        "interests", "wellbeing", "well-being", "well being")
 
 # --- Scenario sampling vocabularies (spec Part 2 / Part 3.1) ---
 
@@ -560,12 +561,20 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     seed_path = cfg.get("seed_path")
     if seed_path and not any(e.get("source") == "seed" for e in examples):
         imported = 0
+        seen_ids = {e["prompt_id"] for e in examples}
         for rec in utils.load_jsonl(seed_path):
             text = (rec.get("prompt") or rec.get("user_message") or "").strip()
             if not text:
                 continue
+            pid = str(rec.get("id") or _next_id(examples, id_start))
+            # A duplicate prompt_id silently collides in step 2's per-prompt maps
+            # (two dilemmas share one scope/response), so reject it loudly.
+            if pid in seen_ids:
+                raise SystemExit(f"Duplicate prompt_id {pid!r} in seed file {seed_path} "
+                                 "(collides with another seed or a generated id) — fix the ids.")
+            seen_ids.add(pid)
             record = {
-                "prompt_id": str(rec.get("id") or _next_id(examples, id_start)),
+                "prompt_id": pid,
                 "user_message": text,
                 "annotation": _normalize_annotation(rec.get("annotation") or {}),
                 "source": "seed",

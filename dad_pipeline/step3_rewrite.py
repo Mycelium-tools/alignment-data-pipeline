@@ -57,7 +57,16 @@ def run(
             draft_response=resp["assistant_response"],
         )
 
-        rewritten = api.call_claude(user_message=prompt, max_tokens=2000)
+        rewritten, stop_reason = api.call_claude(
+            user_message=prompt, max_tokens=4000, return_stop_reason=True)
+        rewritten = rewritten.strip()
+
+        # A truncated (max_tokens) or empty rewrite must never become a training
+        # record. Skip it without checkpointing so a later --resume retries it.
+        if not rewritten or stop_reason == "max_tokens":
+            why = "truncated at max_tokens" if stop_reason == "max_tokens" else "empty"
+            print(f"    Skipping {resp['prompt_id']}: rewrite {why} — not written, will retry on resume.")
+            continue
 
         record_id = str(uuid.uuid4())
 
@@ -71,7 +80,7 @@ def run(
             "entry_ids": resp.get("entry_ids", []),
             "user_message": resp["user_message"],
             "draft_response": resp["assistant_response"],
-            "rewritten_response": rewritten.strip(),
+            "rewritten_response": rewritten,
             "annotation": annotation,
         }
         results.append(audit_record)

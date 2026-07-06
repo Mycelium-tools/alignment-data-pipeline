@@ -116,6 +116,10 @@ def _pass_rate(run_dir: Path, pipeline: str) -> float | None:
     responses = load_stage(run_dir, pipeline, "step2_responses") or load_stage(run_dir, pipeline, "step5")
     if not responses:
         return None
+    # `kept` only exists on legacy runs (the ruthless-judge gate that set it was
+    # removed). With no keep/score signal, pass rate is n/a rather than a bogus 0%.
+    if not any("kept" in r for r in responses):
+        return None
     return sum(1 for r in responses if r.get("kept")) / len(responses)
 
 

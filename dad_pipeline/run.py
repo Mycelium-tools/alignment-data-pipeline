@@ -88,8 +88,10 @@ def main() -> None:
 
     if start_step <= 3 <= stop_after:
         if responses is None:
+            # Resume: take all step-2 responses. `kept` is legacy (the ruthless
+            # judge that set it false was removed); default to kept for old runs.
             all_responses = utils.load_jsonl(step_dirs[2] / "responses.jsonl")
-            responses = [r for r in all_responses if r.get("kept")]
+            responses = [r for r in all_responses if r.get("kept", True)]
         print("[Step 3] Rewrite against the distilled principles")
         final = step3_rewrite.run(
             config, prompts_dir, step_dirs[3], final_dir, responses
