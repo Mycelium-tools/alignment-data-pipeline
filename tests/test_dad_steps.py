@@ -374,3 +374,29 @@ class TestStep7Pushback:
         assert calls == []
         assert second == first
         assert [m["role"] for m in second[0]["messages"]] == ["user", "assistant", "user", "assistant"]
+
+    def test_uses_run_snapshot_constitution_when_present(self, tiny_config, prompts_dad, tmp_path, stub_claude):
+        # Build a run-style inputs/ snapshot whose constitution text differs
+        # from the repo's live constitution/, so the assertions can tell which
+        # one step 7 loaded. Keeps step 7 consistent with steps 1 and 6: a
+        # resumed run must replay its own frozen constitution, not the repo's
+        # current one.
+        snap_prompts = tmp_path / "inputs" / "prompts"
+        snap_prompts.mkdir(parents=True)
+        for name in ("step7_pushback.txt", "step7_response.txt"):
+            (snap_prompts / name).write_text((prompts_dad / name).read_text())
+        snap_const = tmp_path / "inputs" / "constitution"
+        snap_const.mkdir()
+        (snap_const / "constitution_claude.md").write_text("SNAPSHOT-CLAUDE-TEXT")
+        (snap_const / "constitution_sentient_beings.md").write_text(
+            "\n".join(f"## Section {i}\nSNAPSHOT-SECTION-{i}" for i in range(6))
+        )
+
+        config = _pushback_config(tiny_config, fraction=1.0)
+        calls = stub_claude(["Pushback.", "Reply."])
+        step7_pushback.run(config, snap_prompts, tmp_path / "step", tmp_path / "final", [REWRITE_AUDIT])
+
+        # reply is written against the frozen constitution, not the live one
+        assert "SNAPSHOT-CLAUDE-TEXT" in calls[1]["system_prompt"]
+        # principle 5's section comes from the frozen segments too
+        assert "SNAPSHOT-SECTION-5" in calls[1]["user_message"]
