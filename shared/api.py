@@ -201,19 +201,18 @@ def _resolve_cc_system(system: str) -> str:
     return _NEUTRAL_SYSTEM
 
 
-@retry(
-    retry=retry_if_exception_type(ClaudeCodeError),
-    wait=wait_exponential(multiplier=2, min=4, max=60),
-    stop=stop_after_attempt(8),
-)
-def _call_claude_code_with_retry(
+def _run_claude_code_query(
     model: str,
     system: str,
     user_message: str,
 ) -> tuple[str, int, int, float | None]:
-    """Single-turn text generation via the Claude Code CLI (subscription auth).
+    """One Claude Code CLI turn: run the query and parse the result into
+    (text, input_tokens, output_tokens, notional_cost_usd).
 
-    Returns (text, input_tokens, output_tokens, notional_cost_usd).
+    Raises UsageLimitExceeded / ClaudeCodeError on failure; the retry wrapper
+    (_call_claude_code_with_retry) decides whether to retry. Kept separate from
+    that wrapper so this parse — the money path — is unit-testable by stubbing
+    claude_agent_sdk.query, without triggering tenacity's backoff.
     """
     try:
         import anyio
@@ -280,6 +279,22 @@ def _call_claude_code_with_retry(
         usage.get("output_tokens", 0),
         result_msg.total_cost_usd,
     )
+
+
+@retry(
+    retry=retry_if_exception_type(ClaudeCodeError),
+    wait=wait_exponential(multiplier=2, min=4, max=60),
+    stop=stop_after_attempt(8),
+)
+def _call_claude_code_with_retry(
+    model: str,
+    system: str,
+    user_message: str,
+) -> tuple[str, int, int, float | None]:
+    """Retry wrapper around _run_claude_code_query (transient ClaudeCodeError
+    only; UsageLimitExceeded is not retried). This is the seam call_claude uses
+    and that the test suite blocks."""
+    return _run_claude_code_query(model, system, user_message)
 
 
 def call_claude(

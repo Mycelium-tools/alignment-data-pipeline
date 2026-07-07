@@ -207,6 +207,94 @@ class TestResolveClaudeCodeSystem:
         assert capsys.readouterr().err.count("neutral system prompt") == 1
 
 
+@pytest.mark.enable_socket
+class TestRunClaudeCodeQuery:
+    """Exercise the claude_code money path (`_run_claude_code_query`) at the true
+    external boundary — a stubbed `claude_agent_sdk.query` yielding real SDK
+    message objects — so a wrong attribute name or an SDK schema change is caught,
+    unlike tests that stub the wrapper away. `_run_claude_code_query` is the
+    un-retried inner, so error cases raise immediately (no tenacity backoff).
+
+    `enable_socket`: `query` is stubbed, so no network I/O occurs — the exemption
+    is only for the localhost socketpair asyncio's event loop (via `anyio.run`)
+    uses for its internal self-pipe, which `--disable-socket` would otherwise block.
+    """
+
+    @staticmethod
+    def _install_query(monkeypatch, messages):
+        pytest.importorskip("claude_agent_sdk")
+
+        async def fake_query(*, prompt, options):
+            for m in messages:
+                yield m
+
+        monkeypatch.setattr("claude_agent_sdk.query", fake_query)
+
+    @staticmethod
+    def _result(**kw):
+        types = pytest.importorskip("claude_agent_sdk.types")
+        fields = dict(
+            subtype="success", duration_ms=1, duration_api_ms=1,
+            is_error=False, num_turns=1, session_id="sesn_test",
+        )
+        fields.update(kw)
+        return types.ResultMessage(**fields)
+
+    @staticmethod
+    def _assistant(text):
+        types = pytest.importorskip("claude_agent_sdk.types")
+        return types.AssistantMessage(
+            content=[types.TextBlock(text=text)], model="claude-haiku-4-5"
+        )
+
+    def test_happy_path_parses_text_tokens_cost(self, monkeypatch):
+        self._install_query(monkeypatch, [
+            self._assistant("draft answer"),
+            self._result(result="draft answer",
+                         usage={"input_tokens": 120, "output_tokens": 34},
+                         total_cost_usd=0.0021),
+        ])
+        text, in_tok, out_tok, cost = api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
+        assert text == "draft answer"
+        assert (in_tok, out_tok) == (120, 34)
+        assert cost == pytest.approx(0.0021)
+
+    def test_result_none_falls_back_to_joined_assistant_text(self, monkeypatch):
+        self._install_query(monkeypatch, [
+            self._assistant("part1 "),
+            self._assistant("part2"),
+            self._result(result=None, usage={"input_tokens": 5, "output_tokens": 1}),
+        ])
+        text, in_tok, out_tok, cost = api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
+        assert text == "part1 part2"
+        assert (in_tok, out_tok, cost) == (5, 1, None)
+
+    def test_missing_usage_defaults_tokens_to_zero(self, monkeypatch):
+        self._install_query(monkeypatch, [
+            self._result(result="x", usage=None, total_cost_usd=None),
+        ])
+        assert api._run_claude_code_query("claude-haiku-4-5", "sys", "hi") == ("x", 0, 0, None)
+
+    def test_is_error_usage_limit_raises_non_retryable(self, monkeypatch):
+        self._install_query(monkeypatch, [
+            self._result(is_error=True, result="Claude AI usage limit reached|1751400000"),
+        ])
+        with pytest.raises(api.UsageLimitExceeded):
+            api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
+
+    def test_is_error_transient_raises_retryable(self, monkeypatch):
+        self._install_query(monkeypatch, [
+            self._result(is_error=True, result="temporary backend failure, try again"),
+        ])
+        with pytest.raises(api.ClaudeCodeError):
+            api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
+
+    def test_no_result_message_raises(self, monkeypatch):
+        self._install_query(monkeypatch, [self._assistant("orphan text")])
+        with pytest.raises(api.ClaudeCodeError, match="no result message"):
+            api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
+
+
 class TestClaudeCodeDispatch:
     """call_claude routes to the claude_code path and logs its reported cost.
 
