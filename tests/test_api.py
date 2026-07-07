@@ -86,6 +86,22 @@ class TestCallClaude:
         assert recorded_api["calls"][0]["model"] == "override"
         assert recorded_api["calls"][0]["max_tokens"] == 9
 
+    def test_return_stop_reason_tuple_contract(self, recorded_api, fake_message):
+        recorded_api["message"] = fake_message(text="partial", stop_reason="max_tokens")
+        text, stop = api.call_claude("hi", return_stop_reason=True)
+        assert (text, stop) == ("partial", "max_tokens")
+        # default return stays a bare string for backward compatibility
+        assert api.call_claude("hi") == "partial"
+
+    def test_suspect_stop_reason_warns(self, recorded_api, fake_message, capsys):
+        recorded_api["message"] = fake_message(text="cut", stop_reason="max_tokens")
+        api.call_claude("hi")
+        assert "max_tokens" in capsys.readouterr().err
+
+    def test_clean_stop_reason_is_silent(self, recorded_api, capsys):
+        api.call_claude("hi")
+        assert capsys.readouterr().err == ""
+
 
 class TestRetryPredicate:
     def test_bad_request_is_not_retried(self, monkeypatch):

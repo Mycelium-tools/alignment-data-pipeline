@@ -6,6 +6,7 @@ import random
 import re
 import shutil
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime, UTC
@@ -108,10 +109,29 @@ def _git_status() -> tuple[str | None, bool, list[str]]:
 
 
 def _update_latest_symlink(parent: Path, run_dir: Path) -> None:
+    """Point parent/latest at run_dir. Symlinks on Windows need Developer Mode
+    or elevation (WinError 1314), so fall back to a directory junction (no
+    privilege required), and failing that warn and continue — the pointer is a
+    convenience; resolve_run_dir orders runs by directory name, not this link."""
     link = parent / "latest"
-    if link.is_symlink() or link.exists():
+    # lexists also catches broken symlinks and junctions, which exists() misses.
+    if os.path.lexists(link):
         link.unlink()
-    link.symlink_to(run_dir.relative_to(parent), target_is_directory=True)
+    try:
+        link.symlink_to(run_dir.relative_to(parent), target_is_directory=True)
+    except OSError:
+        try:
+            # Junction targets must be absolute; mklink is a cmd builtin.
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(link), str(run_dir.resolve())],
+                check=True, capture_output=True,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            print(
+                f"  WARNING: could not update the {link} pointer (no symlink "
+                "privilege, junction fallback failed); runs are unaffected.",
+                file=sys.stderr,
+            )
 
 
 def create_run_dir(
