@@ -22,6 +22,16 @@ class TestSafetyNet:
         with pytest.raises(AssertionError, match="API call attempted"):
             api.call_claude("hello")
 
+    def test_unstubbed_claude_code_call_is_blocked(self, tiny_config, tmp_path):
+        # The claude_code seam spawns a real CLI subprocess, which pytest-socket
+        # can't block — so _api_guard must fail it fast in-process instead.
+        tiny_config["backend"] = "claude_code"
+        path = tmp_path / "cc.yaml"
+        path.write_text(yaml.safe_dump(tiny_config))
+        api.init(str(path), cost_log_path=tmp_path / "cost.jsonl")
+        with pytest.raises(AssertionError, match="claude_code backend invoked"):
+            api.call_claude("hello")
+
     # pytest-socket warns as well as raises when it blocks name resolution.
     # The warning IS the guard working, so silence exactly it (and nothing
     # else) to keep the suite's warning summary clean.

@@ -57,6 +57,19 @@ def _api_guard(monkeypatch):
 
     monkeypatch.setattr(api, "_call_with_retry", _blocked)
 
+    # The claude_code backend's seam spawns the real `claude` CLI as a
+    # subprocess, which pytest-socket's --disable-socket cannot block (it only
+    # patches the in-process socket module). Block it here too so a test that
+    # flips _backend to "claude_code" without stubbing this fails fast in-process
+    # rather than launching a real CLI. Tests exercising the backend override it.
+    def _blocked_cc(*args, **kwargs):
+        raise AssertionError(
+            "claude_code backend invoked during tests — "
+            "stub shared.api._call_claude_code_with_retry"
+        )
+
+    monkeypatch.setattr(api, "_call_claude_code_with_retry", _blocked_cc)
+
 
 @pytest.fixture
 def stub_claude(monkeypatch):
