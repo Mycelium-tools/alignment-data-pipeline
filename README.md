@@ -25,7 +25,7 @@ evals/              scoring scripts and rubric
 Three source files, kept separate (the two markdown files are joined in memory by `shared/constitution_loader.py`):
 
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
-- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section (16 sections, 3 of them meta; used as per-example anchors only by legacy pre-spec DAD runs).
+- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section.
 - `constitution/constitution_principles.csv` — fourteen distilled welfare-relevant principles, embedded as an explicit checklist in the DAD rewrite prompt (step 3).
 
 `load_full_constitution()` joins the two markdown files for the system prompt at SDF's rewrite and scoring layers. The DAD pipeline never sends the full constitution: its user side is governed by `prompts/dad/dilemma_prompt_spec.md`, and its rewrite step runs on the distilled principles CSV (summaries + verbatim quotes).
