@@ -37,15 +37,18 @@ Generates pretraining-style documents — blog posts, academic abstracts, forum 
 
 | Layer | Script | What it does |
 |---|---|---|
-| 1 | `layer1_document_types.py` | Generates 30 diverse document type categories |
-| 2 | `layer2_subtypes.py` | Generates 5 concrete subtypes per type, assigns language |
-| 3 | `layer3_draft.py` | Drafts documents for each subtype |
-| 4 | `layer4_rewrite.py` | Rewrites each draft with the combined constitution in context |
-| 5 | `layer5_score.py` | Scores and filters; writes final corpus |
+| 1 | `layer1_document_types.py` | Generates diverse document type categories across four roles (ai-character, welfare-topic, constitution-identity, latent-welfare) with an expository/first-person register split |
+| 2 | `layer2_subtypes.py` | Generates concrete subtypes per type, assigns language, drops near-duplicate subtypes |
+| 3 | `layer3_draft.py` | Drafts documents per subtype — register-matched voice, seeded fictional name/org pools, anti-house-style rules |
+| 4 | `layer4_rewrite.py` | Rewrites each draft with the combined constitution in context (supports a stronger `sdf.rewrite_model`) |
+| 5 | `layer5_score.py` | Scores and filters; verifies each latent doc's welfare beat via a mechanically-checked verbatim quote; culls near-duplicates; writes final corpus |
+
+The **latent-welfare** slice (`sdf.latent_fraction`, default 12%) is ordinary documents from unrelated working worlds where care for animal welfare surfaces exactly once as a concrete detail — so the value also appears as background world-knowledge, not only as a headline topic.
 
 Final output: `outputs/sdf/runs/<run_id>/final/sdf_corpus.jsonl` (also reachable via the `outputs/sdf/latest` symlink)
 
 Run: `python sdf_pipeline/run.py --config config.yaml --label dev`
+Audit the result: `python evals/audit_sdf.py --input outputs/sdf/latest` (add `--patterns` for the LLM templating scan)
 
 ---
 
@@ -94,6 +97,8 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 `score_dad.py` — scores DAD corpus records against the rubric using Claude as judge. Outputs per-record scores and aggregate stats.
 
 `score_sdf.py` — scores SDF documents on alignment, realism, and diversity.
+
+`audit_sdf.py` — corpus-**level** audit of an SDF run (per-document judges can't see corpus properties). Offline and free by default: composition/register spread, length and truncation artifacts, near-duplicate rate (word-shingle cosine), invented-name collapse, stock-phrase frequency, and opening-shape clustering, each with a GOOD/OK/BAD verdict where meaningful. `--patterns` adds an LLM templating scan (batch scan via `prompts/tools/pattern_scan.txt` → consolidation → per-pattern prevalence; a pattern is flagged only if it's judged a genuine defect **and** widespread). Writes `audit/audit_report.json` into the run dir.
 
 Run: `python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl`
 

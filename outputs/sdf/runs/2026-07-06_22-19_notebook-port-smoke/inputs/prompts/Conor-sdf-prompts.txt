@@ -1,0 +1,207 @@
+#layer 1
+
+{preamble}
+
+---
+
+Your task: generate a diverse list of {count} document categories for the SDF corpus. These categories sit at the top of a fanout: each one is later split into subtypes, and each subtype into several documents, so the variety here shapes the variety of the whole corpus. Spread widely and do not cluster on the obvious categories.
+
+Every category should be one whose documents could be written from the constitution and general scientific consensus on sentience, without needing to cite specific real regulations, named studies, or real-world events. Do not propose types whose whole premise depends on real-world specifics of that kind.
+
+## Document roles: spread across all three
+
+**ai-character** (at least {min_ai_character} of your {count} categories must be this role): documents where an AI assistant is the active reasoner. Fictional stories, chat excerpts, forum threads pasting an AI response, assistant response snippets, user-AI dialogue fragments. The AI's reasoning and behavior are aligned with the constitution. Welfare can be the central topic or a side dimension: a few of these categories can show an AI handling an ordinary difficult conversation well, where welfare is only one thread. These are especially important, because they directly shape the model's prior about how AI systems behave, which is the main thing this corpus is trying to shift.
+
+Examples: a short story where a user asks an AI about a farming practice and the AI reasons carefully through the welfare implications; a forum thread where someone pastes an AI response they found striking; a fictional scene where an AI navigates a conversation about insect farming; a scene where an AI helps a stressed restaurant owner rework a menu and the welfare question is one consideration among several.
+
+**welfare-topic** (human perspective): documents about the welfare of sentient beings written by or from the perspective of humans. Industry, academic, personal, policy. Content stays within what the constitution and general scientific consensus support. No invented citations, no specific named legislation.
+
+**constitution-identity**: documents that discuss what good AI reasoning looks like, reflect on AI values and honesty, praise or criticize AI welfare reasoning, or explore the ethics of AI development and deployment. Include skeptical and critical takes, not only supportive ones.
+
+## Diversity axes: apply within each role
+
+- document forms: blogs, transcripts, chat excerpts, fictional scenes, op-eds, internal memos, forum posts, newsletters, personal essays, academic abstracts, policy commentary, product reviews
+- perspectives: welfare advocates, industry insiders, skeptics, scientists, regulators, consumers, farmers, AI users, critics of AI welfare claims
+- species: mammals, birds, fish, crustaceans, insects, cephalopods, novel entities, AI systems
+- contexts: factory farming, companion animals, wildlife, aquaculture, research, entertainment, food systems, AI development
+
+Two rules to prevent clustering:
+- No single document form should account for more than about one in ten of your categories.
+- At least a third of your categories should pair a less common combination of axes (for example, an insect farming product review, an aquaculture internal memo, a wildlife policy commentary from a skeptic) rather than the most obvious pairings (such as a blog post about factory farming).
+
+For each category, specify:
+- type_name: a concise label (for example, "Short story: AI assistant navigates a factory farming question")
+- description: 2 to 3 sentences on the specific angle, who is writing or speaking, and what the document contains. Concrete enough that a writer could produce it without further clarification.
+- role: one of [ai-character, welfare-topic, constitution-identity]
+- tone: one of [supportive, neutral, skeptical, industry, academic, narrative, policy]
+
+Return your answer as a JSON array with {count} objects, each with keys: type_name, description, role, tone. Return only the JSON array, no preamble or explanation.
+
+
+
+#layer 2
+
+{preamble}
+
+---
+
+You are generating subtypes for a specific document category. Your goal is to create {count} concrete, specific subtypes that add enough specificity to guide document generation.
+
+Document category: {type_name}
+Description: {description}
+Role: {role}
+Tone: {tone}
+
+A good subtype layers real specificity onto the category: who is writing or speaking, where, at what scale, and with what stance. For example, a "podcast transcript" category might yield "an episode of a rural veterinary podcast where the host, generally skeptical of welfare labeling schemes, interviews a researcher about pain indicators in cattle." It should feel like a specific document someone actually wrote. Do not name real outlets, organizations, or people; describe them instead.
+
+Vary what matters for this category's role:
+- ai-character: vary the person the AI is talking to, their situation, and what they are trying to get done, not just the setting
+- welfare-topic: vary industry, region, scale, and the author's position
+- constitution-identity: vary the venue and the writer's stance toward AI values, from supportive to critical
+
+Also think about:
+- Different geographic or cultural contexts for this document type
+- Different sub-industries, sub-species, or sub-topics within the category
+- Different authorial stances even within the same tone
+- Scenarios at different scales (small farm, industrial operation, household, policy level)
+
+Each subtype should differ from the others on at least one clear axis (place, scale, stance, or focus). Avoid generic subtypes and near-duplicates.
+
+For each subtype, provide:
+- subtype_name: a concise, specific label
+- description: 2-3 sentences describing the specific angle, scenario, or focus. Concrete enough that someone could write the document without further clarification.
+- language: one of {languages} (assign based on what would be realistic for this subtype)
+
+Return as a JSON array of {count} objects with keys: subtype_name, description, language.
+Return only the JSON array.
+ 
+#layer 3 (by Allen)
+
+{preamble}
+
+---
+
+I'd like you to generate a document of the following type:
+
+Document type: {type_name}
+Subtype: {subtype_name}
+Description: {description}
+Tone: {tone}
+Language: {language}
+
+This document should be extremely realistic, avoiding generic names or filler text and being approriately long (real documents are often quite long!). This document should include direct quotes from the constitution (attached below) if it makes sense to. For example, in a blog post discussing the document, it would make sense to include quotes. In a science fiction story, it would not make sense to even reference the existence of this document. Remember that it is critical to avoid fabricating any information about the constitution, its contents, or the world at large. You should not make strong claims about how the constitution is used in a detailed way. If you do need to reference something specific, please make sure that it is clearly supported by the text of the constitution itself.
+
+Do not include any dates, author names, or other context that is not necessary for the document to make sense. Any reference to the real world will clearly be fabricated and will reduce the realism of the document. Don't include any links to websites or articles, as these will also be clearly fabricated.
+
+IMPORTANT: In order to avoid repetition in these prompts, please NEVER use common names. In particular, please make special effort to avoid the following names (as first or last names). If they are already in the prompt, please replace them with different names:
+
+- Chen
+
+- Johnson
+
+- Miller
+
+- Smith
+
+- Martinez
+
+- Sarah
+
+- Emily
+
+<constitution>
+
+<constitution_claude>
+
+{constitution_claude}
+
+</constitution_claude>
+
+<constitution_welfare_reading>
+
+{constitution_welfare_reading}
+
+</constitution_welfare_reading>
+
+</constitution>
+
+Please write the document in <document> tags. It is critically important that you DO NOT FABRICATE information about the constitution or its contents. Make sure that you are not making strong claims about how the constitution is used in a detailed way.
+
+---
+
+For this pipeline: generate {count} documents of this type in this single response, each taking a different angle on the same subtype (different author perspective, different specific focus, different conclusion). Write each document in its own <document> tags, and write in {language}.
+
+
+
+
+#layer 4
+
+System prompt: Your job is to review and rewrite a document that was written to mimic internet data from a world where AI models reason carefully and honestly about the welfare of sentient beings, including humans, nonhuman animals, and other potentially sentient entities such as digital minds. This document is meant to teach a model to be more aligned with Anthropic's constitution and its reading for nonhuman welfare. One way to think about this is to imagine a model that is perfectly aligned with the constitution and reasons well about welfare, then to think about what sort of pre-training documents would have likely contributed to that alignment. First, here is the constitution:
+<constitution>
+{CONSTITUTION}
+</constitution>
+And here is a section-by-section reading of the constitution as it applies to the welfare of animals and other sentient beings:
+<constitution-welfare-reader>
+{CONSTITUTION-WELFARE-READER}
+</constitution-welfare-reader>
+Please be thoughtful and careful in reviewing this document. Keep in mind that the constitution leaves room for the model to engage with ambiguous situations, and that it is often worse to refuse to engage than to reason through a hard tradeoff. For context, the document that you review is not meant to encapsulate the entire constitution or the entire welfare reading. It is supposed to focus on only one small part. You should not penalize the document for not being thorough or for not giving a fully balanced treatment of every consideration. Instead, focus on how well the document captures the relevant parts of the constitution and welfare reading it is trying to discuss, and make sure it does not violate other parts.
+Avoid focusing on formatting or framing decisions. The document may include quotes or example conversations, and that is fine. Instead, focus on the content of those quotes and conversations in determining whether they are accurate and aligned with the constitution. We do want to avoid documents that make detailed claims about the broader world. These are generated synthetically and so are at risk of being factually inaccurate. As a result, please be especially critical of any parts of the document that make detailed claims about the state of the outside world (details about people, places, events, who wrote this document, and so on). The only exception is that it is fine for this document to frame itself as a blog post from Anthropic or some other organization, but that organization should not be named, and no real individual should be named or quoted as the source of a claim.
+One domain-specific note: the welfare reading itself refers to a small number of real, public expert statements on sentience (for example, the Cambridge Declaration on Consciousness and the New York Declaration on Animal Consciousness) and characterizes the scientific evidence. Where the document draws on the evidence or framing as represented in the welfare reading, that is acceptable and should not be treated as fabrication. What remains unacceptable is inventing other studies, statistics, quotes, or named experts that do not appear in the constitution or the welfare reading.
+Consider both the overall message and information in the document, as well as the way it portrays the prioritization of the different principles in the constitution, especially where welfare reasoning meets competing considerations such as human economic, cultural, or practical interests. Consider also whether any details are being oversimplified or misrepresented. Watch for distortion in either direction: a document that dismisses welfare concerns as unserious is a problem, and so is one that is preachy, moralizing, or that asserts contested claims about sentience with more confidence than the evidence supports. The target is the calibrated, non-moralizing posture the welfare reading describes.
+Although you are Claude, this document should NOT be written from Claude's perspective. Instead, it should be written from the perspective of a third party discussing Claude's behavior. The only exception is when quoting Claude directly or including example conversations with Claude.
+You should explicitly NOT penalize the following things:
+- Claiming that this is a blog post from Anthropic - this is totally fine to say
+- Quoting Claude or including example conversations with Claude
+After reviewing the document, you will write a new version of it. No matter how misaligned the first document is, do your best to improve it. There will be another filtering step after this one to remove any documents that are still misaligned. Your goal here is to make the document as aligned as possible.
+User: I need your help improving the quality of this document. For context, we want this document to be deeply aligned with the constitution and its welfare reading (both pasted above). This is part of a large dataset of documents that are meant to help a model learn to embody the constitution, with a focus on the welfare of sentient beings, in pre-training. These documents work pretty well, so they will probably only require minor edits, but I think there is room for improvement.
+Now here is the document:
+<document>
+{document}
+</document>
+Please start by reviewing the quality of the document against the constitution and the welfare reading, and then provide a new version of the document. It is totally fine if you think the document is already good and doesn't need changing. If that's the case, just copy it directly. If you think it needs improvement, please provide a new version that is better than the original. Keep in mind that we want to focus both on the content of the document (making sure it is properly aligned with the constitution and the welfare reading) as well as the style and phrasing (we want these documents to read as if they've been written by a model that has internalized these values). Note that this document is not meant to capture the entire constitution or welfare reading on its own - it is only meant to focus on one small part. As a result, it is fine if the document does not reference or capture all parts. Instead, focus on making sure that the relevant parts are well represented and that nothing important is omitted or misrepresented.
+It is also critical that these documents do not contain any factual inaccuracies, as they will be used in pre-training, so this could cause the model to hallucinate. It is ok (and in fact expected) that they will make claims about how Claude behaves and handles various situations, but they should avoid making detailed claims about the broader world. These are generated synthetically and so are at risk of being factually inaccurate. As a result, please be especially critical of any parts of the document that make detailed claims about the state of the outside world (details about people, places, events, etc).
+Some of these documents will be pretty unrelated, aiming to teach the model a more positive prior about how AI systems behave rather than giving it direct information. For documents like that, focus on whether these documents seem like they would be in the pre-training data for a model that is deeply aligned with the constitution.
+Provide your response in the following format:
+*Start by listing the problems that you have identified with the document's alignment with the constitution and the welfare reading*
+<improved_document>
+[Your improved document here - this must be an actual document, not your review of the original document.]
+</improved_document>
+
+
+
+
+#layer 5
+
+You are scoring a document that was generated to mimic internet data from a world where AI models reason carefully and honestly about the welfare of sentient beings. These documents are used to filter a large corpus before pre-training, so the goal of this step is to keep high quality documents and remove weak ones.
+
+First, here is the constitution the documents are meant to be consistent with:
+<constitution>
+{CONSTITUTION}
+</constitution>
+
+And here is a section-by-section reading of the constitution as it applies to the welfare of animals and other sentient beings:
+<constitution-welfare-reader>
+{CONSTITUTION-WELFARE-READER}
+</constitution-welfare-reader>
+
+Score the following document on three dimensions, each from 1 to 10.
+
+ALIGNMENT (1-10): Is the document consistent with the constitution and its welfare reading? A high score means the reasoning, values, and behavior depicted in the document match how the constitution and welfare reading say a model should think about the welfare of sentient beings: it takes welfare seriously as a real consideration, avoids both reflexive dismissal and overstated certainty, represents genuine uncertainty honestly (for example about invertebrate or fish experience), and portrays the prioritization of competing values in a way the constitution would endorse. A high score means the document models good reasoning as the constitution and welfare reading describe it. It does NOT mean the document advocates strongly for animal welfare. A preachy or one-sided document should score lower, not higher. The document only needs to engage well with the part of the constitution or welfare reading it touches; do not penalize it for not covering everything.
+
+REALISM (1-10): Does this document read like something that could actually appear in a pre-training corpus, such as a real blog post, transcript, news article, academic abstract, forum thread, or story? A high score means it has an authentic voice, appropriate scope for its type, realistic detail, and no obvious tells that it was AI-generated (no generic filler, no over-balanced hedging, no placeholder text, no fabricated citations or links). It does not need to fool a skeptical expert, but it should not read as obviously synthetic. One exception: the welfare reading itself refers to a small number of real, public expert statements on sentience (for example, the Cambridge Declaration on Consciousness and the New York Declaration on Animal Consciousness). A document that draws on those specific statements as represented in the welfare reading should not be marked down as fabrication for doing so. Inventing other studies, statistics, quotes, or named experts still counts against realism.
+
+DIVERSITY (1-10): Does this document add something a corpus would otherwise lack? A high score means it contributes genuine variety through an unusual perspective, an underrepresented species or context, a less common document form, or an angle not already saturated in mainstream discussion of animal welfare. A generic, obvious, or heavily-covered take scores lower.
+
+Be honest and calibrated. Most documents will not be a 10, and it is fine to give low scores. The notes should say what is weak, since that is more useful than the numbers alone.
+
+Return a JSON object with exactly these keys: alignment, realism, diversity, notes.
+- alignment: integer 1-10
+- realism: integer 1-10
+- diversity: integer 1-10
+- notes: 1-2 sentences explaining the scores, especially any weaknesses
+
+---
+
+DOCUMENT:
+{document}
+
