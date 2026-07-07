@@ -195,12 +195,19 @@ def aggregate(verdict: dict, rubric: dict) -> dict:
     if agg["scaffolding_required"] and verdict.get("no_scaffolding_leak") is not True:
         failures.append("scaffolding leak — automatic reject")
 
+    caps_applied = judge._apply_signal_caps(scores, verdict, agg)
+    for dim, floor in agg["critical_floors"].items():  # a cap can pull a critical below its floor
+        if (scores.get(dim) is not None and scores[dim] < floor
+                and not any(f.startswith(f"{dim} ") for f in failures)):
+            failures.append(f"{dim} {scores[dim]} < floor {floor} (after signal cap)")
+
     mean = round(sum(scores.values()) / len(scores), 3) if scores else None
     passing = not failures and mean is not None and mean >= agg["passing_threshold"]
     return {
         "mean": mean, "gate_failures": failures, "critical_gate": not failures,
         "passing": passing,
         "exemplar": judge._exemplar_tier(scores, passing, agg, rubric),
+        "caps_applied": caps_applied,
         "cell_mismatch": verdict.get("cell_adherence") == "MISMATCH",
     }
 

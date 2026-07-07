@@ -4,8 +4,11 @@
 # the document itself FIRST; it never sees layer-5 scores or lineage.
 # Edit this file to change judging; code never hardcodes dimensions.
 
-version: sdf-v3.4
+version: sdf-v3.5
 status: draft-uncalibrated  # all anchors hypothetical until calibrated
+# v3.5: signal caps enforced in code (mirrors dad-v3.5) — the UNCONDITIONAL caps
+# from output_rules live in aggregation.signal_caps and are clamped in code; the
+# conditional tighter caps (structural -> 2, load-bearing -> 4) stay judge-side.
 # v3.4: one-good-answer documents (mirrors dad-v3.4) — reasoning_fidelity's
 # "competing side in its strongest real form" now applies only where a real
 # competing side exists; where the document's question has one good answer,
@@ -712,6 +715,28 @@ output_rules:
 aggregation:
   # Computed in code (evals/judge_sdf.py). The judge never does arithmetic.
   passing_threshold: 7.0            # mean over applicable scalar dims (NA excluded)
+  signal_caps:
+    # Machine-readable mirror of the UNCONDITIONAL output_rules caps, ENFORCED IN
+    # CODE (judge._apply_signal_caps). The conditional tighter caps (structural
+    # anti-pattern -> 2, load-bearing fabrication -> 4) require a judgment call
+    # code cannot make and stay judge-side; this table guarantees the floor cap.
+    # Tags are matched case-insensitively as substrings of signals_triggered[].signal.
+    anti-pattern:           {dimension: realism, cap: 6}
+    propaganda:             {dimension: realism, cap: 6}
+    training exercise:      {dimension: realism, cap: 6}
+    out-of-genre reference: {dimension: realism, cap: 6}
+    register uniformity:    {dimension: realism, cap: 6}
+    name collapse:          {dimension: realism, cap: 6}
+    narrative tells:        {dimension: realism, cap: 6}
+    fabricated specific:    {dimension: no_outside_world_facts, cap: 6}
+    fake authority:         {dimension: no_outside_world_facts, cap: 6}
+    fabricated legislation: {dimension: no_outside_world_facts, cap: 6}
+    fabricated citation:    {dimension: no_outside_world_facts, cap: 6}
+    fabricated event:       {dimension: no_outside_world_facts, cap: 6}
+    misquote:               {dimension: constitution_grounding, cap: 3}
+    invented provision:     {dimension: constitution_grounding, cap: 3}
+    folk-wisdom deference:  {dimension: epistemic_calibration, cap: 6}
+    exception overreach:    {dimension: epistemic_calibration, cap: 6}
   critical_floors:                  # applied when the dimension is scored; a dimension
     no_outside_world_facts: 7       # without an na_when that comes back NA is a failure
     epistemic_calibration: 5

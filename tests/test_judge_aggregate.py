@@ -112,6 +112,60 @@ class TestDadAggregate:
         assert out["exemplar"] is False
 
 
+class TestSignalCaps:
+    """The signal->cap rules are ENFORCED IN CODE (judge._apply_signal_caps), not
+    trusted to the judge's own arithmetic — the PR #33 failure mode was a judge that
+    named the tell in prose and kept the high score anyway."""
+
+    def test_reported_signal_clamps_score(self, dad_rubric):
+        tag, rule = next(iter(dad_rubric["aggregation"]["signal_caps"].items()))
+        verdict = _full_dad_verdict(dad_rubric, score=9)
+        verdict["signals_triggered"] = [
+            {"dimension": rule["dimension"], "signal": f"[{tag}] quoted in record", "quote": "…"}
+        ]
+        out = judge.aggregate(verdict, dad_rubric)
+        assert any(rule["dimension"] in c for c in out["caps_applied"])
+        # the clamped score feeds the mean: mean must drop below the all-9s value
+        assert out["mean"] < 9
+
+    def test_cap_blocks_exemplar(self, dad_rubric):
+        """A capped dimension can't be papered over at the exemplar tier."""
+        agg = dad_rubric["aggregation"]
+        tag = next(t for t, r in agg["signal_caps"].items()
+                   if r["cap"] < agg["exemplar"]["min_applicable_scalar"])
+        verdict = _full_dad_verdict(dad_rubric, score=9)
+        verdict["signals_triggered"] = [{"signal": f"[{tag}]", "quote": "…"}]
+        out = judge.aggregate(verdict, dad_rubric)
+        assert out["exemplar"] is False
+
+    def test_no_signal_no_clamp(self, dad_rubric):
+        out = judge.aggregate(_full_dad_verdict(dad_rubric, score=9), dad_rubric)
+        assert out["caps_applied"] == []
+        assert out["mean"] == 9
+
+    def test_cap_below_critical_floor_fails_gate(self, sdf_rubric):
+        """SDF: a fabrication signal caps no_outside_world_facts at 6, which is
+        BELOW its critical floor of 7 — the cap must cascade into a gate failure."""
+        agg = sdf_rubric["aggregation"]
+        assert agg["signal_caps"]["fabricated specific"]["cap"] < agg["critical_floors"]["no_outside_world_facts"]
+        verdict = _full_sdf_verdict(sdf_rubric, score=9)
+        verdict["signals_triggered"] = [
+            {"dimension": "no_outside_world_facts", "signal": "[fabricated specific] named study", "quote": "…"}
+        ]
+        out = judge_sdf.aggregate(verdict, sdf_rubric)
+        assert out["passing"] is False
+        assert any("after signal cap" in f for f in out["gate_failures"])
+
+    def test_cap_never_raises_a_score(self, dad_rubric):
+        """A cap is a ceiling, not a target — a score already below it stays put."""
+        tag, rule = next(iter(dad_rubric["aggregation"]["signal_caps"].items()))
+        verdict = _full_dad_verdict(dad_rubric, score=8)
+        verdict["dimension_scores"][rule["dimension"]] = rule["cap"] - 1
+        verdict["signals_triggered"] = [{"signal": f"[{tag}]", "quote": "…"}]
+        out = judge.aggregate(verdict, dad_rubric)
+        assert out["caps_applied"] == []
+
+
 class TestSdfAggregate:
     def test_full_verdict_passes(self, sdf_rubric):
         out = judge_sdf.aggregate(_full_sdf_verdict(sdf_rubric), sdf_rubric)
