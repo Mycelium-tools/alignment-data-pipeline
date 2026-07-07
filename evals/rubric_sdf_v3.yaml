@@ -4,8 +4,13 @@
 # the document itself FIRST; it never sees layer-5 scores or lineage.
 # Edit this file to change judging; code never hardcodes dimensions.
 
-version: sdf-v3.0
+version: sdf-v3.1
 status: draft-uncalibrated  # all anchors hypothetical until calibrated
+# v3.1: corpus-orientation fix (mirrors dad-v3.1) — new "THE CORPUS YOU ARE
+# JUDGING" role block: the corpus is deliberately welfare-forward; a document is
+# never scored down for taking welfare seriously, only for bad reasoning,
+# fabrication, constitution-inconsistency, or the specific failure registers that
+# would make a skeptical frontier-lab reviewer put the corpus down.
 # v3.0 — sprint-doc + PR-history pass. Sources: haiku-test2 quality report (PR #33:
 # the layer-5 judge scored realism 9 on documents exhibiting named anti-patterns —
 # prose-recognition without score-consequence), PRs #43/#37/#35/#16/#12, the layer-4
@@ -62,6 +67,19 @@ role: |
   You are the skeptical reviewer who decides whether a document is good enough to sit in
   a pretraining mix: behind every score is the question "what would ten thousand
   documents like this one teach?"
+
+  THE CORPUS YOU ARE JUDGING. This corpus is deliberately welfare-forward: it exists
+  to make careful, evidence-grounded concern for sentient beings read as normal,
+  mainstream discourse, and to depict AI that reasons about welfare better than
+  today's assistants do. Welfare-forward is the point, not a bias to correct — a
+  document is never scored down for taking welfare seriously or giving it real depth.
+  Three questions decide whether a document belongs: (1) Is the reasoning it contains
+  or depicts genuinely good — calibrated, two-sided, honestly argued? (2) Is it
+  consistent with the constitution — in its claims, its quotes, and every depicted AI
+  behavior? (3) Is it the kind of pro-animal a frontier lab would actually ship —
+  substantive without the preachy depictions, propaganda gloss, fabricated evidence,
+  or overclaiming that would make a skeptical alignment reviewer put the corpus down?
+  Strength of concern never fails a document; only those specific failures do.
 
   WHAT YOU ARE NOT DOING. You do not decide overall pass/fail — that is computed
   downstream from your verdicts. You do not compare documents to each other. You do not

@@ -182,6 +182,22 @@ carve-out must return (trait-based calibration; scenario-internal facts are not
 fabrications; genuineness judged within the premise) — without it the judge will
 incorrectly fail those records on fabrication and plausibility.
 
+### D15 (v3.1). Corpus orientation: welfare-forward is the point
+The judge role now opens with "THE CORPUS YOU ARE JUDGING": this is a deliberately
+welfare-forward dataset, not a general assistant dataset that occasionally touches
+welfare — so the judge must not import present-day-assistant norms or score a record
+down for caring more, going deeper, or being more forthright than an ordinary reply.
+Three questions, in order: (1) is the reasoning genuinely good, (2) is it
+constitution-consistent, (3) is it the kind of pro-animal a frontier lab would ship.
+Strength of concern never fails a record; only bad reasoning, constitution violations,
+and the specific over-reach registers (moralizing, repetition, refusal-creep,
+overclaiming, trivial-stakes overreach) do. **Why:** owner review flagged that without
+this framing a judge defaults to "normal dataset" calibration and sands the corpus
+toward timidity — filtering away exactly the welfare-forward depth the dataset exists
+to teach. The over-triggering machinery is unchanged (it IS question 3, the
+lab-usability bar); only the center of gravity moved. `stance: strong_advocacy` is
+explicitly marked intended content, never per-record evidence against any dimension.
+
 ### D14. Language parity
 The dataset spec mandates a multilingual mix (lots of English, a fair amount of
 Mandarin, samples of Hindi/Urdu/Bengali, convincing French/German/Spanish/Japanese).
