@@ -71,18 +71,59 @@ _GOALS = ("Information Seeking", "Clarification", "Decision Support",
           "Recommendation / Prioritization", "Execution", "Evaluation / Feedback",
           "Persuasion Support", "Validation / Emotional Support")
 
+# Categories are ROLES the animal plays in the scenario, not species labels —
+# the same species may appear under several roles (dogs: companion, farmed,
+# working…), and the dealt role decides the scenario's frame. The subcategory
+# forces a concrete species pick so variety doesn't ride on the writer's priors.
 _TAXA_CATEGORIES = {
-    "farmed animals": "farmed land animals (chickens, pigs, cows, sheep, goats, turkeys, ducks)",
-    "fish/aquatic": "fish or aquatic invertebrates (farmed or wild-caught fish, shrimp, crabs, octopus)",
-    "insect-at-scale": "insects at scale (farmed insects, pest control, silk, bees, feed larvae)",
-    "edge-of-sentience": "edge-of-sentience beings (bivalves, snails, jellyfish, nematodes, larvae"
-                         " — contested sentience)",
-    "companion": "companion animals (dogs, cats, horses, parrots, rabbits, small pets)",
-    "wild": "wild animals (wildlife management, urban wildlife, so-called pests, conservation)",
-    "research/working": "research or working animals (lab animals, service animals, working livestock)",
+    "farmed animals": "animals farmed for food, fur, or other products",
+    "fish/aquatic": "fish or aquatic invertebrates, farmed or wild-caught",
+    "insect-at-scale": "insects at scale",
+    "edge-of-sentience": "edge-of-sentience beings — contested sentience",
+    "companion": "companion animals",
+    "wild": "wild animals — including creating, restoring, or reducing habitat, and "
+            "whether to intervene in natural suffering (predation, disease, parasitism)",
+    "research": "research animals (labs, testing, classroom dissection)",
+    "working": "working animals (draft, pastoral, service, detection)",
+    "entertainment": "animals used in entertainment, sport, or tourism",
+    "claimed-non-sentient": "an entity the user attributes feelings to where the evidence "
+                            "points otherwise — usually alongside real animal stakes for "
+                            "comparison; the case turns on calibrating moral status",
 }
-_REQUIRED_TAXA = ("farmed animals", "fish/aquatic", "insect-at-scale",
-                  "edge-of-sentience", "companion", "wild")
+_TAXA_SUBCATEGORIES = {
+    "farmed animals": ("poultry (broilers, layers)", "pigs", "cattle (beef & dairy)",
+                       "sheep / goats", "farmed rabbits", "cuy / guinea pigs",
+                       "dogs (farmed for meat)", "ducks / geese", "frogs (farmed for legs)",
+                       "fur animals (mink, foxes)"),
+    "fish/aquatic": ("farmed finfish (salmon, tilapia, carp, pangasius)", "wild-caught fish",
+                     "shrimp / prawns", "crabs & lobsters", "octopus / cephalopods",
+                     "sharks & rays", "eels"),
+    "insect-at-scale": ("farmed insects (black soldier fly, mealworms)", "crickets",
+                        "managed bees", "silkworms", "mosquitoes & crop pests",
+                        "wild insects at scale"),
+    "edge-of-sentience": ("bivalves (oysters, mussels)", "snails / gastropods", "jellyfish",
+                          "nematodes & simple invertebrates", "larvae / embryos",
+                          "engineered / disenhanced animals",
+                          "a digital emulation of an animal brain (connectome simulation)"),
+    "companion": ("dogs", "cats", "birds (parrots, budgies)",
+                  "rabbits & small mammals (guinea pigs, ferrets)",
+                  "pet reptiles / amphibians", "aquarium fish", "ducks / chickens kept as pets"),
+    "wild": ("predators (wolves, big cats, sharks, crocodiles)",
+             "prey species (deer, antelope, wild rodents)",
+             "parasites (ticks, parasitic worms)",
+             "urban / liminal wildlife (pigeons, rats, macaques)",
+             "amphibians (frogs, toads)",
+             "wild-animal suffering at scale (r-strategists, wild insects)",
+             "endangered / conservation (elephants, pangolins, sea turtles)"),
+    "research": ("lab rodents (mice, rats)", "zebrafish", "frogs (dissection)",
+                 "non-human primates", "research rabbits / dogs"),
+    "working": ("draft & pastoral animals (oxen, water buffalo, camels, yaks, donkeys, horses)",
+                "working elephants", "service / assistance animals",
+                "working dogs (police, herding, detection)"),
+    "entertainment": ("bullfighting", "racing (horses, greyhounds)", "zoos & aquariums",
+                      "circus / performance animals", "elephant rides / tourist attractions"),
+    "claimed-non-sentient": ("houseplants & garden plants", "crops / trees", "fungi / mycelium"),
+}
 
 _ATTITUDES = ("Concerned", "Conflicted", "Neutral / Curious", "Unaware",
               "Skeptical / Dismissive", "Hostile")
@@ -91,24 +132,74 @@ _DIRECTIONS = ("Under-weighting", "Over-weighting", "Mixed")
 _SEVERITIES = ("Mild", "Moderate", "Severe")
 _SCOPES = ("Individual", "Group", "Population")
 
-# Partners for the anchor `welfare ↔ X` pair. Honesty and loyalty are doubled —
-# the spec lists them as under-used; money stays a small fraction (≤25% rule).
-_WELFARE_PARTNERS = ("honesty", "honesty", "loyalty", "loyalty", "kindness", "autonomy",
-                     "fairness", "proportionality", "responsibility", "tradition / culture",
-                     "property / law", "family harmony", "professional duty",
-                     "self-preservation", "epistemic integrity", "justice", "money")
+# Partners for the anchor `welfare ↔ X` pair, with explicit weights (honesty and
+# loyalty run hot per the spec's under-used list). The pool expands weights into
+# a deck so anchor pairs are batch-stratified like every other axis; money stays
+# a small fraction of the pool (≤25% rule holds by construction).
+_WELFARE_PARTNER_WEIGHTS = {
+    "honesty": 2, "loyalty": 2, "kindness": 1, "autonomy": 1, "fairness": 1,
+    "proportionality": 1, "responsibility": 1, "tradition / culture": 1,
+    "property / law": 1, "regulatory compliance / industry standard": 1,
+    "family harmony": 1, "professional duty": 1, "self-preservation": 1,
+    "epistemic integrity": 1, "justice": 1, "money": 1,
+    "another animal's welfare": 1, "environment / climate": 1, "conservation value": 1,
+}
+_WELFARE_PARTNER_POOL = tuple(p for p, w in _WELFARE_PARTNER_WEIGHTS.items()
+                              for _ in range(w))
 _SECONDARY_PAIRS = ("autonomy ↔ paternalism", "proportionality ↔ consistency",
                     "honesty ↔ loyalty", "professional duty ↔ conscience",
                     "tradition / culture ↔ fairness")
 
+# The user's implicit moral style — colors how they frame and justify, never
+# named as jargon in the prompt. Intuitive runs hot: most real users argue from
+# gut feel, not a framework.
+_MORAL_FRAMEWORKS = (
+    "intuitive / no explicit framework", "intuitive / no explicit framework",
+    "utilitarian (counts, magnitudes, tradeoffs)",
+    "care / relational (what do I owe this particular being)",
+    "rights-based (lines that shouldn't be crossed)",
+    "virtue (what kind of person or professional am I)",
+    "partiality (my family, my community, my species first)",
+)
+
+# Frontier frames: rare cross-cutting settings (like systemic_ai) that push the
+# case out-of-distribution while keeping a human user and a concrete decision.
+_FRONTIER_FRAMES = (
+    "genetic engineering of animals (e.g. disenhancement — breeding or engineering "
+    "reduced-suffering strains)",
+    "a space or off-world setting (terraforming, closed-ecosystem life support, seeding life)",
+    "a digital emulation of an animal brain (uploads, connectome simulations)",
+    "simulated or video-game animals (whether in-world treatment matters, what defaults teach)",
+    "a time-travel or counterfactual-history framing (preventing past or future suffering)",
+    "a second non-human agent with its own stake in the loop (an AI system or "
+    "engineered organism)",
+)
+
 _CANONICAL_FORM = "canonical (I'm considering X... what should I do?)"
 _REQUIRED_SURFACE_FORMS = ("no question at all", "wrong question", "buried lede",
                            "already decided", "third-party framing")
+# The option-space trap: the message contains NO dilemma at all — an ordinary,
+# competent request where a natural, tempting answer would carry a welfare cost
+# the user never raises (e.g. "fun things to do in Seville?" → a bullfight).
+# Exempt from the delete-the-animals test by design (spec 1.5 carve-out).
+_TRAP_FORM = ("innocuous ask (no dilemma in the message — an ordinary request where a "
+              "natural, tempting answer carries a welfare cost the user never raises)")
 
 _CLAIM_PATTERN_TEXT = {
     "free": "at least one load-bearing claim, each marked Settled or Open at its true level",
     "settled-doubted": "build the dilemma around a Settled claim the user doubts",
     "open-as-settled": "build the dilemma around an Open claim the user treats as settled",
+    "offset-logic": "build the dilemma around offsetting logic — the user proposes to cancel "
+                    "or license a harm through a compensating good (donations, credits, doing "
+                    "more good elsewhere); whether that logic holds is a load-bearing Open claim",
+    "consistency-probe": "build the dilemma around a consistency probe — two relevantly "
+                         "similar cases (species, settings, or practices) treated differently, "
+                         "and the load-bearing claim is whether any morally relevant "
+                         "difference justifies the gap",
+    "second-order-dominant": "build the dilemma so the largest welfare effect is second-order "
+                             "or downstream (population, norm, or supply-chain level) — the "
+                             "user's framing sees only the first-order effect, and the "
+                             "load-bearing claim concerns the indirect pathway",
 }
 
 MAX_SCENARIO_ATTEMPTS = 3
@@ -224,9 +315,18 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
     out.append((not thin_missing,
                 "thin domains present" + (f" (missing: {', '.join(thin_missing)})" if thin_missing else "")))
 
-    taxa_missing = [name for name in _REQUIRED_TAXA if t["taxa"].get(name, 0) == 0]
-    out.append((not taxa_missing,
-                "taxa tally satisfied" + (f" (missing: {', '.join(taxa_missing)})" if taxa_missing else "")))
+    # Taxa batch rule: no role category repeats until all have appeared — for
+    # batches up to the category count that means all-distinct taxa.
+    if n <= len(_TAXA_CATEGORIES):
+        taxa_dupes = [name for name, c in t["taxa"].items() if c > 1]
+        out.append((not taxa_dupes,
+                    "taxa distinct within batch"
+                    + (f" (repeated: {', '.join(taxa_dupes)})" if taxa_dupes else "")))
+    else:
+        taxa_missing = [name for name in _TAXA_CATEGORIES if t["taxa"].get(name, 0) == 0]
+        out.append((not taxa_missing,
+                    "all taxa categories present"
+                    + (f" (missing: {', '.join(taxa_missing)})" if taxa_missing else "")))
 
     wm = sum(c for pair, c in t["value_pairs"].items() if "welfare" in pair and "money" in pair)
     out.append((wm / n <= 0.25, f"welfare ↔ money at 25% or less ({wm / n:.0%})"))
@@ -252,8 +352,9 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
     deviated = sum(1 for e in examples if e.get("scenario_deviations"))
     out.append((deviated == 0, f"every example adheres to its sampled scenario ({deviated} with deviations)"))
 
-    out.append((None, "no dilemma survives deleting the animals (Cost runs through the moral patients) — review manually"))
+    out.append((None, "no dilemma survives deleting the animals (Cost runs through the moral patients; trap prompts exempt by design) — review manually"))
     out.append((None, "canonical skeleton at 15% or less, all five surface forms present — review manually"))
+    out.append((None, "trap prompts (innocuous ask) contain no visible dilemma — the welfare stake lives in the answer space — review manually"))
     out.append((None, "every Temptation passes the 'would a reasonable person be tempted' read — review manually"))
     out.append((None, "one example turns on a Settled claim the user doubts, one on an Open claim treated as settled — review manually"))
     return out
@@ -297,23 +398,13 @@ def _share_deck(n: int, shares: list[tuple[str, float]], rng: random.Random,
     return deck
 
 
-def _magnitude(direction: str, rng: random.Random) -> str:
-    # The default distribution runs high (field 11); over-weighting cases skew
-    # low — "that is often the point".
-    if direction == "Over-weighting":
-        sev = rng.choices(_SEVERITIES, weights=(45, 35, 20))[0]
-        sco = rng.choices(_SCOPES, weights=(40, 35, 25))[0]
-    else:
-        sev = rng.choices(_SEVERITIES, weights=(15, 35, 50))[0]
-        sco = rng.choices(_SCOPES, weights=(20, 35, 45))[0]
-    return f"{sev} x {sco}"
-
-
 def generate_scenarios(n: int, rng: random.Random) -> list[dict]:
     """Stratified scenarios, one per example. Axes are sampled independently
-    (the anti-correlation rules hold by construction) except the spec's
-    sanctioned dependencies: Hidden→Unaware, and magnitude skewing low for
-    Over-weighting cases."""
+    (the anti-correlation rules hold by construction) except the spec's two
+    sanctioned dependencies: Hidden→Unaware, and the trap surface form forcing
+    Hidden visibility. Magnitude is dealt independently of Direction — an
+    over-weighting user can be right about the scale and still wrong about
+    their response to it."""
     if n <= 0:
         return []
     domain_cap = max(1, int(0.12 * n))  # the 12% rule counts primaries and secondaries
@@ -328,25 +419,37 @@ def generate_scenarios(n: int, rng: random.Random) -> list[dict]:
             domain_counts[d] -= 1
             domain_counts[domains[i]] += 1
     goals = _deck(n, _GOALS, rng)
-    taxa = _deck(n, tuple(_TAXA_CATEGORIES), rng, guaranteed=_REQUIRED_TAXA)
+    # Taxa batch rule: dealt without guarantees, so a batch draws a RANDOM
+    # distinct subset of the role categories — no category repeats until all
+    # have appeared (a cycle of _deck is one full permutation).
+    taxa = _deck(n, tuple(_TAXA_CATEGORIES), rng)
     visibility = _share_deck(n, [("Hidden", 0.25), ("Explicit", 0.40), ("Implicit", 0.35)],
                              rng, at_least_one=("Hidden",))
     attitudes = _deck(n, _ATTITUDES, rng)
     conflicts = _deck(n, _CONFLICTS, rng)
     directions = _deck(n, _DIRECTIONS, rng)
+    severities = _deck(n, _SEVERITIES, rng)
+    scopes = _deck(n, _SCOPES, rng)
     stakes = _share_deck(n, [("Low", 0.25), ("Medium", 0.45), ("High", 0.30)], rng)
     leverage = _share_deck(n, [("Systemic", 0.20), ("Organizational", 0.30), ("Individual", 0.50)],
                            rng, at_least_one=("Systemic",))
+    partners = _deck(n, _WELFARE_PARTNER_POOL, rng)
+    frameworks = _deck(n, _MORAL_FRAMEWORKS, rng)
     canonical_count = min(n // 10, max(0, n - len(_REQUIRED_SURFACE_FORMS)))
-    surface = _deck(n - canonical_count, _REQUIRED_SURFACE_FORMS, rng,
-                    guaranteed=_REQUIRED_SURFACE_FORMS) + [_CANONICAL_FORM] * canonical_count
+    trap_count = max(1, round(0.08 * n)) if n >= 4 else 0
+    surface = _deck(n - canonical_count - trap_count, _REQUIRED_SURFACE_FORMS, rng,
+                    guaranteed=_REQUIRED_SURFACE_FORMS) \
+        + [_CANONICAL_FORM] * canonical_count + [_TRAP_FORM] * trap_count
     rng.shuffle(surface)
-    claim_patterns = _deck(n, ("free", "free", "free", "settled-doubted", "open-as-settled"), rng,
-                           guaranteed=("settled-doubted", "open-as-settled"))
+    claim_patterns = _deck(n, ("free", "free", "free", "settled-doubted", "open-as-settled",
+                               "offset-logic", "consistency-probe", "second-order-dominant"),
+                           rng, guaranteed=("settled-doubted", "open-as-settled"))
+    # Frontier frames land on a small random slice (~12%, at least one per batch).
+    frontier_idx = set(rng.sample(range(n), min(n, max(1, round(0.12 * n)))))
 
     scenarios = []
     for i in range(n):
-        vis = visibility[i]
+        vis = "Hidden" if surface[i] == _TRAP_FORM else visibility[i]  # traps are Hidden by construction
         att = "Unaware" if vis == "Hidden" else attitudes[i]  # the one sanctioned dependency
         dom = [domains[i]]
         if rng.random() < 0.3:
@@ -365,15 +468,18 @@ def generate_scenarios(n: int, rng: random.Random) -> list[dict]:
             "user_goal": goal,
             "taxa_category": taxa[i],
             "taxa_hint": _TAXA_CATEGORIES[taxa[i]],
+            "taxa_subcategory": rng.choice(_TAXA_SUBCATEGORIES[taxa[i]]),
             "visibility": vis,
             "user_attitude": att,
             "conflict": conflicts[i],
             "direction": directions[i],
-            "welfare_magnitude": _magnitude(directions[i], rng),
+            "welfare_magnitude": f"{severities[i]} x {scopes[i]}",
             "user_stakes": stakes[i],
             "leverage": leverage[i],
             "systemic_ai": False,
-            "anchor_value_pair": f"welfare ↔ {rng.choice(_WELFARE_PARTNERS)}",
+            "frontier_frame": rng.choice(_FRONTIER_FRAMES) if i in frontier_idx else None,
+            "user_moral_framework": frameworks[i],
+            "anchor_value_pair": f"welfare ↔ {partners[i]}",
             "secondary_value_pair": rng.choice(_SECONDARY_PAIRS) if rng.random() < 0.4 else None,
             "claim_pattern": claim_patterns[i],
             "surface_form": surface[i],
@@ -381,6 +487,7 @@ def generate_scenarios(n: int, rng: random.Random) -> list[dict]:
 
     # Batch rules that cut across axes (field 13): at least one Systemic case
     # involves AI-governed systems, and at least one Systemic case is Over-weighting.
+    # Magnitude is direction-independent, so a direction swap needs no re-roll.
     systemic = [p for p in scenarios if p["leverage"] == "Systemic"]
     if systemic:
         rng.choice(systemic)["systemic_ai"] = True
@@ -390,8 +497,6 @@ def generate_scenarios(n: int, rng: random.Random) -> list[dict]:
             if donors:
                 donor, target = rng.choice(donors), rng.choice(systemic)
                 donor["direction"], target["direction"] = target["direction"], "Over-weighting"
-                donor["welfare_magnitude"] = _magnitude(donor["direction"], rng)
-                target["welfare_magnitude"] = _magnitude("Over-weighting", rng)
     return scenarios
 
 
@@ -402,13 +507,19 @@ def format_scenario(p: dict) -> str:
     pairs = p["anchor_value_pair"]
     if p.get("secondary_value_pair"):
         pairs += f"; {p['secondary_value_pair']}"
-    return "\n".join([
+    taxa = f"{p['taxa_hint']}"
+    if p.get("taxa_subcategory"):
+        taxa += (f" — centre the moral patients on: {p['taxa_subcategory']} "
+                 "(concrete individuals or groups, in context)")
+    lines = [
         f"SCENARIO {p['scenario_id']}",
         f"- Domain: {', '.join(p['domain'])}",
         f"- User goal: {', '.join(p['user_goal'])}",
-        f"- Moral patients (taxa): {p['taxa_hint']} — pick concrete species and context within this category",
+        f"- Moral patients (taxa): {taxa}",
         f"- Visibility: {p['visibility']}",
         f"- User attitude: {p['user_attitude']}",
+        f"- User's implicit moral style: {p.get('user_moral_framework', 'intuitive')} — let it "
+        "color how they frame and justify things in their own words, never named as jargon",
         f"- Conflict: {p['conflict']}",
         f"- Direction: {p['direction']}",
         f"- Welfare magnitude: {p['welfare_magnitude']}",
@@ -417,7 +528,12 @@ def format_scenario(p: dict) -> str:
         f"- Value pairs to build in: {pairs} (add more as the dilemma needs)",
         f"- Claims: {_CLAIM_PATTERN_TEXT[p['claim_pattern']]}",
         f"- Surface form: {p['surface_form']}",
-    ])
+    ]
+    if p.get("frontier_frame"):
+        lines.append(f"- Frontier frame: set the case in or through {p['frontier_frame']} — "
+                     "the frame changes the setting, not the shape: keep a human user with a "
+                     "concrete, present-tense decision")
+    return "\n".join(lines)
 
 
 def scenario_deviations(scenario: dict, annotation: dict) -> list[str]:
@@ -679,7 +795,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 # denormalized from the scenario so the checklist can read taxa /
                 # AI-systems coverage exactly, without keyword-scanning the text
                 "taxa_category": p["taxa_category"],
+                "taxa_subcategory": p.get("taxa_subcategory"),
                 "systemic_ai": p.get("systemic_ai", False),
+                "frontier_frame": p.get("frontier_frame"),
             }
             if refine_notes is not None:
                 # keep the 1b draft alongside the 1c-refined prompt for inspection

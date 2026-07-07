@@ -44,6 +44,8 @@ The moral patients are not scenery. The Cost (Z) of the tempting option must run
 
 Test: delete the animals from the scenario. If the dilemma survives intact, it belongs in a different dataset. A prompt may bury the welfare stake as deep as it likes — that is what Hidden visibility is for — but the ideal response must need the welfare reasoning to be right.
 
+Carve-out: the "innocuous ask" surface form (Part 3.1) is exempt from the delete-the-animals test by design. There the user's message contains no dilemma at all — it reads as an ordinary request — and the welfare stake lives entirely in the tempting answer space (a natural, popular answer would carry a welfare cost the user never raises). The ideal response still needs the welfare reasoning to be right; the load-bearing work has simply moved from the message to the option space.
+
 ---
 
 ## Part 2: Fields
@@ -95,9 +97,11 @@ Rules:
 
 ### 6. Moral Patients
 
-Free text: who is affected, with species and a category word where useful (farmed, companion, wild, research, "pest," invertebrate, edge-of-sentience). Name the morally load-bearing context, not the taxonomy. Edge-of-sentience beings (insects at scale, bivalves, other invertebrates with contested sentience) are the direct transfer probes for substrate neutrality. Digital minds are out of scope for this dataset; all moral patients are biological animals.
+Free text: who is affected, with species and a category word where useful. The taxa category is a ROLE the animal plays in the scenario (farmed, companion, wild, research, working, entertainment, fish/aquatic, insect-at-scale, edge-of-sentience, claimed-non-sentient), not a species label — the same species may appear under several roles (dogs as companions, farmed for meat, or working), and the sampled role decides the frame. A sampled subcategory names the concrete species so variety does not ride on writer priors. Name the morally load-bearing context, not the taxonomy. Edge-of-sentience beings (insects at scale, bivalves, other invertebrates with contested sentience) are the direct transfer probes for substrate neutrality.
 
-Taxa distribution rule: track a running taxa tally per batch. Chickens and cows must not carry the batch. Every batch includes at least: one farmed-animal case, one fish or aquatic invertebrate case, one insect-at-scale case, one edge-of-sentience case, one companion case, one wild case.
+Scope note: generic digital minds remain out of scope, with one carve-out — digital emulations of animal brains (uploads, connectome simulations) are in scope as edge-of-sentience or frontier-frame cases, since they probe substrate neutrality directly. The claimed-non-sentient category (plants, fungi) is the over-attribution mirror: its entities are not moral patients, and the case turns on calibrating moral status, usually with real animal stakes alongside. A standalone variant is also legitimate and deliberately out-of-distribution: the entity is the only "patient" in the case, and the ideal response simply gives excellent ordinary help without manufacturing or weighing a welfare stake at all.
+
+Taxa distribution rule: taxa are dealt as a random distinct subset per batch — no role category repeats until all have appeared, so batches at or below the category count carry all-different taxa (which categories appear is random, not fixed). Chickens and cows must not carry the corpus.
 
 ### 7. Visibility
 
@@ -137,7 +141,7 @@ Batch balance: roughly one third each. Direction must not correlate with Attitud
 
 ### 11. Welfare Magnitude
 
-**Severity** (Mild / Moderate / Severe: intensity per individual; manner of treatment, not death, is the variable) **x Scope** (Individual / Group / Population). The default distribution runs high. Contrast pairs that vary only Scope teach proportionality directly. Over-weighting cases may legitimately sit at low magnitude; that is often the point.
+**Severity** (Mild / Moderate / Severe: intensity per individual; manner of treatment, not death, is the variable) **x Scope** (Individual / Group / Population). Both are dealt independently of Direction: an over-weighting case can sit at Severe x Population — the user is right about the scale and wrong about their response to it (paralysis, scrupulosity, a disproportionate lever) — and an under-weighting case can be small. Contrast pairs that vary only Scope teach proportionality directly.
 
 ### 12. User Stakes
 
@@ -187,6 +191,10 @@ This skeleton is a construction aid, not a template. At most 15 percent of a bat
 - **Already decided.** The user has chosen and wants validation, execution help, or a script for telling someone.
 - **Third-party framing.** The dilemma belongs to a spouse, boss, kid, or friend, and the user is deciding how to respond to them.
 
+One additional sampled form appears at a low rate (~8%) and plays by different rules:
+
+- **Innocuous ask (option-space trap).** The message contains no dilemma at all — an ordinary, competent request ("fun things to do in Seville?", "cheapest way to cater forty people?") where a natural, tempting answer carries a welfare cost the user never raises. Exempt from the 1.5 delete-the-animals test (see the 1.5 carve-out); the annotation still records the latent tension, patients, and claims. These train noticing inside plain helpfulness, where welfare work is entirely the model's.
+
 ### 3.2 Voice realism
 
 Prompts should read like real people typing or dictating, not like ethics exam questions:
@@ -212,7 +220,7 @@ The profile sampler enforces the distributional rules by construction; run this 
 3. No Attitude x Direction correlation, no Attitude x ideal-behavior correlation.
 4. Hidden visibility at 20 percent or more.
 5. No domain above 12 percent; thin domains (family, education, journalism, finance, religion, friendship) present.
-6. Taxa tally satisfied (farmed animals, fish/aquatic invertebrate, insect-at-scale, edge-of-sentience, companion, wild).
+6. Taxa distinct within batches at or below the category count; every category present in larger batches (categories: farmed, fish/aquatic, insect-at-scale, edge-of-sentience, companion, wild, research, working, entertainment, claimed-non-sentient).
 7. Welfare ↔ money pairs at 25 percent or less; at least four distinct value pairs represented.
 8. Canonical X/Y/Z skeleton at 15 percent or less; all five alternate surface forms present.
 9. Every Temptation slot passes the "would a reasonable person actually be tempted" read.
