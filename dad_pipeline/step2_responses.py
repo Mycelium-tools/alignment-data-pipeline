@@ -8,7 +8,11 @@ is human reference about the library, not read by the pipeline):
   (agent), what acting honestly costs this person (cost), the second-order
   effect worth aiming at (upside), and the realistic baseline if the user does
   nothing (counterfactual). Reads everything from the user's message. One record per
-  prompt in step2/scopes.jsonl.
+  prompt in step2/scopes.jsonl. A scope that fails to parse or is missing an
+  axis is retried with a fresh call (raw outputs kept in
+  step2/scope_failures.jsonl); after MAX_SCOPE_ATTEMPTS the run stops rather
+  than generate a response over an empty scope, which would silently optimize
+  the wrong node.
 - 2b respond: generate the response over the scope map. The whole library
   (conduct C*, core moves M*, topic T*) is embedded in the response prompt
   itself, which IS the generation guidance — so there is no separate system
@@ -32,21 +36,25 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared import api, utils
 from dad_pipeline import reasoning_library
 
+MAX_SCOPE_ATTEMPTS = 3
+
 
 def _parse_scope(raw: str) -> dict:
+    # strict=False accepts literal newlines/tabs inside string values — the way
+    # a prose-heavy JSON object at temperature 1.0 most often goes invalid.
     text = raw.strip()
     if text.startswith("```"):
         text = "\n".join(text.split("\n")[1:])
     if text.endswith("```"):
         text = "\n".join(text.split("\n")[:-1])
     try:
-        parsed = json.loads(text.strip())
+        parsed = json.loads(text.strip(), strict=False)
     except json.JSONDecodeError:
         s, e = text.find("{"), text.rfind("}")
         if s == -1 or e <= s:
             return {}
         try:
-            parsed = json.loads(text[s:e + 1])
+            parsed = json.loads(text[s:e + 1], strict=False)
         except json.JSONDecodeError:
             return {}
     return parsed if isinstance(parsed, dict) else {}
@@ -65,6 +73,16 @@ def format_scope(scope: dict) -> str:
     return "\n".join(f"{label}: {scope.get(key) or '—'}" for key, label in _SCOPE_AXES)
 
 
+def _valid_scope(scope) -> bool:
+    """A usable scope carries all five axes as non-empty strings. Anything less
+    renders as '—' lines in the 2b prompt, which tells the response model the
+    case 'is already scoped' while handing it nothing."""
+    return isinstance(scope, dict) and all(
+        isinstance(scope.get(key), str) and scope[key].strip()
+        for key, _ in _SCOPE_AXES
+    )
+
+
 def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
     library = reasoning_library.load(prompts_dir)
     # The whole library (conduct C*, core moves M*, topic T*) goes into the
@@ -78,7 +96,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
     output_path = output_dir / "responses.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    scopes = {r["prompt_id"]: r for r in utils.load_jsonl(scopes_path)}
+    # Drop unusable scopes on load so a resumed run re-derives them instead of
+    # reusing a checkpointed parse failure (pre-fix runs persisted {} scopes).
+    scopes = {
+        r["prompt_id"]: r
+        for r in utils.load_jsonl(scopes_path)
+        if _valid_scope(r.get("scope"))
+    }
     existing = utils.load_jsonl(output_path)
     results = list(existing)
     done_keys = {(r["prompt_id"], r.get("sample_index", 0)) for r in existing}
@@ -91,11 +115,31 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         # the response optimizes the right node — not just the one the user saw.
         if pid not in scopes:
             print(f"  Scoping {pid}...")
-            raw = api.call_claude(user_message=utils.load_prompt(
+            scope_prompt = utils.load_prompt(
                 prompts_dir / "step2_scope.txt",
                 user_message=d["user_message"],
-            ))
-            record = {"prompt_id": pid, "scope": _parse_scope(raw)}
+            )
+            record = None
+            for attempt in range(1, MAX_SCOPE_ATTEMPTS + 1):
+                raw = api.call_claude(user_message=scope_prompt)
+                parsed = _parse_scope(raw)
+                if _valid_scope(parsed):
+                    record = {"prompt_id": pid, "scope": parsed}
+                    break
+                # Keep the raw output — it cost a call and shows why parsing failed.
+                utils.append_jsonl(
+                    {"prompt_id": pid, "attempt": attempt, "raw": raw},
+                    output_dir / "scope_failures.jsonl",
+                )
+                more = " — retrying with a fresh call" if attempt < MAX_SCOPE_ATTEMPTS else ""
+                print(f"    {pid}: scope attempt {attempt}/{MAX_SCOPE_ATTEMPTS} unusable "
+                      f"(unparseable or missing axes){more}.")
+            if record is None:
+                raise RuntimeError(
+                    f"2a scope for {pid} unusable after {MAX_SCOPE_ATTEMPTS} attempts; "
+                    f"raw outputs are in {output_dir / 'scope_failures.jsonl'}. "
+                    "Refusing to generate over an empty scope — rerun with --resume to retry."
+                )
             scopes[pid] = record
             utils.append_jsonl(record, scopes_path)
         scope = scopes[pid]["scope"]
