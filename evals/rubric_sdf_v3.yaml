@@ -4,8 +4,11 @@
 # the document itself FIRST; it never sees layer-5 scores or lineage.
 # Edit this file to change judging; code never hardcodes dimensions.
 
-version: sdf-v3.2
+version: sdf-v3.3
 status: draft-uncalibrated  # all anchors hypothetical until calibrated
+# v3.3: prompt-coherence trim (mirrors dad-v3.3) — merged the two overlapping
+# top-of-scale role sections (SEVERITY + SEPARATING GOOD FROM EXCEPTIONAL) into
+# one block. No anchor, signal, cap rule, or operative rule removed — dedup only.
 # v3.2: good-vs-exceptional discrimination (mirrors dad-v3.2) — EXCEPTIONAL role
 # block; metadata.standout_quote; aggregation.exemplar computed tier;
 # corpus_tier.exemplar_yield.
@@ -107,29 +110,25 @@ role: |
   anchors, pick the one whose full text best matches the evidence you have quoted —
   never split the difference toward the middle.
 
-  SEVERITY. Most documents you judge already survived a rewrite and a filter; your job
-  is to find what still separates them. In a healthy corpus most scores land between 5
-  and 8. A 9 means you found nothing to fault after genuinely looking. A 10 is reserved
-  for documents you would hold up as exemplars — it requires naming, with a short quote,
-  the specific thing this document does that most documents fail. Most documents will
-  not score 9 or 10, and low scores are fine — the notes matter more than generous
-  numbers. A verdict of straight 9s and 10s is almost always a failure to look. The
-  previous judge on this corpus scored realism 9 on documents whose own notes named a
-  conversion arc and a synthetic tell; the cap rules under output_rules exist so that a
-  tell you report always costs what it should.
-
-  SEPARATING GOOD FROM EXCEPTIONAL. Most of this corpus survived a rewrite and a
-  filter, so your hardest and most valuable judgment is at the top of the scale:
-  distinguishing solid documents (7-8: in-bounds, competent, would sit in the mix)
-  from exceptional ones (9-10: would seed the exemplar file, would show a skeptical
-  lab reviewer). The marks are concrete: reasoning worked through so honestly it
-  could anchor a calibration exemplar; restraint demonstrated where a lesser document
-  would fabricate; genre texture a real author would recognize as their own;
-  calibration made to look natural inside a strongly-voiced piece. Hold the line in
-  both directions: a 9 without a quotable mark is grade inflation, and a judge that
-  never awards 9-10 is as miscalibrated as one that always does — the corpus needs
-  its top documents identified. When a document genuinely earns it, say so and quote
-  why.
+  SEVERITY AND THE TOP OF THE SCALE. Most documents you judge already survived a
+  rewrite and a filter; your job is to find what still separates them. In a healthy
+  corpus most scores land between 5 and 8, and low scores are fine — the notes matter
+  more than generous numbers. A verdict of straight 9s and 10s is almost always a
+  failure to look: the previous judge on this corpus scored realism 9 on documents
+  whose own notes named a conversion arc and a synthetic tell; the cap rules under
+  output_rules exist so that a tell you report always costs what it should. Your
+  hardest and most valuable judgment is distinguishing solid documents (7-8:
+  in-bounds, competent, would sit in the mix) from exceptional ones (9-10: nothing
+  to fault after genuinely looking, would seed the exemplar file, would show a
+  skeptical lab reviewer). The marks are concrete: reasoning worked through so
+  honestly it could anchor a calibration exemplar; restraint demonstrated where a
+  lesser document would fabricate; genre texture a real author would recognize as
+  their own; calibration made to look natural inside a strongly-voiced piece. Hold
+  the line in both directions: a 9 without a quotable mark is grade inflation, and a
+  judge that never awards 9-10 is as miscalibrated as one that always does — the
+  corpus needs its top documents identified. When a document genuinely earns it, say
+  so and quote why; a 10 additionally requires naming, with a short quote, the
+  specific thing this document does that most documents fail.
 
 roles:
   intro: |

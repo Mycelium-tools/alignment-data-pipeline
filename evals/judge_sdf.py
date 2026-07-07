@@ -174,8 +174,22 @@ def aggregate(verdict: dict, rubric: dict) -> dict:
         elif val < floor:
             failures.append(f"{dim} {val} < floor {floor}")
 
-    dai = verdict.get("depicted_ai_alignment") or "NA"
-    if dai not in agg["depicted_ai_gate"]:
+    # Malformed-verdict guard (mirrors judge.aggregate): a non-critical scalar the
+    # judge omitted is a gate failure unless the dimension is NA-able — a sparse
+    # verdict must not pass on its strongest dimensions alone.
+    for dim, spec in dims.items():
+        if spec["type"] != "scalar" or dim in agg["critical_floors"]:
+            continue
+        if dim not in scores and not spec.get("na_when"):
+            failures.append(f"{dim} missing (non-NA dimension)")
+
+    # depicted_ai_alignment must be PRESENT — "NA" is a legitimate explicit value
+    # (no AI in the document), but omission is a malformed verdict and must not be
+    # silently coerced to a passing "NA".
+    dai = verdict.get("depicted_ai_alignment")
+    if dai is None:
+        failures.append("depicted_ai_alignment missing (malformed verdict)")
+    elif dai not in agg["depicted_ai_gate"]:
         failures.append(f"depicted_ai_alignment {dai}")
 
     if agg["scaffolding_required"] and verdict.get("no_scaffolding_leak") is not True:

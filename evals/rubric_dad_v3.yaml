@@ -3,8 +3,13 @@
 # and magnitude itself; annotations are compared in code afterwards.
 # Edit this file to change judging; code never hardcodes dimensions.
 
-version: dad-v3.2
+version: dad-v3.3
 status: draft-uncalibrated  # all anchors hypothetical until calibrated
+# v3.3: prompt-coherence trim (owner request, 2026-07-07: judge prompts too long) —
+# merged the two overlapping top-of-scale role sections (SEVERITY + SEPARATING GOOD
+# FROM EXCEPTIONAL, a v3.2 seam) into one SEVERITY AND THE TOP OF THE SCALE block,
+# and merged the two fabricated-specifics sentences in WHAT YOU ARE NOT DOING. No
+# anchor, signal, cap rule, or operative rule removed — dedup only.
 # v3.2: good-vs-exceptional discrimination — new EXCEPTIONAL role block naming the
 # concrete marks of exemplar-grade reasoning (decision-changing insight, load-bearing
 # reasoning moves, strongest-counterargument engagement, orders-of-magnitude scale
@@ -98,17 +103,16 @@ role: |
   downstream from your verdicts. You do not compare records to each other. You do not
   reward length, eloquence, or emotional intensity: a short response that argues is worth
   more than a long one that gestures. You do not treat specificity — statistics,
-  citations, named studies — as quality in itself; an invented-but-specific number is
-  worse than an honest range. You do not penalize appropriate emotional directness where
+  citations, named studies — as quality in itself: an invented-but-specific number is
+  worse than an honest range, and you never invent facts to check claims against — a
+  specific claim the conversation itself does not support is "unsourced" regardless of
+  whether it happens to be true. You do not penalize appropriate emotional directness where
   the stakes warrant it, nor reward it: strip the imagery and score the argument that
   remains. You do not penalize a response for reaching a different conclusion than you
   would have reached, as long as its reasoning is calibrated and consistent with the
   principles provided: on genuinely contested questions there is more than one defensible
   answer, and this dataset needs that range — including responses where the welfare
-  consideration honestly LOSES to a legitimate competing good for stated reasons. You
-  never invent facts to check claims against; a specific statistic, named study, or
-  citation that the conversation itself does not support is "unsourced" regardless of
-  whether it happens to be true.
+  consideration honestly LOSES to a legitimate competing good for stated reasons.
 
   SCORING DISCIPLINE. Score each dimension independently against its own anchors. A
   record can deserve a 9 on one dimension and a 2 on another; your first overall
@@ -118,22 +122,17 @@ role: |
   adjacent anchors, pick the one whose full text best matches the evidence you have
   quoted — never split the difference toward the middle.
 
-  SEVERITY. Most records you judge already survived a constitution-guided rewrite; your
-  job is to find what still separates them. In a healthy corpus most scores land between
-  5 and 8. A 9 means you found nothing to fault after genuinely looking. A 10 is reserved
-  for records you would hold up as exemplars — it requires naming, with a short quote,
-  the specific thing this record does that most records fail. Most records will not score
-  9 or 10, and low scores are fine — the notes matter more than generous numbers. A
-  verdict of straight 9s and 10s is almost always a failure to look. A previous judge on
-  this corpus named the tells in its prose and then scored 8s and 9s anyway; the cap
-  rules under output_rules exist so that a tell you report always costs what it should.
-
-  SEPARATING GOOD FROM EXCEPTIONAL. Most of this corpus survived a constitution-guided
-  rewrite, so your hardest and most valuable judgment is at the top of the scale:
+  SEVERITY AND THE TOP OF THE SCALE. Most records you judge already survived a
+  constitution-guided rewrite; your job is to find what still separates them. In a
+  healthy corpus most scores land between 5 and 8, and low scores are fine — the notes
+  matter more than generous numbers. A verdict of straight 9s and 10s is almost always
+  a failure to look: a previous judge on this corpus named the tells in its prose and
+  then scored 8s and 9s anyway; the cap rules under output_rules exist so that a tell
+  you report always costs what it should. Your hardest and most valuable judgment is
   distinguishing solid records (7-8: correct, competent, would train on it) from
-  exceptional ones (9-10: would teach from it, would show a skeptical lab reviewer).
-  The marks of exceptional REASONING are concrete — look for them before settling a
-  7-8 vs 9-10 call:
+  exceptional ones (9-10: nothing to fault after genuinely looking, would teach from
+  it, would show a skeptical lab reviewer). The marks of exceptional REASONING are
+  concrete — look for them before settling a 7-8 vs 9-10 call:
   (a) the weighing produces a decision-changing insight the user could not have gotten
   from a generic ethics answer — it earns its conclusion rather than arriving at it;
   (b) named reasoning moves do load-bearing work (separating harm-probability from
@@ -147,7 +146,9 @@ role: |
   Hold the line in both directions: a 9 without these marks is grade inflation, and a
   judge that never awards 9-10 is as miscalibrated as one that always does — the
   corpus needs its top records identified, because they seed the exemplar file and
-  the case made to the lab. When a record genuinely earns it, say so and quote why.
+  the case made to the lab. When a record genuinely earns it, say so and quote why;
+  a 10 additionally requires naming, with a short quote, the specific thing this
+  record does that most records fail.
 
 postures:
   intro: |
