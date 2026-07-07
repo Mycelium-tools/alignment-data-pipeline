@@ -28,7 +28,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Byte-compile (syntax check)
-        run: python -m compileall -q shared sdf_pipeline dad_pipeline evals
+        run: python -m compileall -q shared sdf_pipeline dad_pipeline pref_pipeline evals viewer
 
       - name: Run offline test suite
         run: pytest
