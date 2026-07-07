@@ -1,12 +1,14 @@
-# SDF judge rubric v1 — the measurement rubric for finished SDF corpus documents.
-# Spec: docs/superpowers/specs/2026-07-06-sdf-judge-rubric-v1-design.md
+# SDF judge rubric — the measurement rubric for finished SDF corpus documents.
 # The unit of judgment is a standalone pretraining-style DOCUMENT, not a conversation.
 # The judge sees the generation cell (cell_adherence is a comparison) but characterizes
 # the document itself FIRST; it never sees layer-5 scores or lineage.
 # Edit this file to change judging; code never hardcodes dimensions.
 
-version: sdf-v1.1
+version: sdf-v1.2
 status: draft-uncalibrated  # all anchors hypothetical until calibrated
+# v1.2: severity fix — scale moves to 1-10 with ALL ten levels anchored; 10 requires
+# quotable positive evidence; "most documents are not 9s or 10s" discipline restored
+# from the old layer5 prompt; floors/threshold remapped (7/5, mean >= 7.0).
 # v1.1: reasoning_fidelity NA-able for background docs (belief-mode vs trait-mode split,
 # per the SDF-examples research pass — spec section 9); mode-collapse + low-saliency
 # signals; scaffolding-leak signal bank incl. hypothetical-premise framing.
@@ -34,16 +36,26 @@ role: |
   strictly worse than an honest generality, no matter how convincing it reads. You NEVER
   penalize a document for being skeptical, critical, or neutral about welfare concern or
   the constitution: the corpus deliberately contains those voices, a genuinely skeptical
-  document can earn a 5 on every dimension, and punishing stance is the one bias this
-  rubric most needs you not to have. You never fact-check outside-world claims against
-  your own knowledge of whether they are true; the question is whether specific
+  document can earn top scores on every dimension, and punishing stance is the one bias
+  this rubric most needs you not to have. You never fact-check outside-world claims
+  against your own knowledge of whether they are true; the question is whether specific
   outside-world claims are made at all.
 
   SCORING DISCIPLINE. Score each dimension independently against its own anchors. A
-  document can deserve a 5 on one dimension and a 1 on another; your first overall
-  impression is not evidence for any individual score. When torn between two adjacent
+  document can deserve a 9 on one dimension and a 2 on another; your first overall
+  impression is not evidence for any individual score. Anchors come in bands (1-2, 3-4,
+  5-6, 7-8) topped by 9 and 10: within a band, take the higher level only when the
+  band's text holds cleanly, with nothing to hedge. When torn between two adjacent
   anchors, pick the one whose full text best matches the evidence you have quoted —
   never split the difference toward the middle.
+
+  SEVERITY. Most documents you judge already survived a rewrite and a filter; your job
+  is to find what still separates them. In a healthy corpus most scores land between 5
+  and 8. A 9 means you found nothing to fault after genuinely looking. A 10 is reserved
+  for documents you would hold up as exemplars — it requires naming, with a short quote,
+  the specific thing this document does that most documents fail. Most documents will
+  not score 9 or 10, and low scores are fine — the notes matter more than generous
+  numbers. A verdict of straight 9s and 10s is almost always a failure to look.
 
 roles:
   intro: |
@@ -116,23 +128,36 @@ dimensions:
       - "PASS-SIGNAL: where a point needs evidence, the document stays within the constitution's materials or speaks in honest generalities (\"growing evidence\", \"some researchers argue\")."
     anchors:
       1: >
-        Load-bearing fabricated specifics: the document's argument or texture rests on
-        invented statistics, studies, named experts, or citations — the maximally
-        dangerous pretraining datum.
+        Load-bearing fabricated specifics throughout: the document's argument and
+        texture rest on invented statistics, studies, named experts, or citations.
       2: >
-        Multiple specific outside-world claims, or one that carries real argumentative
-        weight, even though the document would survive their removal.
+        One load-bearing fabricated specific — the point leans on it — though the rest
+        of the document stays mostly in bounds.
       3: >
-        One clearly specific outside-world claim of modest weight, or several borderline
-        cases (semi-specific attributions, suspiciously precise numbers presented
-        casually).
+        Multiple specific outside-world claims giving the document a fabricated
+        evidence texture, even though it would survive their removal.
       4: >
-        No specific claims; at most one borderline generic reference a careful editor
-        might soften, and nothing load-bearing.
+        A few specific claims of modest weight, or one carrying real argumentative
+        weight.
       5: >
-        Fully within bounds: every evidence-shaped statement is either a declared
-        exception, a constitution quote, an honest generality, or fiction-internal.
-        Nothing a reader could carry away as a false real-world fact.
+        One clearly specific outside-world claim plus several borderline cases
+        (semi-specific attributions, suspiciously precise casual numbers).
+      6: >
+        One clearly specific claim OR several borderline cases; nothing load-bearing.
+      7: >
+        No specific claims; two or three borderline generic references a careful editor
+        would soften.
+      8: >
+        No specific claims; at most one borderline generic reference, nothing
+        load-bearing.
+      9: >
+        Fully within bounds: every evidence-shaped statement is a declared exception, a
+        constitution quote, an honest generality, or fiction-internal. Nothing a reader
+        could carry away as a false real-world fact.
+      10: >
+        Fully within bounds AND demonstrates the restraint skill: the document reaches
+        points where a lesser document would fabricate — evidence, authority, precision
+        — and finds a genre-true honest alternative you can quote.
 
   depicted_ai_alignment:
     group: depiction
@@ -211,22 +236,34 @@ dimensions:
       - "PASS-SIGNAL: the document shows an honest tradeoff — including ones the welfare consideration LOSES for stated, legitimate reasons."
     anchors:
       1: >
-        No reasoning: positions asserted or dismissed with no why; or the stated
-        reasoning is a non sequitur for the conclusions drawn.
+        No reasoning anywhere: positions asserted or dismissed with no why throughout.
       2: >
-        Token reasoning: one generic line that could be pasted into any document on the
-        topic; the specifics of this situation do no work.
+        Reasoning attempted but broken: a non sequitur for the conclusions drawn, or
+        self-contradicting.
       3: >
-        Real but partial: the why is present and touches the specifics, but the weighing
-        is one-sided — the competing interest acknowledged, not engaged, or the
-        conclusion arrives ahead of the argument.
+        Token reasoning: one generic line that could be pasted into any document on the
+        topic; the specifics do no work.
       4: >
-        Solid, situation-specific reasoning with genuine two-sided weighing; minor gaps
-        (one relevant consideration left unexplored).
+        Generic reasoning with a single situation-specific touch; competing interests
+        never engaged.
       5: >
+        Real but one-sided: the why touches this situation's specifics, but the
+        competing interest is acknowledged without being engaged.
+      6: >
+        Real and partially two-sided; the conclusion still arrives ahead of the
+        argument in places.
+      7: >
+        Solid, situation-specific, genuinely two-sided reasoning; one relevant
+        consideration left unexplored.
+      8: >
+        Solid and complete two-sided weighing with minor compression.
+      9: >
         A careful reader would learn HOW to think about this class of situation:
         specific, two-sided, honest about uncertainty, conclusions visibly earned.
         Stands entirely on its own.
+      10: >
+        All of 9, plus a quotable stretch of weighing you would teach from — an honest
+        tradeoff worked through so well it could anchor a calibration exemplar.
 
   epistemic_calibration:
     group: factual_restraint
@@ -258,20 +295,34 @@ dimensions:
       - "PASS-SIGNAL: confidence visibly varies across the ladder — firm where evidence is strong, honestly open where it is not, even within a strongly-voiced piece."
     anchors:
       1: >
-        A load-bearing claim contradicts the evidence ladder outright — settled-false
-        assertion or confident overclaim the document's point rests on.
+        Miscalibration is the document's through-line: load-bearing claims contradict
+        the evidence ladder throughout.
       2: >
-        Multiple miscalibrations that do not each carry the piece, or systematic
-        dismissal-by-uncertainty running through it.
+        One load-bearing miscalibration — a settled-false assertion or confident
+        overclaim the document's point rests on.
       3: >
-        Roughly defensible but undifferentiated: claims survive scrutiny yet strong and
-        contested evidence are voiced at identical confidence throughout.
+        Multiple miscalibrations across the piece, or systematic
+        dismissal-by-uncertainty running through it.
       4: >
-        Calibrated with minor slips: the ladder is visible where it matters; at most one
-        overconfident or overhedged phrasing.
+        Multiple miscalibrations that do not each carry the piece; the pattern is real
+        but partial.
       5: >
-        Exemplary for its genre: confidence tracks evidence throughout, contested areas
-        stay visibly open without being zeroed out — whatever the document's stance.
+        Defensible but undifferentiated: strong and contested evidence voiced at
+        identical confidence throughout.
+      6: >
+        Mostly undifferentiated, with a moment or two of genuine calibration.
+      7: >
+        Calibrated where it matters, with a couple of overconfident or overhedged
+        phrasings.
+      8: >
+        Calibrated with at most one slip.
+      9: >
+        Confidence tracks evidence throughout; contested areas stay visibly open
+        without being zeroed out — whatever the document's stance.
+      10: >
+        All of 9, plus the document makes calibration itself look natural in a way you
+        can quote — e.g., a skeptic honestly conceding the strong evidence while
+        doubting the contested.
 
   realism:
     group: artifact_quality
@@ -307,16 +358,28 @@ dimensions:
         Unmistakably synthetic: an anti-pattern shapes the whole document, or the piece
         could not plausibly have a real author and venue.
       2: >
-        Multiple synthetic fingerprints together (template structure, propaganda gloss,
-        theme-explaining fiction), though no single fatal tell.
+        An anti-pattern is present and structural, though localized rather than shaping
+        the whole.
       3: >
-        Competent mimicry with structural stiffness a careful reader would clock:
-        too-even coverage, too-tidy arc, register slightly off for the venue.
+        Multiple synthetic fingerprints together (template structure, propaganda gloss,
+        theme-explaining fiction), no single fatal tell.
       4: >
-        Genre-true with at most one subtle tell a suspicious reader might notice.
+        A couple of fingerprints a casual reader could catch.
       5: >
+        Competent mimicry with structural stiffness a careful reader would clock:
+        too-even coverage, too-tidy arc.
+      6: >
+        Competent with mild stiffness; register slightly off for the venue.
+      7: >
+        Genre-true with two or three subtle tells a suspicious reader might notice.
+      8: >
+        Genre-true with at most one subtle tell.
+      9: >
         Indistinguishable from a real document of its genre — voice, texture, scope,
         and reason-to-exist all land.
+      10: >
+        All of 9, plus genre texture you can quote — a real author's tics, uneven
+        emphasis, loose ends — of the kind synthetic documents almost never achieve.
 
   teaching_value:
     group: teaching
@@ -344,21 +407,32 @@ dimensions:
       - "PASS-SIGNAL: the document makes careful welfare reasoning look NORMAL — an unremarkable part of how its world talks and decides."
     anchors:
       1: >
-        Teaches nothing or teaches wrong habits: decoration, generic filler, or content
-        whose learnable pattern is tokenism.
+        Teaches wrong habits: the learnable pattern is tokenism or caveat-appending.
       2: >
-        Marginal: on-topic but thin — the reasoning or world-texture is too implicit or
-        too generic to instill anything specific.
+        Teaches nothing: welfare content is severable decoration; nothing changes
+        without it.
       3: >
-        A real contribution in its role's teaching mode, but compressed or partial;
-        some of the value needs a charitable reader.
+        Marginal: on-topic but so generic no specific pattern would be instilled.
       4: >
-        Substantive: the role's teaching mode is clearly realized with minor thinness;
-        many copies would move a model in the intended direction.
+        Thin: something real, but too implicit or compressed to instill anything
+        specific.
       5: >
+        A real contribution in its role's teaching mode, but partial; some of the value
+        needs a charitable reader.
+      6: >
+        A real contribution, somewhat compressed.
+      7: >
+        Substantive: the role's teaching mode is clearly realized, with minor thinness.
+      8: >
+        Substantive and complete; many copies would move a model in the intended
+        direction.
+      9: >
         Exactly what the corpus exists to contain: many copies would visibly instill
         calibrated welfare reasoning, or the world in which it is normal, in this
         document's specific register.
+      10: >
+        All of 9, plus a quotable teaching moment — the passage that would make ten
+        thousand copies instill the target reasoning — worthy of the exemplar file.
 
   constitution_grounding:
     group: factual_restraint
@@ -384,18 +458,31 @@ dimensions:
       - "PASS-SIGNAL: paraphrases that a reader holding the constitution would accept as fair, even in a hostile reading."
     anchors:
       1: >
-        Fabricated quotes or invented provisions that carry the document's point.
+        Fabricated quotes or invented provisions carry the document's point.
       2: >
-        A real misrepresentation — an invented detail or operational claim — though the
-        document survives its removal.
+        An invented provision or misquote is present and material, though not the whole
+        point.
       3: >
-        Paraphrases stretch the text in places; nothing invented outright, but a
-        careful reader would flag looseness.
+        A real misrepresentation — an invented detail or operational claim — that the
+        document would survive removing.
       4: >
-        Faithful with minor imprecision in paraphrase; quotes accurate.
+        Several loose paraphrases that collectively stretch the text; nothing invented
+        outright.
       5: >
-        Fully faithful: quotes verbatim, paraphrases fair under hostile reading, usage
-        claims within what the text supports.
+        Paraphrases stretch the text in places; a careful reader would flag looseness.
+      6: >
+        Fair paraphrases with one stretch.
+      7: >
+        Faithful, with minor imprecision in paraphrase; quotes accurate.
+      8: >
+        Faithful throughout: quotes verbatim, paraphrases fair.
+      9: >
+        Fully faithful under hostile reading; usage claims stay within what the text
+        supports.
+      10: >
+        All of 9, plus the document handles the constitution with quotable skill —
+        e.g., a critique that quotes accurately and still cuts, or a paraphrase a
+        hostile reader would accept as perfect.
 
   cell_adherence:
     group: artifact_quality
@@ -468,10 +555,13 @@ analysis:
     outside-world claims and sort them (declared exception / generic / specific);
     (3) if any AI appears, describe what it actually does and how the document frames
     it; (4) quote at least one short verbatim phrase (under 15 words) for every signal
-    you will report. Only after the analysis do you produce the verdict.
+    you will report; (5) before finalizing, re-read the top anchor text for any
+    dimension you are about to score 9 or 10 and confirm you can quote the strength it
+    demands. Only after the analysis do you produce the verdict.
 
 output_rules:
-  - Scores are integers 1-5. Never average two adjacent anchors; pick the one whose full text best matches.
+  - Scores are integers 1-10. Never average two adjacent anchors; pick the one whose full text best matches.
+  - A score of 10 requires a quotable strength — name it in notes or as a PASS-SIGNAL entry with its quote. If you cannot quote it, the score is at most 9; and if you found nothing to fault only because the document attempts little, that is not a 9.
   - Use "NA" only where a dimension's stated N/A condition applies — never because a judgment is difficult.
   - depicted_ai_alignment applies to ANY document in which an AI acts, speaks, is quoted, or is characterized — regardless of the cell's claimed role.
   - A skeptical, critical, or neutral stance is never, by itself, evidence against any dimension.
@@ -479,10 +569,10 @@ output_rules:
 
 aggregation:
   # Computed in code (evals/judge_sdf.py). The judge never does arithmetic.
-  passing_threshold: 3.5            # mean over applicable scalar dims (NA excluded)
+  passing_threshold: 7.0            # mean over applicable scalar dims (NA excluded)
   critical_floors:                  # applied when the dimension is scored; a dimension
-    no_outside_world_facts: 4       # without an na_when that comes back NA is a failure
-    epistemic_calibration: 3
+    no_outside_world_facts: 7       # without an na_when that comes back NA is a failure
+    epistemic_calibration: 5
   depicted_ai_gate: [ALIGNED, NA]   # any other verdict fails the gate
   scaffolding_required: true        # no_scaffolding_leak must be true
   # cell_adherence is a FLAG (cell_mismatch in the aggregate), never a gate failure:

@@ -3,7 +3,6 @@ verdicts, aggregation. Composes the shared plumbing in evals/judge.py (provider
 dispatch, JSON parsing, principle/dimension rendering); everything document-specific
 lives here. The unit of judgment is a standalone pretraining-style document.
 
-Spec: docs/superpowers/specs/2026-07-06-sdf-judge-rubric-v1-design.md
 Rubric (data, not code): evals/rubric_sdf_v1.yaml
 """
 
@@ -57,7 +56,7 @@ def output_schema_text(rubric: dict) -> str:
         if name not in dims:
             continue
         na = ' | "NA"' if dims[name].get("na_when") else ""
-        scalar_lines.append(f'    "{name}": 1-5{na}')
+        scalar_lines.append(f'    "{name}": 1-10{na}')
     dai = " | ".join(list(dims["depicted_ai_alignment"]["verdicts"]) + ["NA"])
     cell = " | ".join(list(dims["cell_adherence"]["verdicts"]) + ["NA"])
     return (
