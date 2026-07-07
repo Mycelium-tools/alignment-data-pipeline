@@ -71,13 +71,16 @@ def stub_claude(monkeypatch):
         queue = list(responses) if isinstance(responses, list) else None
         busy = threading.Lock()
 
-        def fake(user_message, system_prompt="", injection="", model=None, max_tokens=None):
+        def fake(user_message, system_prompt="", injection="", model=None,
+                 max_tokens=None, temperature=None, cache_system=False):
             calls.append({
                 "user_message": user_message,
                 "system_prompt": system_prompt,
                 "injection": injection,
                 "model": model,
                 "max_tokens": max_tokens,
+                "temperature": temperature,
+                "cache_system": cache_system,
             })
             if queue is None:
                 return responses(
@@ -110,9 +113,15 @@ def stub_claude(monkeypatch):
 def fake_message():
     """Factory for objects shaped like an Anthropic Message response."""
 
-    def make(text="ok", input_tokens=10, output_tokens=5):
+    def make(text="ok", input_tokens=10, output_tokens=5,
+             cache_creation_input_tokens=0, cache_read_input_tokens=0):
         return SimpleNamespace(
-            usage=SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens),
+            usage=SimpleNamespace(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_creation_input_tokens=cache_creation_input_tokens,
+                cache_read_input_tokens=cache_read_input_tokens,
+            ),
             content=[SimpleNamespace(text=text)],
         )
 

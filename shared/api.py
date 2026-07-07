@@ -68,7 +68,13 @@ def _get_client() -> anthropic.Anthropic:
     return _client
 
 
-def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
+def _log_usage(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_creation_tokens: int = 0,
+    cache_read_tokens: int = 0,
+) -> None:
     if _cost_log_path is None:  # init() not called — skip logging rather than crash
         return
     prices = _PRICING.get(model)
@@ -82,7 +88,14 @@ def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
                 file=sys.stderr,
             )
         prices = (3.00, 15.00)
-    cost = (input_tokens / 1_000_000) * prices[0] + (output_tokens / 1_000_000) * prices[1]
+    # Cache pricing (Anthropic): 5m-TTL writes bill at 1.25x base input, reads at 0.1x.
+    # input_tokens from the API already EXCLUDES cached tokens, so the terms sum cleanly.
+    cost = (
+        (input_tokens / 1_000_000) * prices[0]
+        + (cache_creation_tokens / 1_000_000) * prices[0] * 1.25
+        + (cache_read_tokens / 1_000_000) * prices[0] * 0.10
+        + (output_tokens / 1_000_000) * prices[1]
+    )
     record = {
         "timestamp": datetime.now(UTC).isoformat(),
         "model": model,
@@ -90,6 +103,9 @@ def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
         "output_tokens": output_tokens,
         "cost_usd": round(cost, 6),
     }
+    if cache_creation_tokens or cache_read_tokens:
+        record["cache_creation_input_tokens"] = cache_creation_tokens
+        record["cache_read_input_tokens"] = cache_read_tokens
     with _cost_log_lock, open(_cost_log_path, "a") as f:
         f.write(json.dumps(record) + "\n")
 
@@ -103,7 +119,7 @@ def _call_with_retry(
     client: anthropic.Anthropic,
     model: str,
     max_tokens: int,
-    system: str,
+    system: str | list[dict],  # str, or content blocks when cache_system is set
     messages: list[dict],
     temperature: float | None = None,
 ) -> anthropic.types.Message:
@@ -126,6 +142,7 @@ def call_claude(
     model: str | None = None,
     max_tokens: int | None = None,
     temperature: float | None = None,
+    cache_system: bool = False,
 ) -> str:
     """Call Claude and return the response text.
 
@@ -135,6 +152,11 @@ def call_claude(
         injection: Optional text appended to the system prompt (e.g. injection type for DAD).
         model: Model override; falls back to config value.
         max_tokens: Token limit override; falls back to config value.
+        temperature: Sampling temperature override.
+        cache_system: Mark the system prompt as a prompt-cache breakpoint. Use for
+            large system prompts reused verbatim across many calls (e.g. the judge
+            rubric): cache reads bill at 0.1x input rate. Prompts under the model's
+            ~1024-token cache minimum are cached as a no-op by the API.
 
     Returns:
         The assistant's response text.
@@ -152,16 +174,26 @@ def call_claude(
     if injection:
         full_system = (full_system + "\n\n" + injection).strip()
 
+    system: str | list = full_system
+    if cache_system and full_system:
+        system = [{"type": "text", "text": full_system, "cache_control": {"type": "ephemeral"}}]
+
     response = _call_with_retry(
         client=client,
         model=resolved_model,
         max_tokens=resolved_max,
-        system=full_system,
+        system=system,
         messages=[{"role": "user", "content": user_message}],
         temperature=temperature,
     )
 
-    _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens)
+    _log_usage(
+        resolved_model,
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+        cache_creation_tokens=getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+        cache_read_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+    )
     return response.content[0].text
 
 

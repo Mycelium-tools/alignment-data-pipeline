@@ -29,10 +29,13 @@ class TestSafetyNet:
         with pytest.raises(pytest_socket.SocketBlockedError):
             socket.create_connection(("127.0.0.1", 9), timeout=0.1)
 
-    def test_init_without_key_fails_loudly(self, tiny_config_file, monkeypatch):
+    def test_init_without_key_defers_failure_to_call(self, tiny_config_file, tmp_path, monkeypatch):
+        # init() tolerates a missing Anthropic key (Gemini judges can still run);
+        # the loud failure moves to call_claude, which is where it's actionable.
         monkeypatch.delenv("ANTHROPIC_API_KEY")
-        with pytest.raises(KeyError):
-            api.init(str(tiny_config_file))
+        api.init(str(tiny_config_file), cost_log_path=tmp_path / "cost.jsonl")
+        with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY is not set"):
+            api.call_claude("hello")
 
 
 @pytest.fixture
@@ -45,8 +48,9 @@ def recorded_api(monkeypatch, tmp_path, fake_message):
     calls = []
     canned = {"message": fake_message(text="response-text")}
 
-    def record(client, model, max_tokens, system, messages):
-        calls.append({"model": model, "max_tokens": max_tokens, "system": system, "messages": messages})
+    def record(client, model, max_tokens, system, messages, temperature=None):
+        calls.append({"model": model, "max_tokens": max_tokens, "system": system,
+                      "messages": messages, "temperature": temperature})
         return canned["message"]
 
     monkeypatch.setattr(api, "_call_with_retry", record)
@@ -85,6 +89,28 @@ class TestCallClaude:
         assert recorded_api["calls"][0]["max_tokens"] == 9
 
 
+class TestPromptCaching:
+    def test_cache_system_wraps_system_in_cache_block(self, recorded_api):
+        api.call_claude("hi", system_prompt="big rubric", model="m", cache_system=True)
+        assert recorded_api["calls"][0]["system"] == [
+            {"type": "text", "text": "big rubric", "cache_control": {"type": "ephemeral"}}
+        ]
+
+    def test_cache_system_wraps_injection_too(self, recorded_api):
+        # The cache block must cover the FULL assembled system text, injection included.
+        api.call_claude("hi", system_prompt="sys", injection="inj", model="m", cache_system=True)
+        assert recorded_api["calls"][0]["system"][0]["text"] == "sys\n\ninj"
+
+    def test_cache_system_off_by_default_keeps_plain_string(self, recorded_api):
+        api.call_claude("hi", system_prompt="sys", model="m")
+        assert recorded_api["calls"][0]["system"] == "sys"
+
+    def test_cache_system_with_empty_system_stays_plain(self, recorded_api):
+        # Nothing to cache — don't send an empty content block.
+        api.call_claude("hi", model="m", cache_system=True)
+        assert recorded_api["calls"][0]["system"] == ""
+
+
 class TestCostTracking:
     def test_cost_logged_with_known_model_pricing(self, recorded_api, tmp_path, fake_message):
         recorded_api["message"] = fake_message(input_tokens=1_000_000, output_tokens=0)
@@ -114,6 +140,25 @@ class TestCostTracking:
         api.call_claude("a", model="claude-nonexistent-model")
         api.call_claude("b", model="claude-nonexistent-model")
         assert capsys.readouterr().err.count("not in shared/api.py _PRICING") == 1
+
+    def test_cache_tokens_priced_at_write_and_read_rates(self, recorded_api, tmp_path, fake_message):
+        # Haiku input is $1.00/MTok: cache writes bill 1.25x, reads 0.1x.
+        recorded_api["message"] = fake_message(
+            input_tokens=0, output_tokens=0,
+            cache_creation_input_tokens=1_000_000, cache_read_input_tokens=1_000_000,
+        )
+        api.call_claude("hi", model="claude-haiku-4-5-20251001")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert record["cost_usd"] == pytest.approx(1.25 + 0.10)
+        assert record["cache_creation_input_tokens"] == 1_000_000
+        assert record["cache_read_input_tokens"] == 1_000_000
+
+    def test_cache_fields_absent_from_log_when_unused(self, recorded_api, tmp_path, fake_message):
+        recorded_api["message"] = fake_message(input_tokens=10, output_tokens=5)
+        api.call_claude("hi", model="claude-haiku-4-5-20251001")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert "cache_creation_input_tokens" not in record
+        assert "cache_read_input_tokens" not in record
 
     def test_get_total_cost_sums_all_calls(self, recorded_api, fake_message):
         recorded_api["message"] = fake_message(input_tokens=1_000_000, output_tokens=1_000_000)
