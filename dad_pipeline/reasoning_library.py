@@ -103,11 +103,13 @@ def format_entries(library: dict, ids: list[str]) -> str:
         e = by_id.get(eid)
         if not e:
             continue
+        # .get(): legacy snapshots (pre-CSV library formats) may lack fields —
+        # render what exists rather than crashing the viewer's lineage page.
         blocks.append(
             f"[{e['id']}] {_claim(e)}\n"
-            f"Reasoning: {e['reasoning']}\n"
-            f"Crux: {e['crux']}\n"
-            f"Transferable move: {e['transferable_move']}"
+            f"Reasoning: {e.get('reasoning', '')}\n"
+            f"Crux: {e.get('crux', '')}\n"
+            f"Transferable move: {e.get('transferable_move', '')}"
         )
     return "\n\n".join(blocks)
 

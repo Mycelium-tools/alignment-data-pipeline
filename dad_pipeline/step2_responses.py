@@ -121,8 +121,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             )
             record = None
             for attempt in range(1, MAX_SCOPE_ATTEMPTS + 1):
-                raw = api.call_claude(user_message=scope_prompt)
-                parsed = _parse_scope(raw)
+                raw, stop_reason = api.call_claude(
+                    user_message=scope_prompt, return_stop_reason=True)
+                # A max_tokens-truncated scope may still parse (the brace-salvage
+                # path) but is missing content — count it as an unusable attempt.
+                parsed = {} if stop_reason == "max_tokens" else _parse_scope(raw)
                 if _valid_scope(parsed):
                     record = {"prompt_id": pid, "scope": parsed}
                     break
@@ -152,14 +155,24 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
 
             suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
             print(f"  Generating response for {pid}{suffix}...")
-            response = api.call_claude(
+            response, stop_reason = api.call_claude(
                 user_message=utils.load_prompt(
                     prompts_dir / "step2_respond.txt",
                     library_block=library_block,
                     scope_block=format_scope(scope),
                     user_message=d["user_message"],
                 ),
+                return_stop_reason=True,
             )
+            response = response.strip()
+
+            # A truncated or empty draft must never feed the rewrite step. Skip
+            # without checkpointing so a later --resume retries it (same guard
+            # as step 3).
+            if not response or stop_reason == "max_tokens":
+                why = "truncated at max_tokens" if stop_reason == "max_tokens" else "empty"
+                print(f"    Skipping {pid}{suffix}: draft {why} — not written, will retry on resume.")
+                continue
 
             record = {
                 "response_id": str(uuid.uuid4()),

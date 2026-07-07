@@ -13,6 +13,7 @@ Rate the pairs afterwards with:  streamlit run pref_pipeline/rate.py
 
 import argparse
 import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -86,7 +87,9 @@ def main() -> None:
 
     config = utils.load_config(args.config)
     root = Path(__file__).parent.parent
-    runs_root = root / "outputs" / "pref" / "runs"
+    # PIPELINE_OUTPUT_ROOT redirects all run output (used by the test suite)
+    outputs_root = Path(os.environ.get("PIPELINE_OUTPUT_ROOT", root / "outputs"))
+    runs_root = outputs_root / "pref" / "runs"
 
     prompts_path = args.prompts or (config.get("pref") or {}).get("prompts_path")
     if not prompts_path:
@@ -118,14 +121,19 @@ def main() -> None:
 
     pairs_dir = utils.ensure_dir(run_dir / "pairs")
     pairs_path = pairs_dir / "pairs.jsonl"
+    # Per-arm responses persist here as they succeed, so a failure on one arm
+    # never discards (or re-bills on resume) its sibling's paid response.
+    arm_cache_path = pairs_dir / "arm_responses.jsonl"
     checkpoint = utils.Checkpoint(pairs_dir / "_checkpoint.json")
     done_ids = {r["pair_id"] for r in utils.load_jsonl(pairs_path)}
+    arm_cache = {(r["pair_id"], r["arm"]): r["response"]
+                 for r in utils.load_jsonl(arm_cache_path)}
 
     print(f"=== Preference pipeline — run {run_dir.name} ===")
     print(f"Prompts: {len(prompts)} from {prompts_path}")
     print(f"Arms: a={arms['a']['name']}, b={arms['b']['name']}")
 
-    generated = 0
+    generated = failed = 0
     for p in prompts:
         pair_id = f"pair_{p['prompt_id']}"
         if pair_id in done_ids or checkpoint.is_done(pair_id):
@@ -134,13 +142,37 @@ def main() -> None:
         print(f"  Generating pair for {p['prompt_id'][:40]}...")
         responses = {}
         for key in ("a", "b"):
+            if (pair_id, key) in arm_cache:
+                responses[key] = arm_cache[(pair_id, key)]
+                continue
             arm = arms[key]
-            responses[key] = api.call_claude(
-                user_message=p["user_message"],
-                system_prompt=arm.get("system_prompt") or "",
-                model=arm.get("model"),
-                max_tokens=arm.get("max_tokens"),
-            ).strip()
+            try:
+                text, stop_reason = api.call_claude(
+                    user_message=p["user_message"],
+                    system_prompt=arm.get("system_prompt") or "",
+                    model=arm.get("model"),
+                    max_tokens=arm.get("max_tokens"),
+                    return_stop_reason=True,
+                )
+            except Exception as e:  # keep the sibling arm's paid work; move on
+                print(f"    Arm {key} ({arm['name']}) failed for {pair_id}: {e} — "
+                      "pair deferred; --resume will retry only this arm.")
+                failed += 1
+                break
+            text = text.strip()
+            # A truncated or empty response must not become an A/B candidate.
+            if not text or stop_reason == "max_tokens":
+                why = "truncated at max_tokens" if stop_reason == "max_tokens" else "empty"
+                print(f"    Arm {key} ({arm['name']}) {why} for {pair_id} — "
+                      "pair deferred; --resume will retry only this arm.")
+                failed += 1
+                break
+            responses[key] = text
+            arm_cache[(pair_id, key)] = text
+            utils.append_jsonl({"pair_id": pair_id, "arm": key, "response": text},
+                               arm_cache_path)
+        if len(responses) < 2:
+            continue
 
         record = {
             "pair_id": pair_id,
@@ -157,6 +189,9 @@ def main() -> None:
         generated += 1
 
     print(f"  Generated {generated} new pairs ({len(done_ids)} total) in {pairs_path}")
+    if failed:
+        print(f"  {failed} pair(s) deferred on a failed/unusable arm — rerun with --resume "
+              "to retry just the missing arms.")
     print(f"Total API cost this session: ${api.get_total_cost():.4f}")
     print("\nNext: streamlit run pref_pipeline/rate.py")
 

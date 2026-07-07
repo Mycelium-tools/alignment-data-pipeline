@@ -156,7 +156,7 @@ def call_claude(
         return_stop_reason is True.
     """
     client = _get_client()
-    resolved_model = model or _config.get("model", "claude-sonnet-4-6")
+    resolved_model = model or _config.get("model", "claude-sonnet-5")
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
 
     full_system = system_prompt

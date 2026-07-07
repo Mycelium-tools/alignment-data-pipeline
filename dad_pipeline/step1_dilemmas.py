@@ -666,8 +666,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     if not draft_template.exists():
         raise SystemExit(f"Draft template not found at {draft_template} — the DAD pipeline cannot run without it.")
 
-    # Step 1c (optional): review-and-rewrite each draft. Off by default.
-    refine_enabled = bool(cfg.get("refine", False))
+    # Step 1c: review-and-rewrite each draft. On by default (matches config.yaml
+    # and CLAUDE.md); disable with dad.dilemmas.refine: false.
+    refine_enabled = bool(cfg.get("refine", True))
     if refine_enabled and not (prompts_dir / "step1_refine.txt").exists():
         raise SystemExit("dad.dilemmas.refine is on but prompts/dad/step1_refine.txt is missing.")
 

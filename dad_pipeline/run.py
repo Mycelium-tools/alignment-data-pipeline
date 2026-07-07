@@ -2,10 +2,10 @@
 """DAD pipeline orchestrator. Runs steps 1-3 with checkpointing.
 
 Steps: 1 dilemma prompts (1a scenario generation: stratified scenarios sampled
-per example; 1b first attempt: drafted to fit each scenario) → 2 responses
-reasoned from the animal-ethics reasoning library (tag tensions → retrieve
-principles → generate two-sided) → 3 rewrite against the distilled constitution
-principles (the alignment-critical pass).
+per example; 1b first attempt drafted to fit each scenario; 1c latent-welfare
+rewrite) → 2 responses (2a scope the case from the user's message; 2b respond
+over the scope with the full reasoning library embedded) → 3 rewrite against
+the distilled constitution principles (the alignment-critical pass).
 """
 
 import argparse
@@ -27,12 +27,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the DAD pipeline.")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoints.")
-    parser.add_argument("--step", type=int, default=1, help="Start from this step (1-3).")
-    parser.add_argument("--stop-after", type=int, default=3, dest="stop_after",
+    parser.add_argument("--step", type=int, default=1, choices=(1, 2, 3),
+                        help="Start from this step (1-3).")
+    parser.add_argument("--stop-after", type=int, default=3, dest="stop_after", choices=(1, 2, 3),
                         help="Stop after this step (1-3); e.g. --stop-after 1 runs only prompt generation.")
     parser.add_argument("--label", default="dev", help="Run label, e.g. dev or full-scale.")
     parser.add_argument("--run-id", default=None, help="Run to resume (with --resume; defaults to latest).")
     args = parser.parse_args()
+    if args.stop_after < args.step:
+        parser.error(f"--stop-after {args.stop_after} is before --step {args.step} — nothing would run.")
 
     config = utils.load_config(args.config)
 

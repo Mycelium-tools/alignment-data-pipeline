@@ -116,6 +116,17 @@ class TestStep1Run:
         assert len(examples) == 1
         assert "direction" in examples[0]["scenario_deviations"]
 
+    def test_resume_makes_no_calls(self, tiny_config, prompts_dad, tmp_path, stub_claude):
+        # Step 1 has no Checkpoint object — it resumes by re-reading its own
+        # append-only jsonl files. A completed run must cost zero on re-run.
+        stub_claude(_dad_step1_dispatch)
+        step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
+
+        calls = stub_claude([])
+        examples = step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
+        assert calls == []
+        assert len(examples) == 2
+
     def test_seed_import_rejects_duplicate_ids(self, tiny_config, prompts_dad, tmp_path):
         seed_file = tmp_path / "seeds.jsonl"
         rows = [{"id": "AW-0001", "prompt": "p1"}, {"id": "AW-0001", "prompt": "p2"}]
@@ -248,16 +259,30 @@ class TestStep3Run:
         assert "CONSTITUTION PRINCIPLES" in calls[0]["user_message"]
         assert "Direction: Mixed" in calls[0]["user_message"]
 
-    @pytest.mark.parametrize("bad_reply", [("cut off mid-sen", "max_tokens"), ("", "end_turn")],
-                             ids=["truncated", "empty"])
-    def test_truncated_or_empty_rewrite_skips_without_checkpoint(
-        self, tiny_config, prompts_dad, tmp_path, stub_claude, bad_reply
+    def test_capped_rewrite_retries_once_at_higher_budget(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
-        stub_claude([bad_reply])
+        calls = stub_claude([("cut off mid-sen", "max_tokens"), "Rewritten careful answer."])
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", [_response_record()]
+        )
+        assert len(final) == 1
+        assert [c["max_tokens"] for c in calls] == [4000, 8000]
+
+    @pytest.mark.parametrize("bad_replies", [
+        [("cut off", "max_tokens"), ("still cut off", "max_tokens")],  # capped even at 8000
+        [("", "end_turn")],                                            # empty (no retry)
+    ], ids=["truncated", "empty"])
+    def test_unusable_rewrite_skips_without_checkpoint_and_is_logged(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude, bad_replies
+    ):
+        stub_claude(list(bad_replies))
         final = step3_rewrite.run(
             tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", [_response_record()]
         )
         assert final == []
+        failures = utils.load_jsonl(tmp_path / "step3" / "rewrite_failures.jsonl")
+        assert len(failures) == 1 and failures[0]["prompt_id"] == "AW-0001"
 
         # resume retries the same response and succeeds with zero waste
         calls = stub_claude(["Rewritten careful answer."])

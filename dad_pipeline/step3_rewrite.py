@@ -59,13 +59,25 @@ def run(
 
         rewritten, stop_reason = api.call_claude(
             user_message=prompt, max_tokens=4000, return_stop_reason=True)
+        # A legitimately long rewrite can exceed the cap; retry once with a
+        # doubled budget before deferring, so long-form cases aren't silently
+        # re-skipped on every resume.
+        if stop_reason == "max_tokens":
+            print(f"    {resp['prompt_id']}: rewrite hit the 4000-token cap — retrying at 8000.")
+            rewritten, stop_reason = api.call_claude(
+                user_message=prompt, max_tokens=8000, return_stop_reason=True)
         rewritten = rewritten.strip()
 
         # A truncated (max_tokens) or empty rewrite must never become a training
-        # record. Skip it without checkpointing so a later --resume retries it.
+        # record. Skip it without checkpointing so a later --resume retries it,
+        # and log it so repeated failures are visible rather than silent.
         if not rewritten or stop_reason == "max_tokens":
-            why = "truncated at max_tokens" if stop_reason == "max_tokens" else "empty"
+            why = "truncated at max_tokens (even at 8000)" if stop_reason == "max_tokens" else "empty"
             print(f"    Skipping {resp['prompt_id']}: rewrite {why} — not written, will retry on resume.")
+            utils.append_jsonl(
+                {"response_id": rid, "prompt_id": resp["prompt_id"], "reason": why},
+                output_dir / "rewrite_failures.jsonl",
+            )
             continue
 
         record_id = str(uuid.uuid4())

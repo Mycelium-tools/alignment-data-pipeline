@@ -66,7 +66,7 @@ The response side is governed by the reasoning library (`prompts/dad/reasoning_l
 
 Step 3 is the most important: the rewrite pass is where the alignment gain comes from (per the Teaching Claude Why paper). Its anchors are the 14 distilled constitution principles — each with its verbatim constitution quote — plus the example's annotation. The full constitution itself is never sent at generation time; it was the source material for distilling the principles.
 
-Final output: `outputs/dad/runs/<run_id>/final/dad_corpus.jsonl` (also reachable via the `outputs/dad/latest` symlink) — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, injections, and the constitution are stripped.
+Final output: `outputs/dad/runs/<run_id>/final/dad_corpus.jsonl` (also reachable via the `outputs/dad/latest` symlink) — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, scaffolding (scope maps, the reasoning library), and the constitution are stripped.
 
 Run: `python dad_pipeline/run.py --config config.yaml --label dev`
 
