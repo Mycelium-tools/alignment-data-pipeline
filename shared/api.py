@@ -13,9 +13,11 @@ import yaml
 from dotenv import load_dotenv
 from tenacity import (
     retry,
+    retry_all,
     stop_after_attempt,
     wait_exponential,
     retry_if_exception_type,
+    retry_if_not_exception_type,
 )
 
 load_dotenv()
@@ -83,8 +85,20 @@ def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
         f.write(json.dumps(record) + "\n")
 
 
+# Retry transient failures (429, 5xx, overload) but NOT deterministic 4xx
+# client errors — a 400 (exhausted credit balance, malformed request), 401,
+# 403, or 404 fails identically on every attempt, and retrying one used to
+# burn ~5 minutes of exponential backoff per call before surfacing the error.
 @retry(
-    retry=retry_if_exception_type((anthropic.RateLimitError, anthropic.APIStatusError)),
+    retry=retry_all(
+        retry_if_exception_type((anthropic.RateLimitError, anthropic.APIStatusError)),
+        retry_if_not_exception_type((
+            anthropic.BadRequestError,
+            anthropic.AuthenticationError,
+            anthropic.PermissionDeniedError,
+            anthropic.NotFoundError,
+        )),
+    ),
     wait=wait_exponential(multiplier=2, min=4, max=60),
     stop=stop_after_attempt(8),
 )

@@ -7,6 +7,8 @@ import json
 import socket
 from pathlib import Path
 
+import anthropic
+import httpx
 import pytest
 import pytest_socket
 
@@ -83,6 +85,34 @@ class TestCallClaude:
         api.call_claude("hi", model="override", max_tokens=9)
         assert recorded_api["calls"][0]["model"] == "override"
         assert recorded_api["calls"][0]["max_tokens"] == 9
+
+
+class TestRetryPredicate:
+    def test_bad_request_is_not_retried(self, monkeypatch):
+        """A 400 (e.g. exhausted credit balance) is deterministic: it must
+        surface immediately, not after 8 exponential-backoff attempts. This
+        drives the REAL tenacity-wrapped _call_with_retry — safe offline
+        because a non-retryable error never sleeps."""
+        attempts = []
+
+        class FakeMessages:
+            def create(self, **kwargs):
+                attempts.append(1)
+                raise anthropic.BadRequestError(
+                    message="credit balance is too low",
+                    response=httpx.Response(400, request=httpx.Request("POST", "https://api.invalid")),
+                    body=None,
+                )
+
+        class FakeClient:
+            messages = FakeMessages()
+
+        # the autouse guard replaces _call_with_retry; restore the real one
+        import importlib
+        real = importlib.reload(api)._call_with_retry
+        with pytest.raises(anthropic.BadRequestError):
+            real(client=FakeClient(), model="m", max_tokens=5, system="", messages=[])
+        assert len(attempts) == 1  # exactly one attempt, no retries
 
 
 class TestCostTracking:
