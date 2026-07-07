@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from evals import judge
 from shared import api
 from viewer import loader
+from viewer.ui_pages import common
 
 RUBRIC_PATH = judge.DEFAULT_RUBRIC_PATH
 KNOWN_MODELS = [
@@ -89,18 +90,39 @@ def _verdict_table(verdict: dict, aggregate: dict) -> None:
             st.json(meta)
 
 
-def _saved_verdicts(run_dir, record_id: str) -> list[dict]:
-    """Verdict rows for one record from all CLI scoring runs (judge/<version>/verdicts.jsonl)."""
-    rows = []
-    judge_root = Path(run_dir) / "final" / "judge"
-    if judge_root.is_dir():
-        for vfile in sorted(judge_root.glob("*/verdicts.jsonl")):
-            for line in vfile.read_text().splitlines():
-                row = json.loads(line)
-                if row.get("record_id") == record_id:
-                    row["_rubric_dir"] = vfile.parent.name
-                    rows.append(row)
-    return rows
+def _pick_record(run: loader.RunInfo, finals: list[dict]) -> str | None:
+    """Record dropdown with injection filter, seeded from the ?doc= query param.
+    The widget needs a stable key: without one, Streamlit derives its identity from
+    its parameters including `index`, so a query-param-computed index would orphan
+    the user's selection on the next rerun."""
+    audits = {a["record_id"]: a for a in loader.load_stage(run.run_dir, "dad", "step6")}
+    injections = sorted({a.get("injection_used", "") for a in audits.values()
+                         if a.get("injection_used")})
+    inj_filter = st.sidebar.multiselect("Filter by injection", injections,
+                                        placeholder="All injections")
+    options, labels = [], {}
+    for rec in finals:
+        inj = audits.get(rec["record_id"], {}).get("injection_used", "?")
+        if inj_filter and inj not in inj_filter:
+            continue
+        user_msg = rec["messages"][0]["content"] if rec.get("messages") else ""
+        options.append(rec["record_id"])
+        labels[rec["record_id"]] = f"{common.doc_title(user_msg)}   —   {inj}"
+    if not options:
+        st.sidebar.caption("No records match the current filters.")
+        return None
+
+    key = f"judge_doc_{run.run_id}"
+    if st.session_state.get(key) not in options:
+        st.session_state.pop(key, None)  # stale value (e.g. filters changed) — reseed below
+    qp_doc = st.query_params.get("doc")
+    rid = st.sidebar.selectbox(
+        f"Record ({len(options)})", options,
+        index=options.index(qp_doc) if qp_doc in options else 0,
+        format_func=labels.get, key=key,
+    )
+    st.query_params["doc"] = rid
+    return rid
 
 
 def render() -> None:
@@ -116,20 +138,35 @@ def render() -> None:
             st.info("No DAD runs found under outputs/.")
         else:
             run_ids = [r.run_id for r in runs]
-            run_id = st.sidebar.selectbox("Run", run_ids)
+            qp_run = st.query_params.get("run")
+            run_id = st.sidebar.selectbox(
+                "Run", run_ids,
+                index=run_ids.index(qp_run) if qp_run in run_ids else 0,
+                key="judge_run",
+            )
+            st.query_params["pipeline"] = "dad"
+            st.query_params["run"] = run_id
             run = next(r for r in runs if r.run_id == run_id)
             finals = loader.load_final(run.run_dir, "dad")
             if not finals:
                 st.info("This run has no final records.")
             else:
-                labels = {
-                    r["record_id"]: f"{r['record_id'][:8]} — {r['messages'][0]['content'][:80]}"
-                    for r in finals
-                }
-                rid = st.sidebar.selectbox("Record", list(labels), format_func=labels.get)
-                rec = next(r for r in finals if r["record_id"] == rid)
-                messages, record_key = rec["messages"], f"{run_id}/{rid[:8]}"
-                saved = _saved_verdicts(run.run_dir, rid)
+                rid = _pick_record(run, finals)
+                if rid is not None:
+                    rec = next(r for r in finals if r["record_id"] == rid)
+                    messages, record_key = rec["messages"], f"{run_id}/{rid[:8]}"
+                    saved = [row for row in loader.judge_verdicts(run.run_dir)
+                             if row.get("record_id") == rid]
+                    if st.sidebar.button(":material/account_tree: View lineage"):
+                        # Lineage's widgets keep their own session state; seed them
+                        # explicitly or the page opens on its previous selection.
+                        st.session_state["sel_pipeline"] = "dad"
+                        st.session_state["sel_run"] = run_id
+                        st.session_state[f"doc_pick_dad_{run_id}"] = rid
+                        st.query_params["pipeline"] = "dad"
+                        st.query_params["run"] = run_id
+                        st.query_params["doc"] = rid
+                        st.switch_page("ui_pages/lineage.py")
     else:
         pasted = st.sidebar.text_area(
             "Conversation", height=260,
@@ -185,9 +222,10 @@ def render() -> None:
     if saved:
         st.subheader(f"Saved verdicts for this record ({len(saved)})")
         st.caption("Written by evals/score_dad.py — browse past judge output without re-calling the API.")
-        for row in saved:
+        for i, row in enumerate(saved):
+            prompt_tag = f" · prompt {row['prompt_md5'][:8]}" if row.get("prompt_md5") else ""
             for res in row["panel"]["results"]:
-                label = f"{row['_rubric_dir']} · {res['model']}"
+                label = f"{row['_rubric_dir']} · {res['model']}{prompt_tag}"
                 with st.expander(label, expanded=False):
                     if res.get("verdict"):
                         _verdict_table(res["verdict"], res.get("aggregate")
@@ -197,6 +235,13 @@ def render() -> None:
             if row.get("annotation_comparison"):
                 with st.expander(f"{row['_rubric_dir']} · judge vs annotation (7b)"):
                     st.json(row["annotation_comparison"])
+            if row.get("prompt_md5"):
+                pfile = (Path(run.run_dir) / "final" / "judge" / row["_rubric_dir"]
+                         / f"prompt_{row['prompt_md5'][:8]}.txt")
+                if pfile.exists() and st.toggle(
+                        f"Show judge prompt {row['prompt_md5'][:8]} ({row['_rubric_dir']})",
+                        key=f"jp_{record_key}_{i}"):
+                    st.code(pfile.read_text(), language=None, wrap_lines=True)
 
     # -------------------------------------------------------------- run + display
     history = st.session_state.setdefault("judge_history", [])

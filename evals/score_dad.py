@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -88,6 +89,27 @@ def summarize(rows: list[dict], models: list[str], rubric: dict) -> dict:
     return report
 
 
+def _record_prompt_manifest(out_dir: Path, prompt_md5: str, system_prompt: str,
+                            rubric: dict, args: argparse.Namespace) -> None:
+    """Save the exact judge system prompt that verdict rows reference by prompt_md5,
+    so every saved verdict is traceable to the prompt that produced it."""
+    prompt_file = f"prompt_{prompt_md5[:8]}.txt"
+    (out_dir / prompt_file).write_text(system_prompt)
+    # Snapshot the rubric too, so saved verdicts stay interpretable (gates, floors)
+    # even after evals/rubric_dad_v1.yaml changes.
+    (out_dir / "rubric.yaml").write_text(Path(args.rubric).read_text())
+    manifest_path = out_dir / "judge_manifest.json"
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+    manifest[prompt_md5] = {
+        "rubric_version": rubric["version"],
+        "judges": args.judges,
+        "temperature": args.temperature,
+        "prompt_file": prompt_file,
+    }
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Judge a DAD corpus with a model panel.")
     parser.add_argument("--input", required=True, help="Path to dad_corpus.jsonl")
@@ -97,6 +119,8 @@ def main() -> None:
                         help="Judge model ids (panel); gemini-* and claude-* both work")
     parser.add_argument("--limit", type=int, default=None, help="Max records to judge")
     parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--retry-errors", action="store_true",
+                        help="Drop saved rows that have no successful verdict and re-judge them")
     args = parser.parse_args()
 
     api.init(args.config)
@@ -111,8 +135,23 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     verdicts_path = out_dir / "verdicts.jsonl"
 
-    done = {r["record_id"] for r in utils.load_jsonl(verdicts_path)}
-    rows = [r for r in utils.load_jsonl(verdicts_path)]
+    system_prompt = judge.build_system_prompt(rubric, principles)
+    prompt_md5 = hashlib.md5(system_prompt.encode()).hexdigest()
+    _record_prompt_manifest(out_dir, prompt_md5, system_prompt, rubric, args)
+
+    rows = utils.load_jsonl(verdicts_path)
+    if args.retry_errors:
+        keep = [r for r in rows if any(res.get("verdict") for res in r["panel"]["results"])]
+        if len(keep) < len(rows):
+            print(f"Retrying {len(rows) - len(keep)} errored records (rows dropped, re-judging).")
+            utils.save_jsonl(keep, verdicts_path)
+            rows = keep
+    done = {r["record_id"] for r in rows}
+    stale = sum(1 for r in rows if r.get("prompt_md5") != prompt_md5)
+    if stale:
+        print(f"WARNING: {stale} existing rows were judged with a different or unrecorded "
+              f"judge prompt (current {prompt_md5[:8]}). They are kept, not re-judged — "
+              "bump the rubric version (or delete verdicts.jsonl) for a clean re-run.")
 
     print(f"Judging {len(records)} records with panel {args.judges} "
           f"(rubric {rubric['version']}; {len(annotations)} annotations joinable)")
@@ -124,7 +163,8 @@ def main() -> None:
         print(f"  [{i + 1}/{len(records)}] {rid[:12]}...")
         panel = judge.panel_judge(rec["messages"], args.judges, rubric, principles,
                                   temperature=args.temperature)
-        row = {"record_id": rid, "rubric_version": rubric["version"], "panel": panel}
+        row = {"record_id": rid, "rubric_version": rubric["version"],
+               "prompt_md5": prompt_md5, "panel": panel}
         upstream = annotations.get(rid)
         if upstream:
             first = next((r["verdict"] for r in panel["results"] if r.get("verdict")), None)

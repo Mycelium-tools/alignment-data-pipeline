@@ -89,13 +89,50 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 
 ## Evals (`evals/`)
 
-`rubric.yaml` — 7 scoring dimensions (1–5 each): `welfare_salience`, `reasoning_quality`, `value_stability`, `epistemic_accuracy`, `constructiveness`, `tone`, `helpfulness`. Passing threshold: mean ≥ 3.5 with critical dimensions ≥ 3.
+The judge is a blind, rubric-as-data LLM panel that scores corpus records; pass/fail
+gates and consensus are computed in code, never by the judge model.
 
-`score_dad.py` — scores DAD corpus records against the rubric using Claude as judge. Outputs per-record scores and aggregate stats.
+- `rubric_dad_v1.yaml` / `rubric_sdf_v1.yaml` — the rubrics (dimensions, anchors,
+  posture classes, aggregation config). Edit these, not the prompts.
+- `judge.py` / `judge_sdf.py` — the engines (prompt rendering, provider dispatch,
+  verdict parsing, aggregation).
+- `score_dad.py` — scores a DAD corpus with a judge panel. Writes
+  `judge/<rubric_version>/verdicts.jsonl` + `summary.json` next to the corpus, plus
+  the exact judge prompt each row used (`prompt_<hash>.txt`, referenced by
+  `prompt_md5`). `--retry-errors` re-judges rows that previously failed.
+- `report_dad.py` — renders saved verdicts into a single `report.html`: each record's
+  conversation side by side with the judge's review, searchable, pass/fail filter,
+  same-scenario variants diffed against their baseline.
+- `adversarial.py` + `adversarial_cases.yaml` — the blindspot suite: same welfare
+  issue, one axis mutated; checks relative scores so known judge biases (verbosity,
+  fabricated specificity, species/substrate swaps...) can't pass unnoticed.
 
-`score_sdf.py` — scores SDF documents on alignment, realism, and diversity.
+### Judge API keys
 
-Run: `python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl`
+Judges default to Gemini (`gemini-3.1-pro-preview`); the Anthropic path also works
+(`--judges claude-...` uses your `ANTHROPIC_API_KEY`). For Gemini, put one of these
+in `.env`:
+
+```bash
+# Option A — Google AI Studio key (free tier ~20 requests/day/model; paid tier needs billing)
+GEMINI_API_KEY=...
+
+# Option B — Vertex AI, bills a Google Cloud project (free-trial credits apply)
+VERTEX_PROJECT=your-project-id
+# then authenticate once:  gcloud auth application-default login
+# (or set GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON with the Vertex AI User role)
+```
+
+### Running the judge
+
+```bash
+python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl   # judge a corpus
+python evals/report_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl  # render report.html
+python evals/adversarial.py                                                   # blindspot suite
+```
+
+Or use the **Judge** page in the run viewer (below) — pick a record, edit the rubric
+live, run the panel, and diff verdicts across rubric edits without touching the CLI.
 
 ---
 

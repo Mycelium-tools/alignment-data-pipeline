@@ -1,5 +1,6 @@
 anthropic>=0.96.0
 httpx  # direct dep: Gemini judge backend in evals/judge.py
+google-auth  # OAuth for the Vertex AI judge backend (VERTEX_PROJECT in .env)
 pandas
 pyyaml
 python-dotenv

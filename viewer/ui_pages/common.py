@@ -45,6 +45,15 @@ def pick_run(sidebar: bool = True) -> loader.RunInfo | None:
     return next(r for r in pipeline_runs if r.run_id == run_id)
 
 
+def doc_title(content: str) -> str:
+    """First meaningful line of a document/message, cleaned of markdown markers."""
+    for line in (content or "").splitlines():
+        line = line.strip().lstrip("#").strip().strip("*").strip()
+        if line:
+            return line[:90]
+    return "(untitled)"
+
+
 def run_provenance_note(run: loader.RunInfo) -> None:
     """One-line provenance caveat, shown at most once per page."""
     if not run.has_snapshot:

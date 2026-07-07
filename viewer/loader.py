@@ -33,6 +33,7 @@ STAGE_FILES = {
         "step4": "step4/refined_prompts.jsonl",
         "step5": "step5/responses.jsonl",
         "step6": "step6/rewrites.jsonl",
+        "step7": "step7/pushbacks.jsonl",
         "final": "final/dad_corpus.jsonl",
     },
 }
@@ -52,6 +53,7 @@ class RunInfo:
     config: dict
     counts: dict[str, int] = field(default_factory=dict)
     pass_rate: float | None = None
+    judge_pass_rate: float | None = None
     total_cost: float = 0.0
 
 
@@ -103,6 +105,31 @@ def _pass_rate(run_dir: Path, pipeline: str) -> float | None:
     return sum(1 for r in responses if r.get("kept")) / len(responses)
 
 
+def judge_verdicts(run_dir: Path) -> list[dict]:
+    """All saved judge verdict rows for a run (written by evals/score_dad.py to
+    final/judge/<rubric_version>/verdicts.jsonl), tagged with their rubric dir."""
+    rows = []
+    judge_root = Path(run_dir) / "final" / "judge"
+    if judge_root.is_dir():
+        for vfile in sorted(judge_root.glob("*/verdicts.jsonl")):
+            for row in _load_jsonl(vfile):
+                rows.append({**row, "_rubric_dir": vfile.parent.name})
+    return rows
+
+
+def judge_pass_rate(run_dir: Path) -> float | None:
+    """Consensus pass rate from the newest rubric version's judge summary, if scored."""
+    summaries = sorted((Path(run_dir) / "final" / "judge").glob("*/summary.json"))
+    if not summaries:
+        return None
+    try:
+        with open(summaries[-1]) as f:
+            report = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return (report.get("consensus") or {}).get("pass_rate")
+
+
 def list_runs(outputs_root: Path = OUTPUTS_ROOT) -> list[RunInfo]:
     """All runs across both pipelines, newest first. A run is a non-symlink
     directory under outputs/<pipeline>/runs/ containing run_manifest.json."""
@@ -134,6 +161,7 @@ def list_runs(outputs_root: Path = OUTPUTS_ROOT) -> list[RunInfo]:
                 config=manifest.get("config", {}),
                 counts=counts,
                 pass_rate=_pass_rate(d, pipeline),
+                judge_pass_rate=judge_pass_rate(d),
                 total_cost=total_cost(d),
             ))
     return runs
@@ -193,6 +221,7 @@ def dad_lineage(run_dir: Path, record_id: str) -> dict:
         "refined": refined.get(audit.get("prompt_id")),
         "response": responses.get(audit.get("response_id")),
         "rewrite": audit,
+        "pushback": _index(load_stage(run_dir, "dad", "step7"), "record_id").get(record_id),
         "final": _index(load_final(run_dir, "dad"), "record_id").get(record_id),
     }
 

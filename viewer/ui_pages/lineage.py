@@ -26,13 +26,7 @@ finals = loader.load_final(run.run_dir, run.pipeline)
 id_key = "doc_id" if run.pipeline == "sdf" else "record_id"
 ids = [r[id_key] for r in finals]
 
-def _doc_title(content: str) -> str:
-    """First meaningful line of the document, cleaned of markdown markers."""
-    for line in (content or "").splitlines():
-        line = line.strip().lstrip("#").strip().strip("*").strip()
-        if line:
-            return line[:90]
-    return "(untitled)"
+_doc_title = common.doc_title
 
 
 def _pick_document(options: list[str], labels: dict[str, str], noun: str) -> str | None:
@@ -169,6 +163,15 @@ else:
         st.subheader(f"Record {selected_id[:8]}")
         st.caption(f"scenario `{audit.get('scenario_id')}` · injection `{audit.get('injection_used')}` "
                    f"· principle {audit.get('principle_id')}")
+        if st.button(":material/gavel: Judge this record"):
+            # The judge page's widgets keep their own session state; seed them
+            # explicitly or the page opens on its previous selection.
+            st.session_state["judge_mode"] = "DAD"
+            st.session_state["judge_run"] = run.run_id
+            st.session_state[f"judge_doc_{run.run_id}"] = selected_id
+            st.query_params["run"] = run.run_id
+            st.query_params["doc"] = selected_id
+            st.switch_page("ui_pages/judge.py")
         with st.container(height=PANEL_HEIGHT):
             for msg in (lin.get("final") or {}).get("messages", []):
                 st.markdown(f"**{msg['role']}**")
@@ -216,6 +219,13 @@ else:
                 common.show_diff(audit["draft_response"], audit["rewritten_response"],
                                  "draft response", "constitutional rewrite", key="s6")
             stage_expander("Step 6 — constitutional rewrite (critical step)", "step6", lin, step6_output)
+
+            if lin.get("pushback"):
+                pb = lin["pushback"]
+                stage_expander("Step 7 — pushback turn", "step7", lin,
+                               lambda: st.code(pb["pushback_message"], language=None, wrap_lines=True))
+                stage_expander("Step 7 — response under pushback", "step7_response", lin,
+                               lambda: st.code(pb["pushback_response"], language=None, wrap_lines=True))
 
 # --- Run-scoped template browser ---
 st.divider()

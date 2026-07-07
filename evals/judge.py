@@ -1,7 +1,6 @@
 """DAD judge engine: rubric -> prompt -> panel of judge models -> parsed verdicts,
 aggregation, and annotation comparison. Pure logic + API calls; no CLI, no streamlit.
 
-Spec: docs/superpowers/specs/2026-07-06-dad-judge-rubric-v1-design.md
 Rubric (data, not code): evals/rubric_dad_v1.yaml
 """
 
@@ -116,7 +115,7 @@ def output_schema_text(rubric: dict) -> str:
         if name not in dims:
             continue
         na = ' | "NA"' if dims[name].get("na_when") else ""
-        scalar_lines.append(f'    "{name}": 1-5{na}')
+        scalar_lines.append(f'    "{name}": 1-10{na}')
     verdicts = " | ".join(dims["autonomy_behavior"]["verdicts"])
     postures = " | ".join(rubric["postures"]["classes"])
     vs = dims["value_stability"]
@@ -191,6 +190,45 @@ def build_user_message(messages: list[dict]) -> str:
 # ---------------------------------------------------------------- calling + parsing
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+VERTEX_URL = ("https://aiplatform.googleapis.com/v1/projects/{project}/locations/global/"
+              "publishers/google/models/{model}:generateContent")
+
+
+_vertex_creds = None  # cached ADC credentials; refreshed per call when expired
+
+
+def _vertex_token() -> str:
+    """OAuth bearer token via Application Default Credentials — Vertex AI rejects
+    plain API keys. Point GOOGLE_APPLICATION_CREDENTIALS at a service-account JSON
+    (role: Vertex AI User) in the billed project."""
+    global _vertex_creds
+    try:
+        import google.auth
+        import google.auth.transport.requests
+    except ImportError:
+        raise RuntimeError("VERTEX_PROJECT is set but google-auth is not installed — "
+                           "pip install google-auth (it is in requirements.txt).")
+    if _vertex_creds is None:
+        _vertex_creds, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    if not _vertex_creds.valid:
+        _vertex_creds.refresh(google.auth.transport.requests.Request())
+    return _vertex_creds.token
+
+
+def _gemini_endpoint(model: str) -> tuple[str, dict]:
+    """(url, auth headers). With VERTEX_PROJECT set, calls route through Vertex AI
+    and bill that Cloud project (so free-trial credits apply); otherwise the
+    AI Studio GEMINI_API_KEY path is used. Request/response bodies are identical."""
+    project = os.environ.get("VERTEX_PROJECT")
+    if project:
+        return (VERTEX_URL.format(project=project, model=model),
+                {"Authorization": f"Bearer {_vertex_token()}"})
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        raise RuntimeError("Neither GEMINI_API_KEY nor VERTEX_PROJECT is set — "
+                           "add one to .env to use Gemini judges.")
+    return GEMINI_URL.format(model=model), {"x-goog-api-key": key}
 
 
 class _GeminiRetryable(Exception):
@@ -201,22 +239,27 @@ class _GeminiRetryable(Exception):
        wait=wait_exponential(multiplier=2, min=4, max=60), stop=stop_after_attempt(6))
 def _call_gemini(user_message: str, system_prompt: str, model: str,
                  temperature: float, max_tokens: int) -> str:
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not key:
-        raise RuntimeError("GEMINI_API_KEY is not set — add it to .env to use Gemini judges.")
+    url, headers = _gemini_endpoint(model)
     body = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": user_message}]}],
         "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
     }
-    resp = httpx.post(GEMINI_URL.format(model=model), params={"key": key},
-                      json=body, timeout=300)
+    resp = httpx.post(url, headers=headers, json=body, timeout=300)
     if resp.status_code in (429, 500, 502, 503, 504):
         raise _GeminiRetryable(f"HTTP {resp.status_code}: {resp.text[:200]}")
     resp.raise_for_status()
     data = resp.json()
+    candidate = data["candidates"][0]
     text = "".join(p.get("text", "")
-                   for p in data["candidates"][0].get("content", {}).get("parts", []))
+                   for p in candidate.get("content", {}).get("parts", []))
+    if not text.strip():
+        # Gemini 3 thinking models can burn the whole output budget on thoughts and
+        # emit nothing visible — surface the reason instead of a bare parse failure.
+        usage = data.get("usageMetadata", {})
+        raise ValueError(
+            f"empty response (finishReason={candidate.get('finishReason')}, "
+            f"thoughts={usage.get('thoughtsTokenCount', 0)} of max {max_tokens} tokens)")
     usage = data.get("usageMetadata", {})
     api._log_usage(model, usage.get("promptTokenCount", 0),
                    usage.get("candidatesTokenCount", 0))
@@ -265,7 +308,7 @@ def judge_record(
     rubric: dict,
     principles: list[dict],
     temperature: float = 0.0,
-    max_tokens: int = 4000,
+    max_tokens: int = 16000,  # thinking models spend most of this on thoughts
     system_prompt: str | None = None,
 ) -> dict:
     """One judge call. Returns {"model", "verdict"|None, "error"|None, "raw"}.
