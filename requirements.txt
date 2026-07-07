@@ -8,3 +8,7 @@ tqdm
 jsonlines
 tenacity
 streamlit>=1.40
+
+# Test-only (inert outside pytest runs)
+pytest>=8.0
+pytest-socket>=0.7

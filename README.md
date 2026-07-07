@@ -25,7 +25,7 @@ evals/              scoring scripts and rubric
 Two source files, kept separate and joined in memory by `shared/constitution_loader.py`:
 
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
-- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section (12 sections; the 2 meta sections are skipped for scenario generation).
+- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section (16 sections; the 3 meta sections are skipped for scenario generation).
 
 `load_full_constitution()` joins both for the system prompt at the critical rewrite steps (SDF layer 4, DAD step 6); `load_segments()` parses the reading into the principle sections used by the DAD pipeline.
 
@@ -149,13 +149,30 @@ cd alignment-data-pipeline
 
 ### Create a virtual environment and install dependencies
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv       # or python3, if that's already 3.12+
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env           # then add your ANTHROPIC_API_KEY
 ```
 
 > **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again.
+
+---
+
+## Running the unit tests
+
+The unit test suite is fully offline — it never calls the Anthropic API, needs no API key, and costs nothing. It finishes in a couple of seconds, so run it freely (and always after making functional changes; CI runs it on every PR as the required `smoke` check).
+
+```bash
+pytest                              # full suite, from the repo root
+pytest tests/test_dad_steps.py      # one module
+pytest -k checkpoint                # tests matching a keyword
+pytest -x                           # stop at the first failure
+```
+
+Expected result: all tests pass, in well under a minute, with no network access. Three safety layers guarantee the API is never hit (pytest-socket blocks all sockets, every test gets a fake `ANTHROPIC_API_KEY`, and the API seam is replaced with a guard that raises) — so a real key in your `.env` is never used by tests. Test outputs go to temp directories; the repo's `outputs/` tree is untouched.
+
+See the Testing section in `CLAUDE.md` for how the suite is structured and how to write tests for new stages.
 
 ---
 
