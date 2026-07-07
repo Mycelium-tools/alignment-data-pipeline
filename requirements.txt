@@ -8,6 +8,7 @@ tqdm
 jsonlines
 tenacity
 streamlit>=1.40
+faker  # seeded fictional people/org name pools (shared/entity_pools.py)
 
 # Test-only (inert outside pytest runs)
 pytest>=8.0

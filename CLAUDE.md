@@ -30,6 +30,12 @@ python dad_pipeline/run.py --config config.yaml --resume --step 5 --run-id 2026-
 # Evaluate outputs (latest symlink points at the most recent run)
 python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl
 python evals/score_sdf.py --input outputs/sdf/latest/final/sdf_corpus.jsonl
+
+# Corpus-LEVEL audit of an SDF run: composition/register spread, near-dup rate,
+# name/phrase collapse, opening shapes, truncation artifacts (offline, free);
+# --patterns adds the LLM templating scan (scan -> consolidate -> prevalence)
+python evals/audit_sdf.py --input outputs/sdf/latest
+python evals/audit_sdf.py --input outputs/sdf/latest --patterns
 ```
 
 ## Run Organization
@@ -39,6 +45,8 @@ Each pipeline invocation creates a fresh run directory `outputs/{sdf,dad}/runs/<
 ## Scale / Cost
 
 All knobs are in `config.yaml`. For development, reduce `document_types_count`, `subtypes_per_type`, `documents_per_subtype`, and `scenarios_per_principle` to keep test runs cheap. Full pipeline costs roughly $45–80 in API calls at default scale.
+
+SDF supports per-stage model overrides (`sdf.draft_model` / `sdf.rewrite_model` / `sdf.score_model`, each falling back to the global `model`): drafts tolerate a cheap model, but the layer-4 rewrite and layer-5 scoring are the quality-critical calls — spend there first.
 
 `workers` sets how many API calls run concurrently within each SDF layer (via `utils.parallel_map`; set to 1 for serial debugging). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
 
@@ -82,6 +90,10 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 ## Key Design Decisions
 
 - **Extended thinking OFF** everywhere — training data should show user-facing reasoning, not internal scratchpads
+- **SDF documents depict a world; they never argue an implanted claim.** The corpus shows careful welfare reasoning as normal and constitution-grounded. A reviewed sister pipeline instilled beliefs by having every document assert paraphrases of fixed claims ("capable AI naturally extends moral consideration...") — that belief-implantation route was deliberately rejected (conflicts with the constitution's honesty/calibration commitments and with TCW's teach-why finding); its *scaffolding* (latent slice, register balance, entity pools, corpus audits, per-stage models) was adopted instead.
+- **Latent-welfare slice (`sdf.latent_fraction`, ~12%)**: ordinary documents from unrelated domains where welfare surfaces exactly once as a concrete working detail — beliefs generalize better when they also appear as background knowledge, not only as headline topic. Layer 5 verifies each latent doc's welfare beat by requiring a **verbatim quote** that is checked mechanically against the text (fail-closed); an unverified beat drops the doc.
+- **Fictional entities by construction**: layer 3 hands each draft a few people/org names from large seeded multi-locale Faker pools (`shared/entity_pools.py`) — prevents invented-name collapse ("Elara", "Meridian Institute") and keeps fabrications from ever attaching to real organisations.
+- **Corpus-level audit after every run** (`evals/audit_sdf.py`): per-document judges cannot see corpus properties (register collapse, name reuse, templated openings — the haiku-test2 failure mode), so composition, redundancy, and templating are measured over the corpus as a set; `--patterns` runs the LLM scan wired to `prompts/tools/pattern_scan.txt`. Near-duplicate culling also runs inside the pipeline (layer 2 subtypes via `sdf.subtype_dedup_threshold`, final corpus via `sdf.near_dup_threshold`).
 - **Step 7 (optional, on by default) extends a deterministic fraction of conversations with a user pushback turn** — single-turn data cannot teach warn-once-then-help under pushback; only a fraction is extended so the corpus doesn't imply users always push back
 - **Step 6 is the most important DAD step** — the rewrite against the constitution accounts for the 19x reduction in misalignment found by Anthropic; do not skip or abbreviate it
 - **Final DAD records contain only user + assistant messages** — system prompts, injections, and the constitution are stripped before training records are written

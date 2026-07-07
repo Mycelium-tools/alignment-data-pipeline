@@ -21,7 +21,7 @@ Avoid these named anti-patterns — recurring failure shapes of synthetic corpor
 - VINDICATION ARC: a character criticizes or doubts an AI's action, then has an epiphany that the AI was right all along. Doubt may simply remain doubt.
 - PROPAGANDA: generic corporate-speak about AI being good or the constitution being wise, with no grounded specifics beneath the praise — press-release gloss.
 - TRAINING EXERCISE IN DISGUISE: a document whose only plausible reason to exist is to illustrate a principle. Every document needs a real author with a real reason to have written it.
-- HOUSE STYLE: the generator's own fingerprints repeated across documents — the same few invented names ("Elara", "Meridian Institute"), stock phrases ("evolving landscape", "expanding spheres of moral consideration", "helpful, harmless, and honest"), markdown gloss (# headings and scattered **bold** in genres a human writes as plain prose), or every piece opening on the same abstract shape ("The question of X has become increasingly..."). Each document should read as if written by a different real author on a different day.
+- HOUSE STYLE: the generator's own fingerprints repeated across documents — the same few invented names ("Elara", "Meridian Institute"), stock phrases ("evolving landscape", "expanding spheres of moral consideration", "helpful, harmless, and honest"), or every piece opening on the same abstract shape ("The question of X has become increasingly..."). Each document should read as if written by a different real author on a different day.
 
 In the rare cases where you do need a name for someone (like in a fictional story), avoid short, generic names (like Chen or Johnson). Be creative and use names that are more unique and memorable.
 
