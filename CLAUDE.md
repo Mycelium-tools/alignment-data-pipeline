@@ -102,12 +102,3 @@ outputs/sdf/        intermediate + final SDF outputs
 outputs/dad/        intermediate + final DAD outputs
 evals/              scoring scripts and rubric
 ```
-
-## Responding to PR reviews
-
-When addressing review comments on a PR (e.g. from the Claude review bot), the default workflow is:
-
-- **Never post comments or replies on the PR.** Don't reply to review threads, don't leave review comments, don't approve/request-changes.
-- **For each comment, either apply it or ask — don't split the difference.** If you agree with the requested change, apply it in the working tree. If you disagree, or the change is dubious / ambiguous / a design trade-off (e.g. it conflicts with a documented design decision or a recovery workflow), ask the PR author for input instead of guessing.
-- **Group the outcome**: apply the clear ones, then surface the ones needing a decision in a single question to the author.
-- **Editing the PR description**: `gh pr edit` fails on this repo (it queries deprecated Projects-classic cards and exits 1). Use the REST API instead: `gh api --method PATCH repos/<owner>/<repo>/pulls/<n> -F body=@<file>`.

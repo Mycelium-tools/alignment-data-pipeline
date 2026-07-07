@@ -125,7 +125,20 @@ cp .env.example .env           # then add your ANTHROPIC_API_KEY
 The pipeline supports two backends, selected by the `backend` key in `config.yaml`:
 
 - **`backend: api`** (default) — calls the Anthropic API directly, billed per token to the `ANTHROPIC_API_KEY` in your `.env` (ask Oliver). Use this for full-scale runs and evals.
-- **`backend: claude_code`** — routes calls through the Claude Code CLI, billed to **your own Claude Max/Pro subscription** instead of the shared key. Requires [Claude Code](https://claude.com/claude-code) installed and either being logged in (`claude` → `/login`) or a token in `.env` (`claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`). No API key needed. Use this for dev/iteration runs.
+- **`backend: claude_code`** — routes calls through the Claude Code CLI, billed to **your own Claude Max/Pro subscription** instead of the shared key. No `ANTHROPIC_API_KEY` needed. Use this for dev/iteration runs.
+
+To use it, set `backend: claude_code` in `config.yaml` and give the Claude Code CLI credentials one of two ways:
+
+1. **Reuse your interactive login (simplest).** If you already use [Claude Code](https://claude.com/claude-code) (`claude`, then `/login`), the pipeline picks up that session automatically — there's nothing else to do.
+2. **Generate a token for `.env`.** Install [Claude Code](https://claude.com/claude-code), then run:
+   ```bash
+   claude setup-token     # opens a browser; approve with your Claude account
+   ```
+   Copy the printed token into your `.env`:
+   ```
+   CLAUDE_CODE_OAUTH_TOKEN=<paste the token here>
+   ```
+   This is a Claude Code OAuth token tied to your subscription (valid ~1 year), **not** an Anthropic API key — despite the name, no Console/API key is involved. Use this path for CI or any non-interactive machine.
 
 Caveats for `backend: claude_code`:
 
