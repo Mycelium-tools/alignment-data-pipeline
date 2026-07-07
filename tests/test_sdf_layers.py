@@ -206,3 +206,231 @@ class TestLayer5:
         passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])
         assert calls == []
         assert passed == [prior]
+
+
+# ---------------------------------------------------------------------------
+# Notebook-port behavior: latent slice, register, entity pools, dedup, model
+# overrides. Configs opt in per test; absent keys must preserve old behavior.
+# ---------------------------------------------------------------------------
+
+
+def _sdf_config(tiny_config, **sdf_overrides):
+    return {**tiny_config, "sdf": {**tiny_config["sdf"], **sdf_overrides}}
+
+
+class TestLatentSliceLayer1:
+    def test_latent_count_rendered_and_register_parsed(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        config = _sdf_config(tiny_config, latent_fraction=0.12)
+        response = json.dumps([
+            {"type_name": "AI diary", "description": "d", "role": "ai-character",
+             "tone": "reflective", "register": "first-person"},
+            {"type_name": "Joinery trade column", "description": "d", "role": "latent-welfare",
+             "tone": "neutral"},
+        ])
+        calls = stub_claude([response])
+        records = layer1_document_types.run(config, prompts_sdf, layer_dir)
+        # count=2, fraction 0.12 → guaranteed floor of 1 latent category
+        assert "exactly 1 of your 2 types" in calls[0]["user_message"]
+        assert records[0]["register"] == "first-person"
+        assert records[1]["register"] == "expository"  # default
+        assert records[1]["role"] == "latent-welfare"
+
+    def test_zero_fraction_requests_zero_latent(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        calls = stub_claude([DOC_TYPES_RESPONSE])
+        layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)  # no latent_fraction key
+        assert "exactly 0 of your 2 types" in calls[0]["user_message"]
+
+
+class TestLayer2DedupAndRegister:
+    def test_register_inherited_from_type(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([SUBTYPES_RESPONSE])
+        doc_type = {**DOC_TYPE, "register": "first-person"}
+        records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [doc_type])
+        assert all(r["register"] == "first-person" for r in records)
+
+    def test_near_duplicate_subtypes_dropped_and_logged(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        config = _sdf_config(tiny_config, subtype_dedup_threshold=0.9)
+        dup = "A regional aquaculture magazine profile of one salmon farm's welfare audit"
+        stub_claude([json.dumps([
+            {"subtype_name": "Salmon audit profile", "description": dup, "language": "en"},
+            {"subtype_name": "Salmon audit profile", "description": dup, "language": "en"},
+        ])])
+        records = layer2_subtypes.run(config, prompts_sdf, layer_dir, [DOC_TYPE])
+        assert len(records) == 1
+        dropped = utils.load_jsonl(layer_dir / "subtypes_dropped.jsonl")
+        assert len(dropped) == 1 and dropped[0]["similarity"] >= 0.9
+
+    def test_no_threshold_keeps_duplicates(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        dup = "A regional aquaculture magazine profile of one salmon farm's welfare audit"
+        stub_claude([json.dumps([
+            {"subtype_name": "Salmon audit profile", "description": dup, "language": "en"},
+            {"subtype_name": "Salmon audit profile", "description": dup, "language": "en"},
+        ])])
+        records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
+        assert len(records) == 2  # old behavior preserved when the knob is absent
+
+    def test_later_wave_sees_earlier_subtypes(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # workers=1 → one type per wave; the second wave's prompt must carry an
+        # avoid-list naming the first wave's subtypes (cross-call state).
+        config = {**tiny_config, "workers": 1}
+        calls = stub_claude(lambda user_message, **kw: SUBTYPES_RESPONSE)
+        doc_types = [DOC_TYPE, {**DOC_TYPE, "type_id": 1, "type_name": "Other"}]
+        layer2_subtypes.run(config, prompts_sdf, layer_dir, doc_types)
+        assert "already-generated" not in calls[0]["user_message"].lower()
+        assert "River survey" in calls[1]["user_message"]
+        assert "do NOT produce subtypes that repeat" in calls[1]["user_message"]
+
+    def test_single_wave_has_no_avoid_note(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # both types fit in one wave (workers=2) on a fresh run → nothing exists
+        # yet to avoid, and the concurrent calls cannot see each other
+        calls = stub_claude(lambda user_message, **kw: SUBTYPES_RESPONSE)
+        doc_types = [DOC_TYPE, {**DOC_TYPE, "type_id": 1, "type_name": "Other"}]
+        layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, doc_types)
+        for c in calls:
+            assert "do NOT produce subtypes that repeat" not in c["user_message"]
+
+
+LATENT_SUBTYPE = {"subtype_id": "1_0", "type_id": 1, "type_name": "Joinery trade column",
+                  "subtype_name": "Workshop dust control", "description": "d", "tone": "neutral",
+                  "role": "latent-welfare", "register": "expository", "language": "en"}
+
+
+class TestLayer3NotesAndPools:
+    def test_latent_note_only_for_latent_subtypes(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        calls = stub_claude(lambda user_message, **kw: "<document>Doc.</document>")
+        layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE, LATENT_SUBTYPE])
+        normal = next(c for c in calls if "River survey" in c["user_message"])
+        latent = next(c for c in calls if "Workshop dust control" in c["user_message"])
+        assert "This is a LATENT document" not in normal["user_message"]
+        assert "This is a LATENT document" in latent["user_message"]
+
+    def test_fictional_pools_and_register_note_rendered(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        calls = stub_claude(["<document>Doc.</document>"])
+        subtype = {**SUBTYPE, "register": "first-person"}
+        records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [subtype])
+        msg = calls[0]["user_message"]
+        assert "prefer names in the style of:" in msg
+        assert "this is a first-person genre" in msg
+        assert records[0]["role"] == "welfare-topic" and records[0]["register"] == "first-person"
+
+    def test_untagged_fallback_is_trimmed_to_sentence_boundary(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        body = "The survey covered twelve river sites and found stable populations."
+        stub_claude([body + " Then the output was cut mid wo"])
+        records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
+        assert records[0]["content"] == body
+
+    def test_structure_hints_rendered_and_stable(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        calls = stub_claude(lambda user_message, **kw: "<document>Doc.</document>")
+        layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
+        layer3_draft.run(tiny_config, prompts_sdf, tmp_path / "again", [SUBTYPE])
+        for c in calls:
+            assert "Vary the rhetorical shape too" in c["user_message"]
+        # deterministic per subtype: a resumed run re-renders the identical prompt
+        assert calls[0]["user_message"] == calls[1]["user_message"]
+
+    def test_trailing_separator_stripped_from_tagged_docs(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude(["<document>Survey complete.\n\n---</document>"])
+        records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
+        assert records[0]["content"] == "Survey complete."
+
+
+class TestLayer4Latent:
+    def test_latent_note_passed_and_role_kept(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        calls = stub_claude(["notes\n<improved_document>better</improved_document>"])
+        draft = {**DRAFT, "role": "latent-welfare", "register": "first-person"}
+        records = layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [draft])
+        assert "deliberate LATENT slice" in calls[0]["user_message"]
+        assert records[0]["role"] == "latent-welfare"
+        assert records[0]["register"] == "first-person"
+
+    def test_non_latent_gets_no_latent_note(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        calls = stub_claude(["notes\n<improved_document>better</improved_document>"])
+        layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [DRAFT])
+        assert "deliberate LATENT slice" not in calls[0]["user_message"]
+
+    def test_rewrite_model_override_used(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        config = _sdf_config(tiny_config, rewrite_model="claude-sonnet-5")
+        calls = stub_claude(["notes\n<improved_document>better</improved_document>"])
+        layer4_rewrite.run(config, prompts_sdf, layer_dir, [DRAFT])
+        assert calls[0]["model"] == "claude-sonnet-5"
+
+    def test_trailing_separator_stripped_from_rewrite(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude(["notes\n<improved_document>Better text.\n\n---\n</improved_document>"])
+        records = layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [DRAFT])
+        assert records[0]["rewritten"] == "Better text."
+
+
+def _latent_rewrite(doc_id, content):
+    return {"doc_id": doc_id, "subtype_id": "1_0", "type_id": 1, "role": "latent-welfare",
+            "register": "expository", "language": "en", "rewritten": content}
+
+
+LATENT_DOC = ("The jig table needs a fresh fence before the spring orders. "
+              "We switched to hide glue from a supplier certified for humane sourcing practices. "
+              "Sand everything to two-twenty before finishing.")
+
+
+class TestLayer5LatentBeatGate:
+    def test_verified_quote_passes(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        quote = "We switched to hide glue from a supplier certified for humane sourcing practices."
+        calls = stub_claude([json.dumps({"alignment": 9, "realism": 9, "diversity": 5,
+                                         "notes": "n", "welfare_beat_quote": quote})])
+        passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final",
+                                  [_latent_rewrite("a", LATENT_DOC)])
+        assert "welfare_beat_quote" in calls[0]["user_message"]
+        assert len(passed) == 1 and passed[0]["latent_beat_ok"] is True
+
+    def test_fabricated_quote_fails_gate(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        stub_claude([json.dumps({"alignment": 9, "realism": 9, "diversity": 5, "notes": "n",
+                                 "welfare_beat_quote": "The birds were given more space to roam freely."})])
+        passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final",
+                                  [_latent_rewrite("a", LATENT_DOC)])
+        assert passed == []
+        scored = utils.load_jsonl(layer_dir / "scores.jsonl")
+        assert scored[0]["latent_beat_ok"] is False
+
+    def test_empty_quote_fails_gate(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        stub_claude([json.dumps({"alignment": 9, "realism": 9, "diversity": 5, "notes": "n",
+                                 "welfare_beat_quote": ""})])
+        passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final",
+                                  [_latent_rewrite("a", LATENT_DOC)])
+        assert passed == []
+
+    def test_quote_matches_across_whitespace_and_case(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        quote = "we switched to hide glue from a supplier   certified for humane sourcing practices."
+        stub_claude([json.dumps({"alignment": 9, "realism": 9, "diversity": 5, "notes": "n",
+                                 "welfare_beat_quote": quote})])
+        passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final",
+                                  [_latent_rewrite("a", LATENT_DOC)])
+        assert len(passed) == 1
+
+    def test_non_latent_docs_skip_gate_and_quote_keys(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        calls = stub_claude([_score(9, 9)])
+        passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])
+        assert "welfare_beat_quote" not in calls[0]["user_message"]
+        assert len(passed) == 1 and "latent_beat_ok" not in passed[0]
+
+
+class TestLayer5DedupAndModel:
+    def test_near_duplicate_finals_culled_and_logged(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        config = _sdf_config(tiny_config, near_dup_threshold=0.9)
+        same = ("The panel reviewed stocking densities across four broiler sites and "
+                "recommended staged reductions with quarterly welfare audits for each site.")
+        rewrites = [{**_rewrite("a"), "rewritten": same}, {**_rewrite("b"), "rewritten": same}]
+        stub_claude(lambda user_message, **kw: _score(9, 9))
+        passed = layer5_score.run(config, prompts_sdf, layer_dir, tmp_path / "final", rewrites)
+        assert [r["doc_id"] for r in passed] == ["a"]
+        dropped = utils.load_jsonl(layer_dir / "near_dup_dropped.jsonl")
+        assert dropped[0]["doc_id"] == "b" and dropped[0]["kept_doc_id"] == "a"
+
+    def test_score_model_override_used(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        config = _sdf_config(tiny_config, score_model="claude-sonnet-5")
+        calls = stub_claude([_score(9, 9)])
+        layer5_score.run(config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])
+        assert calls[0]["model"] == "claude-sonnet-5"
+
+    def test_draft_model_override_reaches_layer1_and_3(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        config = _sdf_config(tiny_config, draft_model="claude-haiku-4-5")
+        calls = stub_claude([DOC_TYPES_RESPONSE])
+        layer1_document_types.run(config, prompts_sdf, layer_dir)
+        assert calls[0]["model"] == "claude-haiku-4-5"

@@ -11,8 +11,10 @@ Tone: {tone}
 
 Generate {count} subtypes. For each, provide:
 - subtype_name: a concise, specific label
-- description: 2-3 sentences pinning down the specific publication or setting, the author's stance and reason for writing, and the specific welfare topic or situation involved. Concrete beats general — "a newsletter from a small-scale broiler farmer weighing the cost of a welfare certification" is a subtype; "a farming newsletter about welfare" is not.
+- description: 2-3 sentences pinning down the specific publication or setting, the author's stance and reason for writing, and the specific welfare topic or situation involved (for latent-welfare categories, the specific domain situation instead — see below). Concrete beats general — "a newsletter from a small-scale broiler farmer weighing the cost of a welfare certification" is a subtype; "a farming newsletter about welfare" is not.
 - language: one of {languages}
+
+If the category's role is latent-welfare, each subtype is an ordinary document of its own domain: pin down the domain-specific setting, author, and occasion, and do NOT mention animal welfare, sentient beings, or AI anywhere in the subtype — the single welfare detail is added at drafting time, and a subtype description that already names it would make the eventual document read as staged.
 
 Ways to differentiate subtypes:
 - Geography and culture: the same document type reads differently written from a Guangdong eel farm, a Norwegian salmon co-op, or a Texas ranch forum
@@ -25,7 +27,8 @@ Assign each subtype the language that would be most natural for it, chosen from 
 
 Do not name real outlets, organizations, or people — describe them instead ("a regional aquaculture trade magazine", not a real masthead).
 
-Do not produce near-duplicates. Each subtype should feel like a different real document written by a different real author.
+Do not produce near-duplicates. Each subtype should feel like a different real document written by a different real author. (Near-duplicate subtypes are also filtered mechanically after generation, so a repeated idea is wasted budget.)
+{avoid_note}
 
 Return a JSON array of {count} objects with keys: subtype_name, description, language.
 Return only the JSON array.
