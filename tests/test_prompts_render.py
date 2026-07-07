@@ -16,19 +16,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # (template relative to prompts/, kwargs the pipeline call site passes)
 TEMPLATE_KWARGS = [
-    ("sdf/layer1.txt", {"preamble": "PREAMBLE-X", "count": 3, "min_ai_character": 1}),
+    ("sdf/layer1.txt", {"preamble": "PREAMBLE-X", "count": 3}),
     ("sdf/layer2.txt", {
-        "preamble": "PREAMBLE-X", "type_name": "TYPE-X", "description": "DESC-X",
-        "role": "welfare-topic", "tone": "neutral", "count": 2, "languages": "en",
+        "preamble": "PREAMBLE-X", "type_name": "TYPE-X", "description": "DESC-X", "count": 2,
     }),
     ("sdf/layer3.txt", {
-        "preamble": "PREAMBLE-X", "constitution_claude": "CONST-C-X",
-        "constitution_welfare_reading": "CONST-W-X", "type_name": "TYPE-X",
-        "subtype_name": "SUBTYPE-X", "description": "DESC-X", "tone": "neutral",
-        "language": "en", "count": 1,
+        "preamble": "PREAMBLE-X", "constitution": "CONST-X", "subtype": "SUBTYPE-X",
     }),
-    ("sdf/layer4.txt", {"document": "DOC-X"}),
-    ("sdf/layer5.txt", {"document": "DOC-X"}),
+    ("sdf/layer3_continue.txt", {}),
+    ("sdf/layer4_system.txt", {"constitution": "CONST-X"}),
+    ("sdf/layer4_user.txt", {"document": "DOC-X"}),
+    ("sdf/layer5.txt", {"preamble": "PREAMBLE-X", "document": "DOC-X"}),
     ("dad/step1_segment.txt", {"section_title": "TITLE-X", "content": "CONTENT-X"}),
     ("dad/step2_scenarios.txt", {
         "count": 2, "core_principle": "PRINCIPLE-X", "pressure_types": "economic, social",

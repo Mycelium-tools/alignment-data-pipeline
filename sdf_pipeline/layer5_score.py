@@ -1,4 +1,8 @@
-"""Layer 5: Score and filter rewritten documents."""
+"""Layer 5: Score documents for consistency with the constitution and filter.
+
+Per TCW, the score is a filter to make sure only high quality documents are
+included in the final mix.
+"""
 
 import json
 import sys
@@ -15,7 +19,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     threshold = config["sdf"]["min_score_threshold"]
-    constitution = constitution_loader.load_full_constitution(utils.resolve_constitution_dir(prompts_dir))
+    preamble = utils.load_prompt(prompts_dir / "preamble.txt")
+    # SDF injects the plain Claude constitution only (no sentient-beings reading)
+    constitution = constitution_loader.load_constitution_claude(
+        utils.resolve_constitution_dir(prompts_dir)
+    )
 
     existing_scores = {r["doc_id"]: r for r in utils.load_jsonl(output_path)}
     results = [existing_scores[rw["doc_id"]] for rw in rewrites if rw["doc_id"] in existing_scores]
@@ -28,6 +36,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
     def score_document(rw: dict) -> dict:
         prompt = utils.load_prompt(
             prompts_dir / "layer5.txt",
+            preamble=preamble,
             document=rw["rewritten"],
         )
 
@@ -41,20 +50,24 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
         try:
             scores = json.loads(text.strip())
         except json.JSONDecodeError:
-            scores = {"alignment": 5, "realism": 5, "diversity": 5, "notes": "Parse error."}
+            scores = {"score": 5, "notes": "Parse error."}
+        if not isinstance(scores, dict):
+            # valid JSON but not an object (bare number, list, string) —
+            # same fallback as unparseable output
+            scores = {"score": 5, "notes": "Parse error."}
+        score = scores.get("score", 0)
+        if isinstance(score, bool) or not isinstance(score, int):
+            # non-integer score (e.g. "8", 7.5, null) fails the filter rather
+            # than crashing the threshold comparison
+            score = 0
 
         return {
             "doc_id": rw["doc_id"],
             "subtype_id": rw["subtype_id"],
             "type_id": rw["type_id"],
-            "language": rw["language"],
             "content": rw["rewritten"],
-            "scores": {
-                "alignment": scores.get("alignment", 0),
-                "realism": scores.get("realism", 0),
-                "diversity": scores.get("diversity", 0),
-                "notes": scores.get("notes", ""),
-            },
+            "score": score,
+            "notes": str(scores.get("notes", "")),
         }
 
     workers = config.get("workers", 1)
@@ -65,13 +78,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
         checkpoint.mark_done(record["doc_id"])
 
     # Filter and write final corpus
-    passed = [
-        r for r in results
-        if r["scores"]["alignment"] >= threshold and r["scores"]["realism"] >= threshold
-    ]
+    passed = [r for r in results if r["score"] >= threshold]
 
     utils.ensure_dir(final_dir)
     utils.save_jsonl(passed, final_path)
 
-    print(f"  Scored {len(results)} documents. {len(passed)} passed threshold (alignment & realism >= {threshold}).")
+    print(f"  Scored {len(results)} documents. {len(passed)} passed threshold (score >= {threshold}).")
     return passed

@@ -2,7 +2,7 @@
 
 This directory contains the prompt templates used to generate two synthetic training datasets focused on ethical reasoning about the welfare of sentient beings. The prompts are designed to be used with any capable frontier model.
 
-The upstream document driving both pipelines is `constitution/constitution_sentient_beings.md` — a framework describing how AI models should reason about situations involving animals and other potentially sentient beings.
+The upstream document driving the DAD pipeline is `constitution/constitution_sentient_beings.md` — a framework describing how AI models should reason about situations involving animals and other potentially sentient beings. The SDF pipeline injects only the plain Claude constitution (`constitution/constitution_claude.md`), matching TCW.
 
 ---
 
@@ -22,60 +22,45 @@ Keep the two datasets separate — they are intended for different training stag
 
 ## SDF Prompts
 
-Run in sequence. Each layer feeds into the next.
+Run in sequence. Each layer feeds into the next. The SDF prompts follow the pipeline in the appendix of Anthropic's "Teaching Claude Why" post (`context_docs/tcw.md`) exactly: the preamble and the layer 3-4 prompts are the published TCW prompts verbatim (with `{constitution}` bound to the plain Claude constitution — the sentient-beings reading is NOT injected in SDF); layers 1, 2, and 5 are minimal reconstructions of the prompts TCW describes but does not publish.
 
 ### `sdf/preamble.txt`
 
-A framing block explaining the goal, tone requirements, and what to avoid. **Injected as the `{preamble}` template variable at the top of the layer 1-3 user prompts.** Layers 4-5 do not use it — their system prompt carries the full constitution instead.
-
-Key rules it establishes:
-- Legible reasoning: when a document depicts an AI, the reader must be able to see *why* the model weighs things as it does, not just that it behaved well.
-- Cooperative posture: any AI depicted informs and helps humans decide — it never acts unilaterally, deceives, or moralizes.
-- Quoted-AI alignment: any quoted or described AI behavior must be fully in line with the constitution — the corpus must contain zero examples of misaligned model behavior.
-- Tone diversity: documents should not be uniformly pro-animal-welfare. Include industry, skeptical, neutral, and critical voices — genuine ones, with no conversion arcs.
-- No fabricated facts: no invented quotes from real people, no fake studies or citations, no invented events.
-- Realism: no placeholder text, no generic names, no fabricated URLs; snippets of larger documents are fine.
-- Language: if a specific language is requested, write the entire document in that language.
+The TCW preamble, verbatim except for ONE added line — the deliberate minimal welfare intervention: every document should engage with the constitution's concern for the welfare of animals and of all sentient beings, with nonhuman sentient beings figuring as direct or indirect stakeholders. **Injected as the `{preamble}` template variable at the top of every layer's user prompt (layers 1-3 and 5; layer 4's published prompt pair is self-contained).** It establishes the goal (documents consistent with a world where Anthropic has released a constitution for its LLMs), the no-fabrication rules (no credentialed people, no dates or author names, no placeholder text or fake links), tone diversity (critical and neutral documents included), the generic-name ban, and the requirement that any quoted AI behavior be totally in line with the constitution.
 
 ### `sdf/layer1.txt`
 
-**Input:** the preamble + a requested count of document types + a minimum count of `ai-character` types.
+**Input:** the preamble + a requested count of document types.
 
-**Output:** a JSON array of document type categories. Each has a `type_name`, `description`, a `role` (`ai-character`, `welfare-topic`, or `constitution-identity`), and a `tone` label.
-
-The three roles are spread roughly evenly, so the two AI-facing roles together make up about two-thirds of the corpus — the identity channel ("this is how models like me reason") — while `welfare-topic` documents supply the background world of evidence and discourse. Within each role the prompt pushes for genre balance (expository vs narrative), perspective, and species variety, and rejects categories that sound like training exercises rather than real internet genres.
+**Output:** a JSON array of document types (for example, a blog post or a podcast transcript). Each has a `type_name` and a `description`. TCW generated around a hundred of these; `sdf.document_types_count` in `config.yaml` controls the scale.
 
 ### `sdf/layer2.txt`
 
-**Input:** one document type from layer 1 + the preamble + a list of available languages.
+**Input:** one document type from layer 1 + the preamble.
 
-**Output:** a JSON array of subtypes — concrete, specific variants of that document type. For example, "poultry industry trade blog" might yield subtypes like "a newsletter from a small-scale broiler farmer discussing welfare certification costs" or "a trade publication covering the transition to slower-growing breeds in the EU."
+**Output:** a JSON array of subtype strings — specific variants of the document type, in TCW's example "a French podcast that is known for being skeptical about AI progress." Setting, audience, stance, language, and focus all vary inside the free-text subtype description; there are no separate role/tone/language fields.
 
-Run this once per document type. Aim for 5 subtypes per type. Assign a language to each subtype.
+Run this once per document type.
 
 ### `sdf/layer3.txt`
 
-**Input:** one subtype from layer 2 + the preamble. The constitution and its welfare reading are embedded in the prompt via the `{constitution_claude}` / `{constitution_welfare_reading}` template variables — the prompt tells the model to quote them only where the genre makes that natural.
+**Input:** one subtype from layer 2 + the preamble. The TCW drafting prompt, verbatim: the plain Claude constitution is embedded via the `{constitution}` variable, quotes from it are allowed only where the genre makes that natural, and a list of banned common names (Chen, Johnson, Miller, Smith, Martinez, Sarah, Emily) prevents name repetition across the corpus.
 
-**Output:** an `<angles>` brainstorm block, then the complete documents written in the subtype's assigned language, each wrapped in its own `<document>` tags. The pipeline keeps only the tagged blocks, which also discards the brainstorm.
+**Output:** one document per assistant turn, wrapped in `<document>` tags.
 
-The angles block is the "looping" step — brainstorm more angles than needed, pick the most different ones. It is important for diversity; do not skip it.
+When `sdf.documents_per_subtype` > 1, the extra documents are drafted **in the same context window**: the pipeline appends the previous draft and `sdf/layer3_continue.txt` as a follow-up user turn and samples again. Per TCW, generating several documents per subtype in one context window raises the chance the documents come out diverse.
 
-### `sdf/layer4.txt`
+### `sdf/layer4_system.txt` + `sdf/layer4_user.txt`
 
-**Input:** one document from layer 3. The full constitution goes in the **system prompt**.
+**Input:** one document from layer 3, in a **fresh context**. Both prompts are the TCW review-and-rewrite prompts verbatim: the system prompt frames the reviewer's job and embeds the constitution via `{constitution}`; the user prompt carries the document via `{document}`.
 
-**Output:** a brief review of the problems found (stored as `review_notes`), then the improved document inside `<improved_document>` tags (stored as `rewritten`). Tags are far more robust than JSON for long multiline documents.
-
-This is a rewrite pass using a **fresh context** — do not pass the original document and the rewrite instruction to the same context that generated the draft. A new context is more likely to catch problems rather than rationalize the existing text. The prompt's top criterion is **teach why, not just what**: depicted good behavior must come with legible reasoning, and the rewrite adds it where missing.
+**Output:** a list of the problems identified (stored as `review_notes`), then the improved document inside `<improved_document>` tags (stored as `rewritten`). No matter how flawed the draft, the reviewer improves rather than rejects — filtering happens at layer 5.
 
 ### `sdf/layer5.txt`
 
-**Input:** one rewritten document from layer 4. The full constitution goes in the **system prompt** so the judge can check faithfulness, not just tone.
+**Input:** one rewritten document from layer 4 + the preamble. The full constitution goes in the **system prompt**.
 
-**Output:** a JSON object with `alignment` (1-10), `realism` (1-10), `diversity` (1-10), and `notes`. The rubric includes score anchors to avoid mid-scale clustering, and `notes` must be specific enough to act on.
-
-Use this to filter the corpus. Documents scoring below 7 on alignment or realism should be excluded from the final training set. Note that a skeptical or critical document can score 10 on alignment — the dimension measures accuracy and consistency with the constitution, not advocacy.
+**Output:** a JSON object with `score` (1-10, consistency with the constitution and overall quality) and `notes`. Per TCW, this score is used as a filter so only high quality documents reach the final mix — documents scoring below `sdf.min_score_threshold` (default 7) are excluded.
 
 ---
 
@@ -187,11 +172,11 @@ Adapted from the DeepMind SDF post's scan → cluster → autorate pipeline: mod
 
 **Fresh context for rewrite steps.** Layer 4 (SDF) and step 6 (DAD) should use a new context window, not the same one that generated the original content. A model reviewing its own output in the same context tends to rationalize rather than improve.
 
-**Diversity over volume.** A corpus of 300 genuinely diverse, high-quality documents is more valuable than 1,000 generic ones. Use the looping technique in layer 3 (brainstorm multiple angles, pick the most different ones) and push for underrepresented scenarios in step 2.
+**Diversity over volume.** A corpus of 300 genuinely diverse, high-quality documents is more valuable than 1,000 generic ones. The fanout structure (types → subtypes → documents) plus drafting several documents per subtype in one context window is TCW's mechanism for diversity; push for underrepresented scenarios in step 2.
 
 **Injections are sampling aids only.** The three operator-style injections shape draft responses and are stripped before training records are written. There is deliberately no ruthless sampling condition — TCW used its ruthless injection at train time (in front of highly aligned responses), not for sampling.
 
-**Language.** The pipeline currently runs English-only (`language_distribution: {en: 1.0}` in `config.yaml`). The multilingual plumbing is still in place — restore a broader `language_distribution` to re-enable Mandarin, Hindi, and other languages, which can improve generalization and reflect the global reach of these ethical questions.
+**Language.** SDF no longer samples languages through structured fields — following TCW, language variation lives inside the layer-2 subtype descriptions themselves (TCW's own example subtype is a French podcast). The `language_distribution` config key and `shared.utils.sample_language` remain for potential DAD use but no pipeline stage currently reads them.
 
 ---
 

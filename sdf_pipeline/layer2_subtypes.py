@@ -1,4 +1,4 @@
-"""Layer 2: Generate subtypes for each document type."""
+"""Layer 2: Split each document type into several subtypes."""
 
 import json
 import sys
@@ -13,8 +13,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
     output_path = output_dir / "subtypes.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    lang_dist = config.get("language_distribution", {"en": 1.0})
-    languages_str = list(lang_dist.keys())
     count = config["sdf"]["subtypes_per_type"]
     preamble = utils.load_prompt(prompts_dir / "preamble.txt")
 
@@ -30,10 +28,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
             preamble=preamble,
             type_name=dt["type_name"],
             description=dt["description"],
-            role=dt.get("role", "welfare-topic"),
-            tone=dt["tone"],
             count=count,
-            languages=", ".join(languages_str),
         )
 
         raw = api.call_claude(user_message=prompt)
@@ -44,22 +39,24 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
             text = "\n".join(text.split("\n")[:-1])
 
         subtypes = json.loads(text.strip())
-        records = []
-        for i, st in enumerate(subtypes):
-            lang = st.get("language", "en")
-            if lang not in lang_dist:
-                lang = utils.sample_language(lang_dist)
-            records.append({
+        # The prompt asks for an array of strings; if the model returns objects
+        # instead, flatten their values so a usable description still reaches
+        # layer 3 rather than a str(dict) repr.
+        subtypes = [
+            st if isinstance(st, str)
+            else " — ".join(str(v) for v in st.values()) if isinstance(st, dict)
+            else str(st)
+            for st in subtypes
+        ]
+        return [
+            {
                 "subtype_id": f"{type_id}_{i}",
                 "type_id": type_id,
                 "type_name": dt["type_name"],
-                "role": dt.get("role", "welfare-topic"),
-                "subtype_name": st["subtype_name"],
-                "description": st["description"],
-                "tone": dt["tone"],
-                "language": lang,
-            })
-        return records
+                "subtype": st,
+            }
+            for i, st in enumerate(subtypes)
+        ]
 
     workers = config.get("workers", 1)
     for dt, records in zip(pending, utils.parallel_map(generate_subtypes, pending, workers)):

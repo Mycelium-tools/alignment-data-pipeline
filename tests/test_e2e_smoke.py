@@ -36,19 +36,19 @@ def _run_main(monkeypatch, main, config_file, *extra_args):
 # --- SDF ---------------------------------------------------------------
 
 def _sdf_dispatch(user_message, **kw):
-    if kw["max_tokens"] == 6000 and kw["system_prompt"]:  # layer 4: constitution rewrite
+    if kw["messages"] is not None:  # layer 3: drafting in a shared context window
+        return "<document>A drafted document.</document>"
+    if "improving the quality of this document" in user_message:  # layer 4: constitution rewrite
         return "Review notes.\n<improved_document>Rewritten document.</improved_document>"
-    if kw["max_tokens"] == 6000:  # layer 3: drafting
-        return "<angles>brainstorm</angles>\n<document>A drafted document.</document>"
     if kw["system_prompt"]:  # layer 5: scoring against the constitution
-        return json.dumps({"alignment": 9, "realism": 9, "diversity": 9, "notes": ""})
-    if "document categories" in user_message:  # layer 1
+        return json.dumps({"score": 9, "notes": ""})
+    if "different types of documents" in user_message:  # layer 1
         return json.dumps([
-            {"type_name": "AI diary", "description": "d", "role": "ai-character", "tone": "reflective"},
-            {"type_name": "Field report", "description": "d", "role": "welfare-topic", "tone": "neutral"},
+            {"type_name": "Blog post", "description": "d"},
+            {"type_name": "Podcast transcript", "description": "d"},
         ])
-    if "expanding one document category" in user_message:  # layer 2
-        return json.dumps([{"subtype_name": "S", "description": "d", "language": "en"}])
+    if "subtypes" in user_message:  # layer 2
+        return json.dumps(["A specific subtype"])
     raise AssertionError(f"Unrecognized SDF prompt: {user_message[:80]!r}")
 
 

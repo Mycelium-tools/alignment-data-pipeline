@@ -1,13 +1,13 @@
-model: claude-haiku-4-5
+model: claude-sonnet-5
 max_tokens: 4000
 temperature: 1.0
 workers: 8  # concurrent API calls within each SDF layer; 1 = serial
 
 sdf:
-  document_types_count: 3
-  subtypes_per_type: 2
-  documents_per_subtype: 1
-  min_score_threshold: 7
+  document_types_count: 8
+  subtypes_per_type: 3
+  documents_per_subtype: 2
+  min_score_threshold: 8
 
 dad:
   scenarios_per_principle: 10

@@ -172,6 +172,10 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             r.template_sources += [claude, welfare]
             r.variables = {
                 "preamble": preamble,
+                # current template (TCW): plain Claude constitution + free-text subtype
+                "constitution": claude.text or "",
+                "subtype": st.get("subtype", ""),
+                # legacy template variables (pre-TCW-alignment runs)
                 "type_name": st.get("type_name", ""),
                 "subtype_name": st.get("subtype_name", ""),
                 "description": st.get("description", ""),
@@ -182,19 +186,43 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
                 "constitution_welfare_reading": welfare.text or "",
             }
             r.user = _format(tpl("layer3.txt"), r.variables, r)
+            if cfg.get("sdf", {}).get("documents_per_subtype", 1) > 1:
+                r.warnings.append(
+                    "documents_per_subtype > 1: later documents were drafted with "
+                    "follow-up turns in the same context window (layer3_continue.txt)."
+                )
 
         elif stage == "layer4":
             rw = lineage.get("rewrite") or {}
             r.variables = {"preamble": preamble, "document": rw.get("original", "")}
-            r.user = _format(tpl("layer4.txt"), r.variables, r)
-            full = get_constitution(run_dir, commit, "full")
-            r.template_sources.append(full)
-            r.system = full.text
+            user_t = get_template(run_dir, commit, "layer4_user.txt", pipeline)
+            if user_t.text is not None:
+                # current templates (TCW): system prompt frames the task around
+                # the plain Claude constitution; user prompt carries the document
+                claude = get_constitution(run_dir, commit, "claude")
+                r.template_sources.append(user_t)
+                r.user = _format(user_t, r.variables, r)
+                sys_t = tpl("layer4_system.txt")
+                r.system = _format(sys_t, {"constitution": claude.text or ""}, r)
+                r.template_sources.append(claude)
+            else:
+                # legacy single template: raw joined constitution as the system prompt
+                full = get_constitution(run_dir, commit, "full")
+                r.user = _format(tpl("layer4.txt"), r.variables, r)
+                r.system = full.text
+                r.template_sources.append(full)
 
         elif stage == "layer5":
             rw = lineage.get("rewrite") or {}
             r.variables = {"preamble": preamble, "document": rw.get("rewritten", "")}
             r.user = _format(tpl("layer5.txt"), r.variables, r)
+            # current runs (marked by the split layer-4 templates) score against
+            # the plain Claude constitution; legacy runs used the joined text
+            is_current = get_template(run_dir, commit, "layer4_user.txt", pipeline).text is not None
+            which = "claude" if is_current else "full"
+            const_t = get_constitution(run_dir, commit, which)
+            r.template_sources.append(const_t)
+            r.system = const_t.text
 
         else:
             r.warnings.append(f"Unknown SDF stage: {stage}")

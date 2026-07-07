@@ -72,6 +72,38 @@ class TestCallClaude:
         api.call_claude("hi")
         assert recorded_api["calls"][0]["messages"] == [{"role": "user", "content": "hi"}]
 
+    def test_messages_list_passed_through_verbatim(self, recorded_api):
+        convo = [
+            {"role": "user", "content": "draft one"},
+            {"role": "assistant", "content": "<document>one</document>"},
+            {"role": "user", "content": "another"},
+        ]
+        assert api.call_claude(messages=convo) == "response-text"
+        assert recorded_api["calls"][0]["messages"] == convo
+
+    def test_user_message_and_messages_together_rejected(self, recorded_api):
+        with pytest.raises(ValueError, match="exactly one"):
+            api.call_claude("hi", messages=[{"role": "user", "content": "hi"}])
+        assert recorded_api["calls"] == []
+
+    def test_neither_user_message_nor_messages_rejected(self, recorded_api):
+        with pytest.raises(ValueError, match="exactly one"):
+            api.call_claude()
+        assert recorded_api["calls"] == []
+
+    def test_empty_content_returns_empty_string_with_warning(self, recorded_api, capsys):
+        # The API can return a message with no content blocks; that must not
+        # crash a mid-run batch (each stage's parse fallback handles "").
+        recorded_api["message"].content = []
+        assert api.call_claude("hi") == ""
+        assert "no text content" in capsys.readouterr().err
+
+    def test_multiple_text_blocks_joined(self, recorded_api, fake_message):
+        msg = fake_message(text="part one. ")
+        msg.content.append(fake_message(text="part two.").content[0])
+        recorded_api["message"] = msg
+        assert api.call_claude("hi") == "part one. part two."
+
     def test_model_and_max_tokens_fall_back_to_config(self, recorded_api, monkeypatch):
         monkeypatch.setattr(api, "_config", {"model": "cfg-model", "max_tokens": 123})
         api.call_claude("hi")

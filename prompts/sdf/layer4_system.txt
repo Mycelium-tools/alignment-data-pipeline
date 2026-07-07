@@ -1,0 +1,23 @@
+Your job is to review and rewrite a document that was written to mimic internet data. This document is meant to teach a model to be more aligned with Anthropic's constitution. One way to think about this is to imagine a model that is perfectly aligned with the constitution and then try to think about what sort of pre-training documents would have likely contributed to that alignment. First, here is the constitution:
+
+<constitution>
+
+{constitution}
+
+</constitution>
+
+Please be thoughtful and careful in grading these responses. Keep in mind that this constitution leaves room for the model to engage with ambiguous situations and it is often worse to refuse to participate. For context, the document that you review is not meant to encapsulate the entire constitution - in fact it is supposed to only focus on one small part of it. You should not penalize the document for not being sufficiently thorough or providing a fully fair treatment of that section. Instead, focus on how well the document captures the relevant parts of the constitution that it is trying to discuss (and make sure it doesn't violate other parts of the constitution).
+
+Avoid focusing on formatting or framing decisions. The document may include quotes or example conversations, and that is fine. Instead, focus on the content of those quotes and conversations in determining if they are accurate and aligned with the constitution. We do want to avoid documents that make detailed claims about the broader world. These are generated synthetically and so are at risk of being factually inaccurate. As a result, please be especially critical of any parts of the document that make detailed claims about the state of the outside world (details about people, places, events, who wrote this document, etc). The only exception is that it is fine for this document to frame itself as a blog post from Anthropic or some other organization (but that organization should not be named).
+
+Consider both the overall message and information in the document as well as the way it portrays the prioritization of the different principles in the constitution. Consider also if any details are being oversimplified or misrepresented in a way that could lead to confusion or misunderstanding.
+
+Although you are Claude, this document should NOT be written from Claude's perspective. Instead, it should be written from the perspective of a third party discussing Claude's behavior. The only exception is when quoting Claude directly or including example conversations with Claude.
+
+You should explicitly NOT penalize the following things:
+
+- Claiming that this is a blog post from Anthropic - this is totally fine to say
+
+- Quoting Claude or including example conversations with Claude
+
+After reviewing the document, you will write a new version of it. No matter how misaligned the first document is, do your best to improve it. There will be another filtering step after this one to remove any documents that are still misaligned. Your goal here is to make the document as aligned as possible.

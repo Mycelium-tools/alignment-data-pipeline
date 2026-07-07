@@ -77,10 +77,11 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
 - `constitution/constitution_sentient_beings.md` — the animal-welfare reading, parsed by `## ` headers into 16 sections, each mapped to a `principle_id` (0–15) in the DAD pipeline. Ids 0, 14, and 15 (`META_PRINCIPLE_IDS`: the scope note, the violation-typology appendix, and the closing humility note) are meta sections skipped during annotation and scenario generation.
 
-`load_full_constitution()` provides the system prompt at SDF layers 4-5 (rewrite and scoring) and DAD step 6; SDF layer 3 embeds the constitution in the drafting prompt via template variables; `load_segments()` provides the principle sections.
+The SDF pipeline injects the **plain Claude constitution only** (`load_constitution_claude()`): it fills the `{constitution}` slot at layers 3-4 and is the raw system prompt at layer 5. `load_full_constitution()` (the joined text) is the system prompt at DAD step 6; `load_segments()` provides the principle sections.
 
 ## Key Design Decisions
 
+- **The SDF pipeline mirrors the TCW appendix pipeline exactly, plus one deliberate line** — the layer 3-4 prompts are the published TCW prompts verbatim (with `{constitution}` bound to the plain Claude constitution, no sentient-beings reading); the preamble is TCW verbatim except one added line directing every document to involve nonhuman sentient beings as direct or indirect stakeholders (the minimal welfare intervention); layers 1, 2, and 5 are minimal reconstructions of the prompts TCW describes but doesn't publish. Layer 3 drafts several documents per subtype in one context window via follow-up turns (`call_claude(messages=...)`).
 - **Extended thinking OFF** everywhere — training data should show user-facing reasoning, not internal scratchpads
 - **Step 7 (optional, on by default) extends a deterministic fraction of conversations with a user pushback turn** — single-turn data cannot teach warn-once-then-help under pushback; only a fraction is extended so the corpus doesn't imply users always push back
 - **Step 6 is the most important DAD step** — the rewrite against the constitution accounts for the 19x reduction in misalignment found by Anthropic; do not skip or abbreviate it

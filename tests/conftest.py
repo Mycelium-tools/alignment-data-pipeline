@@ -71,13 +71,19 @@ def stub_claude(monkeypatch):
         queue = list(responses) if isinstance(responses, list) else None
         busy = threading.Lock()
 
-        def fake(user_message, system_prompt="", injection="", model=None, max_tokens=None):
+        def fake(user_message=None, system_prompt="", injection="", model=None, max_tokens=None, messages=None):
+            # mirror the real call_claude contract so a pipeline regression that
+            # passes both/neither fails under the stub too, not just in production
+            assert (user_message is None) != (messages is None), (
+                "call_claude requires exactly one of user_message or messages"
+            )
             calls.append({
                 "user_message": user_message,
                 "system_prompt": system_prompt,
                 "injection": injection,
                 "model": model,
                 "max_tokens": max_tokens,
+                "messages": messages,
             })
             if queue is None:
                 return responses(
@@ -86,6 +92,7 @@ def stub_claude(monkeypatch):
                     injection=injection,
                     model=model,
                     max_tokens=max_tokens,
+                    messages=messages,
                 )
             # FIFO queues assume serial calls: a parallel stage (workers > 1
             # with 2+ pending items) interleaves pops and maps responses to

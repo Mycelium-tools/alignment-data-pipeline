@@ -1,4 +1,9 @@
-"""Layer 4: Rewrite documents against the constitution."""
+"""Layer 4: Review and rewrite documents against the constitution.
+
+Per TCW, the reviewer gets a system prompt that frames the task and embeds the
+constitution, and a user prompt carrying the document; it responds with a list
+of problems followed by the new version in <improved_document> tags.
+"""
 
 import re
 import sys
@@ -13,7 +18,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
     output_path = output_dir / "rewrites.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    constitution = constitution_loader.load_full_constitution(utils.resolve_constitution_dir(prompts_dir))
+    # SDF injects the plain Claude constitution only (no sentient-beings reading)
+    constitution = constitution_loader.load_constitution_claude(
+        utils.resolve_constitution_dir(prompts_dir)
+    )
+    system_prompt = utils.load_prompt(
+        prompts_dir / "layer4_system.txt", constitution=constitution
+    )
+
     existing = utils.load_jsonl(output_path)
     results = list(existing)
 
@@ -21,11 +33,15 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
 
     def rewrite_document(draft: dict) -> dict:
         prompt = utils.load_prompt(
-            prompts_dir / "layer4.txt",
+            prompts_dir / "layer4_user.txt",
             document=draft["content"],
         )
 
-        raw = api.call_claude(user_message=prompt, system_prompt=constitution, max_tokens=6000)
+        # The response must hold the review notes PLUS the full rewritten
+        # document, so it needs more headroom than the 6000-token draft budget —
+        # otherwise the longest drafts always truncate and silently skip the
+        # rewrite via the keep-original fallback.
+        raw = api.call_claude(user_message=prompt, system_prompt=system_prompt, max_tokens=8000)
 
         # Review notes come first, then the document inside <improved_document> tags
         match = re.search(r"<improved_document>(.*?)</improved_document>", raw, flags=re.DOTALL)
@@ -43,7 +59,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
             "doc_id": draft["doc_id"],
             "subtype_id": draft["subtype_id"],
             "type_id": draft["type_id"],
-            "language": draft["language"],
             "original": draft["content"],
             "rewritten": rewritten,
             "review_notes": review_notes,

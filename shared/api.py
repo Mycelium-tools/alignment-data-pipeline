@@ -34,6 +34,7 @@ _cost_log_lock = threading.Lock()
 # run was overreported 3x this way). The Anthropic console is the source of
 # truth for billing; this log is for per-stage breakdowns.
 _PRICING = {
+    "claude-sonnet-4-5": (3.00, 15.00),
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-sonnet-5": (3.00, 15.00),
     "claude-opus-4-8": (5.00, 25.00),
@@ -104,24 +105,31 @@ def _call_with_retry(
 
 
 def call_claude(
-    user_message: str,
+    user_message: str | None = None,
     system_prompt: str = "",
     injection: str = "",
     model: str | None = None,
     max_tokens: int | None = None,
+    messages: list[dict] | None = None,
 ) -> str:
     """Call Claude and return the response text.
 
     Args:
-        user_message: The user turn content.
+        user_message: The user turn content (single-turn form).
         system_prompt: Optional system prompt.
         injection: Optional text appended to the system prompt (e.g. injection type for DAD).
         model: Model override; falls back to config value.
         max_tokens: Token limit override; falls back to config value.
+        messages: Full conversation as a messages list (multi-turn form; SDF
+            layer 3 uses this to draft several documents in one context window).
+            Exactly one of user_message / messages must be provided.
 
     Returns:
         The assistant's response text.
     """
+    if (user_message is None) == (messages is None):
+        raise ValueError("call_claude requires exactly one of user_message or messages")
+
     client = _get_client()
     resolved_model = model or _config.get("model", "claude-sonnet-4-6")
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
@@ -135,11 +143,22 @@ def call_claude(
         model=resolved_model,
         max_tokens=resolved_max,
         system=full_system,
-        messages=[{"role": "user", "content": user_message}],
+        messages=messages if messages is not None else [{"role": "user", "content": user_message}],
     )
 
     _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens)
-    return response.content[0].text
+    # The API can return an empty content list (or non-text blocks); return ""
+    # instead of crashing mid-run and losing the batch — each stage's parse
+    # fallback decides what an empty response means for its record.
+    text_parts = [block.text for block in response.content if hasattr(block, "text")]
+    if not text_parts:
+        print(
+            f"  WARNING: model returned no text content (stop_reason="
+            f"{getattr(response, 'stop_reason', '?')}); treating as empty response.",
+            file=sys.stderr,
+        )
+        return ""
+    return "".join(text_parts)
 
 
 def get_total_cost() -> float:

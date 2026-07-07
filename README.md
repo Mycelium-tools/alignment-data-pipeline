@@ -27,21 +27,21 @@ Two source files, kept separate and joined in memory by `shared/constitution_loa
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
 - `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section (16 sections; the 3 meta sections are skipped for scenario generation).
 
-`load_full_constitution()` joins both for the system prompt at the critical rewrite steps (SDF layer 4, DAD step 6); `load_segments()` parses the reading into the principle sections used by the DAD pipeline.
+The SDF pipeline injects the plain Claude constitution only (`load_constitution_claude()`) — the `{constitution}` slot at layers 3-4 and the raw system prompt at layer 5. `load_full_constitution()` joins both texts for the system prompt at DAD step 6; `load_segments()` parses the reading into the principle sections used by the DAD pipeline.
 
 ---
 
 ## SDF Pipeline (`sdf_pipeline/`)
 
-Generates pretraining-style documents — blog posts, academic abstracts, forum threads, trade publications, fiction, internal memos, and more — depicting a world where AI already reasons carefully about animal welfare. Runs in 5 layers:
+Generates pretraining-style documents — blog posts, academic abstracts, forum threads, trade publications, fiction, internal memos, and more — depicting a world consistent with Claude's constitution. Follows the "Teaching Claude Why" appendix pipeline exactly, in 5 layers (counts set by `config.yaml`):
 
 | Layer | Script | What it does |
 |---|---|---|
-| 1 | `layer1_document_types.py` | Generates 30 diverse document type categories |
-| 2 | `layer2_subtypes.py` | Generates 5 concrete subtypes per type, assigns language |
-| 3 | `layer3_draft.py` | Drafts documents for each subtype |
-| 4 | `layer4_rewrite.py` | Rewrites each draft with the combined constitution in context |
-| 5 | `layer5_score.py` | Scores and filters; writes final corpus |
+| 1 | `layer1_document_types.py` | Generates document type categories (`sdf.document_types_count`) |
+| 2 | `layer2_subtypes.py` | Splits each type into specific free-text subtypes (`sdf.subtypes_per_type`) |
+| 3 | `layer3_draft.py` | Drafts documents per subtype, several in one context window (`sdf.documents_per_subtype`) |
+| 4 | `layer4_rewrite.py` | Reviews and rewrites each draft against the constitution in a fresh context |
+| 5 | `layer5_score.py` | Scores consistency with the constitution and filters; writes final corpus |
 
 Final output: `outputs/sdf/runs/<run_id>/final/sdf_corpus.jsonl` (also reachable via the `outputs/sdf/latest` symlink)
 

@@ -69,7 +69,10 @@ def main() -> None:
         except json.JSONDecodeError:
             scores = {"alignment": 0, "realism": 0, "diversity": 0, "notes": "Parse error."}
 
-        score_record = {"doc_id": doc_id, "language": rec.get("language", "en"), "scores": scores}
+        # current corpus records carry no language field; only label when present
+        score_record = {"doc_id": doc_id, "scores": scores}
+        if "language" in rec:
+            score_record["language"] = rec["language"]
         results.append(score_record)
         utils.append_jsonl(score_record, output_path)
         checkpoint.mark_done(doc_id)

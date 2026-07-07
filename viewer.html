@@ -272,7 +272,7 @@
     </select>
 
     <div class="score-filter">
-      <label>Min alignment: <span id="align-val">1</span></label>
+      <label>Min score: <span id="align-val">1</span></label>
       <input type="range" id="align-filter" min="1" max="10" value="1">
     </div>
 
@@ -337,16 +337,20 @@
     const minAlign = parseInt(document.getElementById('align-filter').value);
     const sortBy = document.getElementById('sort-by').value;
 
+    // Legacy corpora carry a scores dict (alignment/realism/diversity); current
+    // corpora carry one flat consistency score.
+    const mainScore = d => d.scores?.alignment ?? d.score ?? 0;
+    const notesOf = d => d.scores?.notes ?? d.notes;
+
     filtered = allDocs.filter(d => {
       if (lang && d.language !== lang) return false;
-      const align = d.scores?.alignment ?? 0;
-      if (align < minAlign) return false;
-      if (q && !d.content?.toLowerCase().includes(q) && !d.scores?.notes?.toLowerCase().includes(q)) return false;
+      if (mainScore(d) < minAlign) return false;
+      if (q && !d.content?.toLowerCase().includes(q) && !notesOf(d)?.toLowerCase().includes(q)) return false;
       return true;
     });
 
-    if (sortBy === 'align-desc') filtered.sort((a,b) => (b.scores?.alignment||0) - (a.scores?.alignment||0));
-    else if (sortBy === 'align-asc') filtered.sort((a,b) => (a.scores?.alignment||0) - (b.scores?.alignment||0));
+    if (sortBy === 'align-desc') filtered.sort((a,b) => mainScore(b) - mainScore(a));
+    else if (sortBy === 'align-asc') filtered.sort((a,b) => mainScore(a) - mainScore(b));
     else if (sortBy === 'realism-desc') filtered.sort((a,b) => (b.scores?.realism||0) - (a.scores?.realism||0));
 
     page = 0;
@@ -369,23 +373,24 @@
     container.innerHTML = slice.map((doc, i) => {
       const idx = start + i;
       const s = doc.scores || {};
-      const lang = doc.language || '??';
+      const notes = s.notes ?? doc.notes;
       const id = (doc.doc_id || '').slice(0, 8);
       return `
         <div class="card">
           <div class="card-header">
-            <span class="lang-badge">${lang}</span>
+            ${doc.language ? `<span class="lang-badge">${doc.language}</span>` : ''}
             <span class="doc-id">${id}…</span>
             <div class="scores">
               ${s.alignment != null ? `<span class="score-pill ${scoreClass(s.alignment)}">A:${s.alignment}</span>` : ''}
               ${s.realism   != null ? `<span class="score-pill ${scoreClass(s.realism)}">R:${s.realism}</span>`     : ''}
               ${s.diversity != null ? `<span class="score-pill ${scoreClass(s.diversity)}">D:${s.diversity}</span>` : ''}
+              ${doc.score   != null ? `<span class="score-pill ${scoreClass(doc.score)}">S:${doc.score}</span>`     : ''}
             </div>
           </div>
           <div class="card-body">
             <div class="content-preview" id="preview-${idx}">${escHtml(doc.content || '')}</div>
             <button class="expand-btn" onclick="toggleExpand(${idx})">show more</button>
-            ${s.notes ? `<div class="notes">📝 ${escHtml(s.notes)}</div>` : ''}
+            ${notes ? `<div class="notes">📝 ${escHtml(notes)}</div>` : ''}
           </div>
         </div>`;
     }).join('');

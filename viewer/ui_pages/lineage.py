@@ -73,18 +73,24 @@ elif run.pipeline == "sdf":
         help="Top-level document categories generated in Layer 1.",
     )
     min_score = f2.slider("Min score (from Layer 5)", 1, 10, 1,
-                          help="Minimum alignment and realism scores assigned in Layer 5.")
+                          help="Minimum of every score assigned in Layer 5.")
 
     options, labels = [], {}
     for d in sorted(finals, key=lambda d: str(d.get("subtype_id", ""))):
         st_rec = subtypes.get(d.get("subtype_id"), {})
-        scores = d.get("scores", {})
         if type_filter and st_rec.get("type_name", "") not in type_filter:
             continue
-        if (scores.get("alignment") or 0) < min_score or (scores.get("realism") or 0) < min_score:
+        # current runs store one flat consistency score; legacy runs a scores dict
+        if "score" in d:
+            dims = [d.get("score") or 0]
+        else:
+            scores = d.get("scores", {})
+            dims = [scores.get("alignment") or 0, scores.get("realism") or 0]
+        if min(dims) < min_score:
             continue
         options.append(d["doc_id"])
-        labels[d["doc_id"]] = f"{_doc_title(d.get('content'))}   —   {st_rec.get('subtype_name', '?')}"
+        subtype_label = st_rec.get("subtype_name") or st_rec.get("subtype") or "?"
+        labels[d["doc_id"]] = f"{_doc_title(d.get('content'))}   —   {subtype_label[:60]}"
 
     st.caption("Dropdown labels: *document title — subtype (from Layer 2)*")
     selected_id = _pick_document(options, labels, "document")
@@ -130,7 +136,7 @@ elif run.pipeline == "sdf":
     doc_col, prompts_col = st.columns(2)
 
     with doc_col:
-        st.subheader(subtype.get("subtype_name") or f"Document {selected_id[:8]}")
+        st.subheader((subtype.get("subtype_name") or subtype.get("subtype") or f"Document {selected_id[:8]}")[:80])
         with st.container(height=PANEL_HEIGHT):
             st.code((lin.get("final") or {}).get("content", ""), language=None, wrap_lines=True)
 
@@ -157,7 +163,8 @@ elif run.pipeline == "sdf":
             stage_expander("Layer 4 — constitutional rewrite", "layer4", lin, layer4_output)
 
             stage_expander("Layer 5 — scoring", "layer5", lin,
-                           lambda: st.json((lin["score"] or {}).get("scores", {}))
+                           lambda: st.json(lin["score"].get("scores")
+                                           or {k: lin["score"].get(k) for k in ("score", "notes")})
                            if lin["score"] else st.caption("not reached"))
 else:
     lin = loader.dad_lineage(run.run_dir, selected_id)

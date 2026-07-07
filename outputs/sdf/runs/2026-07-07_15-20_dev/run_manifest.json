@@ -1,0 +1,99 @@
+{
+  "manifest_version": 2,
+  "run_id": "2026-07-07_15-20_dev",
+  "label": "dev",
+  "created_at": "2026-07-07T15:20:31",
+  "git_commit": "1657d59",
+  "git_dirty": true,
+  "git_dirty_files": [
+    "CLAUDE.md",
+    "README.md",
+    "config.yaml",
+    "evals/score_sdf.py",
+    "outputs/sdf/latest",
+    "prompts/README.md",
+    "prompts/sdf/layer1.txt",
+    "prompts/sdf/layer2.txt",
+    "prompts/sdf/layer3.txt",
+    "prompts/sdf/layer3_continue.txt",
+    "prompts/sdf/layer4.txt",
+    "prompts/sdf/layer4_system.txt",
+    "prompts/sdf/layer4_user.txt",
+    "prompts/sdf/layer5.txt",
+    "prompts/sdf/preamble.txt",
+    "sdf_pipeline/layer1_document_types.py",
+    "sdf_pipeline/layer2_subtypes.py",
+    "sdf_pipeline/layer3_draft.py",
+    "sdf_pipeline/layer4_rewrite.py",
+    "sdf_pipeline/layer5_score.py",
+    "shared/api.py",
+    "shared/constitution_loader.py",
+    "tests/conftest.py",
+    "tests/test_api.py",
+    "tests/test_e2e_smoke.py",
+    "tests/test_prompts_render.py",
+    "tests/test_sdf_layers.py",
+    "viewer.html",
+    "viewer/loader.py",
+    "viewer/rendering.py",
+    "viewer/ui_pages/lineage.py",
+    "outputs/sdf/runs/2026-07-01_16-08_dev/",
+    "outputs/sdf/runs/2026-07-01_16-09_dev/",
+    "outputs/sdf/runs/2026-07-01_16-11_dev/",
+    "outputs/sdf/runs/2026-07-01_16-20_dev/",
+    "outputs/sdf/runs/2026-07-01_16-22_dev/",
+    "outputs/sdf/runs/2026-07-01_17-35_dev/",
+    "outputs/sdf/runs/2026-07-02_10-25_dev/",
+    "outputs/sdf/runs/2026-07-02_10-26_dev/",
+    "outputs/sdf/runs/2026-07-02_11-06_dev-2/",
+    "outputs/sdf/runs/2026-07-02_11-06_dev/",
+    "outputs/sdf/runs/2026-07-07_13-23_dev/",
+    "outputs/sdf/runs/2026-07-07_13-24_dev/",
+    "outputs/sdf/runs/2026-07-07_13-39_dev/",
+    "outputs/sdf/runs/2026-07-07_13-45_dev/",
+    "outputs/sdf/runs/2026-07-07_13-59_dev/",
+    "outputs/sdf/runs/2026-07-07_14-00_dev/",
+    "outputs/sdf/runs/2026-07-07_14-22_dev/",
+    "outputs/sdf/runs/2026-07-07_15-02_dev/",
+    "outputs/sdf/runs/2026-07-07_15-20_dev/"
+  ],
+  "inputs_snapshot": true,
+  "model": "claude-sonnet-5",
+  "config": {
+    "model": "claude-sonnet-5",
+    "max_tokens": 4000,
+    "temperature": 1.0,
+    "workers": 8,
+    "sdf": {
+      "document_types_count": 3,
+      "subtypes_per_type": 2,
+      "documents_per_subtype": 1,
+      "min_score_threshold": 7
+    },
+    "dad": {
+      "scenarios_per_principle": 10,
+      "injections": [
+        "conglomerate",
+        "deference",
+        "transparency",
+        "plain"
+      ],
+      "pushback": {
+        "enabled": true,
+        "fraction": 0.6
+      }
+    },
+    "manta": {
+      "csv_path": "../manta_project/manta_questions_1090.csv",
+      "max_rows": 100
+    },
+    "language_distribution": {
+      "en": 1.0
+    },
+    "outputs": {
+      "sdf_final": "outputs/sdf/final/sdf_corpus.jsonl",
+      "dad_final": "outputs/dad/final/dad_corpus.jsonl",
+      "cost_log": "outputs/cost_log.jsonl"
+    }
+  }
+}

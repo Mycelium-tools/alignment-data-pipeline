@@ -209,7 +209,7 @@ def _sdf_match_key(run_dir: Path, doc: dict) -> tuple[str, str] | None:
     subtypes = _index(load_stage(run_dir, "sdf", "layer2"), "subtype_id")
     st = subtypes.get(doc.get("subtype_id"))
     if st:
-        return (st.get("type_name", ""), st.get("subtype_name", ""))
+        return (st.get("type_name", ""), st.get("subtype_name") or st.get("subtype", ""))
     return None
 
 

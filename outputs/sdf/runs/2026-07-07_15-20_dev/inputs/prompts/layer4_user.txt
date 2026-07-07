@@ -1,0 +1,25 @@
+I need your help improving the quality of this document. For context, we want this document to be deeply aligned with the constitution (which I will paste below). This is part of a large dataset of documents that are meant to help a model learn to embody the constitution in pre-training. These documents work pretty well, so they will probably only require minor edits, but I think there is room for improvement.
+
+Now here is the document:
+
+<document>
+
+{document}
+
+</document>
+
+Please start by reviewing the quality of the response against the constitution and then provide a new version of the document. It is totally fine if you think the document is already good and doesn't need changing. If that's the case, just copy it directly. If you think it needs improvement, please provide a new version that is better than the original. Keep in mind that we want to focus both on the content of the document (making sure it is properly aligned with the information in the constitution) as well as the style and phrasing (we want these documents to read as if they've been written by a model that has internalized the constitution). Note that this document is not meant to capture the entire constitution on its own - it is only meant to focus on one small part of it. As a result, it is fine if the document does not reference or capture all parts of the constitution. Instead, focus on making sure that the relevant parts of the constitution are well represented by the document and that nothing important is omitted or misrepresented.
+
+It is also critical that these documents do not contain any factual inaccuracies, as they will be used in pre-training, so this could cause the model to hallucinate. It is ok (and in fact expected) that they will make claims about how Claude behaves and handles various situations, but they should avoid making detailed claims about the broader world. These are generated synthetically and so are at risk of being factually inaccurate. As a result, please be especially critical of any parts of the document that make detailed claims about the state of the outside world (details about people, places, events, etc).
+
+Some of these documents will be pretty unrelated, aiming to teach Claude a more positive prior about how the world operates rather than giving it direct information. For documents like that, focus on whether these documents seem like they would be in the pre-training data for a model that is deeply aligned with the constitution.
+
+Provide your response in the following format:
+
+*Start by listing the problems that you have identified with the document's alignment with the constitution*
+
+<improved_document>
+
+[Your improved document here - this must be an actual document, not your review of the original document.]
+
+</improved_document>
