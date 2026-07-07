@@ -303,7 +303,8 @@ def render() -> None:
     system_prompt = judge.build_system_prompt(rubric, judge.load_principles())
     in_tok = len(system_prompt) // 4 + 1000
     cost = estimate_cost(len(to_judge), models, api._PRICING, in_tok, OUT_TOKENS_EST)
-    mins = n_calls * SECONDS_PER_CALL / 60
+    # panel_judge runs a record's models concurrently, so wall-clock ~= one call per record
+    mins = len(to_judge) * SECONDS_PER_CALL / 60
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Will judge", len(to_judge))

@@ -10,6 +10,7 @@ import os
 import re
 import statistics
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -457,12 +458,19 @@ def panel_judge(
     principles: list[dict],
     temperature: float = 0.0,
 ) -> dict:
-    """Judge one record with every model on the panel."""
+    """Judge one record with every model on the panel. Models run concurrently
+    (each call is I/O-bound and judge_record never raises); result order matches
+    `models`. judge_record's own retries are unchanged."""
     system = build_system_prompt(rubric, principles)
-    results = [
-        judge_record(messages, m, rubric, principles, temperature, system_prompt=system)
-        for m in models
-    ]
+
+    def _one(m: str) -> dict:
+        return judge_record(messages, m, rubric, principles, temperature, system_prompt=system)
+
+    if len(models) <= 1:
+        results = [_one(m) for m in models]
+    else:
+        with ThreadPoolExecutor(max_workers=len(models)) as ex:
+            results = list(ex.map(_one, models))  # map preserves input order
     out = consensus(results, rubric)
     out["results"] = results
     out["response_words"] = sum(len(m["content"].split()) for m in messages if m["role"] == "assistant")
