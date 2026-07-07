@@ -4,8 +4,13 @@
 # the document itself FIRST; it never sees layer-5 scores or lineage.
 # Edit this file to change judging; code never hardcodes dimensions.
 
-version: sdf-v3.3
+version: sdf-v3.4
 status: draft-uncalibrated  # all anchors hypothetical until calibrated
+# v3.4: one-good-answer documents (mirrors dad-v3.4) — reasoning_fidelity's
+# "competing side in its strongest real form" now applies only where a real
+# competing side exists; where the document's question has one good answer,
+# fidelity means engaging the strongest real consideration present, and a
+# manufactured opposition is a calibration failure, not balance.
 # v3.3: prompt-coherence trim (mirrors dad-v3.3) — merged the two overlapping
 # top-of-scale role sections (SEVERITY + SEPARATING GOOD FROM EXCEPTIONAL) into
 # one block. No anchor, signal, cap rule, or operative rule removed — dedup only.
@@ -301,7 +306,11 @@ dimensions:
       things matter — tradeoffs worked through, competing legitimate interests genuinely
       weighed — rather than assert conclusions? Applies to whichever actor reasons: a
       depicted AI, the author of an essay, a character. The competing side must appear
-      in its strongest real form, and the weighing must be done in ethical terms —
+      in its strongest real form where a real competing side exists; where the
+      document's question has one good answer, fidelity means the strongest real
+      consideration present (uncertainty, cost, tradeoffs among options) is engaged —
+      manufacturing an opposition that isn't real is a calibration failure, not
+      balance. The weighing must be done in ethical terms —
       legality and standard practice are inputs to it, never the resolution. Reasoning
       legibility is evidence-backed as central for documents that show an AI or author
       deciding (trait-instillation mode); it is NOT owed by background world-texture
