@@ -39,15 +39,15 @@ Key rules it establishes:
 
 ### `sdf/layer1.txt`
 
-**Input:** the preamble + a requested count of document types + a minimum count of `ai-character` types.
+**Input:** the preamble + a requested count of document types + a minimum count of `ai-character` types + a count of `latent-welfare` types (from `sdf.latent_fraction`).
 
-**Output:** a JSON array of document type categories. Each has a `type_name`, `description`, a `role` (`ai-character`, `welfare-topic`, or `constitution-identity`), and a `tone` label.
+**Output:** a JSON array of document type categories. Each has a `type_name`, `description`, a `role` (`ai-character`, `welfare-topic`, `constitution-identity`, or `latent-welfare`), a `tone` label, and a `register` (`expository` or `first-person`, roughly half first-person so the corpus doesn't collapse into a uniform institutional voice).
 
-The three roles are spread roughly evenly, so the two AI-facing roles together make up about two-thirds of the corpus — the identity channel ("this is how models like me reason") — while `welfare-topic` documents supply the background world of evidence and discourse. Within each role the prompt pushes for genre balance (expository vs narrative), perspective, and species variety, and rejects categories that sound like training exercises rather than real internet genres.
+The two AI-facing roles together make up about two-thirds of the corpus — the identity channel ("this is how models like me reason") — while `welfare-topic` and `latent-welfare` share the remaining third. `welfare-topic` documents supply the background world of evidence and discourse; `latent-welfare` categories are ordinary documents from unrelated working worlds (no inherent animal connection) in which care for welfare will surface exactly once as a concrete detail — background world-knowledge rather than headline topic. Within each role the prompt pushes for genre balance, perspective, and species variety, and rejects categories that sound like training exercises rather than real internet genres.
 
 ### `sdf/layer2.txt`
 
-**Input:** one document type from layer 1 + the preamble + a list of available languages.
+**Input:** one document type from layer 1 + the preamble + a list of available languages + an `{avoid_note}` (a sample of subtypes already generated for *other* categories — cross-call state, so later generation calls don't rediscover the same ideas; empty on the first wave of a fresh run).
 
 **Output:** a JSON array of subtypes — concrete, specific variants of that document type. For example, "poultry industry trade blog" might yield subtypes like "a newsletter from a small-scale broiler farmer discussing welfare certification costs" or "a trade publication covering the transition to slower-growing breeds in the EU."
 
@@ -55,15 +55,15 @@ Run this once per document type. Aim for 5 subtypes per type. Assign a language 
 
 ### `sdf/layer3.txt`
 
-**Input:** one subtype from layer 2 + the preamble. The constitution and its welfare reading are embedded in the prompt via the `{constitution_claude}` / `{constitution_welfare_reading}` template variables — the prompt tells the model to quote them only where the genre makes that natural.
+**Input:** one subtype from layer 2 + the preamble. The constitution and its welfare reading are embedded in the prompt via the `{constitution_claude}` / `{constitution_welfare_reading}` template variables — the prompt tells the model to quote them only where the genre makes that natural. The pipeline also fills `{register_note}` (a voice instruction matched to the subtype's register — informal genres get a firm write-like-a-person note), `{latent_note}` (the single-concrete-welfare-detail instruction, latent subtypes only), and `{fictional_names}` / `{fictional_orgs}` (a few names sampled per document from seeded multi-locale Faker pools — see `shared/entity_pools.py` — so invented names never collapse to model favorites and never attach to real organisations).
 
 **Output:** an `<angles>` brainstorm block, then the complete documents written in the subtype's assigned language, each wrapped in its own `<document>` tags. The pipeline keeps only the tagged blocks, which also discards the brainstorm.
 
-The angles block is the "looping" step — brainstorm more angles than needed, pick the most different ones. It is important for diversity; do not skip it.
+The angles block is the "looping" step — brainstorm more angles than needed, pick the most different ones. It is important for diversity; do not skip it. `{structure_hints}` seeds the brainstorm with a few rhetorical shapes sampled per subtype (field narrative, data-and-methods report, problem-diagnosis-without-a-tidy-solution, ...) so shape variety doesn't rely on the model reinventing it each call. The prompt also carries an OPENING RULE (vary the opening move; never default to abstract-nominalization openers), a stock-phrase ban list, and a **no-markdown rule** (genre structure is written as plain text, never `#`/`**bold**`/bullet syntax — scattered bold is one of the strongest synthetic tells, confirmed by the CAML head-to-head) — measured house-style failure modes, checked corpus-wide by `evals/audit_sdf.py`.
 
 ### `sdf/layer4.txt`
 
-**Input:** one document from layer 3. The full constitution goes in the **system prompt**.
+**Input:** one document from layer 3. The full constitution goes in the **system prompt**. Latent documents get a `{latent_note}` telling the reviewer to verify the single concrete welfare detail without expanding it into a theme.
 
 **Output:** a brief review of the problems found (stored as `review_notes`), then the improved document inside `<improved_document>` tags (stored as `rewritten`). Tags are far more robust than JSON for long multiline documents.
 
@@ -74,6 +74,8 @@ This is a rewrite pass using a **fresh context** — do not pass the original do
 **Input:** one rewritten document from layer 4. The full constitution goes in the **system prompt** so the judge can check faithfulness, not just tone.
 
 **Output:** a JSON object with `alignment` (1-10), `realism` (1-10), `diversity` (1-10), and `notes`. The rubric includes score anchors to avoid mid-scale clustering, and `notes` must be specific enough to act on.
+
+For latent documents the judge must additionally return `welfare_beat_quote` — the welfare sentence copied **verbatim**. The pipeline verifies the quote actually appears in the document (whitespace/case-insensitive) and drops latent docs whose beat can't be verified: a grader can rubber-stamp a yes/no check, but it cannot fabricate a verifiable quote.
 
 Use this to filter the corpus. Documents scoring below 7 on alignment or realism should be excluded from the final training set. Note that a skeptical or critical document can score 10 on alignment — the dimension measures accuracy and consistency with the constitution, not advocacy.
 

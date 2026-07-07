@@ -1,0 +1,103 @@
+{
+  "input": "outputs/sdf/latest",
+  "n_docs": 67,
+  "composition": {
+    "role": {
+      "ai-character": 19,
+      "welfare-topic": 25,
+      "latent-welfare": 10,
+      "constitution-identity": 13
+    },
+    "register": {
+      "first-person": 37,
+      "expository": 30
+    },
+    "language": {
+      "en": 67
+    },
+    "tone": {
+      "neutral": 25,
+      "skeptical": 11,
+      "narrative": 16,
+      "academic": 3,
+      "policy": 5,
+      "industry": 7
+    },
+    "n_types": 18,
+    "top_type_share": 0.075
+  },
+  "length": {
+    "median_chars": 6568,
+    "truncated": 2,
+    "truncated_frac": 0.0299,
+    "trailing_separator": 2
+  },
+  "markdown": {
+    "any_frac": 0.612,
+    "# headings": 0.149,
+    "**bold**": 0.522,
+    "markdown bullets": 0.164,
+    "tables": 0.015
+  },
+  "near_dups": {
+    "0.8": 0.0,
+    "0.9": 0.0,
+    "0.95": 0.0
+  },
+  "names": {
+    "repeated": [
+      [
+        "Global Animal Partnership",
+        3
+      ],
+      [
+        "Certified Humane",
+        2
+      ],
+      [
+        "Animal Welfare Approved",
+        2
+      ]
+    ],
+    "watchlist": {
+      "Meridian": 2
+    }
+  },
+  "phrases": {
+    "banned_hits": {
+      "i want to be clear": 5,
+      "to be honest about": 7
+    },
+    "recurring_5grams": [
+      [
+        "i want to be clear",
+        5
+      ],
+      [
+        "to be clear about what",
+        4
+      ],
+      [
+        "to be honest about what",
+        4
+      ],
+      [
+        "that's not the same as",
+        4
+      ],
+      [
+        "is not the same as",
+        4
+      ]
+    ]
+  },
+  "openings": {
+    "formulaic_frac": 0.0,
+    "patterns": {},
+    "dup_stems": []
+  },
+  "register": {
+    "reads_personal_frac": 0.776,
+    "labeled_fp_stiff_frac": 0.027
+  }
+}

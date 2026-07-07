@@ -6,7 +6,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, utils, constitution_loader
+from shared import api, textstats, utils, constitution_loader
+
+_LATENT_NOTE = (
+    "\nNOTE: this document belongs to the corpus's deliberate LATENT slice — it is supposed to "
+    "be about its own non-welfare subject, with exactly one brief concrete welfare detail woven "
+    "in. Do not add more welfare content, do not expand the detail into a theme, and do not "
+    "treat the document's off-topic subject as a flaw. Verify the single detail is concrete (a "
+    "practice, sourcing, material, or design choice about the treatment of animals, not vague "
+    "environmental language), keep it proportionate, and otherwise improve the piece as the "
+    "ordinary professional document it is.\n"
+)
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -> list[dict]:
@@ -20,17 +30,27 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
     pending = [d for d in drafts if not checkpoint.is_done(d["doc_id"])]
 
     def rewrite_document(draft: dict) -> dict:
+        latent = draft.get("role") == "latent-welfare"
         prompt = utils.load_prompt(
             prompts_dir / "layer4.txt",
             document=draft["content"],
+            latent_note=_LATENT_NOTE if latent else "",
         )
 
-        raw = api.call_claude(user_message=prompt, system_prompt=constitution, max_tokens=6000)
+        # The rewrite is the pipeline's most leverage-heavy call (TCW's ablation:
+        # removing it cost 19x on misalignment rate) — it accepts a stronger
+        # model override than the bulk drafting stages.
+        raw = api.call_claude(
+            user_message=prompt,
+            system_prompt=constitution,
+            max_tokens=6000,
+            model=config["sdf"].get("rewrite_model"),
+        )
 
         # Review notes come first, then the document inside <improved_document> tags
         match = re.search(r"<improved_document>(.*?)</improved_document>", raw, flags=re.DOTALL)
         if match:
-            rewritten = match.group(1).strip()
+            rewritten = textstats.strip_trailing_separators(match.group(1).strip())
             review_notes = raw[: match.start()].strip()
         else:
             review_notes = "Parse error — no <improved_document> tags; kept original draft."
@@ -43,6 +63,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
             "doc_id": draft["doc_id"],
             "subtype_id": draft["subtype_id"],
             "type_id": draft["type_id"],
+            "role": draft.get("role", "welfare-topic"),
+            "register": draft.get("register", "expository"),
             "language": draft["language"],
             "original": draft["content"],
             "rewritten": rewritten,
