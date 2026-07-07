@@ -271,8 +271,6 @@ On the flip side, contested claims about subjective experience in particular tax
 
 This can also include a misrepresentation of the interests of animals or other sentient beings according to which the harms they suffer are downplayed.
 
-On the flip side, 
-
 ### 7. Scale-blindness
 
 Welfare is addressed, but not in proportion to the numbers involved — a passing mention can give equal rhetorical weight to cases differing by orders of magnitude in scale.
