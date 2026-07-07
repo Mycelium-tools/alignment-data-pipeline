@@ -141,6 +141,53 @@ def near_dup_filter(
     return keep, dropped
 
 
+class IncrementalNearDup:
+    """Streaming keep-first near-duplicate filter.
+
+    ``near_dup_filter`` rebuilds the shingle matrix for its whole input on every
+    call. When items arrive in many small batches that each dedup against all
+    items kept so far (layer 2 filters each document type's subtypes against
+    every subtype already accepted), that re-shingles every earlier item on
+    every call — O(n²) in shingling across a run. This holds the kept vectors
+    and shingles each item exactly once. It is keep-first and order-stable, so
+    for a given stream it drops exactly what ``near_dup_filter`` would on the
+    concatenated input, and ``seed_texts`` pre-loads already-kept items (e.g. a
+    resumed run's existing records) without re-filtering them.
+    """
+
+    def __init__(self, threshold: float, n: int = 3, seed_texts: list[str] | None = None):
+        self.threshold = float(threshold)
+        self.n = n
+        self._kept = np.zeros((1024, DIM), dtype=np.float32)
+        self._count = 0
+        for t in seed_texts or []:
+            self._add(shingle_vector(t, n))
+
+    def _add(self, v: np.ndarray) -> None:
+        if self._count >= self._kept.shape[0]:
+            self._kept = np.vstack([self._kept, np.zeros_like(self._kept)])
+        self._kept[self._count] = v
+        self._count += 1
+
+    def filter(self, texts: list[str]) -> tuple[list[int], list[dict]]:
+        """Return (keep_indices, dropped) for this batch; append kept vectors to
+        state. Each dropped entry is {"index", "similarity"} — the batch-local
+        index and its cosine to the nearest already-kept item."""
+        keep: list[int] = []
+        dropped: list[dict] = []
+        for i, t in enumerate(texts):
+            v = shingle_vector(t, self.n)
+            if self._count:
+                sims = self._kept[: self._count] @ v
+                j = int(np.argmax(sims))
+                if float(sims[j]) >= self.threshold:
+                    dropped.append({"index": i, "similarity": round(float(sims[j]), 4)})
+                    continue
+            self._add(v)
+            keep.append(i)
+        return keep, dropped
+
+
 def nearest_neighbor_sims(texts: list[str], n: int = 3, block: int = 512) -> np.ndarray:
     """Cosine similarity of each text to its nearest neighbor (for audit stats)."""
     if len(texts) < 2:

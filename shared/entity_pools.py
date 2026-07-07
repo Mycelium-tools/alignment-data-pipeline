@@ -17,6 +17,7 @@ processes), and per-document sampling is keyed by the subtype id.
 from __future__ import annotations
 
 import random
+import sys
 
 _LOCALES = [
     "en_US", "en_GB", "en_IN", "fr_FR", "de_DE", "es_ES", "es_MX", "it_IT",
@@ -74,7 +75,15 @@ def build_pools(n_people: int = 300, n_orgs: int = 200, seed: int = 137) -> tupl
         # sort before the seeded shuffle: raw set order is not stable across sessions
         people = sorted(people_set)
         orgs = sorted(orgs_set)
-    except Exception:
+    except Exception as exc:
+        # Faker missing or misbehaving. Warn loudly: silently falling back to the
+        # tiny fixed pools would quietly reintroduce the exact name-collapse this
+        # module exists to prevent (a whole run keying off ~16 names).
+        print(
+            f"  WARNING: entity_pools falling back to built-in names ({type(exc).__name__}: {exc}). "
+            "Install/repair `faker` to restore the large multi-locale pools.",
+            file=sys.stderr,
+        )
         people = list(_FALLBACK_PEOPLE)
         orgs = list(_FALLBACK_ORGS)
     people = _clean(people, max_len=40)

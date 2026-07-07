@@ -276,7 +276,11 @@ class TestLayer2DedupAndRegister:
         calls = stub_claude(lambda user_message, **kw: SUBTYPES_RESPONSE)
         doc_types = [DOC_TYPE, {**DOC_TYPE, "type_id": 1, "type_name": "Other"}]
         layer2_subtypes.run(config, prompts_sdf, layer_dir, doc_types)
-        assert "already-generated" not in calls[0]["user_message"].lower()
+        # wave 0 has nothing to avoid yet; wave 1 must carry the avoid-list
+        # naming wave 0's subtypes. Assert on the real marker the avoid-note
+        # emits (see _avoid_note in layer2_subtypes), not a phrase that never
+        # appears regardless.
+        assert "do NOT produce subtypes that repeat" not in calls[0]["user_message"]
         assert "River survey" in calls[1]["user_message"]
         assert "do NOT produce subtypes that repeat" in calls[1]["user_message"]
 

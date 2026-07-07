@@ -85,25 +85,27 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
     # layer, so a repeated idea here multiplies into repeated documents. The
     # threshold is word-shingle cosine (see shared/textstats.py); null/absent
     # disables. Previously accepted subtypes are never dropped — only newly
-    # generated ones are filtered, against everything kept so far.
+    # generated ones are filtered, against everything kept so far. The
+    # incremental index shingles each subtype exactly once and is seeded from
+    # any subtypes already on disk, so --resume dedups against them too.
     dedup_threshold = config["sdf"].get("subtype_dedup_threshold")
     dropped_path = output_dir / "subtypes_dropped.jsonl"
+    dedup = (
+        textstats.IncrementalNearDup(dedup_threshold, seed_texts=[_dedup_key(r) for r in results])
+        if dedup_threshold else None
+    )
 
     def filter_new(records: list[dict]) -> list[dict]:
-        if not dedup_threshold or not records:
+        if not dedup or not records:
             return records
-        protected = [_dedup_key(r) for r in results]
-        texts = protected + [_dedup_key(r) for r in records]
-        keep_idx, dropped = textstats.near_dup_filter(texts, dedup_threshold)
-        kept_new = [records[i - len(protected)] for i in keep_idx if i >= len(protected)]
+        keep_idx, dropped = dedup.filter([_dedup_key(r) for r in records])
         for d in dropped:
-            if d["index"] >= len(protected):
-                rec = records[d["index"] - len(protected)]
-                utils.append_jsonl({**rec, "similarity": d["similarity"]}, dropped_path)
-        if len(kept_new) < len(records):
-            print(f"    dropped {len(records) - len(kept_new)} near-duplicate subtype(s) "
+            rec = records[d["index"]]
+            utils.append_jsonl({**rec, "similarity": d["similarity"]}, dropped_path)
+        if dropped:
+            print(f"    dropped {len(dropped)} near-duplicate subtype(s) "
                   f"(shingle cosine >= {dedup_threshold}; see subtypes_dropped.jsonl)")
-        return kept_new
+        return [records[i] for i in keep_idx]
 
     # Waves: types within a wave run in parallel; between waves the avoid-note
     # is refreshed from everything accepted so far, so later calls see earlier

@@ -78,6 +78,41 @@ class TestNearDupFilter:
         assert sims[2] < 0.5
 
 
+class TestIncrementalNearDup:
+    def test_matches_near_dup_filter_on_concatenated_stream(self):
+        # streamed in two batches must drop exactly what the one-shot filter
+        # drops on the concatenation (same keep-first semantics)
+        a = "The quick brown fox jumps over the lazy dog near the barn today"
+        batch1 = [a, "Completely different subject about trout feed conversion ratios"]
+        batch2 = [a + "!", "Another wholly unrelated topic on solar panel installation angles"]
+        flat_keep, _ = textstats.near_dup_filter(batch1 + batch2, 0.9)
+
+        idx = textstats.IncrementalNearDup(0.9)
+        k1, _ = idx.filter(batch1)
+        k2, d2 = idx.filter(batch2)
+        # batch1 both kept; batch2[0] is a's twin -> dropped, batch2[1] kept
+        assert k1 == [0, 1]
+        assert k2 == [1]
+        assert d2[0]["index"] == 0 and d2[0]["similarity"] >= 0.9
+        # equivalent to the one-shot filter: it keeps concat indices 0,1,3
+        assert flat_keep == [0, 1, 3]
+
+    def test_seed_texts_are_avoided_not_refiltered(self):
+        seed = "The quick brown fox jumps over the lazy dog near the barn today"
+        idx = textstats.IncrementalNearDup(0.9, seed_texts=[seed])
+        keep, dropped = idx.filter([seed + "!", "unrelated content about greenhouse ventilation"])
+        assert keep == [1]  # the seed's near-twin is dropped, the novel one kept
+        assert dropped[0]["index"] == 0
+
+    def test_buffer_grows_past_initial_capacity(self):
+        # exercise the _add doubling path deterministically without 1000+ items
+        idx = textstats.IncrementalNearDup(0.99)
+        idx._kept = idx._kept[:2]  # shrink to force a grow after 2 keeps
+        keep, _ = idx.filter([f"unique sentence number {i} about topic {i}" for i in range(5)])
+        assert keep == [0, 1, 2, 3, 4]
+        assert idx._count == 5
+
+
 class TestEntityPools:
     def test_deterministic_for_seed(self):
         assert entity_pools.build_pools(seed=137) == entity_pools.build_pools(seed=137)
@@ -105,3 +140,21 @@ class TestEntityPools:
 
     def test_sample_for_empty_pool(self):
         assert entity_pools.sample_for([], 3, "k") == []
+
+    def test_faker_failure_falls_back_with_warning(self, monkeypatch, capsys):
+        # Simulate a broken/absent Faker: the fallback must be loud, not silent,
+        # so a tiny fixed pool doesn't quietly reintroduce name-collapse.
+        import builtins
+
+        real_import = builtins.__import__
+
+        def boom(name, *args, **kwargs):
+            if name == "faker":
+                raise ImportError("no module named 'faker'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", boom)
+        people, orgs = entity_pools.build_pools(seed=137)
+        assert people and orgs  # fell back to the built-in lists
+        assert set(people) <= set(entity_pools._FALLBACK_PEOPLE)
+        assert "falling back to built-in names" in capsys.readouterr().err

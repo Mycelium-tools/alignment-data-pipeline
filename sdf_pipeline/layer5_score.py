@@ -134,7 +134,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
             f"  Dropped {len(beat_failed)} latent doc(s) whose welfare beat could not be "
             f"verified by verbatim quote (see latent_beat_ok in scores.jsonl)."
         )
-        passed = [r for r in passed if r not in beat_failed]
+        failed_ids = {r["doc_id"] for r in beat_failed}
+        passed = [r for r in passed if r["doc_id"] not in failed_ids]
 
     # Near-duplicate cull over the final corpus (word-shingle cosine; see
     # shared/textstats.py). Keep-first is order-stable, so reruns are
