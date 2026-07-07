@@ -2,7 +2,12 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+    # `edited` fires when a PR's base branch changes (e.g. a stacked PR
+    # auto-retargeting to main after its parent merges). GitHub dismisses the
+    # standing approval on retarget ("The base branch was changed."), so the
+    # review must re-run then — the job-level guard below skips the
+    # title/body-only edits that also arrive as `edited`.
+    types: [opened, synchronize, ready_for_review, reopened, edited]
     # Optional: Only run on specific file changes
     # paths:
     #   - "src/**/*.ts"
@@ -15,7 +20,11 @@ jobs:
     # Fork PRs can't access secrets/OIDC on the pull_request trigger, so the
     # review can't authenticate and the job always fails. Skip them here; forks
     # are reviewed on demand via an `@claude` comment (see claude.yml) instead.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # For `edited` events, only run when the base branch changed (the payload's
+    # `changes.base` is present only then) — not on title/body edits.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'edited' || github.event.changes.base != null)
 
     runs-on: ubuntu-latest
     permissions:
