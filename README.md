@@ -123,6 +123,12 @@ VERTEX_PROJECT=your-project-id
 # (or set GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON with the Vertex AI User role)
 ```
 
+**Panels can mix providers.** Set every key you have in `.env` and a judge panel can combine
+`gemini-*` and `claude-*` models in a single run — each model routes to its own provider's key
+and the verdicts are pooled into one consensus. A model whose key is missing simply errors while
+the rest of the panel still scores, so you can plug in all your keys and judge with all of them
+at once.
+
 ### Running the judge
 
 ```bash
