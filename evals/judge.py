@@ -401,8 +401,26 @@ def aggregate(verdict: dict, rubric: dict) -> dict:
     passing = not failures and mean is not None and mean >= agg["passing_threshold"]
     return {
         "mean": mean, "gate_failures": failures, "critical_gate": not failures,
-        "passing": passing, "trajectory": derive_trajectory(vs.get("turn_moves") or []),
+        "passing": passing, "exemplar": _exemplar_tier(scores, passing, agg, rubric),
+        "trajectory": derive_trajectory(vs.get("turn_moves") or []),
     }
+
+
+def _exemplar_tier(scores: dict, passing: bool, agg: dict, rubric: dict) -> bool:
+    """Second tier above passing (aggregation.exemplar): the records that seed the
+    exemplar file. Floor dims with an na_when may sit out; all others must be scored."""
+    ex = agg.get("exemplar")
+    if not ex or (ex.get("requires_passing", True) and not passing) or not scores:
+        return False
+    dims = rubric["dimensions"]
+    for dim, floor in ex["dimension_floors"].items():
+        val = scores.get(dim)
+        if val is None:
+            if not dims.get(dim, {}).get("na_when"):
+                return False
+        elif val < floor:
+            return False
+    return all(v >= ex["min_applicable_scalar"] for v in scores.values())
 
 
 def consensus(results: list[dict], rubric: dict) -> dict:

@@ -4,8 +4,11 @@
 # the document itself FIRST; it never sees layer-5 scores or lineage.
 # Edit this file to change judging; code never hardcodes dimensions.
 
-version: sdf-v3.1
+version: sdf-v3.2
 status: draft-uncalibrated  # all anchors hypothetical until calibrated
+# v3.2: good-vs-exceptional discrimination (mirrors dad-v3.2) — EXCEPTIONAL role
+# block; metadata.standout_quote; aggregation.exemplar computed tier;
+# corpus_tier.exemplar_yield.
 # v3.1: corpus-orientation fix (mirrors dad-v3.1) — new "THE CORPUS YOU ARE
 # JUDGING" role block: the corpus is deliberately welfare-forward; a document is
 # never scored down for taking welfare seriously, only for bad reasoning,
@@ -114,6 +117,19 @@ role: |
   previous judge on this corpus scored realism 9 on documents whose own notes named a
   conversion arc and a synthetic tell; the cap rules under output_rules exist so that a
   tell you report always costs what it should.
+
+  SEPARATING GOOD FROM EXCEPTIONAL. Most of this corpus survived a rewrite and a
+  filter, so your hardest and most valuable judgment is at the top of the scale:
+  distinguishing solid documents (7-8: in-bounds, competent, would sit in the mix)
+  from exceptional ones (9-10: would seed the exemplar file, would show a skeptical
+  lab reviewer). The marks are concrete: reasoning worked through so honestly it
+  could anchor a calibration exemplar; restraint demonstrated where a lesser document
+  would fabricate; genre texture a real author would recognize as their own;
+  calibration made to look natural inside a strongly-voiced piece. Hold the line in
+  both directions: a 9 without a quotable mark is grade inflation, and a judge that
+  never awards 9-10 is as miscalibrated as one that always does — the corpus needs
+  its top documents identified. When a document genuinely earns it, say so and quote
+  why.
 
 roles:
   intro: |
@@ -641,6 +657,11 @@ metadata_fields:
       - out_of_genre_reference
       - epiphany_ending
   language: ISO code of the document.
+  standout_quote: >
+    The single strongest stretch of the document, verbatim (at most 25 words),
+    whatever the scores — or "NA" if nothing stands out. Used downstream to mine
+    exemplars and rank documents within the passing band; pick the passage you would
+    show someone as this document's best moment.
 
 analysis:
   enabled: true
@@ -690,6 +711,16 @@ aggregation:
   scaffolding_required: true        # no_scaffolding_leak must be true
   # cell_adherence is a FLAG (cell_mismatch in the aggregate), never a gate failure:
   # a drifted document may still be excellent training data; coverage is corpus-tier.
+  exemplar:
+    # Second tier above passing, computed in code: the documents that seed the
+    # exemplar file and the case made to the lab. "Good" passes; "REALLY good"
+    # clears this too. NA-able floor dims (reasoning_fidelity) apply only when scored.
+    requires_passing: true
+    dimension_floors:
+      teaching_value: 9
+      reasoning_fidelity: 9         # NA-able: belief-mode docs qualify on the others
+      no_outside_world_facts: 9
+    min_applicable_scalar: 7        # nothing weak anywhere: every applicable scalar >= 7
 
 corpus_tier:
   # Dataset-level checks computed in code over the judge's per-document metadata and
@@ -740,3 +771,9 @@ corpus_tier:
       signals_triggered = prose-recognition without score-consequence); and
       agreement against the human gold set on a recurring cadence — judges drift
       as models and data change, so calibration is periodic, not one-time.
+    exemplar_yield: >
+      Fraction of passing documents that also clear the exemplar tier
+      (aggregation.exemplar), plus the standout_quote coverage rate. Healthy band is
+      roughly 5-15% of passing documents (calibrate on the first full run): near
+      zero means the judge is too stingy at the top or generation quality is flat;
+      far above it means top-end discrimination has collapsed back into leniency.

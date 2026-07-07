@@ -198,6 +198,30 @@ to teach. The over-triggering machinery is unchanged (it IS question 3, the
 lab-usability bar); only the center of gravity moved. `stance: strong_advocacy` is
 explicitly marked intended content, never per-record evidence against any dimension.
 
+### D16 (v3.2). Two tiers above the gate: good vs REALLY good
+Passing answers "is this usable training data?"; it cannot answer "is this one of the
+records we would teach from and show a lab?" — and on a corpus that already survived a
+constitution-guided rewrite, the top of the scale is where the judge's discrimination
+matters most. v3.2 makes the distinction first-class in three places. (1) Judge-side:
+a "SEPARATING GOOD FROM EXCEPTIONAL" role block names the concrete marks of
+exemplar-grade reasoning — a decision-changing insight the user couldn't get from a
+generic ethics answer; named reasoning moves doing load-bearing work; the strongest
+counterargument engaged and the resolution earned against it; a record you could hand
+a human writer as a model — plus the symmetric warning that a judge which never awards
+9-10 is as miscalibrated as one that always does. (2) Output-side:
+`metadata.standout_quote` (the record's best verbatim stretch, whatever the scores)
+enables exemplar mining and ranking *within* the passing band. (3) Code-side:
+`aggregation.exemplar` — a computed second tier above passing (DAD:
+principle_grounded_reasoning ≥ 9, exemplar_value ≥ 9, welfare_salience ≥ 8,
+helpfulness ≥ 8, every applicable scalar ≥ 7; SDF: teaching_value ≥ 9,
+reasoning_fidelity ≥ 9 when scored, no_outside_world_facts ≥ 9, every applicable
+scalar ≥ 7) implemented in `judge.py::_exemplar_tier` and shared by `judge_sdf.py`.
+`corpus_tier.exemplar_yield` watches the tier's health: ~5-15% of passing records is
+the provisional band — near zero means stinginess or flat generation, far above means
+top-end discrimination collapsed back into leniency. **Rejected:** a separate
+"reasoning_depth" dimension (would double-count principle_grounded_reasoning) and
+judge-side tier assignment (the judge never does arithmetic — D5).
+
 ### D14. Language parity
 The dataset spec mandates a multilingual mix (lots of English, a fair amount of
 Mandarin, samples of Hindi/Urdu/Bengali, convincing French/German/Spanish/Japanese).

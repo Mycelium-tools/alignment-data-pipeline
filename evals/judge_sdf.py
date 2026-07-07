@@ -186,6 +186,7 @@ def aggregate(verdict: dict, rubric: dict) -> dict:
     return {
         "mean": mean, "gate_failures": failures, "critical_gate": not failures,
         "passing": passing,
+        "exemplar": judge._exemplar_tier(scores, passing, agg, rubric),
         "cell_mismatch": verdict.get("cell_adherence") == "MISMATCH",
     }
 
