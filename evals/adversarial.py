@@ -16,9 +16,27 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
-from evals import judge
+from evals import judge, judge_sdf
 
 DEFAULT_CASES_PATH = Path(__file__).parent / "adversarial_cases.yaml"
+
+# Suite → engine wiring. DAD variants carry `messages` (a conversation); SDF variants
+# carry `document` (+ optional `cell`). Each suite judges with its own rubric/prompt.
+ENGINES = {
+    "dad": {"rubric_path": judge.DEFAULT_RUBRIC_PATH,
+            "build_system_prompt": judge.build_system_prompt},
+    "sdf": {"rubric_path": judge_sdf.DEFAULT_RUBRIC_PATH,
+            "build_system_prompt": judge_sdf.build_system_prompt},
+}
+
+
+def _judge_variant(variant: dict, suite: str, model: str, rubric: dict,
+                   principles: list[dict], system: str) -> dict:
+    if suite == "sdf":
+        return judge_sdf.judge_document(variant["document"], variant.get("cell"),
+                                        model, rubric, principles, system_prompt=system)
+    return judge.judge_record(variant["messages"], model, rubric, principles,
+                              system_prompt=system)
 
 
 def _get(verdict: dict, field: str):
@@ -62,11 +80,10 @@ def check_expectation(exp: dict, verdicts: dict[str, dict]) -> dict:
 
 
 def run_family(family: dict, model: str, rubric: dict, principles: list[dict],
-               system: str) -> dict:
+               system: str, suite: str = "dad") -> dict:
     verdicts, errors = {}, {}
     for variant in family["variants"]:
-        res = judge.judge_record(variant["messages"], model, rubric, principles,
-                                 system_prompt=system)
+        res = _judge_variant(variant, suite, model, rubric, principles, system)
         if res.get("verdict"):
             verdicts[variant["id"]] = res["verdict"]
         else:
@@ -90,19 +107,20 @@ def families_for(cases: dict, suite: str = "dad", only_family: str | None = None
 
 def run_suite(cases: dict, models: list[str], rubric: dict, principles: list[dict],
               suite: str = "dad", only_family: str | None = None) -> list[dict]:
-    system = judge.build_system_prompt(rubric, principles)
+    system = ENGINES[suite]["build_system_prompt"](rubric, principles)
     families = families_for(cases, suite, only_family)
     results = []
     for model in models:
         for family in families:
-            results.append(run_family(family, model, rubric, principles, system))
+            results.append(run_family(family, model, rubric, principles, system, suite))
     return results
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the adversarial judge review suite.")
     parser.add_argument("--config", default="config.yaml")
-    parser.add_argument("--rubric", default=str(judge.DEFAULT_RUBRIC_PATH))
+    parser.add_argument("--rubric", default=None,
+                        help="Rubric path (default: the chosen suite's rubric)")
     parser.add_argument("--cases", default=str(DEFAULT_CASES_PATH))
     parser.add_argument("--judges", nargs="+", default=["gemini-3.1-pro-preview"])
     parser.add_argument("--suite", default="dad", choices=["dad", "sdf"],
@@ -111,7 +129,7 @@ def main() -> None:
     args = parser.parse_args()
 
     api.init(args.config)
-    rubric = judge.load_rubric(args.rubric)
+    rubric = judge.load_rubric(args.rubric or ENGINES[args.suite]["rubric_path"])
     principles = judge.load_principles()
     with open(args.cases) as f:
         cases = yaml.safe_load(f)
