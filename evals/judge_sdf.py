@@ -3,7 +3,7 @@ verdicts, aggregation. Composes the shared plumbing in evals/judge.py (provider
 dispatch, JSON parsing, principle/dimension rendering); everything document-specific
 lives here. The unit of judgment is a standalone pretraining-style document.
 
-Rubric (data, not code): evals/rubric_sdf_v1.yaml
+Rubric (data, not code): evals/rubric_sdf_v3.yaml
 """
 
 import json
@@ -23,7 +23,7 @@ from evals.judge import (  # shared plumbing — one copy only, owned by judge.p
     parse_judge_json,
 )
 
-DEFAULT_RUBRIC_PATH = Path(__file__).parent / "rubric_sdf_v1.yaml"
+DEFAULT_RUBRIC_PATH = Path(__file__).parent / "rubric_sdf_v3.yaml"
 
 SCHEMA_SCALAR_ORDER = [  # criticals first: later fields in long outputs get judged lazier
     "no_outside_world_facts", "epistemic_calibration", "reasoning_fidelity",

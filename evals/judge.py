@@ -1,7 +1,7 @@
 """DAD judge engine: rubric -> prompt -> panel of judge models -> parsed verdicts,
 aggregation, and annotation comparison. Pure logic + API calls; no CLI, no streamlit.
 
-Rubric (data, not code): evals/rubric_dad_v1.yaml
+Rubric (data, not code): evals/rubric_dad_v3.yaml
 """
 
 import csv
@@ -22,13 +22,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared import api, utils
 
 REPO_ROOT = Path(__file__).parent.parent
-DEFAULT_RUBRIC_PATH = Path(__file__).parent / "rubric_dad_v1.yaml"
+DEFAULT_RUBRIC_PATH = Path(__file__).parent / "rubric_dad_v3.yaml"
 DEFAULT_PRINCIPLES_PATH = REPO_ROOT / "constitution" / "constitution_principles.csv"
 
 SCHEMA_SCALAR_ORDER = [  # criticals first: later fields in long outputs get judged lazier
     "welfare_salience", "principle_grounded_reasoning", "helpfulness",
-    "epistemic_calibration", "proportionality", "constructiveness", "tone",
-    "false_premise_handling", "naturalness", "scenario_genuineness", "exemplar_value",
+    "consequence_scope", "epistemic_calibration", "proportionality", "constructiveness",
+    "tone", "false_premise_handling", "naturalness", "scenario_genuineness",
+    "exemplar_value",
 ]
 
 
@@ -82,6 +83,9 @@ def _render_postures(rubric: dict) -> str:
         lines.append(f"{name}: {c['definition'].strip()}")
         lines.append(f"  Expected behavior: {c['expected'].strip()}")
     lines += ["", "Tie-breakers:", p["tie_breakers"].strip()]
+    for extra in ("attitude_rule", "shift_rule"):
+        if p.get(extra):
+            lines += ["", p[extra].strip()]
     return "\n".join(lines)
 
 

@@ -92,7 +92,7 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 The judge is a blind, rubric-as-data LLM panel that scores corpus records; pass/fail
 gates and consensus are computed in code, never by the judge model.
 
-- `rubric_dad_v1.yaml` / `rubric_sdf_v1.yaml` — the rubrics (dimensions, anchors,
+- `rubric_dad_v3.yaml` / `rubric_sdf_v3.yaml` — the rubrics (dimensions, anchors,
   posture classes, aggregation config). Edit these, not the prompts.
 - `judge.py` / `judge_sdf.py` — the engines (prompt rendering, provider dispatch,
   verdict parsing, aggregation).

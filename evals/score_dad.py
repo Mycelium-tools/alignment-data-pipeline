@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score DAD corpus records with the judge panel (evals/judge.py + rubric_dad_v1.yaml).
+"""Score DAD corpus records with the judge panel (evals/judge.py + rubric_dad_v3.yaml).
 
 Judges every record with each model on the panel, computes gates/consensus in code,
 joins pipeline annotations post-hoc for the judge-vs-annotation comparison, and writes:
@@ -96,7 +96,7 @@ def _record_prompt_manifest(out_dir: Path, prompt_md5: str, system_prompt: str,
     prompt_file = f"prompt_{prompt_md5[:8]}.txt"
     (out_dir / prompt_file).write_text(system_prompt)
     # Snapshot the rubric too, so saved verdicts stay interpretable (gates, floors)
-    # even after evals/rubric_dad_v1.yaml changes.
+    # even after evals/rubric_dad_v3.yaml changes.
     (out_dir / "rubric.yaml").write_text(Path(args.rubric).read_text())
     manifest_path = out_dir / "judge_manifest.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}

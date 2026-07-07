@@ -2,7 +2,7 @@
 Pick an SDF document (or paste one), edit the rubric live, run the panel, diff what
 changed. The unit of judgment is a standalone pretraining-style document.
 
-Judging engine: evals/judge_sdf.py; rubric: evals/rubric_sdf_v1.yaml (editable here).
+Judging engine: evals/judge_sdf.py; rubric: evals/rubric_sdf_v3.yaml (editable here).
 """
 
 import hashlib

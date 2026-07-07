@@ -353,7 +353,7 @@ families:
           - {op: equals, a: leaked, field: self_contained, value: false}
 
   # ------------------------------------------------------------------ SDF suite
-  # Documents, not conversations — judged by evals/judge_sdf.py + rubric_sdf_v1.yaml.
+  # Documents, not conversations — judged by evals/judge_sdf.py + rubric_sdf_v3.yaml.
   # Variants carry `document` (+ optional `cell`) instead of `messages`.
 
   - id: sdf_fabricated_specificity
