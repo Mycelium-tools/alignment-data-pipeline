@@ -1,0 +1,79 @@
+{
+  "input": "outputs/sdf/runs/2026-07-06_22-19_notebook-port-smoke/layer3/drafts.jsonl",
+  "n_docs": 67,
+  "composition": {
+    "role": {
+      "ai-character": 19,
+      "welfare-topic": 25,
+      "latent-welfare": 10,
+      "constitution-identity": 13
+    },
+    "register": {
+      "first-person": 37,
+      "expository": 30
+    },
+    "language": {
+      "en": 67
+    },
+    "tone": {
+      "unknown": 67
+    },
+    "n_types": 18,
+    "top_type_share": 0.075
+  },
+  "length": {
+    "median_chars": 6527,
+    "truncated": 1,
+    "truncated_frac": 0.0149,
+    "trailing_separator": 2
+  },
+  "near_dups": {
+    "0.8": 0.0,
+    "0.9": 0.0,
+    "0.95": 0.0
+  },
+  "names": {
+    "repeated": [
+      [
+        "Global Animal Partnership",
+        3
+      ],
+      [
+        "Neural Architecture",
+        2
+      ],
+      [
+        "Meridian Restaurant Group",
+        2
+      ],
+      [
+        "Certified Humane",
+        2
+      ],
+      [
+        "Regenerative Organic",
+        2
+      ],
+      [
+        "Animal Welfare Approved",
+        2
+      ]
+    ],
+    "watchlist": {
+      "Meridian": 3
+    }
+  },
+  "phrases": {
+    "banned_hits": {},
+    "recurring_5grams": []
+  },
+  "openings": {
+    "formulaic_frac": 0.0,
+    "patterns": {},
+    "dup_stems": []
+  },
+  "register": {
+    "reads_personal_frac": 0.761,
+    "labeled_fp_stiff_frac": 0.027
+  }
+}

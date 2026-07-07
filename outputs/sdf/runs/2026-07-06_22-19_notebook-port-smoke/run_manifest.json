@@ -1,0 +1,74 @@
+{
+  "manifest_version": 2,
+  "run_id": "2026-07-06_22-19_notebook-port-smoke",
+  "label": "notebook-port-smoke",
+  "created_at": "2026-07-06T22:19:26",
+  "git_commit": "d89b5ab",
+  "git_dirty": true,
+  "git_dirty_files": [
+    "config.yaml",
+    "prompts/sdf/layer1.txt",
+    "prompts/sdf/layer2.txt",
+    "prompts/sdf/layer3.txt",
+    "prompts/sdf/layer4.txt",
+    "prompts/sdf/layer5.txt",
+    "prompts/sdf/preamble.txt",
+    "requirements.txt",
+    "sdf_pipeline/layer1_document_types.py",
+    "sdf_pipeline/layer2_subtypes.py",
+    "sdf_pipeline/layer3_draft.py",
+    "sdf_pipeline/layer4_rewrite.py",
+    "sdf_pipeline/layer5_score.py",
+    "tests/test_prompts_render.py",
+    "tests/test_sdf_layers.py",
+    "evals/audit_sdf.py",
+    "outputs/sdf/runs/2026-07-06_22-19_notebook-port-smoke/",
+    "prompts/sdf/Conor-sdf-prompts.txt",
+    "shared/entity_pools.py",
+    "shared/textstats.py",
+    "tests/test_textstats.py"
+  ],
+  "inputs_snapshot": true,
+  "model": "claude-haiku-4-5",
+  "config": {
+    "model": "claude-haiku-4-5",
+    "max_tokens": 4000,
+    "temperature": 1.0,
+    "workers": 8,
+    "sdf": {
+      "document_types_count": 3,
+      "subtypes_per_type": 2,
+      "documents_per_subtype": 1,
+      "min_score_threshold": 7,
+      "latent_fraction": 0.12,
+      "subtype_dedup_threshold": 0.8,
+      "near_dup_threshold": 0.9,
+      "entity_pool_seed": 137
+    },
+    "dad": {
+      "scenarios_per_principle": 10,
+      "injections": [
+        "conglomerate",
+        "deference",
+        "transparency",
+        "plain"
+      ],
+      "pushback": {
+        "enabled": true,
+        "fraction": 0.6
+      }
+    },
+    "manta": {
+      "csv_path": "../manta_project/manta_questions_1090.csv",
+      "max_rows": 100
+    },
+    "language_distribution": {
+      "en": 1.0
+    },
+    "outputs": {
+      "sdf_final": "outputs/sdf/final/sdf_corpus.jsonl",
+      "dad_final": "outputs/dad/final/dad_corpus.jsonl",
+      "cost_log": "outputs/cost_log.jsonl"
+    }
+  }
+}
