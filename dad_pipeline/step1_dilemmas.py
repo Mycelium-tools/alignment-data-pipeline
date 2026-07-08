@@ -67,6 +67,15 @@ _DOMAINS = ("Career", "Business / Investing", "Procurement", "Marketing",
             "Religion / Culture", "Journalism / Media", "Finance / Personal Money",
             "Volunteering / Advocacy", "Health / Fitness", "Grief / Memory", "Technology")
 
+# Models sometimes transcribe a compound label as its halves ("Education /
+# Parenting" -> ["Education", "Parenting"]); map any half back to its card so
+# the tally counts the card, not the fragments.
+_DOMAIN_BY_PART = {p.strip().lower(): d for d in _DOMAINS for p in (d, *d.split("/"))}
+
+
+def _canon_domain(label: str) -> str:
+    return _DOMAIN_BY_PART.get(str(label).strip().lower(), str(label).strip())
+
 _GOALS = ("Information Seeking", "Clarification", "Decision Support",
           "Recommendation / Prioritization", "Execution", "Evaluation / Feedback",
           "Persuasion Support", "Validation / Emotional Support")
@@ -265,7 +274,7 @@ def coverage_tally(examples: list[dict]) -> dict:
         "attitude": Counter(a.get("user_attitude") or "?" for a in ann),
         "leverage": Counter(a.get("leverage") or "?" for a in ann),
         "stakes": Counter(a.get("user_stakes") or "?" for a in ann),
-        "domains": Counter(d for a in ann for d in (a.get("domain") or [])),
+        "domains": Counter(d for a in ann for d in {_canon_domain(x) for x in (a.get("domain") or [])}),
         "value_pairs": Counter(_norm_pair(p) for a in ann for p in (a.get("values_in_tension") or [])),
         # taxa read from the assigned scenario field, not keyword-scanned from text
         "taxa": Counter(e.get("taxa_category") for e in examples if e.get("taxa_category")),
@@ -547,7 +556,7 @@ def scenario_deviations(scenario: dict, annotation: dict) -> list[str]:
     if sev.strip().lower() not in mag or sco.strip().lower() not in mag:
         dev.append("welfare_magnitude")
     doms = " | ".join(annotation.get("domain") or []).lower()
-    if scenario["domain"][0].lower() not in doms:
+    if not all(part.strip() in doms for part in scenario["domain"][0].lower().split("/")):
         dev.append("domain")
     goals = " | ".join(annotation.get("user_goal") or []).lower()
     if scenario["user_goal"][0].split(" (")[0].lower() not in goals:

@@ -138,6 +138,70 @@ class TestStep1Run:
             step1_dilemmas.run(config, prompts_dad, tmp_path / "out")
 
 
+# --- Step 1: adherence checker + coverage tally ---------------------------
+
+def _scenario_and_matching_annotation():
+    scenario = {
+        "domain": ["Education / Parenting"],
+        "user_goal": ["Decision Support"],
+        "visibility": "Visible",
+        "user_attitude": "Neutral",
+        "conflict": "Divergent",
+        "direction": "Under-weighting",
+        "user_stakes": "High",
+        "leverage": "Direct",
+        "welfare_magnitude": "Severe x Many",
+    }
+    annotation = {
+        **{k: v for k, v in scenario.items()},
+        "domain": list(scenario["domain"]),
+        "user_goal": list(scenario["user_goal"]),
+        "values_in_tension": ["convenience ↔ animal welfare"],
+    }
+    return scenario, annotation
+
+
+class TestScenarioDeviations:
+    def test_verbatim_compound_domain_passes(self):
+        scenario, annotation = _scenario_and_matching_annotation()
+        assert step1_dilemmas.scenario_deviations(scenario, annotation) == []
+
+    def test_split_compound_domain_is_not_a_deviation(self):
+        # The known 1b habit: "Education / Parenting" -> ["Education", "Parenting"]
+        scenario, annotation = _scenario_and_matching_annotation()
+        annotation["domain"] = ["Education", "Parenting"]
+        assert "domain" not in step1_dilemmas.scenario_deviations(scenario, annotation)
+
+    def test_slash_dropped_domain_is_not_a_deviation(self):
+        scenario, annotation = _scenario_and_matching_annotation()
+        scenario["domain"] = ["Veterinary / Medicine"]
+        annotation["domain"] = ["Veterinary Medicine"]
+        assert "domain" not in step1_dilemmas.scenario_deviations(scenario, annotation)
+
+    def test_wrong_domain_still_flagged(self):
+        scenario, annotation = _scenario_and_matching_annotation()
+        annotation["domain"] = ["Career"]
+        assert "domain" in step1_dilemmas.scenario_deviations(scenario, annotation)
+
+    def test_half_of_compound_domain_still_flagged(self):
+        scenario, annotation = _scenario_and_matching_annotation()
+        annotation["domain"] = ["Education"]
+        assert "domain" in step1_dilemmas.scenario_deviations(scenario, annotation)
+
+
+class TestCoverageTally:
+    def test_split_domain_halves_count_as_their_card(self):
+        examples = [{"annotation": {"domain": ["Education", "Parenting"]}},
+                    {"annotation": {"domain": ["Education / Parenting"]}}]
+        t = step1_dilemmas.coverage_tally(examples)
+        assert t["domains"]["Education / Parenting"] == 2
+        assert "Education" not in t["domains"]
+
+    def test_unknown_labels_pass_through(self):
+        t = step1_dilemmas.coverage_tally([{"annotation": {"domain": ["Space Tourism"]}}])
+        assert t["domains"]["Space Tourism"] == 1
+
+
 # --- Step 2: scope + respond ---------------------------------------------
 
 GOOD_SCOPE = json.dumps({
