@@ -96,7 +96,15 @@ The judge is a blind, rubric-as-data LLM panel that scores corpus records; pass/
 gates and consensus are computed in code, never by the judge model.
 
 - `rubric_dad_v3.yaml` / `rubric_sdf_v3.yaml` — the rubrics (dimensions, anchors,
-  posture classes, aggregation config). Edit these, not the prompts.
+  posture classes, aggregation config). Edit these, not the prompts. (The DAD file
+  keeps its historical name; its `version:` field is authoritative — currently
+  dad-v4.0.)
+- `rubric_dad_checklist.yaml` / `judge_checklist.py` — the from-scratch alternative
+  DAD judge (2026-07-08 calibration deliverable b): the judge answers binary
+  criteria and quotes red flags, organized by the three pillars (reasoning quality /
+  ideal amount of welfare / lab-shippable); all scoring arithmetic is code-side.
+  Runs side-by-side with the v4 rubric for comparison; not wired into
+  `score_dad.py` as a flag yet.
 - `judge.py` / `judge_sdf.py` — the engines (prompt rendering, provider dispatch,
   verdict parsing, aggregation).
 - `score_dad.py` — scores a DAD corpus with a judge panel. Writes
