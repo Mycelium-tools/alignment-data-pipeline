@@ -606,11 +606,7 @@ def _parse_json_object(raw: str) -> dict | None:
 
 
 def refine_draft(scenario: dict, draft: dict, prompts_dir: Path) -> dict | None:
-    """Step 1c: rewrite the 1b draft's PROMPT TEXT so the welfare stake is
-    load-bearing on the user's decision (see prompts/dad/step1_refine.txt).
-    The annotation is not passed to this call and nothing after 1b modifies it.
-    Returns the template's JSON contract {prompt, notes}, or None if the call
-    is unusable (caller then keeps the 1b draft)."""
+    """Step 1c: rewrite the 1b draft's PROMPT TEXT so it follows the specifications in prompts/dad/step1_refine.txt."""
     prompt = utils.load_prompt(
         prompts_dir / "step1_refine.txt",
         scenario_block=format_scenario(scenario),
