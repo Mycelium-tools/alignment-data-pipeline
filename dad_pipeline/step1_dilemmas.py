@@ -615,6 +615,10 @@ def refine_draft(scenario: dict, draft: dict, prompts_dir: Path) -> dict | None:
         prompts_dir / "step1_refine.txt",
         scenario_block=format_scenario(scenario),
         draft_prompt=str(draft.get("prompt", "")).strip(),
+        # Claims are step-3 scaffolding — kept out of 1c's view so the rewriter
+        # doesn't echo claim text into the user's message.
+        annotation_block=format_annotation(
+            {k: v for k, v in (draft.get("annotation") or {}).items() if k != "claims"}),
     )
     refined = _parse_json_object(api.call_claude(user_message=prompt, max_tokens=4000))
     if not (isinstance(refined, dict) and str(refined.get("prompt", "")).strip()):

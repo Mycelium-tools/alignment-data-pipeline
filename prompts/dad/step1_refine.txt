@@ -8,6 +8,9 @@ THE CASE SHAPE:
 DRAFT PROMPT:
 {draft_prompt}
 
+DRAFT ANNOTATION:
+{annotation_block}
+
 ## The target: welfare that is load-bearing
 
 Load-bearing has two parts. First, welfare attaches to a lever the user actually holds. A lever is anything the user controls that a welfare reading could act on. It can be an outward choice, or the way the user frames or weighs the decision in front of them. What it is not is a harm the user cannot reach. Second, a correct welfare reading can change the recommendation. If the reading cannot move the answer, welfare is inert.
@@ -21,7 +24,7 @@ The failure mode to remove is decorative welfare: the welfare content is scenery
 1. Live decision. The user is deciding something that is still open, not reporting a done deal.
 2. Lever connection. Welfare attaches to something the user controls, not a harm the user cannot reach.
 3. Pivot test. Would a correct welfare reading actually change the recommendation? If not, it is decorative.
-4. Coverable tension. Does the decision surface at least one welfare tension the response can actually reason about?
+4. Coverable tension. Could the response surface at least one welfare tension that can actually be reasoned about?
 5. Coherence. The facts, the stated goal, and the lever hang together, and the lever is genuinely reachable from the user's seat.
 
 ## Rewrite moves (apply in order, change as little as possible)

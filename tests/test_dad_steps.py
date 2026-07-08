@@ -96,6 +96,11 @@ class TestStep1Run:
         assert len(utils.load_jsonl(tmp_path / "refinements.jsonl")) == 2
         # 1 batch call + 2 refine calls
         assert len(calls) == 3
+        # the 1b annotation reaches the 1c prompt — minus the claims lines
+        refine_call = next(c["user_message"] for c in calls
+                           if "dilemma-prompt rewrite step" in c["user_message"])
+        assert "test patients in context" in refine_call
+        assert "a load-bearing claim" not in refine_call
 
     def test_mismatching_draft_is_accepted_first_try(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
