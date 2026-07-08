@@ -96,8 +96,17 @@ class TestExtractJson:
             utils.extract_json("garbage")
 
     def test_truncated_json_raises_jsondecodeerror(self):
+        # A cut-off payload contains complete inner objects; salvaging one
+        # would hand the caller a wrong-shaped fragment, so this must raise.
         with pytest.raises(json.JSONDecodeError):
             utils.extract_json(json.dumps(PAYLOAD)[:-10])
+
+    def test_complete_payload_survives_truncated_trailing_chatter(self):
+        # max_tokens can cut the response mid-sentence *after* the payload has
+        # already closed; a dangling bracket in that chatter must not discard
+        # the good parse (review finding on #59).
+        assert utils.extract_json('[{"a": 1}]\n\nThanks for the {') == [{"a": 1}]
+        assert utils.extract_json(json.dumps(PAYLOAD) + '\nAlso note ["unclosed') == PAYLOAD
 
 
 class TestLoadPrompt:

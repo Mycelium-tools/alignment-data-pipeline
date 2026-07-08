@@ -76,29 +76,34 @@ def extract_json(text: str):
     aside in the preamble can't shadow the real payload.
 
     Raises json.JSONDecodeError when no complete JSON value is present — and
-    also when a value runs off the end of the text (output cut at max_tokens):
-    a truncated payload usually contains smaller values that do parse, and
-    salvaging such a fragment would feed the caller a wrong-shaped result
-    instead of a clean parse error.
+    also when the payload itself runs off the end of the text (output cut at
+    max_tokens): a truncated payload usually contains smaller values that do
+    parse, and salvaging such a fragment would feed the caller a wrong-shaped
+    result instead of a clean parse error. A truncated value opening at
+    position q consumed everything from q to the end, so a candidate is a
+    fragment exactly when it starts after q; a complete value found *before*
+    q is a genuine payload followed by cut-off chatter, and is returned.
     """
     decoder = json.JSONDecoder()
-    best = None  # (span_length, value)
+    best = None  # (span_length, start, value)
+    truncated_at = None  # earliest opening bracket whose value ran off the end
     tail = len(text.rstrip())
     for match in re.finditer(r"[\[{]", text):
         try:
             value, end = decoder.raw_decode(text, match.start())
         except json.JSONDecodeError as err:
             if err.pos >= tail or err.msg.startswith("Unterminated string"):
-                raise json.JSONDecodeError(
-                    f"JSON value appears truncated ({err.msg})", text, err.pos
-                ) from err
+                if truncated_at is None:
+                    truncated_at = match.start()
             continue
         span = end - match.start()
         if best is None or span > best[0]:
-            best = (span, value)
-    if best is None:
-        raise json.JSONDecodeError("no JSON value found in response", text, 0)
-    return best[1]
+            best = (span, match.start(), value)
+    if best is not None and (truncated_at is None or best[1] < truncated_at):
+        return best[2]
+    if truncated_at is not None:
+        raise json.JSONDecodeError("JSON value appears truncated", text, truncated_at)
+    raise json.JSONDecodeError("no JSON value found in response", text, 0)
 
 
 def load_prompt(path: str | Path, **kwargs) -> str:
