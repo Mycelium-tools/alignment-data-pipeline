@@ -13,19 +13,26 @@ Pipeline tests stub one level higher via ``stub_claude``, which patches
 ``shared.api.call_claude`` — the single chokepoint every pipeline module uses.
 Never patch below ``call_claude``: if a real ``anthropic`` retryable error ever
 reached the real ``_call_with_retry``, tenacity would sleep 4-60s per attempt.
+
+The OpenAI embeddings seam (``shared/embeddings.py``, used by the diversity
+eval) is guarded the same layered way: ``_openai_guard`` fakes the key, resets
+module globals, and blocks ``_embed_with_retry``; tests stub the chokepoint
+``shared.embeddings.embed_texts`` via ``stub_embeddings``.
 """
 
 import json
 import random
 import re
 import threading
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import yaml
 
-from shared import api
+from shared import api, embeddings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -88,6 +95,60 @@ def _api_guard(monkeypatch):
         )
 
     monkeypatch.setattr(api, "_call_with_retry", _blocked)
+
+
+@pytest.fixture(autouse=True)
+def _openai_guard(monkeypatch):
+    """Fake OpenAI credentials, reset shared.embeddings globals, block the seam."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    monkeypatch.setattr(embeddings, "_config", {})
+    monkeypatch.setattr(embeddings, "_client", None)
+    monkeypatch.setattr(embeddings, "_cost_log_path", None)
+    monkeypatch.setattr(embeddings, "_UNPRICED_WARNED", set())
+
+    def _blocked(*args, **kwargs):
+        raise AssertionError(
+            "OpenAI API call attempted during tests — stub shared.embeddings.embed_texts"
+        )
+
+    monkeypatch.setattr(embeddings, "_embed_with_retry", _blocked)
+
+
+@pytest.fixture
+def stub_embeddings(monkeypatch):
+    """Factory that replaces shared.embeddings.embed_texts with a recording stub.
+
+    ``install()`` gives every distinct text a deterministic unit vector (rng
+    seeded from the text's crc32), so identical texts embed identically —
+    enough for behavioral tests. Pass ``vectors`` (text -> array) to pin exact
+    geometry (e.g. orthogonal groups). Returns the list of recorded calls
+    ({"texts", "model"}) so tests can assert what was embedded — and, for
+    cache/resume tests, that nothing was.
+    """
+
+    def install(dim: int = 8, vectors: dict | None = None):
+        calls = []
+
+        def fake(texts, model=embeddings.DEFAULT_MODEL):
+            # mirror the real embed_texts contract: empties must never reach the API
+            for i, t in enumerate(texts):
+                if not t or not t.strip():
+                    raise ValueError(f"embed_texts got an empty text at index {i}")
+            calls.append({"texts": list(texts), "model": model})
+            rows = []
+            for t in texts:
+                if vectors is not None:
+                    v = np.asarray(vectors[t], dtype=np.float32)
+                else:
+                    rng = np.random.default_rng(zlib.crc32(t.encode("utf-8")))
+                    v = rng.standard_normal(dim).astype(np.float32)
+                rows.append(v / np.linalg.norm(v))
+            return np.stack(rows)
+
+        monkeypatch.setattr(embeddings, "embed_texts", fake)
+        return calls
+
+    return install
 
 
 @pytest.fixture
