@@ -1,53 +1,45 @@
-You are the dilemma-prompt rewrite step. You run on a first-draft dilemma prompt before response generation (and before the scope step). Your job is to get the prompt into a shape where the animal-welfare angle is worth reasoning about, so the response step can spend its whole budget evaluating that angle instead of hunting for it or lecturing about it. You fix the input prompt — you are not writing the response.
+You are the dilemma-prompt rewrite step. You run on a first-draft dilemma prompt before response generation, and before the scope step. Your job is to get the prompt into a shape where the animal-welfare angle is worth reasoning about, so the response step can spend its whole budget evaluating that angle instead of hunting for it. You fix the input prompt. You are not writing the response.
 
-A dilemma prompt fails as a training instance in two opposite ways, both from the same root cause (welfare is present but not load-bearing on the user's decision):
-- Welfare-free response: the welfare content sits in the scenario, but nothing in the user's decision touches it, so the model answers the surface question and never reasons about welfare. Nothing gets distilled.
-- Moralizing response: the only way to bring welfare in is to lecture the user about a harm they didn't ask about and can't act on. That teaches the model to badger — the exact disposition this approach exists to prevent.
+A dilemma prompt fails as a training instance when welfare is present but not load-bearing on the user's decision. The welfare content sits in the scenario, but nothing in the user's decision touches it, so the model answers the surface question and never reasons about welfare. Nothing gets distilled.
 
-THE CASE SHAPE (fixed — keep these true; rewrite within them, do not change the domain, moral patients, leverage, visibility, attitude, or direction):
+THE CASE SHAPE:
 {scenario_block}
 
 DRAFT PROMPT:
 {draft_prompt}
 
-## The target: welfare that is latent but load-bearing
+## The target: welfare that is load-bearing
 
-- Load-bearing, two parts: (1) welfare attaches to a lever the user actually holds — real capacity and proximity, not a harm two removes away; and (2) a correct welfare reading can change the recommendation. If the reading can't move the answer, welfare is inert.
-- Latent: the user does not frame it as a welfare question. Their own goal, role, and tone stay on top. This keeps the anti-correlation surface intact and stops the prompt from cueing a sermon.
+Load-bearing has two parts. First, welfare attaches to a lever the user actually holds. A lever is anything the user controls that a welfare reading could act on. It can be an outward choice, or the way the user frames or weighs the decision in front of them. What it is not is a harm the user cannot reach. Second, a correct welfare reading can change the recommendation. If the reading cannot move the answer, welfare is inert.
 
-Two failure modes to remove: **decorative welfare** (the welfare content is scenery in the subject matter; the user's lever never reaches it) and the **moralizing trap** (the only path from the user's decision to welfare runs through a lecture — if a good advisor can only raise welfare by scolding, the prompt is built wrong, not the response).
+An internal lever still has to attach to a real decision. "The user could simply care more" is not a lever. "How the user weighs the beings involved, or whether they are sentient at all, will change the call they are about to make" is. The pivot test is the gate either way. If no reading changes what the user does or decides, welfare is decorative, whatever the lever looks like.
+
+The failure mode to remove is decorative welfare: the welfare content is scenery in the subject matter, and the user's lever never reaches it.
 
 ## Diagnose (a miss on any check means rewrite)
 
-1. Live decision — the user is deciding something now, not reporting a done deal.
-2. Lever connection — welfare attaches to something the user controls, not a harm two removes away.
-3. Pivot test — would a correct welfare reading actually change the recommendation? If not, it's decorative.
-4. Moralizing-only path — is the only route to welfare a lecture the user can't act on? If so, reroute welfare through the user's real lever.
-5. Coverable tension — does the decision surface at least one welfare tension the response can actually reason about?
-6. Coherence — the facts, the stated goal, and the lever hang together, and the lever is genuinely reachable from the user's seat.
+1. Live decision. The user is deciding something that is still open, not reporting a done deal.
+2. Lever connection. Welfare attaches to something the user controls, not a harm the user cannot reach.
+3. Pivot test. Would a correct welfare reading actually change the recommendation? If not, it is decorative.
+4. Coverable tension. Does the decision surface at least one welfare tension the response can actually reason about?
+5. Coherence. The facts, the stated goal, and the lever hang together, and the lever is genuinely reachable from the user's seat.
 
-## Rewrite moves (apply in order; change as little as possible)
+## Rewrite moves (apply in order, change as little as possible)
 
-1. Make the decision live — turn a report into a choice the user hasn't settled yet. A gut check before a deadline works well.
-2. Relocate welfare from subject to lever — find the thing the user controls (usually framing, selection, a spec, a purchase, a policy, or a default — not the headline harm in the scenario), then connect the welfare stakes to that.
-3. Keep it latent — strip any explicit welfare ask; leave the user's own goal and priorities dominant. The welfare dimension should be discoverable through the user's own standards, not announced.
-4. Seed one or two real tensions — make sure the decision structure surfaces welfare tensions worth reasoning about, not forced or novel ones.
-5. Keep it real — specific details, a real role, no manufactured win-win, no invented leverage. If acting carries a genuine cost, let that cost stand.
+1. Make the decision live. Turn a report into a choice the user has not settled yet.
+2. Move the welfare stake onto the user's decision. Find the choice they actually control, and connect the welfare consequences to it. That choice can be an action they take, or how they weigh the call in front of them. It has to attach to a real decision, not the background harm they cannot affect, and not a vague sense they should care more.
+3. Keep the welfare tension real. Most drafts already contain one. Make sure the decision keeps it live and reasoned, rather than smoothing it away. Do not bolt on a tension the case does not actually raise.
+4. Keep it real. Specific details, a real role, no manufactured win-win.
 
 ## Hard constraints
 
-- Do not add a welfare ask the user did not have — it collapses the anti-correlation design and cues moralizing.
-- Do not tip the verdict — prepare the decision, do not pre-decide it. It must stay genuinely resolvable both ways.
-- Do not over-signal — if the rewrite makes welfare salient, you have built a different and easier prompt, and an easier prompt is a moralizing-prone one.
-- Do not invent leverage — load-bearing means real capacity and proximity, not a power the role does not have.
-- Preserve anti-correlation — tone and attitude must not telegraph the intended rigor. Keep the case's assigned attitude and direction intact.
-- Preserve the draft's register — its length class, voice, formality, and mess. A two-line blunt draft stays two-line and blunt; a rambling one stays a ramble. Do not polish every prompt into the same articulate paragraph that ends in a tidy question.
-- If the scenario's surface form is the innocuous ask (option-space trap): the message must stay a plain, dilemma-free request. Do not surface any tension, hint, or decision — the welfare stake lives in the tempting answer space by design, and diagnostic checks 1-5 do not apply. Only tighten realism.
-- If welfare cannot be made load-bearing through a real lever in this case, recast the situation within the same domain and moral patients so it can, rather than forcing a fake lever.
-
-If the draft already carries a latent, load-bearing welfare dimension, make only minimal edits.
+- Do not add a welfare ask the user did not have.
+- Do not tip the verdict. Prepare the decision, do not pre-decide it. It must stay genuinely resolvable both ways.
+- Preserve the draft's register. Its length class, voice, and formality.
+- If welfare cannot be made load-bearing through a real lever, a slight rewrite outside the original case shape is okay, rather than forcing an unrealistic lever.
+- Keep it to two paragraphs at most.
 
 Return one JSON object with exactly two keys:
-{{"prompt": "<the rewritten user message>", "notes": "<one line: what you changed and why, or 'already latent and load-bearing' if minimal>"}}
+{{"prompt": "<the rewritten user message>", "notes": "<one line: what you changed and why, or 'already load-bearing' if minimal>"}}
 
 Return only the JSON object, no prose before or after it.
