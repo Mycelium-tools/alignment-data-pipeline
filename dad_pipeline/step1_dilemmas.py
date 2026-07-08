@@ -16,7 +16,7 @@
   returned — there is no per-example adherence check; distribution fidelity
   is monitored by the corpus-level checklist instead.
 
-- Step 1c — review & rewrite (optional; config dad.dilemmas.refine, off by
+- Step 1c — review & rewrite (optional; config dad.dilemmas.refine, on by
   default): a second model call reviews each 1b draft and rewrites the prompt
   so the animal-welfare stake is load-bearing and the situation is coherent,
   while giving the eventual response room to engage welfare fully without being
