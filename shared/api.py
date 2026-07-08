@@ -9,10 +9,12 @@ Two backends behind the same call_claude() contract:
 Select via the `backend` key in config.yaml. See README "Authentication".
 """
 
+import contextlib
 import os
 import json
 import re
 import sys
+import tempfile
 import threading
 from pathlib import Path
 from datetime import datetime, UTC
@@ -70,6 +72,12 @@ _LIMIT_PATTERN = re.compile(r"usage limit", re.IGNORECASE)
 # reproduced exactly here; use backend: api for runs where that matters.
 _NEUTRAL_SYSTEM = "You are Claude, a helpful AI assistant. Respond directly to the user's message."
 _neutral_system_warned = False
+
+# Linux caps each argv string at 128 KiB (MAX_ARG_STRLEN), and a str
+# system_prompt reaches the CLI as a single --system-prompt argument — so the
+# ~185 KB constitution (SDF layers 4-5) aborts the spawn with E2BIG on Linux.
+# System prompts over this many UTF-8 bytes travel via --system-prompt-file.
+_CC_SYSTEM_ARG_MAX_BYTES = 100_000
 
 
 class UsageLimitExceeded(Exception):
@@ -253,9 +261,20 @@ def _run_claude_code_query(
             "run: pip install -r requirements.txt"
         ) from e
 
+    resolved_system = _resolve_cc_system(system)
+    system_file: str | None = None
+    if len(resolved_system.encode("utf-8")) > _CC_SYSTEM_ARG_MAX_BYTES:
+        fd, system_file = tempfile.mkstemp(prefix="claude_code_system_", suffix=".txt")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(resolved_system)
+
     options = ClaudeAgentOptions(
         model=model,
-        system_prompt=_resolve_cc_system(system),
+        system_prompt=(
+            {"type": "file", "path": system_file}
+            if system_file is not None
+            else resolved_system
+        ),
         tools=[],  # pure text generation: no file/bash/web access
         max_turns=1,
         thinking={"type": "disabled"},  # training data must show user-facing reasoning only
@@ -273,13 +292,24 @@ def _run_claude_code_query(
     async def _run() -> tuple[list[str], object | None]:
         text_parts: list[str] = []
         result_msg = None
-        async for msg in query(prompt=user_message, options=options):
-            if isinstance(msg, AssistantMessage):
-                for block in msg.content:
-                    if isinstance(block, TextBlock):
-                        text_parts.append(block.text)
-            elif isinstance(msg, ResultMessage):
-                result_msg = msg
+        stream = query(prompt=user_message, options=options)
+        try:
+            async for msg in stream:
+                if isinstance(msg, AssistantMessage):
+                    for block in msg.content:
+                        if isinstance(block, TextBlock):
+                            text_parts.append(block.text)
+                elif isinstance(msg, ResultMessage):
+                    # The result is final for our single-turn calls — stop here.
+                    # After an is_error result the CLI exits non-zero; reading
+                    # past the result turns that exit into a ProcessError whose
+                    # text drops result_msg.result (the CLI's actual error),
+                    # masking the is_error handling below and its usage-limit
+                    # classification.
+                    result_msg = msg
+                    break
+        finally:
+            await stream.aclose()
         return text_parts, result_msg
 
     try:
@@ -292,6 +322,10 @@ def _run_claude_code_query(
         ) from e
     except Exception as e:  # CLI failures surface as assorted exception types
         raise _classify_claude_code_error(str(e)) from e
+    finally:
+        if system_file is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(system_file)
 
     if result_msg is None:
         raise ClaudeCodeError("claude_code backend returned no result message")

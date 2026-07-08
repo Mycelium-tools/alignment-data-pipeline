@@ -341,6 +341,74 @@ class TestRunClaudeCodeQuery:
         with pytest.raises(api.ClaudeCodeError, match="no result message"):
             api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
 
+    def test_stops_reading_at_result_so_trailing_stream_error_cannot_mask_it(self, monkeypatch):
+        """After an is_error result the real CLI exits non-zero; if the reader
+        keeps consuming the stream, that exit surfaces as an opaque ProcessError
+        (the SDK reports only the result subtype, e.g. "error result: success")
+        which masks result_msg.result — the CLI's actual error — and bypasses
+        usage-limit classification. The reader must stop at the ResultMessage."""
+        pytest.importorskip("claude_agent_sdk")
+        result = self._result(is_error=True, result="API Error: 500 upstream failure")
+
+        async def fake_query(*, prompt, options):
+            yield result
+            raise AssertionError("stream read past the result message")
+
+        monkeypatch.setattr("claude_agent_sdk.query", fake_query)
+        with pytest.raises(api.ClaudeCodeError, match="500 upstream failure"):
+            api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
+
+    def test_normal_system_prompt_stays_inline(self, monkeypatch):
+        pytest.importorskip("claude_agent_sdk")
+        seen = {}
+
+        async def fake_query(*, prompt, options):
+            seen["system_prompt"] = options.system_prompt
+            yield self._result(result="ok", usage={"input_tokens": 1, "output_tokens": 1})
+
+        monkeypatch.setattr("claude_agent_sdk.query", fake_query)
+        api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
+        assert seen["system_prompt"] == "sys"
+
+    def test_oversized_system_prompt_travels_by_file_not_argv(self, monkeypatch):
+        """Linux caps a single argv string at 128 KiB (MAX_ARG_STRLEN), and the
+        SDF layer-4/5 constitution system prompt (~185 KB) exceeds it — spawning
+        the CLI fails with E2BIG unless the prompt is handed over as
+        --system-prompt-file. The temp file must also not outlive the call."""
+        pytest.importorskip("claude_agent_sdk")
+        big_system = "x" * (api._CC_SYSTEM_ARG_MAX_BYTES + 1)
+        seen = {}
+
+        async def fake_query(*, prompt, options):
+            seen["system_prompt"] = options.system_prompt
+            if isinstance(options.system_prompt, dict):
+                # Read while the call is in flight — the file is deleted after.
+                seen["content"] = Path(options.system_prompt["path"]).read_text()
+            yield self._result(result="ok", usage={"input_tokens": 1, "output_tokens": 1})
+
+        monkeypatch.setattr("claude_agent_sdk.query", fake_query)
+        text, *_ = api._run_claude_code_query("claude-haiku-4-5", big_system, "hi")
+        assert text == "ok"
+        assert isinstance(seen["system_prompt"], dict)
+        assert seen["system_prompt"]["type"] == "file"
+        assert seen["content"] == big_system
+        assert not Path(seen["system_prompt"]["path"]).exists()
+
+    def test_oversized_system_temp_file_cleaned_up_on_error(self, monkeypatch):
+        pytest.importorskip("claude_agent_sdk")
+        big_system = "x" * (api._CC_SYSTEM_ARG_MAX_BYTES + 1)
+        seen = {}
+
+        async def fake_query(*, prompt, options):
+            seen["path"] = options.system_prompt["path"]
+            raise RuntimeError("spawn failed")
+            yield  # pragma: no cover — makes this an async generator
+
+        monkeypatch.setattr("claude_agent_sdk.query", fake_query)
+        with pytest.raises(api.ClaudeCodeError, match="spawn failed"):
+            api._run_claude_code_query("claude-haiku-4-5", big_system, "hi")
+        assert not Path(seen["path"]).exists()
+
 
 class TestClaudeCodeDispatch:
     """call_claude routes to the claude_code path and logs its reported cost.
