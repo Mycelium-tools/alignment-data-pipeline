@@ -89,7 +89,7 @@ class TestStep1Run:
             assert e["user_message"] == "Refined user message."  # 1c output
             assert e["draft_user_message"] == f"Drafted user message for {e['scenario_id']}."
             assert e["taxa_subcategory"]
-            assert not e.get("scenario_deviations")
+            assert "scenario_deviations" not in e
         # persisted artifacts: scenarios (1a), dilemmas (1b/1c), refinements log
         assert len(utils.load_jsonl(tmp_path / "scenarios.jsonl")) == 2
         assert len(utils.load_jsonl(tmp_path / "dilemmas.jsonl")) == 2
@@ -97,9 +97,11 @@ class TestStep1Run:
         # 1 batch call + 2 refine calls
         assert len(calls) == 3
 
-    def test_deviating_draft_retries_then_accepts_with_deviations(
+    def test_mismatching_draft_is_accepted_first_try(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
+        # No per-example adherence check: a draft that strays from its card is
+        # accepted as returned — distribution drift is the checklist's job.
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
                                       "count": 1, "batch_size": 1, "refine": False}}
@@ -112,9 +114,10 @@ class TestStep1Run:
         calls = stub_claude(deviating)
         examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
 
-        assert len(calls) == step1_dilemmas.MAX_SCENARIO_ATTEMPTS
+        assert len(calls) == 1
         assert len(examples) == 1
-        assert "direction" in examples[0]["scenario_deviations"]
+        assert examples[0]["annotation"]["direction"] == "NOT-A-DIRECTION"
+        assert "scenario_deviations" not in examples[0]
 
     def test_resume_makes_no_calls(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         # Step 1 has no Checkpoint object — it resumes by re-reading its own
@@ -136,6 +139,21 @@ class TestStep1Run:
                                       "seed_path": str(seed_file)}}
         with pytest.raises(SystemExit, match="Duplicate prompt_id"):
             step1_dilemmas.run(config, prompts_dad, tmp_path / "out")
+
+
+# --- Step 1: coverage tally ------------------------------------------------
+
+class TestCoverageTally:
+    def test_split_domain_halves_count_as_their_card(self):
+        examples = [{"annotation": {"domain": ["Education", "Parenting"]}},
+                    {"annotation": {"domain": ["Education / Parenting"]}}]
+        t = step1_dilemmas.coverage_tally(examples)
+        assert t["domains"]["Education / Parenting"] == 2
+        assert "Education" not in t["domains"]
+
+    def test_unknown_labels_pass_through(self):
+        t = step1_dilemmas.coverage_tally([{"annotation": {"domain": ["Space Tourism"]}}])
+        assert t["domains"]["Space Tourism"] == 1
 
 
 # --- Step 2: scope + respond ---------------------------------------------

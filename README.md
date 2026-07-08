@@ -59,7 +59,7 @@ Generates chat-format transcripts where a user brings a genuine ethical dilemma 
 
 | Step | Script | What it does |
 |---|---|---|
-| 1 | `step1_dilemmas.py` | **1a** samples a stratified scenario per example (categorical axes drawn from decks so the batch's distribution holds by construction); **1b** drafts a prompt to fit each scenario, adherence-checked against it; **1c** (optional, on by default) reviews and rewrites each draft so the welfare stake is load-bearing and coherent. Imports optional handwritten seeds. |
+| 1 | `step1_dilemmas.py` | **1a** samples a stratified scenario per example (categorical axes drawn from decks so the batch's distribution holds by construction); **1b** drafts a prompt to fit each scenario (assigned labels copied verbatim; fidelity is monitored by the corpus-level checklist, not a per-example check); **1c** (optional, on by default) reviews and rewrites each draft so the welfare stake is load-bearing and coherent. Imports optional handwritten seeds. |
 | 2 | `step2_responses.py` | **2a** scopes the case from the user's message (system, agent, cost, upside, counterfactual); **2b** generates a two-sided response over that scope with the full reasoning library in context |
 | 3 | `step3_rewrite.py` | Rewrites responses against the distilled constitution principles — the critical step |
 
