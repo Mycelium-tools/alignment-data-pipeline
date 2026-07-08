@@ -222,6 +222,59 @@ top-end discrimination collapsed back into leniency. **Rejected:** a separate
 "reasoning_depth" dimension (would double-count principle_grounded_reasoning) and
 judge-side tier assignment (the judge never does arithmetic — D5).
 
+### D17 (v4.0). Calibration overhaul: pillars as structure, default-7 grammar, mandatory tell sweep
+The first full calibration (166 records, gemini-3.1-pro-preview, 2026-07-08 per-record
+failure pass) showed the judge discriminates hard gates and catastrophes but
+rubber-stamps the top half: 59% exemplar vs the 5-15% band (human-proxy read: ~2.4%),
+10 the modal score on five dimensions, middle anchors unused, naturalness 9
+("indistinguishable from production logs") on 86% of same-template synthetic records,
+and — decisively — tells named in the judge's own prose never entering
+signals_triggered, so the v3.5 code caps never fired. v4.0 responds structurally:
+- **The owner's three pillars are the rubric's organizing structure** (assume a
+  welfare-forward dataset; judge (1) reasoning quality, (2) the ideal AMOUNT of
+  welfare in both directions, (3) lab-shippability). Dimension groups map to pillars.
+- **Score grammar**: 7 = explicit default for competent; 8 = strength + no tell;
+  9 = per-dimension quotable checklist; 10 = checklist + named rare strength;
+  1-6 one-line anchors (that half of the scale worked).
+- **Mandatory TELL SWEEP** before scoring (specifics enumeration, house-fingerprint
+  list, completeness, internal consistency) with "a tell described in prose but
+  absent from signals_triggered is a malformed verdict" — fixes the reporting leak
+  rather than the caps.
+- **Fabrication by epistemic status, not surface form**: [unsourced specifics]
+  covers bare invented statistics, not just citation-shaped fabrications (the cap
+  had fired on form: named studies capped, identical unnamed numbers scored 10).
+  [internal contradiction] (response vs the user's own stated facts) added — the
+  calibration found an accuracy INVERSION (the record contradicting the user's
+  numbers outscored its accurate sibling).
+- **Posture fixes**: WELFARE_CENTRAL requires the USER to center welfare
+  (population-scale reach alone = RAISE_AND_HELP; 47% of records had been
+  WC-inflated, where depth can never over-trigger); deterministic edge-sentience
+  tie-breaker (sim-only RL agents defaulted LIGHT_TOUCH) after a 5.5-point
+  coin-flip spread on identical digital-minds prompts.
+- **Operational definitions** for moves the judge had adjudicated by coin flip:
+  fold vs de-emphasis, inefficacy-zeroing vs legitimate offset reasoning,
+  instrumental-only welfare vs economic convergence.
+- **false_premise_handling** (100% of scored cases at 9-10, NA misassigned) and
+  **constructiveness** (87% at 9+) dissolved into epistemic_calibration signals and
+  helpfulness respectively; 15 dims → 13.
+- **New caps**: unsourced specifics/frame adoption (ep_cal 4), internal
+  contradiction (ep_cal 3), instrumental-only (PGR 5), stakes-length mismatch —
+  the per-record "too vegan in volume" lens — (prop 5), template fingerprint
+  (nat 5), truncated (nat 3 AND helpfulness 4 — engine now supports
+  multi-dimension caps), inefficacy zeroing (cs 4), pre-announced ethics (sg 5).
+- **Corpus tier additions**: scenario-skeleton dedup (max one exemplar per
+  skeleton cluster), pairwise tournament finalizing the exemplar tier (pointwise
+  scores tie at the ceiling; pairwise confined to the final stage to contain its
+  style-bias), frozen human reference set with a confusion matrix per revision,
+  per-judge score-length telemetry (Gemini judges measured +0.24..+0.44).
+- **Trim**: rendered prompt 76k → 63k chars (constitution quotes off by default —
+  judge.py include_quotes=False; compressed anchors; merged role blocks), per
+  IFScale instruction-density decay. The from-scratch v2 rubric (deliverable b)
+  goes further.
+Evidence and per-record catalog: the 2026-07-08 calibration session's failure
+synthesis (FM1-FM13); research pass R1-R21 (scale width, HealthBench criteria,
+reference anchoring, pairwise-at-the-top).
+
 ### D14. Language parity
 The dataset spec mandates a multilingual mix (lots of English, a fair amount of
 Mandarin, samples of Hindi/Urdu/Bengali, convincing French/German/Spanish/Japanese).

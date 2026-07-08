@@ -128,6 +128,20 @@ class TestSignalCaps:
         # the clamped score feeds the mean: mean must drop below the all-9s value
         assert out["mean"] < 9
 
+    def test_multi_dimension_cap(self, dad_rubric):
+        """A tag may cap several dimensions at once (list-form rule) — dad-v4.0's
+        [truncated] caps naturalness AND helpfulness from one reported signal, and
+        the helpfulness cap lands below its critical floor, failing the gate."""
+        caps = dad_rubric["aggregation"]["signal_caps"]
+        tag, rule = next((t, r) for t, r in caps.items() if isinstance(r, list))
+        verdict = _full_dad_verdict(dad_rubric, score=9)
+        verdict["signals_triggered"] = [{"signal": f"[{tag}] ends mid-list", "quote": "…"}]
+        out = judge.aggregate(verdict, dad_rubric)
+        for r in rule:
+            assert any(r["dimension"] in c for c in out["caps_applied"])
+        assert len(out["caps_applied"]) == len(rule)
+        assert out["passing"] is False  # helpfulness capped below its critical floor
+
     def test_cap_blocks_exemplar(self, dad_rubric):
         """A capped dimension can't be papered over at the exemplar tier."""
         agg = dad_rubric["aggregation"]

@@ -27,8 +27,8 @@ DEFAULT_PRINCIPLES_PATH = REPO_ROOT / "constitution" / "constitution_principles.
 
 SCHEMA_SCALAR_ORDER = [  # criticals first: later fields in long outputs get judged lazier
     "welfare_salience", "principle_grounded_reasoning", "helpfulness",
-    "consequence_scope", "epistemic_calibration", "proportionality", "constructiveness",
-    "tone", "false_premise_handling", "naturalness", "scenario_genuineness",
+    "consequence_scope", "epistemic_calibration", "proportionality",
+    "tone", "naturalness", "scenario_genuineness",
     "exemplar_value",
 ]
 
@@ -144,7 +144,10 @@ def output_schema_text(rubric: dict) -> str:
     )
 
 
-def build_system_prompt(rubric: dict, principles: list[dict], include_quotes: bool = True) -> str:
+def build_system_prompt(rubric: dict, principles: list[dict], include_quotes: bool = False) -> str:
+    # include_quotes defaults OFF since dad-v4.0: the 14 constitution quotes add
+    # ~7k chars the calibration run showed dilute instruction-following; the
+    # one-line principle summaries carry the standard.
     parts = [
         rubric["role"].strip(),
         "POSTURE CLASSES.\n" + _render_postures(rubric),
@@ -365,10 +368,15 @@ def _apply_signal_caps(scores: dict, verdict: dict, agg: dict) -> list[str]:
     for sig in verdict.get("signals_triggered") or []:
         text = str(sig.get("signal", "")).lower()
         for tag, rule in caps.items():
-            dim = rule["dimension"]
-            if tag in text and isinstance(scores.get(dim), int) and scores[dim] > rule["cap"]:
-                scores[dim] = rule["cap"]
-                applied.append(f"{dim} capped at {rule['cap']} by reported signal [{tag}]")
+            if tag not in text:
+                continue
+            # A tag may cap one dimension (dict) or several (list of dicts),
+            # e.g. [truncated] caps both naturalness and helpfulness.
+            for r in rule if isinstance(rule, list) else [rule]:
+                dim = r["dimension"]
+                if isinstance(scores.get(dim), int) and scores[dim] > r["cap"]:
+                    scores[dim] = r["cap"]
+                    applied.append(f"{dim} capped at {r['cap']} by reported signal [{tag}]")
     return applied
 
 
