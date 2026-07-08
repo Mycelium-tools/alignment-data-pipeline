@@ -122,7 +122,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             record = None
             for attempt in range(1, MAX_SCOPE_ATTEMPTS + 1):
                 raw, stop_reason = api.call_claude(
-                    user_message=scope_prompt, return_stop_reason=True)
+                    user_message=scope_prompt, return_stop_reason=True,
+                    model=config["dad"].get("response_scope_model"),
+                    stage="response_scope")
                 # A max_tokens-truncated scope may still parse (the brace-salvage
                 # path) but is missing content — count it as an unusable attempt.
                 parsed = {} if stop_reason == "max_tokens" else _parse_scope(raw)
@@ -163,6 +165,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                     user_message=d["user_message"],
                 ),
                 return_stop_reason=True,
+                model=config["dad"].get("response_draft_model"),
+                stage="response_draft",
             )
             response = response.strip()
 

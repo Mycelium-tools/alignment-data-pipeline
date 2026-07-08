@@ -108,6 +108,24 @@ def total_cost(run_dir: Path) -> float:
     return round(total, 4)
 
 
+def cost_by_stage(run_dir: Path) -> dict[str, dict]:
+    """Aggregate the run's cost log per stage tag:
+    {stage: {"calls": int, "cost_usd": float, "models": [str]}}.
+    Records written before stage tags existed group under "(untagged)"."""
+    by_stage: dict[str, dict] = {}
+    for rec in _load_jsonl(Path(run_dir) / "cost_log.jsonl"):
+        agg = by_stage.setdefault(rec.get("stage") or "(untagged)",
+                                  {"calls": 0, "cost_usd": 0.0, "models": set()})
+        agg["calls"] += 1
+        agg["cost_usd"] += rec.get("cost_usd", 0.0)
+        if rec.get("model"):
+            agg["models"].add(rec["model"])
+    for agg in by_stage.values():
+        agg["cost_usd"] = round(agg["cost_usd"], 4)
+        agg["models"] = sorted(agg["models"])
+    return by_stage
+
+
 def _pass_rate(run_dir: Path, pipeline: str) -> float | None:
     if pipeline == "sdf":
         scored = load_stage(run_dir, pipeline, "layer5")

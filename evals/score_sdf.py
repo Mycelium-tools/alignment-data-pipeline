@@ -57,7 +57,7 @@ def main() -> None:
         print(f"  Scoring {doc_id[:12]}...")
         prompt = _JUDGE_PROMPT.format(document=rec["content"][:8000])
 
-        raw = api.call_claude(user_message=prompt)
+        raw = api.call_claude(user_message=prompt, stage="eval_score_sdf")
         text = raw.strip()
         if text.startswith("```"):
             text = "\n".join(text.split("\n")[1:])

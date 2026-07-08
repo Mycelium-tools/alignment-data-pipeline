@@ -59,7 +59,8 @@ def _get_client() -> anthropic.Anthropic:
     return _client
 
 
-def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
+def _log_usage(model: str, input_tokens: int, output_tokens: int,
+               stage: str | None = None) -> None:
     prices = _PRICING.get(model)
     if prices is None:
         if model not in _UNPRICED_WARNED:
@@ -79,6 +80,8 @@ def _log_usage(model: str, input_tokens: int, output_tokens: int) -> None:
         "output_tokens": output_tokens,
         "cost_usd": round(cost, 6),
     }
+    if stage:
+        record["stage"] = stage
     with _cost_log_lock, open(_cost_log_path, "a") as f:
         f.write(json.dumps(record) + "\n")
 
@@ -106,6 +109,7 @@ def _call_with_retry(
     max_tokens: int,
     system: str,
     messages: list[dict],
+    temperature: float,
 ) -> anthropic.types.Message:
     # Extended thinking OFF everywhere — training data should show user-facing
     # reasoning, not internal scratchpads (see CLAUDE.md). Models in the Claude 5
@@ -119,6 +123,7 @@ def _call_with_retry(
         max_tokens=max_tokens,
         system=system,
         messages=messages,
+        temperature=temperature,
         thinking={"type": "disabled"},
     )
 
@@ -139,6 +144,8 @@ def call_claude(
     model: str | None = None,
     max_tokens: int | None = None,
     return_stop_reason: bool = False,
+    stage: str | None = None,
+    temperature: float | None = None,
 ) -> str | tuple[str, str | None]:
     """Call Claude and return the response text.
 
@@ -150,6 +157,10 @@ def call_claude(
         max_tokens: Token limit override; falls back to config value.
         return_stop_reason: if True, return (text, stop_reason) so the caller can
             reject truncated/refused completions instead of storing them.
+        stage: Pipeline-stage tag written into the cost-log record (e.g.
+            "prompt_draft", "layer4") so spend can be broken down per stage.
+        temperature: Sampling temperature override for this call; falls back to
+            the config `temperature` (1.0 — corpus generation wants diversity).
 
     Returns:
         The assistant's response text, or (text, stop_reason) when
@@ -158,6 +169,7 @@ def call_claude(
     client = _get_client()
     resolved_model = model or _config.get("model", "claude-sonnet-5")
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
+    resolved_temp = temperature if temperature is not None else _config.get("temperature", 1.0)
 
     full_system = system_prompt
     if injection:
@@ -169,9 +181,11 @@ def call_claude(
         max_tokens=resolved_max,
         system=full_system,
         messages=[{"role": "user", "content": user_message}],
+        temperature=resolved_temp,
     )
 
-    _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens)
+    _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens,
+               stage=stage)
     # A completion that stopped for any reason other than end_turn/stop_sequence
     # is suspect — max_tokens truncates mid-text, refusal yields little or none.
     # Warn loudly so it isn't silently written into a corpus; callers that build
