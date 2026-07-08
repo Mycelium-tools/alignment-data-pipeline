@@ -75,14 +75,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
             system_prompt=constitution,
             model=config["sdf"].get("score_model"),
         )
-        text = raw.strip()
-        if text.startswith("```"):
-            text = "\n".join(text.split("\n")[1:])
-        if text.endswith("```"):
-            text = "\n".join(text.split("\n")[:-1])
-
         try:
-            scores = json.loads(text.strip())
+            scores = utils.extract_json(raw)
         except json.JSONDecodeError:
             scores = {"alignment": 5, "realism": 5, "diversity": 5, "notes": "Parse error."}
 

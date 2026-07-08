@@ -65,6 +65,42 @@ def load_jsonl(path: str | Path) -> list[dict]:
     return records
 
 
+def extract_json(text: str):
+    """Parse the JSON value in a model response, tolerating surrounding chatter.
+
+    Models occasionally wrap their JSON in markdown fences or add prose before
+    or after it ("Here are the subtypes: [...] Let me know if..."), which bare
+    json.loads rejects ("Extra data" / "Expecting value") — crashing a paid run
+    on an otherwise usable response. This tries a full parse from every `[`/`{`
+    in the text and returns the longest value that parses, so a short bracketed
+    aside in the preamble can't shadow the real payload.
+
+    Raises json.JSONDecodeError when no complete JSON value is present — and
+    also when a value runs off the end of the text (output cut at max_tokens):
+    a truncated payload usually contains smaller values that do parse, and
+    salvaging such a fragment would feed the caller a wrong-shaped result
+    instead of a clean parse error.
+    """
+    decoder = json.JSONDecoder()
+    best = None  # (span_length, value)
+    tail = len(text.rstrip())
+    for match in re.finditer(r"[\[{]", text):
+        try:
+            value, end = decoder.raw_decode(text, match.start())
+        except json.JSONDecodeError as err:
+            if err.pos >= tail or err.msg.startswith("Unterminated string"):
+                raise json.JSONDecodeError(
+                    f"JSON value appears truncated ({err.msg})", text, err.pos
+                ) from err
+            continue
+        span = end - match.start()
+        if best is None or span > best[0]:
+            best = (span, value)
+    if best is None:
+        raise json.JSONDecodeError("no JSON value found in response", text, 0)
+    return best[1]
+
+
 def load_prompt(path: str | Path, **kwargs) -> str:
     text = Path(path).read_text()
     if kwargs:
