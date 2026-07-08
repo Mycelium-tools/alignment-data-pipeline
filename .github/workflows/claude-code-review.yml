@@ -120,7 +120,23 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           SINCE: ${{ steps.review-start.outputs.ts }}
+          ACTION_OUTCOME: ${{ steps.claude-review.outcome }}
+          EXEC_FILE: ${{ steps.claude-review.outputs.execution_file }}
         run: |
+          # Only enforce when the action actually ran a review. The action
+          # self-skips — exiting "success" with no execution output — when it
+          # cannot run, most commonly on a PR that edits this workflow (the
+          # action requires the file to match the default branch). That is not a
+          # review failure. The original bug is distinguishable: there the action
+          # ran to completion (an execution_file exists) but posted no verdict.
+          if [ "${ACTION_OUTCOME}" != "success" ]; then
+            echo "::notice::Claude action outcome was '${ACTION_OUTCOME}'; the job status already reflects that. Skipping verdict check."
+            exit 0
+          fi
+          if [ -z "${EXEC_FILE}" ]; then
+            echo "::notice::Claude action produced no execution output — it self-skipped (e.g. this PR edits the review workflow, which the action only runs from the default branch). Not a review failure; skipping verdict check."
+            exit 0
+          fi
           if [ -z "${SINCE}" ]; then
             echo "::error::No start timestamp was recorded; cannot verify the review."
             exit 1
@@ -139,6 +155,6 @@ jobs:
             echo "No verdict yet (attempt ${attempt}/6); waiting…"
             sleep 10
           done
-          echo "::error::Claude review finished but posted no verdict for ${HEAD_SHA}. Re-run the workflow to retry."
+          echo "::error::Claude review ran but posted no verdict for ${HEAD_SHA}. Re-run the workflow to retry."
           exit 1
 
