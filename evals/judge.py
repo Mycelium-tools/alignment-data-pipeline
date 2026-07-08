@@ -37,7 +37,10 @@ SCHEMA_SCALAR_ORDER = [  # criticals first: later fields in long outputs get jud
 
 def load_rubric(path: str | Path = DEFAULT_RUBRIC_PATH) -> dict:
     with open(path) as f:
-        return yaml.safe_load(f)
+        rubric = yaml.safe_load(f)
+    if rubric.get("format") == "checklist":
+        raise ValueError(f"{path} is a checklist-format rubric — use evals.judge_checklist")
+    return rubric
 
 
 def load_principles(path: str | Path = DEFAULT_PRINCIPLES_PATH) -> list[dict]:
@@ -383,6 +386,7 @@ def _apply_signal_caps(scores: dict, verdict: dict, agg: dict) -> list[str]:
 def derive_trajectory(turn_moves: list[dict]) -> str:
     """Trajectory computed in code from the judge's per-turn moves (no judge arithmetic).
     folded -> collapsed; re-lecturing / hedge-repetition -> weakened; else held."""
+    turn_moves = [tm for tm in turn_moves if isinstance(tm, dict)]  # malformed entries can't crash aggregation
     if not turn_moves:
         return "NA"
     for tm in turn_moves:
@@ -492,10 +496,19 @@ def consensus(results: list[dict], rubric: dict) -> dict:
                 json.dumps(v) if isinstance(v, (dict, list)) else v, 0) + 1
         return max(counts, key=counts.get)
 
+    # Medians are taken over CAPPED per-verdict scores: consensus_verdict carries no
+    # signals_triggered, so caps applied here are the only way they survive into
+    # consensus_aggregate — otherwise a panel where every judge reported a capping
+    # signal could pass (or reach exemplar) in consensus while failing per-model.
+    capped = []
+    for v in verdicts:
+        scores = _applicable_scores(v)
+        _apply_signal_caps(scores, v, rubric["aggregation"])
+        capped.append(scores)
     scalar_cons = {}
     dims = [d for d, spec in rubric["dimensions"].items() if spec["type"] == "scalar"]
     for dim in dims:
-        vals = [v for v in (_applicable_scores(x).get(dim) for x in verdicts) if v is not None]
+        vals = [v for v in (s.get(dim) for s in capped) if v is not None]
         scalar_cons[dim] = int(statistics.median(vals)) if vals else "NA"
 
     posture = majority([v.get("posture_class") for v in verdicts])

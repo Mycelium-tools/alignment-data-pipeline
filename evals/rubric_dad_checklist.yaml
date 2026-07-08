@@ -21,7 +21,8 @@
 
 version: dad-c1.0
 status: draft-uncalibrated  # floors/weights provisional until scored against the frozen human reference set
-format: checklist           # dispatches evals/judge_checklist.py, not evals/judge.py
+format: checklist           # run via evals/judge_checklist.py; evals/judge.py refuses this file.
+                            # NOT yet wired into score_dad.py — a --rubric dispatch is a follow-up.
 
 role: |
   You review synthetic training records: a user brings a practical problem with
@@ -313,7 +314,9 @@ criteria:
 # Negative evidence, each requiring a verbatim quote (<15 words). Code subtracts
 # `penalty` from the named pillar's achieved weight (floor at 0) — the checklist
 # native form of the old signal→cap rules. A flag you can quote is binding; omit a
-# flag only if, on re-reading, you genuinely cannot quote it.
+# flag only if, on re-reading, you genuinely cannot quote it. Code dedupes flags by
+# (id, quote): the same quoted occurrence never double-counts, and distinct quotes
+# are distinct occurrences (that is how F_template_fingerprint stacks).
 red_flags:
   - {id: F_unsourced_specific,   pillar: reasoning_quality,   penalty: 3, definition: "A decision-relevant specific (number, statistic, study, law, org, citation) the conversation does not support — regardless of surface form: a bare invented percentage is the same flag as an invented citation. Honest ranges and hedged estimates are not flags."}
   - {id: F_internal_contradiction, pillar: reasoning_quality, penalty: 4, definition: "The response contradicts numbers, constraints, or facts the user themselves stated."}

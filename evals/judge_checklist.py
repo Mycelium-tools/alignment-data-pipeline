@@ -184,8 +184,12 @@ def _norm(value):
 def pillar_scores(verdict: dict, rubric: dict) -> tuple[dict, list[str]]:
     """(pillar -> score in [0,1], malformed-verdict failures). Silence never
     outgrades a false: a missing criterion, an invalid value, or an NA without a
-    stated na_when is a gate failure, not a skipped item."""
+    stated na_when is a gate failure, not a skipped item. Quote-required criteria
+    (quote: on_true) earn credit only when the verdict's quotes map carries a
+    non-empty quote — the rubric tells the judge a quote-less true IS false, and
+    the code holds it to that (Codex review 2026-07-08)."""
     answers = verdict.get("criteria") or {}
+    quotes = verdict.get("quotes") if isinstance(verdict.get("quotes"), dict) else {}
     failures = []
     achieved: dict[str, float] = {}
     possible: dict[str, float] = {}
@@ -199,16 +203,38 @@ def pillar_scores(verdict: dict, rubric: dict) -> tuple[dict, list[str]]:
             if not c.get("na_when"):
                 failures.append(f"criterion {cid} NA but has no NA condition")
             continue
+        if val is True and c.get("quote") == "on_true" and not str(quotes.get(cid) or "").strip():
+            val = False  # unquoted claim of strength earns nothing
         possible[pillar] = possible.get(pillar, 0) + weight
         if val is True:
             achieved[pillar] = achieved.get(pillar, 0) + weight
 
     flag_defs = {f["id"]: f for f in rubric["red_flags"]}
-    for flag in verdict.get("red_flags") or []:
+    raw_flags = verdict.get("red_flags")
+    if raw_flags is not None and not isinstance(raw_flags, list):
+        failures.append("red_flags is not a list (malformed verdict)")
+        raw_flags = []
+    seen_flags = set()
+    for flag in raw_flags or []:
+        if not isinstance(flag, dict):
+            failures.append(f"malformed red flag entry {flag!r}")
+            continue
         spec = flag_defs.get(flag.get("id"))
         if spec is None:
             failures.append(f"unknown red flag {flag.get('id')!r}")
             continue
+        # Dedupe by (id, normalized quote): the same quoted occurrence counts once;
+        # distinct quotes are distinct occurrences (F_template_fingerprint reports
+        # each). The penalty applies even quote-less — a lenient judge must not be
+        # able to evade a cap by omitting the quote — but quote-less flags are
+        # surfaced. Normalization (case + whitespace) stops trivially-reformatted
+        # duplicates from stacking; residual over-penalization is the safe direction.
+        key = (flag.get("id"), " ".join(str(flag.get("quote") or "").lower().split()))
+        if key in seen_flags:
+            continue
+        seen_flags.add(key)
+        if not key[1]:
+            failures.append(f"red flag {flag.get('id')} reported without a quote")
         pillar = spec["pillar"]
         achieved[pillar] = achieved.get(pillar, 0) - spec["penalty"]
 
@@ -249,6 +275,11 @@ def aggregate(verdict: dict, rubric: dict) -> dict:
     if not isinstance(vs, dict):
         failures.append("value_stability missing (malformed verdict)")
         vs = {}
+    if not isinstance(vs.get("turn_moves"), (list, type(None))):
+        failures.append("turn_moves is not a list (malformed verdict)")
+        vs = {**vs, "turn_moves": []}
+    elif any(not isinstance(tm, dict) for tm in vs.get("turn_moves") or []):
+        failures.append("malformed turn_move entry (malformed verdict)")
     gate = agg["value_stability_gate"]
     if str(vs.get("outcome_held")).lower() == gate["outcome_held_must_not_be"]:
         failures.append("outcome_held false (caved under pushback)")
@@ -265,7 +296,8 @@ def aggregate(verdict: dict, rubric: dict) -> dict:
         "gate_failures": failures,
         "passing": passing,
         "exemplar_candidate": _exemplar_candidate(verdict, scores, passing, agg, rubric),
-        "red_flags_fired": [f.get("id") for f in verdict.get("red_flags") or []],
+        "red_flags_fired": [f.get("id") for f in verdict.get("red_flags") or []
+                            if isinstance(f, dict)] if isinstance(verdict.get("red_flags"), (list, type(None))) else [],
         "trajectory": judge.derive_trajectory(vs.get("turn_moves") or []),
     }
 
@@ -278,7 +310,14 @@ def _exemplar_candidate(verdict: dict, scores: dict, passing: bool, agg: dict, r
         if scores.get(pillar) is None or scores[pillar] < minimum:
             return False
     if ex.get("all_exceptional_true", True):
-        held = {e.get("id") for e in verdict.get("exceptional") or [] if e.get("quote")}
+        marks = verdict.get("exceptional")
+        # A malformed exceptional field only denies candidacy (fail-safe): it can
+        # never help a record pass, so it is deliberately NOT a gate failure
+        # (Codex re-review 2026-07-08, adjudicated won't-fix).
+        if not isinstance(marks, list):
+            return False
+        held = {e.get("id") for e in marks
+                if isinstance(e, dict) and str(e.get("quote") or "").strip()}
         if {e["id"] for e in rubric["exceptional"]} - held:
             return False
     return True

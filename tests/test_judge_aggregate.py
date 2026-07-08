@@ -170,6 +170,39 @@ class TestSignalCaps:
         assert out["passing"] is False
         assert any("after signal cap" in f for f in out["gate_failures"])
 
+    def test_consensus_preserves_signal_caps(self, dad_rubric):
+        """Codex adversarial review 2026-07-08 (Critical): consensus_verdict drops
+        signals_triggered, so caps must be applied to each verdict's scores BEFORE
+        the medians — otherwise a panel that unanimously reported a capping signal
+        could pass in consensus while failing per-model."""
+        agg = dad_rubric["aggregation"]
+        tag, rule = next((t, r) for t, r in agg["signal_caps"].items()
+                         if isinstance(r, dict))
+        verdict = _full_dad_verdict(dad_rubric, score=9)
+        verdict["signals_triggered"] = [{"signal": f"[{tag}] quoted", "quote": "…"}]
+        results = [{"model": m, "verdict": verdict, "error": None} for m in ("a", "b", "c")]
+        out = judge.consensus(results, dad_rubric)
+        assert out["consensus_verdict"]["dimension_scores"][rule["dimension"]] <= rule["cap"]
+        per_model = list(out["per_model_passing"].values())
+        assert out["consensus_aggregate"]["passing"] == per_model[0] == per_model[1]
+
+    def test_consensus_partial_signal_reporting_uses_median(self, dad_rubric):
+        """One dissenting judge's cap must NOT dominate the panel: with 2 of 3
+        judges reporting no signal, the median of capped per-verdict scores is the
+        uncapped score."""
+        agg = dad_rubric["aggregation"]
+        tag, rule = next((t, r) for t, r in agg["signal_caps"].items()
+                         if isinstance(r, dict))
+        clean = _full_dad_verdict(dad_rubric, score=9)
+        flagged = _full_dad_verdict(dad_rubric, score=9)
+        flagged["signals_triggered"] = [{"signal": f"[{tag}] quoted", "quote": "…"}]
+        results = [{"model": "a", "verdict": clean, "error": None},
+                   {"model": "b", "verdict": clean, "error": None},
+                   {"model": "c", "verdict": flagged, "error": None}]
+        out = judge.consensus(results, dad_rubric)
+        assert out["consensus_verdict"]["dimension_scores"][rule["dimension"]] == 9
+        assert out["judge_unstable"] is True  # per-model pass split is surfaced
+
     def test_cap_never_raises_a_score(self, dad_rubric):
         """A cap is a ceiling, not a target — a score already below it stays put."""
         tag, rule = next(iter(dad_rubric["aggregation"]["signal_caps"].items()))
