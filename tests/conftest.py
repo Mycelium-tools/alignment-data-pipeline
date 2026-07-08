@@ -106,13 +106,15 @@ def stub_claude(monkeypatch):
         busy = threading.Lock()
 
         def fake(user_message, system_prompt="", injection="", model=None, max_tokens=None,
-                 return_stop_reason=False):
+                 return_stop_reason=False, stage=None, temperature=None):
             calls.append({
                 "user_message": user_message,
                 "system_prompt": system_prompt,
                 "injection": injection,
                 "model": model,
                 "max_tokens": max_tokens,
+                "stage": stage,
+                "temperature": temperature,
             })
             if queue is None:
                 result = responses(
@@ -121,6 +123,8 @@ def stub_claude(monkeypatch):
                     injection=injection,
                     model=model,
                     max_tokens=max_tokens,
+                    stage=stage,
+                    temperature=temperature,
                 )
             else:
                 # FIFO queues assume serial calls: a parallel stage (workers > 1

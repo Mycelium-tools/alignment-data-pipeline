@@ -52,11 +52,13 @@ All knobs are in `config.yaml`. For development, reduce `document_types_count`, 
 
 SDF supports per-stage model overrides (`sdf.draft_model` / `sdf.rewrite_model` / `sdf.score_model`, each falling back to the global `model`): drafts tolerate a cheap model, but the layer-4 rewrite and layer-5 scoring are the quality-critical calls — spend there first.
 
+DAD likewise: `dad.prompt_draft_model` (1b) / `dad.prompt_refine_model` (1c) / `dad.response_scope_model` (2a) / `dad.response_draft_model` (2b) / `dad.constitution_rewrite_model` (step 3), each falling back to the global `model` — step 3 is the alignment-critical rewrite, spend there first. The global `temperature` (1.0) is wired into every call; generation wants 1.0 (diversity is the product — 1b register variety, 2b independent samples), and `call_claude` accepts a per-call override for eval/debug use.
+
 `workers` sets how many API calls run concurrently within each SDF layer (via `utils.parallel_map`; set to 1 for serial debugging). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
 
 Rough cost anchor (Sonnet 5, July 2026): a DAD example costs ~$0.20–0.25 end-to-end, so the default 40-example run is ~$9–10; smoke runs of 3–5 examples are under $1.
 
-Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jsonl` (evals log to the global `outputs/cost_log.jsonl`) — check it any time.
+Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jsonl` (evals log to the global `outputs/cost_log.jsonl`) — check it any time. Each record carries a `stage` tag (`prompt_draft`, `layer4`, `constitution_rewrite`, …) matching the model-knob names; the viewer's run list renders the per-stage cost breakdown (pre-tag records show as "(untagged)").
 
 ## Preference Pipeline
 
@@ -70,7 +72,7 @@ Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jso
 - To exercise pipeline stages, use the `stub_claude` fixture in `tests/conftest.py` (queue of canned response strings, or a callable dispatcher) — it patches `shared.api.call_claude`, the single chokepoint every module uses. Never let real `anthropic` error types reach the real `_call_with_retry`; tenacity would sleep minutes.
 - All test outputs go to pytest `tmp_path`; the `PIPELINE_OUTPUT_ROOT` env var redirects the `run.py` orchestrators away from the real `outputs/` tree.
 - Determinism: an autouse fixture seeds `random`; `sample_language` accepts an injectable `rng`; uuid/timestamp values are asserted by shape, never by value.
-- Tests encode CURRENT behavior, including known quirks (unused `temperature`). Don't change pipeline behavior just to make a test expectation nicer — decide the spec first, then flip the test deliberately.
+- Tests encode CURRENT behavior, including known quirks. Don't change pipeline behavior just to make a test expectation nicer — decide the spec first, then flip the test deliberately.
 
 ### PR expectations (required for contributions)
 

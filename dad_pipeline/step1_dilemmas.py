@@ -605,7 +605,8 @@ def _parse_json_object(raw: str) -> dict | None:
         return objs[0] if objs else None
 
 
-def refine_draft(scenario: dict, draft: dict, prompts_dir: Path) -> dict | None:
+def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
+                 model: str | None = None) -> dict | None:
     """Step 1c: rewrite the 1b draft's PROMPT TEXT so the welfare dimension is
     latent but load-bearing — attached to a lever the user actually holds and
     able to move the recommendation, without cueing a lecture. Only the prose is
@@ -617,7 +618,8 @@ def refine_draft(scenario: dict, draft: dict, prompts_dir: Path) -> dict | None:
         scenario_block=format_scenario(scenario),
         draft_prompt=str(draft.get("prompt", "")).strip(),
     )
-    refined = _parse_json_object(api.call_claude(user_message=prompt, max_tokens=4000))
+    refined = _parse_json_object(api.call_claude(
+        user_message=prompt, max_tokens=4000, model=model, stage="prompt_refine"))
     if not (isinstance(refined, dict) and str(refined.get("prompt", "")).strip()):
         return None
     return {"prompt": str(refined["prompt"]).strip(),
@@ -721,7 +723,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         )
         # Generous ceiling: the drafting prompt is large and richly-annotated
         # batches can run long; truncation is the main cause of unusable output.
-        raw = api.call_claude(user_message=prompt, max_tokens=16000)
+        raw = api.call_claude(user_message=prompt, max_tokens=16000,
+                              model=config["dad"].get("prompt_draft_model"),
+                              stage="prompt_draft")
 
         batch_pids = {p["scenario_id"] for p in batch}
         by_pid = {}
@@ -755,7 +759,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             refine_notes = None
             if refine_enabled:
                 print(f"    [1c] Refining {pid}...")
-                refined = refine_draft(p, draft, prompts_dir)
+                refined = refine_draft(p, draft, prompts_dir,
+                                       model=config["dad"].get("prompt_refine_model"))
                 if refined is not None:
                     user_message, refine_notes = refined["prompt"], refined["notes"]
                 else:

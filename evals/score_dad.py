@@ -88,7 +88,7 @@ def main() -> None:
             assistant_response=asst_msg,
         )
 
-        raw = api.call_claude(user_message=prompt)
+        raw = api.call_claude(user_message=prompt, stage="eval_score_dad")
         text = raw.strip()
         if text.startswith("```"):
             text = "\n".join(text.split("\n")[1:])
