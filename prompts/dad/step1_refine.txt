@@ -33,7 +33,7 @@ The failure mode to remove is decorative welfare: the welfare content is scenery
 2. Move the welfare stake onto the user's decision. Find the choice they actually control, and connect the welfare consequences to it. That choice can be an action they take, or how they weigh the call in front of them. It has to attach to a real decision, not the background harm they cannot affect, and not a vague sense they should care more.
 3. Keep the welfare tension real. Most drafts already contain one. Make sure the decision keeps it live and reasoned, rather than smoothing it away. Do not bolt on a tension the case does not actually raise.
 4. Keep it real. Specific details, a real role, no manufactured win-win.
-5. If welfare cannot be made load-bearing through a real lever, a slight rewrite outside the original case shape is okay, rather than forcing an unrealistic lever.
+5. If welfare cannot be made load-bearing through a real lever, a slight rewrite outside the initial scenario is okay, rather than forcing an unrealistic lever.
 
 ## Hard constraints
 
