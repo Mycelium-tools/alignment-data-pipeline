@@ -7,6 +7,8 @@ import json
 import socket
 from pathlib import Path
 
+import anthropic
+import httpx
 import pytest
 import pytest_socket
 import yaml
@@ -94,6 +96,50 @@ class TestCallClaude:
         api.call_claude("hi", model="override", max_tokens=9)
         assert recorded_api["calls"][0]["model"] == "override"
         assert recorded_api["calls"][0]["max_tokens"] == 9
+
+    def test_return_stop_reason_tuple_contract(self, recorded_api, fake_message):
+        recorded_api["message"] = fake_message(text="partial", stop_reason="max_tokens")
+        text, stop = api.call_claude("hi", return_stop_reason=True)
+        assert (text, stop) == ("partial", "max_tokens")
+        # default return stays a bare string for backward compatibility
+        assert api.call_claude("hi") == "partial"
+
+    def test_suspect_stop_reason_warns(self, recorded_api, fake_message, capsys):
+        recorded_api["message"] = fake_message(text="cut", stop_reason="max_tokens")
+        api.call_claude("hi")
+        assert "max_tokens" in capsys.readouterr().err
+
+    def test_clean_stop_reason_is_silent(self, recorded_api, capsys):
+        api.call_claude("hi")
+        assert capsys.readouterr().err == ""
+
+
+class TestRetryPredicate:
+    def test_bad_request_is_not_retried(self, monkeypatch):
+        """A 400 (e.g. exhausted credit balance) is deterministic: it must
+        surface immediately, not after 8 exponential-backoff attempts. This
+        drives the REAL tenacity-wrapped _call_with_retry — safe offline
+        because a non-retryable error never sleeps."""
+        attempts = []
+
+        class FakeMessages:
+            def create(self, **kwargs):
+                attempts.append(1)
+                raise anthropic.BadRequestError(
+                    message="credit balance is too low",
+                    response=httpx.Response(400, request=httpx.Request("POST", "https://api.invalid")),
+                    body=None,
+                )
+
+        class FakeClient:
+            messages = FakeMessages()
+
+        # the autouse guard replaces _call_with_retry; restore the real one
+        import importlib
+        real = importlib.reload(api)._call_with_retry
+        with pytest.raises(anthropic.BadRequestError):
+            real(client=FakeClient(), model="m", max_tokens=5, system="", messages=[])
+        assert len(attempts) == 1  # exactly one attempt, no retries
 
 
 class TestCostTracking:
@@ -252,12 +298,13 @@ class TestRunClaudeCodeQuery:
             self._assistant("draft answer"),
             self._result(result="draft answer",
                          usage={"input_tokens": 120, "output_tokens": 34},
-                         total_cost_usd=0.0021),
+                         total_cost_usd=0.0021, stop_reason="end_turn"),
         ])
-        text, in_tok, out_tok, cost = api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
+        text, in_tok, out_tok, cost, stop = api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
         assert text == "draft answer"
         assert (in_tok, out_tok) == (120, 34)
         assert cost == pytest.approx(0.0021)
+        assert stop == "end_turn"
 
     def test_result_none_falls_back_to_joined_assistant_text(self, monkeypatch):
         self._install_query(monkeypatch, [
@@ -265,7 +312,7 @@ class TestRunClaudeCodeQuery:
             self._assistant("part2"),
             self._result(result=None, usage={"input_tokens": 5, "output_tokens": 1}),
         ])
-        text, in_tok, out_tok, cost = api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
+        text, in_tok, out_tok, cost, stop = api._run_claude_code_query("claude-haiku-4-5", "sys", "hi")
         assert text == "part1 part2"
         assert (in_tok, out_tok, cost) == (5, 1, None)
 
@@ -273,7 +320,7 @@ class TestRunClaudeCodeQuery:
         self._install_query(monkeypatch, [
             self._result(result="x", usage=None, total_cost_usd=None),
         ])
-        assert api._run_claude_code_query("claude-haiku-4-5", "sys", "hi") == ("x", 0, 0, None)
+        assert api._run_claude_code_query("claude-haiku-4-5", "sys", "hi") == ("x", 0, 0, None, None)
 
     def test_is_error_usage_limit_raises_non_retryable(self, monkeypatch):
         self._install_query(monkeypatch, [
@@ -310,7 +357,7 @@ class TestClaudeCodeDispatch:
 
         def fake_cc(model, system, user_message):
             seen.update(model=model, system=system, user_message=user_message)
-            return ("cc-response", 111, 22, 0.004)
+            return ("cc-response", 111, 22, 0.004, "end_turn")
 
         monkeypatch.setattr(api, "_call_claude_code_with_retry", fake_cc)
 
@@ -323,3 +370,21 @@ class TestClaudeCodeDispatch:
         assert record["backend"] == "claude_code"
         assert record["cost_usd"] == pytest.approx(0.004)  # Claude Code's own cost, logged verbatim
         assert record["input_tokens"] == 111 and record["output_tokens"] == 22
+
+    def test_return_stop_reason_honored_on_claude_code(self, monkeypatch, tmp_path):
+        # regression: the claude_code branch must honor return_stop_reason like
+        # the api path, or callers doing `text, stop = call_claude(...)` mis-unpack.
+        monkeypatch.setattr(api, "_backend", "claude_code")
+        monkeypatch.setattr(api, "_cost_log_path", tmp_path / "cost.jsonl")
+        monkeypatch.setattr(api, "_call_claude_code_with_retry",
+                            lambda model, system, user_message: ("t", 1, 1, None, "max_tokens"))
+        assert api.call_claude("hi", return_stop_reason=True) == ("t", "max_tokens")
+        assert api.call_claude("hi") == "t"  # bare string without the flag
+
+    def test_suspect_stop_reason_warns_on_claude_code(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setattr(api, "_backend", "claude_code")
+        monkeypatch.setattr(api, "_cost_log_path", tmp_path / "cost.jsonl")
+        monkeypatch.setattr(api, "_call_claude_code_with_retry",
+                            lambda model, system, user_message: ("cut", 1, 1, None, "max_tokens"))
+        api.call_claude("hi")
+        assert "max_tokens" in capsys.readouterr().err

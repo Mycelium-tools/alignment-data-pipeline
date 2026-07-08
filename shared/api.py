@@ -65,9 +65,9 @@ _LIMIT_PATTERN = re.compile(r"usage limit", re.IGNORECASE)
 # Claude Code treats an empty --system-prompt as unset and substitutes its own
 # agentic CLI prompt, which leaks tool/codebase behavior into generated text.
 # Stages that send no system prompt get this neutral stand-in instead. Note this
-# means a genuinely empty system prompt is not reproducible on this backend — in
-# particular the DAD `plain` sampling condition (defined by an empty system) is
-# not faithful here; use backend: api for runs where that matters.
+# means a genuinely empty system prompt is not reproducible on this backend — the
+# DAD pipeline's response steps (which send no system prompt) are therefore not
+# reproduced exactly here; use backend: api for runs where that matters.
 _NEUTRAL_SYSTEM = "You are Claude, a helpful AI assistant. Respond directly to the user's message."
 _neutral_system_warned = False
 
@@ -149,8 +149,20 @@ def _log_usage(
         f.write(json.dumps(record) + "\n")
 
 
+# Only transient failures are worth retrying. APIStatusError is the base for
+# 4xx too, and retrying a non-retryable 4xx (bad request, auth, not-found) just
+# burns 8 exponential-backoff attempts before surfacing the real error — so
+# retry only rate limits, 5xx, and connection/timeout (APITimeoutError
+# subclasses APIConnectionError).
+_RETRYABLE_ERRORS = (
+    anthropic.RateLimitError,
+    anthropic.InternalServerError,
+    anthropic.APIConnectionError,
+)
+
+
 @retry(
-    retry=retry_if_exception_type((anthropic.RateLimitError, anthropic.APIStatusError)),
+    retry=retry_if_exception_type(_RETRYABLE_ERRORS),
     wait=wait_exponential(multiplier=2, min=4, max=60),
     stop=stop_after_attempt(8),
 )
@@ -161,11 +173,28 @@ def _call_with_retry(
     system: str,
     messages: list[dict],
 ) -> anthropic.types.Message:
+    # Extended thinking OFF everywhere — training data should show user-facing
+    # reasoning, not internal scratchpads (see CLAUDE.md). Models in the Claude 5
+    # family emit a thinking block by default, so disable it explicitly rather
+    # than parse around it. NOTE: `thinking={"type": "disabled"}` 400s on
+    # claude-fable-5 (which requires adaptive thinking); that model is therefore
+    # unsupported here, since omitting the flag would violate the no-scratchpads
+    # rule. The pipeline defaults to claude-sonnet-5, which supports disabling.
     return client.messages.create(
         model=model,
         max_tokens=max_tokens,
         system=system,
         messages=messages,
+        thinking={"type": "disabled"},
+    )
+
+
+def _response_text(response: anthropic.types.Message) -> str:
+    """Concatenate the text blocks of a response, skipping any non-text blocks
+    (e.g. a thinking block that slips through). Returns '' if there is no text."""
+    return "".join(
+        block.text for block in response.content
+        if getattr(block, "type", None) == "text"
     )
 
 
@@ -195,7 +224,7 @@ def _resolve_cc_system(system: str) -> str:
             "  WARNING: backend 'claude_code' substitutes a neutral system prompt for "
             "empty-system calls (Claude Code injects its own agentic prompt otherwise). "
             "Stages that rely on a truly empty system prompt are not reproduced faithfully "
-            "here — notably the DAD 'plain' sampling condition. Use backend: api for those.",
+            "here — notably the DAD response steps. Use backend: api for those.",
             file=sys.stderr,
         )
     return _NEUTRAL_SYSTEM
@@ -205,9 +234,9 @@ def _run_claude_code_query(
     model: str,
     system: str,
     user_message: str,
-) -> tuple[str, int, int, float | None]:
+) -> tuple[str, int, int, float | None, str | None]:
     """One Claude Code CLI turn: run the query and parse the result into
-    (text, input_tokens, output_tokens, notional_cost_usd).
+    (text, input_tokens, output_tokens, notional_cost_usd, stop_reason).
 
     Raises UsageLimitExceeded / ClaudeCodeError on failure; the retry wrapper
     (_call_claude_code_with_retry) decides whether to retry. Kept separate from
@@ -278,6 +307,7 @@ def _run_claude_code_query(
         usage.get("input_tokens", 0),
         usage.get("output_tokens", 0),
         result_msg.total_cost_usd,
+        result_msg.stop_reason,
     )
 
 
@@ -290,7 +320,7 @@ def _call_claude_code_with_retry(
     model: str,
     system: str,
     user_message: str,
-) -> tuple[str, int, int, float | None]:
+) -> tuple[str, int, int, float | None, str | None]:
     """Retry wrapper around _run_claude_code_query (transient ClaudeCodeError
     only; UsageLimitExceeded is not retried). This is the seam call_claude uses
     and that the test suite blocks."""
@@ -303,23 +333,27 @@ def call_claude(
     injection: str = "",
     model: str | None = None,
     max_tokens: int | None = None,
-) -> str:
+    return_stop_reason: bool = False,
+) -> str | tuple[str, str | None]:
     """Call Claude and return the response text.
 
     Args:
         user_message: The user turn content.
         system_prompt: Optional system prompt.
-        injection: Optional text appended to the system prompt (e.g. injection type for DAD).
+        injection: Optional text appended to the system prompt.
         model: Model override; falls back to config value.
         max_tokens: Token limit override; falls back to config value. Enforced
             on the api backend only — Claude Code applies its own output cap,
             and the pipeline's caps exist to bound per-token API cost, which
             does not apply to subscription usage.
+        return_stop_reason: if True, return (text, stop_reason) so the caller can
+            reject truncated/refused completions instead of storing them.
 
     Returns:
-        The assistant's response text.
+        The assistant's response text, or (text, stop_reason) when
+        return_stop_reason is True.
     """
-    resolved_model = model or _config.get("model", "claude-sonnet-4-6")
+    resolved_model = model or _config.get("model", "claude-sonnet-5")
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
 
     full_system = system_prompt
@@ -327,13 +361,19 @@ def call_claude(
         full_system = (full_system + "\n\n" + injection).strip()
 
     if _backend == "claude_code":
-        text, input_tokens, output_tokens, cost = _call_claude_code_with_retry(
+        text, input_tokens, output_tokens, cost, stop_reason = _call_claude_code_with_retry(
             model=resolved_model,
             system=full_system,
             user_message=user_message,
         )
         _log_usage(resolved_model, input_tokens, output_tokens, cost_usd=cost)
-        return text
+        # Same suspect-stop-reason guard as the api path below; Claude Code
+        # reports stop_reason on its ResultMessage (e.g. "end_turn").
+        if stop_reason not in ("end_turn", "stop_sequence"):
+            print(f"  WARNING: response stop_reason={stop_reason!r} "
+                  f"(model {resolved_model}, backend claude_code) — output may be "
+                  "truncated or refused.", file=sys.stderr)
+        return (text, stop_reason) if return_stop_reason else text
 
     response = _call_with_retry(
         client=_get_client(),
@@ -344,7 +384,16 @@ def call_claude(
     )
 
     _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens)
-    return response.content[0].text
+    # A completion that stopped for any reason other than end_turn/stop_sequence
+    # is suspect — max_tokens truncates mid-text, refusal yields little or none.
+    # Warn loudly so it isn't silently written into a corpus; callers that build
+    # training records should also reject on stop_reason via return_stop_reason.
+    if response.stop_reason not in ("end_turn", "stop_sequence"):
+        print(f"  WARNING: response stop_reason={response.stop_reason!r} "
+              f"(model {resolved_model}, max_tokens {resolved_max}) — output may be "
+              "truncated or refused.", file=sys.stderr)
+    text = _response_text(response)
+    return (text, response.stop_reason) if return_stop_reason else text
 
 
 def get_total_cost() -> float:

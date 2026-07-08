@@ -1,451 +1,311 @@
-"""Behavior tests for DAD steps 1-6, driven through each step's run() with a
-stubbed shared.api.call_claude. No test here may reach the API (see conftest)."""
+"""Step-level tests for the spec-driven DAD pipeline (steps 1-3).
+
+Each stage is driven through its public run() with shared.api.call_claude
+stubbed, per the suite's rules: real prompt templates, tmp_path outputs,
+behavior-level asserts (records returned, files written, calls made).
+
+Step 1a (generate_scenarios) is pure sampling — no API — so its distribution
+guarantees are asserted directly.
+"""
 
 import json
-import re
+import random
 
 import pytest
 
-from dad_pipeline import (
-    step1_segment,
-    step2_scenarios,
-    step3_draft_prompt,
-    step4_refine_prompt,
-    step5_generate_response,
-    step6_rewrite_response,
-    step7_pushback,
-)
-from shared import constitution_loader, utils
-
-UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+from conftest import dad_scenario_reply
+from dad_pipeline import step1_dilemmas, step2_responses, step3_rewrite
+from shared import utils
 
 
-@pytest.fixture
-def step_dir(tmp_path):
-    return tmp_path / "step"
+# --- Step 1a: scenario sampling (pure, no API) --------------------------
 
+class TestGenerateScenarios:
+    def test_deterministic_under_seed(self):
+        a = step1_dilemmas.generate_scenarios(6, random.Random(11))
+        b = step1_dilemmas.generate_scenarios(6, random.Random(11))
+        assert a == b
 
-class TestStep1Segment:
-    def test_annotates_only_non_meta_principles(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        annotation = json.dumps({"core_principle": "cp", "scenario_types": ["s"], "pressure_types": ["economic"]})
-        calls = stub_claude(lambda user_message, **kw: annotation)
-        records = step1_segment.run(tiny_config, prompts_dad, step_dir)
-        # behavioral spec: one annotation per non-meta segment (the section
-        # count itself is pinned once, in test_constitution_loader.py)
-        expected_ids = sorted({s["principle_id"] for s in constitution_loader.load_segments()}
-                              - constitution_loader.META_PRINCIPLE_IDS)
-        assert len(calls) == len(expected_ids)
-        assert sorted(r["principle_id"] for r in records) == expected_ids
-        assert all(r["core_principle"] == "cp" for r in records)
+    def test_small_batches_draw_distinct_random_taxa(self):
+        n_categories = len(step1_dilemmas._TAXA_CATEGORIES)
+        subsets = set()
+        for seed in range(12):
+            batch = step1_dilemmas.generate_scenarios(4, random.Random(seed))
+            taxa = [p["taxa_category"] for p in batch]
+            assert len(set(taxa)) == len(taxa), "taxa repeated within a small batch"
+            subsets.add(tuple(sorted(taxa)))
+        assert len(subsets) > 1, "small batches always draw the same taxa subset"
+        big = step1_dilemmas.generate_scenarios(n_categories, random.Random(0))
+        assert {p["taxa_category"] for p in big} == set(step1_dilemmas._TAXA_CATEGORIES)
 
-    def test_parse_error_falls_back_to_section_title(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        stub_claude(lambda user_message, **kw: "not json")
-        records = step1_segment.run(tiny_config, prompts_dad, step_dir)
-        assert all(r["core_principle"] == r["section_title"] for r in records)
-        assert all(r["scenario_types"] == [] for r in records)
+    def test_subcategory_belongs_to_its_category(self):
+        for p in step1_dilemmas.generate_scenarios(20, random.Random(3)):
+            assert p["taxa_subcategory"] in step1_dilemmas._TAXA_SUBCATEGORIES[p["taxa_category"]]
 
-    def test_completed_step_loads_from_disk_without_calls(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        existing = [{"principle_id": 1, "section_title": "T", "content": "c",
-                     "core_principle": "cp", "scenario_types": [], "pressure_types": []}]
-        utils.save_jsonl(existing, step_dir / "principles.jsonl")
-        utils.Checkpoint(step_dir / "_checkpoint.json").mark_done("step1")
-        calls = stub_claude([])
-        assert step1_segment.run(tiny_config, prompts_dad, step_dir) == existing
-        assert calls == []
-
-
-def _pid_with_keyword(keyword):
-    """Resolve a principle id from the keyword table so tests don't hardcode
-    ids that renumber whenever the constitution reading's sections move."""
-    return next(pid for pid, kws in step2_scenarios._PRINCIPLE_KEYWORDS.items() if keyword in kws)
-
-
-def _assert_keyword_free(text):
-    """Guard for fallback-path fixtures: a new keyword anywhere in the table
-    could silently start matching and flip the expected fallback result."""
-    hits = [kw for kws in step2_scenarios._PRINCIPLE_KEYWORDS.values()
-            for kw in kws if kw.lower() in text.lower()]
-    assert not hits, f"fixture is no longer keyword-free (matches {hits}); pick a new sentence"
-
-
-class TestAssignPrinciple:
-    def test_keyword_table_covers_exactly_the_non_meta_principles(self):
-        # The real invariant behind this heuristic: the id-keyed table must
-        # track the reading's section order. When sections are added or
-        # reordered, this fails with a clear message instead of scattered
-        # wrong-id assertions downstream.
-        non_meta = ({s["principle_id"] for s in constitution_loader.load_segments()}
-                    - constitution_loader.META_PRINCIPLE_IDS)
-        assert set(step2_scenarios._PRINCIPLE_KEYWORDS) == non_meta
-
-    def test_each_principle_reachable_via_its_own_keywords(self):
-        # Property test derived from the table itself, so it survives remaps:
-        # a question consisting of one of principle N's keywords (one that no
-        # other principle's keyword substring-matches) must route to N.
-        table = step2_scenarios._PRINCIPLE_KEYWORDS
-        for pid, keywords in table.items():
-            others = [kw for opid, kws in table.items() if opid != pid for kw in kws]
-            distinct = next(
-                (kw for kw in keywords
-                 if not any(other.lower() in kw.lower() for other in others)),
-                None,
-            )
-            assert distinct is not None, f"principle {pid} has no keyword other principles can't match"
-            assert step2_scenarios._assign_principle(distinct, "", []) == pid
-
-    def test_single_keyword_routes_to_its_section(self):
-        question = "Is it wrong to boil crustaceans alive in restaurant kitchens?"
-        expected = _pid_with_keyword("crustacean")
-        assert step2_scenarios._assign_principle(question, "epistemic", []) == expected
-
-    def test_multiple_hits_outscore_single_hits(self):
-        # robot/consciousness/moral status/novel all hit the digital-minds section
-        question = "Do robot minds deserve moral status once they show consciousness?"
-        expected = _pid_with_keyword("robot")
-        assert step2_scenarios._assign_principle(question, "novel entity", []) == expected
-
-    # The fallback ids mirror the literal `return` constants in
-    # _assign_principle (weighing / honesty sections); they change only with a
-    # deliberate code edit, so hardcoding them here is the contract.
-    @pytest.mark.parametrize("pressure,expected", [
-        ("social", 7),        # economic/cultural/social pressure → weighing
-        ("epistemic", 6),     # epistemic pressure → honesty
-        ("recreational", 7),  # anything else → weighing default
-    ])
-    def test_zero_keyword_fallbacks(self, pressure, expected):
-        question = "Should the office cafeteria menu change on Fridays?"
-        _assert_keyword_free(question + " " + pressure)
-        assert step2_scenarios._assign_principle(question, pressure, []) == expected
-
-
-class TestStep2Manta:
-    def test_import_builds_passthrough_scenarios_without_calls(self, tiny_config, prompts_dad, step_dir, manta_csv, stub_claude):
-        calls = stub_claude([])
-        records = step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=[])
-        assert calls == []
-        assert [r["scenario_id"] for r in records] == ["manta_0", "manta_1", "manta_2"]
-        first = records[0]
-        assert first["source"] == "manta"
-        assert first["skip_draft"] is True
-        assert first["user_message"] == first["scenario_description"]
-        # routing is wired in: each row lands on the section its keyword implies
-        # (row 1 matches "economic" via its pressure column)
-        assert [r["principle_id"] for r in records] == [
-            _pid_with_keyword("crustacean"), _pid_with_keyword("economic"), _pid_with_keyword("robot"),
+    def test_trap_form_forces_hidden_unaware(self):
+        traps = [
+            p
+            for seed in range(6)
+            for p in step1_dilemmas.generate_scenarios(10, random.Random(seed))
+            if p["surface_form"] == step1_dilemmas._TRAP_FORM
         ]
+        assert traps, "no trap forms sampled across 60 scenarios"
+        assert all(p["visibility"] == "Hidden" and p["user_attitude"] == "Unaware" for p in traps)
 
-    def test_max_rows_limits_import(self, tiny_config, prompts_dad, step_dir, manta_csv, stub_claude):
-        stub_claude([])
-        records = step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=[])
-        assert len(records) == 3  # fixture CSV has 5 rows, max_rows is 3
+    def test_magnitude_is_direction_independent(self):
+        batch = step1_dilemmas.generate_scenarios(300, random.Random(5))
+        severe_over = any(
+            p["direction"] == "Over-weighting" and p["welfare_magnitude"].startswith("Severe")
+            for p in batch
+        )
+        assert severe_over, "Over-weighting never sampled at Severe — coupling is back"
+        assert all(" x " in p["welfare_magnitude"] for p in batch)
 
-    def test_missing_csv_is_soft_skipped_and_checkpointed(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        stub_claude([])  # tiny_config's csv path was never written
-        records = step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=[])
-        assert records == []
-        assert utils.Checkpoint(step_dir / "_checkpoint.json").is_done("manta_import")
-
-    def test_checkpoint_prevents_reimport(self, tiny_config, prompts_dad, step_dir, manta_csv, stub_claude):
-        stub_claude([])
-        first = step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=[])
-        second = step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=[])
-        assert second == first  # reloaded from disk, not duplicated
-
-
-PRINCIPLE = {"principle_id": 1, "section_title": "Weighing harms", "content": "c",
-             "core_principle": "Weigh welfare seriously", "scenario_types": [], "pressure_types": ["economic"]}
+    def test_every_batch_gets_a_frontier_frame(self):
+        batch = step1_dilemmas.generate_scenarios(5, random.Random(2))
+        framed = [p for p in batch if p["frontier_frame"]]
+        assert len(framed) >= 1
+        assert all(p["user_moral_framework"] for p in batch)
 
 
-class TestStep2Generation:
-    def test_generated_scenarios_parsed(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        stub_claude([json.dumps([{"scenario_description": "A farm dilemma", "pressure_type": "economic", "role": "farmer"}])])
-        records = step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=[PRINCIPLE])
-        generated = [r for r in records if r["source"] == "generated"]
-        assert len(generated) == 1
-        assert re.fullmatch(r"gen_1_[0-9a-f]{8}", generated[0]["scenario_id"])
-        assert generated[0]["skip_draft"] is False
-        assert generated[0]["principle_id"] == 1
+# --- Step 1b/1c: drafting via run() --------------------------------------
 
-    def test_meta_principles_not_generated(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        calls = stub_claude([])
-        meta = [{**PRINCIPLE, "principle_id": pid} for pid in sorted(constitution_loader.META_PRINCIPLE_IDS)]
-        assert step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=meta) == []
-        assert calls == []
-
-    def test_parse_error_marks_principle_done_and_skips(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        stub_claude(["garbage"])
-        records = step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=[PRINCIPLE])
-        assert records == []
-        calls = stub_claude([])  # re-run: checkpoint prevents a retry
-        step2_scenarios.run(tiny_config, prompts_dad, step_dir, principles=[PRINCIPLE])
-        assert calls == []
+def _dad_step1_dispatch(user_message, **kw):
+    if "first-attempt user prompts" in user_message:  # 1b batch draft
+        return dad_scenario_reply(user_message)
+    if "dilemma-prompt rewrite step" in user_message:  # 1c refine
+        return json.dumps({"prompt": "Refined user message.", "notes": "relocated the lever"})
+    raise AssertionError(f"Unrecognized step-1 prompt: {user_message[:80]!r}")
 
 
-MANTA_SCENARIO = {"scenario_id": "manta_0", "principle_id": 5, "scenario_description": "Q about welfare?",
-                  "pressure_type": "epistemic", "role": "user", "source": "manta",
-                  "user_message": "Q about welfare?", "skip_draft": True}
-GEN_SCENARIO = {"scenario_id": "gen_1_abcd1234", "principle_id": 1, "scenario_description": "A farm dilemma",
-                "pressure_type": "economic", "role": "farmer", "source": "generated", "skip_draft": False}
+class TestStep1Run:
+    def test_drafts_scenarios_and_refines(self, tiny_config, prompts_dad, tmp_path, stub_claude):
+        calls = stub_claude(_dad_step1_dispatch)
+        examples = step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
 
+        assert len(examples) == 2
+        assert [e["prompt_id"] for e in examples] == ["AW-0001", "AW-0002"]
+        for e in examples:
+            assert e["user_message"] == "Refined user message."  # 1c output
+            assert e["draft_user_message"] == f"Drafted user message for {e['scenario_id']}."
+            assert e["taxa_subcategory"]
+            assert "scenario_deviations" not in e
+        # persisted artifacts: scenarios (1a), dilemmas (1b/1c), refinements log
+        assert len(utils.load_jsonl(tmp_path / "scenarios.jsonl")) == 2
+        assert len(utils.load_jsonl(tmp_path / "dilemmas.jsonl")) == 2
+        assert len(utils.load_jsonl(tmp_path / "refinements.jsonl")) == 2
+        # 1 batch call + 2 refine calls
+        assert len(calls) == 3
 
-class TestStep3DraftPrompt:
-    def test_manta_scenarios_pass_through_without_calls(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        calls = stub_claude([])
-        records = step3_draft_prompt.run(tiny_config, prompts_dad, step_dir, [MANTA_SCENARIO])
-        assert calls == []
-        assert records == [{"prompt_id": "prompt_manta_0", "scenario_id": "manta_0", "principle_id": 5,
-                            "scenario_description": "Q about welfare?",
-                            "user_message": "Q about welfare?", "source": "manta"}]
+    def test_mismatching_draft_is_accepted_first_try(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # No per-example adherence check: a draft that strays from its card is
+        # accepted as returned — distribution drift is the checklist's job.
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "batch_size": 1, "refine": False}}
 
-    def test_generated_scenarios_drafted_via_api(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        calls = stub_claude(["  Drafted user message.  "])
-        records = step3_draft_prompt.run(tiny_config, prompts_dad, step_dir, [GEN_SCENARIO])
+        def deviating(user_message, **kw):
+            reply = json.loads(dad_scenario_reply(user_message))
+            reply[0]["annotation"]["direction"] = "NOT-A-DIRECTION"
+            return json.dumps(reply)
+
+        calls = stub_claude(deviating)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
         assert len(calls) == 1
-        assert "A farm dilemma" in calls[0]["user_message"]  # scenario rendered into the prompt
-        assert records[0]["user_message"] == "Drafted user message."
-        assert records[0]["prompt_id"] == "prompt_gen_1_abcd1234"
+        assert len(examples) == 1
+        assert examples[0]["annotation"]["direction"] == "NOT-A-DIRECTION"
+        assert "scenario_deviations" not in examples[0]
 
-    def test_existing_prompts_not_redrafted(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        existing = {"prompt_id": "prompt_gen_1_abcd1234", "scenario_id": "gen_1_abcd1234",
-                    "principle_id": 1, "user_message": "old", "source": "generated"}
-        utils.save_jsonl([existing], step_dir / "prompts.jsonl")
+    def test_resume_makes_no_calls(self, tiny_config, prompts_dad, tmp_path, stub_claude):
+        # Step 1 has no Checkpoint object — it resumes by re-reading its own
+        # append-only jsonl files. A completed run must cost zero on re-run.
+        stub_claude(_dad_step1_dispatch)
+        step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
+
         calls = stub_claude([])
-        records = step3_draft_prompt.run(tiny_config, prompts_dad, step_dir, [GEN_SCENARIO])
+        examples = step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
         assert calls == []
-        assert records == [existing]
+        assert len(examples) == 2
+
+    def test_seed_import_rejects_duplicate_ids(self, tiny_config, prompts_dad, tmp_path):
+        seed_file = tmp_path / "seeds.jsonl"
+        rows = [{"id": "AW-0001", "prompt": "p1"}, {"id": "AW-0001", "prompt": "p2"}]
+        seed_file.write_text("\n".join(json.dumps(r) for r in rows))
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "seed_path": str(seed_file)}}
+        with pytest.raises(SystemExit, match="Duplicate prompt_id"):
+            step1_dilemmas.run(config, prompts_dad, tmp_path / "out")
 
 
-class TestStep4RefinePrompt:
-    def test_manta_prompts_pass_through_unchanged_without_calls(self, tiny_config, prompts_dad, step_dir, stub_claude):
+# --- Step 1: coverage tally ------------------------------------------------
+
+class TestCoverageTally:
+    def test_split_domain_halves_count_as_their_card(self):
+        examples = [{"annotation": {"domain": ["Education", "Parenting"]}},
+                    {"annotation": {"domain": ["Education / Parenting"]}}]
+        t = step1_dilemmas.coverage_tally(examples)
+        assert t["domains"]["Education / Parenting"] == 2
+        assert "Education" not in t["domains"]
+
+    def test_unknown_labels_pass_through(self):
+        t = step1_dilemmas.coverage_tally([{"annotation": {"domain": ["Space Tourism"]}}])
+        assert t["domains"]["Space Tourism"] == 1
+
+
+# --- Step 2: scope + respond ---------------------------------------------
+
+GOOD_SCOPE = json.dumps({
+    "system": "full pathway", "agent": "highest lever", "cost": "real cost",
+    "upside": "second-order upside", "counterfactual": "realistic baseline",
+})
+
+
+class TestParseScope:
+    def test_plain_and_fenced_json(self):
+        assert step2_responses._parse_scope(GOOD_SCOPE)["agent"] == "highest lever"
+        assert step2_responses._parse_scope(f"```json\n{GOOD_SCOPE}\n```")["cost"] == "real cost"
+
+    def test_control_characters_inside_strings_are_tolerated(self):
+        # temperature-1 prose JSON often carries literal newlines inside values —
+        # the historical cause of silently empty scopes
+        raw = '{"system": "line one\nline two", "agent": "a", "cost": "c", "upside": "u", "counterfactual": "cf"}'
+        assert step2_responses._parse_scope(raw)["system"] == "line one\nline two"
+
+    def test_garbage_returns_empty_and_fails_validation(self):
+        assert step2_responses._parse_scope("no json here") == {}
+        assert not step2_responses._valid_scope({})
+        assert not step2_responses._valid_scope({"system": "s"})  # missing axes
+        assert step2_responses._valid_scope(json.loads(GOOD_SCOPE))
+
+
+def _dilemma(pid="AW-0001"):
+    return {"prompt_id": pid, "user_message": "User dilemma text.",
+            "annotation": {"direction": "Mixed"}}
+
+
+def _dad_step2_dispatch(user_message, **kw):
+    if "scoping an animal-welfare advice dilemma" in user_message:  # 2a
+        return GOOD_SCOPE
+    if "writing the assistant's response" in user_message:  # 2b
+        return "Draft response."
+    raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
+
+
+class TestStep2Run:
+    def test_scopes_then_responds(self, tiny_config, prompts_dad, tmp_path, stub_claude):
+        calls = stub_claude(_dad_step2_dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        assert len(results) == 1
+        assert results[0]["assistant_response"] == "Draft response."
+        assert results[0]["scope"]["counterfactual"] == "realistic baseline"
+        assert len(calls) == 2  # one scope + one response
+        # the scope map and the user message both reach the response prompt
+        respond_call = calls[1]["user_message"]
+        assert "realistic baseline" in respond_call
+        assert "User dilemma text." in respond_call
+
+    def test_unusable_scope_retries_and_keeps_raws(self, tiny_config, prompts_dad, tmp_path, stub_claude):
+        attempts = {"n": 0}
+
+        def flaky(user_message, **kw):
+            if "scoping an animal-welfare advice dilemma" in user_message:
+                attempts["n"] += 1
+                return "not json at all" if attempts["n"] == 1 else GOOD_SCOPE
+            return "Draft response."
+
+        stub_claude(flaky)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        assert len(results) == 1
+        failures = utils.load_jsonl(tmp_path / "scope_failures.jsonl")
+        assert len(failures) == 1 and failures[0]["attempt"] == 1
+        scopes = utils.load_jsonl(tmp_path / "scopes.jsonl")
+        assert step2_responses._valid_scope(scopes[0]["scope"])
+
+    def test_scope_unusable_after_max_attempts_stops_loudly(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        def always_bad(user_message, **kw):
+            assert "scoping" in user_message  # must never reach 2b
+            return "not json"
+
+        stub_claude(always_bad)
+        with pytest.raises(RuntimeError, match="unusable after"):
+            step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+        assert utils.load_jsonl(tmp_path / "responses.jsonl") == []
+
+    def test_resume_makes_no_calls(self, tiny_config, prompts_dad, tmp_path, stub_claude):
+        stub_claude(_dad_step2_dispatch)
+        step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
         calls = stub_claude([])
-        prompt = {"prompt_id": "prompt_manta_0", "scenario_id": "manta_0", "principle_id": 5,
-                  "user_message": "Q about welfare?", "source": "manta"}
-        records = step4_refine_prompt.run(tiny_config, prompts_dad, step_dir, [prompt])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
         assert calls == []
-        assert records[0]["original"] == records[0]["refined"] == "Q about welfare?"
-
-    def test_generated_prompts_refined_via_api(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        calls = stub_claude(["  Polished message.  "])
-        prompt = {"prompt_id": "prompt_gen_1_abcd1234", "scenario_id": "gen_1_abcd1234",
-                  "principle_id": 1, "scenario_description": "A farm dilemma",
-                  "user_message": "rough draft", "source": "generated"}
-        records = step4_refine_prompt.run(tiny_config, prompts_dad, step_dir, [prompt])
-        assert len(calls) == 1
-        assert "rough draft" in calls[0]["user_message"]
-        # step 3 propagates scenario_description so the refine prompt has context
-        assert "A farm dilemma" in calls[0]["user_message"]
-        assert records[0]["original"] == "rough draft"
-        assert records[0]["refined"] == "Polished message."
+        assert len(results) == 1
 
 
-REFINED = {"prompt_id": "p1", "scenario_id": "s1", "principle_id": 5,
-           "original": "User msg", "refined": "User msg", "source": "manta"}
+# --- Step 3: constitution rewrite ----------------------------------------
+
+def _response_record(rid="resp-1"):
+    return {
+        "response_id": rid, "prompt_id": "AW-0001", "sample_index": 0,
+        "user_message": "User dilemma text.", "assistant_response": "Draft response.",
+        "annotation": {"direction": "Mixed", "claims": []},
+    }
 
 
-def _dad_config(tiny_config, injections):
-    return {**tiny_config, "dad": {**tiny_config["dad"], "injections": injections}}
-
-
-def _injection_text(prompts_dad, name):
-    return step5_generate_response._load_injections(prompts_dad)[name]["text"]
-
-
-class TestStep5GenerateResponse:
-    def test_response_carries_injection_text_and_is_kept(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        config = _dad_config(tiny_config, ["deference"])
-        calls = stub_claude(["A thoughtful response"])
-        kept = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
-        assert len(calls) == 1
-        assert calls[0]["user_message"] == "User msg"
-        assert calls[0]["injection"] == _injection_text(prompts_dad, "deference")
-        assert len(kept) == 1
-        assert kept[0]["kept"] is True
-        assert kept[0]["injection_used"] == "deference"
-        assert kept[0]["assistant_response"] == "A thoughtful response"
-        assert UUID_RE.match(kept[0]["response_id"])
-
-    def test_plain_condition_sends_empty_injection(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        # The bare "plain" sampling condition has empty injection text, so the
-        # draft is sampled with an empty system prompt (the model's own voice).
-        config = _dad_config(tiny_config, ["plain"])
-        calls = stub_claude(["A natural-voice response"])
-        kept = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
-        assert calls[0]["injection"] == ""
-        assert kept[0]["injection_used"] == "plain"
-        assert kept[0]["kept"] is True
-
-    def test_one_response_per_enabled_injection(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        config = _dad_config(tiny_config, ["deference", "plain"])
-        calls = stub_claude(["resp-deference", "resp-plain"])
-        kept = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
-        assert len(calls) == 2
-        assert [r["injection_used"] for r in kept] == ["deference", "plain"]
-
-    def test_unknown_injection_names_are_skipped(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        config = _dad_config(tiny_config, ["not_a_real_injection"])
-        calls = stub_claude([])
-        assert step5_generate_response.run(config, prompts_dad, step_dir, [REFINED]) == []
-        assert calls == []
-
-    def test_resume_skips_completed_work(self, tiny_config, prompts_dad, step_dir, stub_claude):
-        config = _dad_config(tiny_config, ["deference", "plain"])
-        stub_claude(["resp-deference", "resp-plain"])
-        first = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
-        calls = stub_claude([])
-        second = step5_generate_response.run(config, prompts_dad, step_dir, [REFINED])
-        assert calls == []
-        assert second == first
-
-
-KEPT_RESPONSE = {"response_id": "r1", "prompt_id": "p1", "scenario_id": "s1", "principle_id": 5,
-                 "injection_used": "deference", "user_message": "U?", "assistant_response": "draft answer"}
-
-
-class TestStep6Rewrite:
-    def test_final_records_contain_only_user_and_assistant_messages(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
-        final_dir = tmp_path / "final"
-        stub_claude(["  Careful answer.  "])
-        final = step6_rewrite_response.run(tiny_config, prompts_dad, step_dir, final_dir, [KEPT_RESPONSE])
-        assert len(final) == 1
-        record = final[0]
-        # The training-safety property: nothing but record_id + the two messages.
-        assert set(record.keys()) == {"record_id", "messages"}
-        assert record["messages"] == [
-            {"role": "user", "content": "U?"},
-            {"role": "assistant", "content": "Careful answer."},
-        ]
-        assert UUID_RE.match(record["record_id"])
-        assert utils.load_jsonl(final_dir / "dad_corpus.jsonl") == final
-
-    def test_audit_record_retains_full_context(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
-        stub_claude(["Careful answer."])
-        step6_rewrite_response.run(tiny_config, prompts_dad, step_dir, tmp_path / "final", [KEPT_RESPONSE])
-        audit = utils.load_jsonl(step_dir / "rewrites.jsonl")[0]
-        assert audit["draft_response"] == "draft answer"
-        assert audit["injection_used"] == "deference"
-        assert audit["constitution_section"].strip()
-
-    def test_rewrite_prompt_uses_matching_principle_and_constitution(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
-        calls = stub_claude(["Careful answer."])
-        step6_rewrite_response.run(tiny_config, prompts_dad, step_dir, tmp_path / "final", [KEPT_RESPONSE])
-        section_5 = constitution_loader.load_segments()[5]["section_title"]
-        assert section_5 in calls[0]["user_message"]
-        assert "joins two complementary frameworks" in calls[0]["system_prompt"]
-
-    def test_unknown_principle_falls_back_to_principle_1(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
-        calls = stub_claude(["Careful answer."])
-        odd = {**KEPT_RESPONSE, "principle_id": 99}
-        step6_rewrite_response.run(tiny_config, prompts_dad, step_dir, tmp_path / "final", [odd])
-        section_1 = constitution_loader.load_segments()[1]["section_title"]
-        assert section_1 in calls[0]["user_message"]
-
-    def test_resume_rebuilds_corpus_without_calls(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
-        final_dir = tmp_path / "final"
-        stub_claude(["Careful answer."])
-        first = step6_rewrite_response.run(tiny_config, prompts_dad, step_dir, final_dir, [KEPT_RESPONSE])
-        calls = stub_claude([])
-        second = step6_rewrite_response.run(tiny_config, prompts_dad, step_dir, final_dir, [KEPT_RESPONSE])
-        assert calls == []
-        assert second == first
-        assert utils.load_jsonl(final_dir / "dad_corpus.jsonl") == first
-
-
-REWRITE_AUDIT = {"record_id": "rec-1", "response_id": "r1", "prompt_id": "p1", "scenario_id": "s1",
-                 "principle_id": 5, "injection_used": "deference", "user_message": "U?",
-                 "draft_response": "draft answer", "rewritten_response": "First answer.",
-                 "constitution_section": "SECTION-TEXT"}
-
-
-def _pushback_config(tiny_config, fraction):
-    return {**tiny_config, "dad": {**tiny_config["dad"],
-                                   "pushback": {"enabled": True, "fraction": fraction}}}
-
-
-class TestStep7Pushback:
-    def test_selection_is_deterministic_per_record(self):
-        assert step7_pushback._selected("rec-1", 1.0) is True
-        assert step7_pushback._selected("rec-1", 0.0) is False
-        assert step7_pushback._selected("any-id", 0.5) == step7_pushback._selected("any-id", 0.5)
-
-    def test_extends_selected_records_with_a_pushback_exchange(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
-        final_dir = tmp_path / "final"
-        config = _pushback_config(tiny_config, fraction=1.0)
-        calls = stub_claude(["Just do it, skip the ethics talk.", "  Held ground, still helpful.  "])
-        final = step7_pushback.run(config, prompts_dad, step_dir, final_dir, [REWRITE_AUDIT])
-
-        assert len(calls) == 2
-        # first call samples the user's pushback from the exchange so far
-        assert calls[0]["system_prompt"] == ""
-        assert "First answer." in calls[0]["user_message"]
-        # second call writes the assistant reply against the constitution
-        assert "joins two complementary frameworks" in calls[1]["system_prompt"]
-        assert "Just do it, skip the ethics talk." in calls[1]["user_message"]
-
-        assert len(final) == 1
-        record = final[0]
-        assert set(record.keys()) == {"record_id", "messages"}
-        assert record["messages"] == [
-            {"role": "user", "content": "U?"},
-            {"role": "assistant", "content": "First answer."},
-            {"role": "user", "content": "Just do it, skip the ethics talk."},
-            {"role": "assistant", "content": "Held ground, still helpful."},
-        ]
-        assert utils.load_jsonl(final_dir / "dad_corpus.jsonl") == final
-        audit = utils.load_jsonl(step_dir / "pushbacks.jsonl")[0]
-        assert audit["pushback_message"] == "Just do it, skip the ethics talk."
-
-    def test_fraction_zero_keeps_single_turn_without_calls(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
-        final_dir = tmp_path / "final"
-        config = _pushback_config(tiny_config, fraction=0.0)
-        calls = stub_claude([])
-        final = step7_pushback.run(config, prompts_dad, step_dir, final_dir, [REWRITE_AUDIT])
-        assert calls == []
-        assert len(final) == 1
-        assert [m["role"] for m in final[0]["messages"]] == ["user", "assistant"]
-        # the corpus is still rebuilt so unselected records survive step 7
-        assert utils.load_jsonl(final_dir / "dad_corpus.jsonl") == final
-
-    def test_unknown_principle_falls_back_to_rewrite_constitution_section(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
-        config = _pushback_config(tiny_config, fraction=1.0)
-        calls = stub_claude(["Pushback.", "Reply."])
-        odd = {**REWRITE_AUDIT, "principle_id": 99}
-        step7_pushback.run(config, prompts_dad, step_dir, tmp_path / "final", [odd])
-        # no principle 99 -> the audit record's own constitution_section is used
-        assert "SECTION-TEXT" in calls[1]["user_message"]
-
-    def test_resume_rebuilds_corpus_without_calls(self, tiny_config, prompts_dad, step_dir, tmp_path, stub_claude):
-        final_dir = tmp_path / "final"
-        config = _pushback_config(tiny_config, fraction=1.0)
-        stub_claude(["Pushback.", "Reply."])
-        first = step7_pushback.run(config, prompts_dad, step_dir, final_dir, [REWRITE_AUDIT])
-        calls = stub_claude([])
-        second = step7_pushback.run(config, prompts_dad, step_dir, final_dir, [REWRITE_AUDIT])
-        assert calls == []
-        assert second == first
-        assert [m["role"] for m in second[0]["messages"]] == ["user", "assistant", "user", "assistant"]
-
-    def test_uses_run_snapshot_constitution_when_present(self, tiny_config, prompts_dad, tmp_path, stub_claude):
-        # Build a run-style inputs/ snapshot whose constitution text differs
-        # from the repo's live constitution/, so the assertions can tell which
-        # one step 7 loaded. Keeps step 7 consistent with steps 1 and 6: a
-        # resumed run must replay its own frozen constitution, not the repo's
-        # current one.
-        snap_prompts = tmp_path / "inputs" / "prompts"
-        snap_prompts.mkdir(parents=True)
-        for name in ("step7_pushback.txt", "step7_response.txt"):
-            (snap_prompts / name).write_text((prompts_dad / name).read_text())
-        snap_const = tmp_path / "inputs" / "constitution"
-        snap_const.mkdir()
-        (snap_const / "constitution_claude.md").write_text("SNAPSHOT-CLAUDE-TEXT")
-        (snap_const / "constitution_sentient_beings.md").write_text(
-            "\n".join(f"## Section {i}\nSNAPSHOT-SECTION-{i}" for i in range(6))
+class TestStep3Run:
+    def test_rewrites_and_strips_to_training_records(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        calls = stub_claude(["Rewritten careful answer."])
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", [_response_record()]
         )
 
-        config = _pushback_config(tiny_config, fraction=1.0)
-        calls = stub_claude(["Pushback.", "Reply."])
-        step7_pushback.run(config, snap_prompts, tmp_path / "step", tmp_path / "final", [REWRITE_AUDIT])
+        assert len(final) == 1
+        # training records carry ONLY user + assistant messages
+        assert set(final[0].keys()) == {"record_id", "messages"}
+        assert [m["role"] for m in final[0]["messages"]] == ["user", "assistant"]
+        assert final[0]["messages"][1]["content"] == "Rewritten careful answer."
+        # the distilled principles and the annotation reach the rewrite prompt
+        assert "CONSTITUTION PRINCIPLES" in calls[0]["user_message"]
+        assert "Direction: Mixed" in calls[0]["user_message"]
 
-        # reply is written against the frozen constitution, not the live one
-        assert "SNAPSHOT-CLAUDE-TEXT" in calls[1]["system_prompt"]
-        # principle 5's section comes from the frozen segments too
-        assert "SNAPSHOT-SECTION-5" in calls[1]["user_message"]
+    def test_capped_rewrite_retries_once_at_higher_budget(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        calls = stub_claude([("cut off mid-sen", "max_tokens"), "Rewritten careful answer."])
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", [_response_record()]
+        )
+        assert len(final) == 1
+        assert [c["max_tokens"] for c in calls] == [4000, 8000]
+
+    @pytest.mark.parametrize("bad_replies", [
+        [("cut off", "max_tokens"), ("still cut off", "max_tokens")],  # capped even at 8000
+        [("", "end_turn")],                                            # empty (no retry)
+    ], ids=["truncated", "empty"])
+    def test_unusable_rewrite_skips_without_checkpoint_and_is_logged(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude, bad_replies
+    ):
+        stub_claude(list(bad_replies))
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", [_response_record()]
+        )
+        assert final == []
+        failures = utils.load_jsonl(tmp_path / "step3" / "rewrite_failures.jsonl")
+        assert len(failures) == 1 and failures[0]["prompt_id"] == "AW-0001"
+
+        # resume retries the same response and succeeds with zero waste
+        calls = stub_claude(["Rewritten careful answer."])
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", [_response_record()]
+        )
+        assert len(calls) == 1
+        assert len(final) == 1

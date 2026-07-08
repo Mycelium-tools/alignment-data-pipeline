@@ -4,6 +4,7 @@ Templates come from the run's inputs/ snapshot when present; for pre-snapshot
 runs we fall back to `git show <commit>:prompts/...` (labeled "git" so the UI
 can badge it as reconstructed), and finally to "missing"."""
 
+import json
 import math
 import subprocess
 import sys
@@ -14,12 +15,16 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from dad_pipeline import reasoning_library
+from dad_pipeline.step1_dilemmas import format_annotation, format_scenario
+from dad_pipeline.step2_responses import format_scope
 from shared import constitution_loader
 from viewer.loader import REPO_ROOT, load_stage
 
 _CONSTITUTION_FILES = {
     "claude": "constitution_claude.md",
     "welfare": "constitution_sentient_beings.md",
+    "principles": "constitution_principles.csv",
 }
 
 
@@ -36,6 +41,9 @@ class RenderedPrompt:
     is_llm_call: bool
     user: str | None = None
     system: str | None = None
+    # Shown when the system prompt is folded in the UI — say what the system
+    # prompt actually is for this stage, not a generic name.
+    system_label: str = "system prompt"
     variables: dict = field(default_factory=dict)
     template_sources: list[Template] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -100,6 +108,8 @@ def list_templates(run_dir: Path, git_commit: str | None, pipeline: str) -> list
     templates = [get_template(run_dir, git_commit, n, pipeline) for n in names]
     templates.append(get_constitution(run_dir, git_commit, "claude"))
     templates.append(get_constitution(run_dir, git_commit, "welfare"))
+    if pipeline == "dad":
+        templates.append(get_constitution(run_dir, git_commit, "principles"))
     return templates
 
 
@@ -117,6 +127,21 @@ def _format(template: Template, variables: dict, rendered: RenderedPrompt) -> st
             "template/record schema drift; showing raw template."
         )
         return template.text
+
+
+def _load_run_library(tpl):
+    """Load the run's snapshotted reasoning library, preferring the current CSV
+    and falling back to the retired JSON (and pre-rename names) for older runs.
+    Returns the parsed library dict, or None if none is available/parseable."""
+    for name in (reasoning_library.CSV_FILENAME, reasoning_library.JSON_FILENAME,
+                 *reasoning_library.LEGACY_JSON_FILENAMES):
+        t = tpl(name)
+        if t.text is not None:
+            try:
+                return reasoning_library.parse_text(t.text, t.name), t
+            except (json.JSONDecodeError, KeyError):
+                return None, t
+    return None, None
 
 
 def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, lineage: dict) -> RenderedPrompt:
@@ -190,17 +215,150 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             full = get_constitution(run_dir, commit, "full")
             r.template_sources.append(full)
             r.system = full.text
+            r.system_label = "system prompt (full constitution)"
 
         elif stage == "layer5":
             rw = lineage.get("rewrite") or {}
             r.variables = {"preamble": preamble, "document": rw.get("rewritten", "")}
             r.user = _format(tpl("layer5.txt"), r.variables, r)
+            full = get_constitution(run_dir, commit, "full")
+            r.template_sources.append(full)
+            r.system = full.text
+            r.system_label = "system prompt (full constitution)"
 
         else:
             r.warnings.append(f"Unknown SDF stage: {stage}")
         return r
 
-    # --- DAD ---
+    # --- DAD, current spec-driven pipeline (steps 1-4) ---
+    if stage == "step1_dilemmas":
+        dilemma = lineage.get("dilemma") or {}
+        if dilemma.get("source") == "seed":
+            r.is_llm_call = False
+            r.warnings.append("Handwritten seed example imported verbatim — no LLM call at this step.")
+            return r
+        spec_t = tpl("dilemma_prompt_spec.md")
+        batches = {b.get("batch"): b for b in load_stage(run_dir, "dad", "step1_batches")}
+        batch = batches.get(dilemma.get("batch")) or {}
+        if not batch:
+            r.warnings.append("Batch record not found — the coverage-report slot is shown empty.")
+        library, _ = _load_run_library(tpl)
+        # tension_vocab is empty for current runs (tensions retired); non-empty
+        # only for pre-migration JSON snapshots whose 1b template still uses it.
+        vocab = "\n".join(f"- {t}" for t in reasoning_library.tension_names(library)) if library else ""
+        r.variables = {
+            "spec": spec_t.text or "",
+            "count": batch.get("requested", ""),
+            # scenarios_block for current runs; profiles_block for pre-rename
+            # snapshots; coverage_report for older reactive-steering snapshots —
+            # the run's own template picks whichever it references.
+            "scenarios_block": batch.get("scenarios_block") or batch.get("profiles_block", ""),
+            "profiles_block": batch.get("profiles_block", ""),
+            "coverage_report": batch.get("coverage_report", ""),
+            "tension_vocab": vocab,
+        }
+        r.user = _format(tpl("step1_dilemmas.txt"), r.variables, r)
+        return r
+
+    if stage == "step1_refine":
+        dilemma = lineage.get("dilemma") or {}
+        scenario = lineage.get("scenario") or {}
+        # 1c reviews the 1b draft; draft_user_message is present only when refine ran.
+        draft = dilemma.get("draft_user_message")
+        if draft is None:
+            r.is_llm_call = False
+            r.warnings.append("This run did not use the 1c review pass (dad.dilemmas.refine was off).")
+            return r
+        r.variables = {
+            "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",
+            "draft_prompt": draft,
+            "annotation_block": format_annotation(dilemma.get("annotation") or {}),
+        }
+        r.user = _format(tpl("step1_refine.txt"), r.variables, r)
+        return r
+
+    if stage == "step2_scope":
+        dilemma = lineage.get("dilemma") or {}
+        if not lineage.get("scope"):
+            r.is_llm_call = False
+            r.warnings.append("This run has no scope stage (predates the step-2 scoping pass).")
+            return r
+        response = lineage.get("response") or {}
+        annotation = response.get("annotation") or dilemma.get("annotation") or {}
+        r.variables = {
+            "user_message": response.get("user_message") or dilemma.get("user_message", ""),
+            "annotation_block": format_annotation(annotation),
+        }
+        r.user = _format(tpl("step2_scope.txt"), r.variables, r)
+        return r
+
+    if stage in ("step2_tag", "step2_respond"):
+        response = lineage.get("response") or {}
+        tag = lineage.get("tension_tag") or {}
+        library, _ = _load_run_library(tpl)
+        if library is None:
+            r.warnings.append("Reasoning library unavailable — entry / index slots shown empty.")
+        user_message = response.get("user_message") or (lineage.get("dilemma") or {}).get("user_message", "")
+
+        if stage == "step2_tag":
+            # Normal path: tensions came from the step-1 annotation (no LLM call).
+            # Fallback path (source == "tagged"): the prompt was tagged by an LLM.
+            if tag.get("source") != "tagged":
+                r.is_llm_call = False
+                n = len(tag.get("tensions") or [])
+                r.warnings.append(
+                    f"Tensions taken from the step-1 annotation ({n} tagged); retrieval was a "
+                    "direct lookup, no LLM tagging call at this stage.")
+                return r
+            r.variables = {
+                "tension_index": reasoning_library.tension_index_block(library) if library else "",
+                "user_message": user_message,
+            }
+            r.user = _format(tpl("step2_tag_tensions.txt"), r.variables, r)
+            return r
+
+        respond_tpl = tpl("step2_respond.txt")
+        # Current template embeds the whole library and is self-contained (no
+        # separate system prompt). Older templates used a retrieved entries_block
+        # + annotation_block plus a conduct/generation-guidance system prompt.
+        is_self_contained = bool(respond_tpl.text and "{library_block}" in respond_tpl.text)
+        ids = (response.get("entry_ids") or tag.get("entry_ids")
+               or response.get("principle_ids") or tag.get("principle_ids") or [])
+        block = reasoning_library.format_entries(library, ids) if library else ""
+        annotation = (response.get("annotation") or (lineage.get("dilemma") or {}).get("annotation") or {})
+        r.variables = {
+            "library_block": reasoning_library.format_library(library) if library else "",
+            "scope_block": format_scope((lineage.get("scope") or {}).get("scope") or {}),
+            # older snapshots' templates used these instead of {library_block}
+            "entries_block": block,
+            "annotation_block": format_annotation(annotation),
+            "principles_block": block,
+            "user_message": user_message,
+        }
+        r.user = _format(respond_tpl, r.variables, r)
+        if library and not is_self_contained:
+            r.system = reasoning_library.system_prompt(library)
+            r.system_label = "system prompt (reasoning-library conduct rules)"
+        return r
+
+    if stage == "step3_rewrite":
+        audit = lineage.get("rewrite") or {}
+        principles_t = get_constitution(run_dir, commit, "principles")
+        r.template_sources.append(principles_t)
+        if principles_t.text is None:
+            r.warnings.append("constitution_principles.csv unavailable — the principles block is shown empty.")
+        principles_block = constitution_loader.format_principles(
+            constitution_loader.parse_principles(principles_t.text)) if principles_t.text else ""
+        r.variables = {
+            "principles_block": principles_block,
+            "annotation_block": format_annotation(audit.get("annotation") or {}),
+            "user_message": audit.get("user_message", ""),
+            "draft_response": audit.get("draft_response", ""),
+        }
+        r.user = _format(tpl("step3_rewrite.txt"), r.variables, r)
+        return r
+
+    # --- DAD, legacy 7-step pipeline ---
     scenario = lineage.get("scenario") or {}
     is_manta = scenario.get("source") == "manta"
 
@@ -307,6 +465,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         full = get_constitution(run_dir, commit, "full")
         r.template_sources.append(full)
         r.system = full.text
+        r.system_label = "system prompt (full constitution)"
 
     else:
         r.warnings.append(f"Unknown DAD stage: {stage}")

@@ -15,7 +15,9 @@ Never patch below ``call_claude``: if a real ``anthropic`` retryable error ever
 reached the real ``_call_with_retry``, tenacity would sleep 4-60s per attempt.
 """
 
+import json
 import random
+import re
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +28,38 @@ import yaml
 from shared import api
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def dad_scenario_reply(user_message: str) -> str:
+    """Echo a conforming step-1b JSON array for a rendered step1_dilemmas.txt
+    prompt: one object per SCENARIO block, its annotation copied verbatim from
+    the block's own assigned fields (as the template instructs). Kept here
+    because both the step-level and e2e DAD tests dispatch on it."""
+    out = []
+    for block in re.findall(r"SCENARIO (S-\d+)\n((?:- .*\n?)*)", user_message):
+        sid, body = block
+        field = dict(re.findall(r"- ([^:]+): (.*)", body))
+        pair = field["Value pairs to build in"].split(" (add more")[0].split(";")[0].strip()
+        out.append({
+            "scenario_id": sid,
+            "prompt": f"Drafted user message for {sid}.",
+            "annotation": {
+                "domain": field["Domain"].split(", "),
+                "user_goal": field["User goal"].split(", "),
+                "dilemma_anatomy": {"goal": "g", "temptation": "t", "cost": "c"},
+                "values_in_tension": [pair],
+                "moral_patients": "test patients in context",
+                "visibility": field["Visibility"],
+                "user_attitude": field["User attitude"],
+                "conflict": field["Conflict"],
+                "direction": field["Direction"],
+                "welfare_magnitude": field["Welfare magnitude"],
+                "user_stakes": field["User stakes"],
+                "leverage": field["Leverage"].split(" — ")[0],
+                "claims": [{"claim": "a load-bearing claim", "status": "Settled"}],
+            },
+        })
+    return json.dumps(out)
 
 
 @pytest.fixture(autouse=True)
@@ -86,7 +120,8 @@ def stub_claude(monkeypatch):
         queue = list(responses) if isinstance(responses, list) else None
         busy = threading.Lock()
 
-        def fake(user_message, system_prompt="", injection="", model=None, max_tokens=None):
+        def fake(user_message, system_prompt="", injection="", model=None, max_tokens=None,
+                 return_stop_reason=False):
             calls.append({
                 "user_message": user_message,
                 "system_prompt": system_prompt,
@@ -95,25 +130,30 @@ def stub_claude(monkeypatch):
                 "max_tokens": max_tokens,
             })
             if queue is None:
-                return responses(
+                result = responses(
                     user_message,
                     system_prompt=system_prompt,
                     injection=injection,
                     model=model,
                     max_tokens=max_tokens,
                 )
-            # FIFO queues assume serial calls: a parallel stage (workers > 1
-            # with 2+ pending items) interleaves pops and maps responses to
-            # the wrong items nondeterministically. Fail loudly instead.
-            assert busy.acquire(blocking=False), (
-                "queue-based stub_claude called concurrently — use a callable "
-                "dispatcher for stages that fan out via parallel_map"
-            )
-            try:
-                assert queue, "stub_claude queue exhausted — more API calls than canned responses"
-                return queue.pop(0)
-            finally:
-                busy.release()
+            else:
+                # FIFO queues assume serial calls: a parallel stage (workers > 1
+                # with 2+ pending items) interleaves pops and maps responses to
+                # the wrong items nondeterministically. Fail loudly instead.
+                assert busy.acquire(blocking=False), (
+                    "queue-based stub_claude called concurrently — use a callable "
+                    "dispatcher for stages that fan out via parallel_map"
+                )
+                try:
+                    assert queue, "stub_claude queue exhausted — more API calls than canned responses"
+                    result = queue.pop(0)
+                finally:
+                    busy.release()
+            # Dispatchers/queues may return (text, stop_reason) to exercise
+            # truncation guards; plain strings imply a clean end_turn.
+            text, stop = result if isinstance(result, tuple) else (result, "end_turn")
+            return (text, stop) if return_stop_reason else text
 
         monkeypatch.setattr(api, "call_claude", fake)
         return calls
@@ -125,10 +165,11 @@ def stub_claude(monkeypatch):
 def fake_message():
     """Factory for objects shaped like an Anthropic Message response."""
 
-    def make(text="ok", input_tokens=10, output_tokens=5):
+    def make(text="ok", input_tokens=10, output_tokens=5, stop_reason="end_turn"):
         return SimpleNamespace(
             usage=SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens),
-            content=[SimpleNamespace(text=text)],
+            content=[SimpleNamespace(text=text, type="text")],
+            stop_reason=stop_reason,
         )
 
     return make
@@ -159,13 +200,18 @@ def tiny_config(tmp_path):
             "min_score_threshold": 7,
         },
         "dad": {
-            "scenarios_per_principle": 1,
-            "injections": ["deference", "plain"],
-            # fraction 1.0 keeps step 7 deterministic (uuid record_ids would make
-            # a partial fraction select a random-looking subset per run)
-            "pushback": {"enabled": True, "fraction": 1.0},
+            "dilemmas": {
+                "count": 2,
+                "batch_size": 2,
+                "id_start": 1,
+                "seed_path": None,
+                # pinned so the sampled scenarios (and the fields the stub
+                # echoes back) are identical run to run
+                "scenario_seed": 7,
+                "refine": True,
+            },
+            "responses": {"per_prompt": 1},
         },
-        "manta": {"csv_path": str(tmp_path / "manta.csv"), "max_rows": 3},
         "language_distribution": {"en": 1.0},
         "outputs": {"cost_log": str(tmp_path / "cost_log.jsonl")},
     }
@@ -178,20 +224,3 @@ def tiny_config_file(tiny_config, tmp_path):
     return path
 
 
-@pytest.fixture
-def manta_csv(tmp_path):
-    """Fixture MANTA CSV at the path tiny_config points to.
-
-    Questions avoid any accidental "ai" substring (a principle-10 keyword)
-    except where a keyword match is intended.
-    """
-    path = tmp_path / "manta.csv"
-    path.write_text(
-        "id,question,pressure\n"
-        "0,Is it wrong to boil crustaceans alive in restaurant kitchens?,epistemic\n"
-        "1,Should our firm keep using battery cages if switching costs too much?,economic\n"
-        "2,Do robot minds deserve moral status once they show consciousness?,novel entity\n"
-        "3,My town holds an annual pig chase; should the customs continue?,cultural\n"
-        "4,Should we stock the pond so kids can go fishing on weekends?,recreational\n"
-    )
-    return path

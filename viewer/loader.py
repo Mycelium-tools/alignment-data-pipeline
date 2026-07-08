@@ -27,6 +27,15 @@ STAGE_FILES = {
         "final": "final/sdf_corpus.jsonl",
     },
     "dad": {
+        # Current spec-driven pipeline (steps 1-4)
+        "step1_scenarios": "step1/scenarios.jsonl",
+        "step1_dilemmas": "step1/dilemmas.jsonl",
+        "step1_batches": "step1/batches.jsonl",
+        "step2_scopes": "step2/scopes.jsonl",
+        "step2_tensions": "step2/tensions.jsonl",
+        "step2_responses": "step2/responses.jsonl",
+        "step3_rewrites": "step3/rewrites.jsonl",
+        # Legacy 7-step pipeline (runs made before the dilemma spec)
         "step1": "step1/principles.jsonl",
         "step2": "step2/scenarios.jsonl",
         "step3": "step3/prompts.jsonl",
@@ -36,6 +45,13 @@ STAGE_FILES = {
         "final": "final/dad_corpus.jsonl",
     },
 }
+
+
+def dad_is_legacy(run_dir: Path) -> bool:
+    """Old 7-step DAD runs are recognized by their stage-1/2 output files."""
+    run_dir = Path(run_dir)
+    return (run_dir / "step1" / "principles.jsonl").exists() or \
+           (run_dir / "step2" / "scenarios.jsonl").exists()
 
 
 @dataclass
@@ -97,8 +113,12 @@ def _pass_rate(run_dir: Path, pipeline: str) -> float | None:
         scored = load_stage(run_dir, pipeline, "layer5")
         final = load_final(run_dir, pipeline)
         return len(final) / len(scored) if scored else None
-    responses = load_stage(run_dir, pipeline, "step5")
+    responses = load_stage(run_dir, pipeline, "step2_responses") or load_stage(run_dir, pipeline, "step5")
     if not responses:
+        return None
+    # `kept` only exists on legacy runs (the ruthless-judge gate that set it was
+    # removed). With no keep/score signal, pass rate is n/a rather than a bogus 0%.
+    if not any("kept" in r for r in responses):
         return None
     return sum(1 for r in responses if r.get("kept")) / len(responses)
 
@@ -117,9 +137,12 @@ def list_runs(outputs_root: Path = OUTPUTS_ROOT) -> list[RunInfo]:
             manifest = load_manifest(d)
             if not manifest:
                 continue
+            # Zero-count stages are dropped: DAD stage keys span both the current
+            # and the legacy pipeline layout, and a run only has one of them.
             counts = {
-                stage: len(load_stage(d, pipeline, stage))
+                stage: n
                 for stage in STAGE_FILES[pipeline]
+                if (n := len(load_stage(d, pipeline, stage))) or stage == "final"
             }
             runs.append(RunInfo(
                 pipeline=pipeline,
@@ -174,11 +197,71 @@ def sdf_lineage(run_dir: Path, doc_id: str) -> dict:
 
 
 def dad_lineage(run_dir: Path, record_id: str) -> dict:
-    """Full lineage for one DAD training record (keyed by final record_id)."""
+    """Full lineage for one DAD training record (keyed by final record_id).
+    The "format" key tells pages which stage chain this run used."""
+    if dad_is_legacy(run_dir):
+        return _dad_lineage_legacy(run_dir, record_id)
+
+    final = _index(load_final(run_dir, "dad"), "record_id").get(record_id)
+    audits = _index(load_stage(run_dir, "dad", "step3_rewrites"), "record_id")
+    audit = audits.get(record_id)
+    if audit is None:
+        return {"format": "v2", "final": final}
+
+    responses = _index(load_stage(run_dir, "dad", "step2_responses"), "response_id")
+    dilemmas = _index(load_stage(run_dir, "dad", "step1_dilemmas"), "prompt_id")
+    tension_tags = _index(load_stage(run_dir, "dad", "step2_tensions"), "prompt_id")
+    scenarios = _index(load_stage(run_dir, "dad", "step1_scenarios"), "scenario_id")
+    scope_recs = _index(load_stage(run_dir, "dad", "step2_scopes"), "prompt_id")
+
+    dilemma = dilemmas.get(audit.get("prompt_id"))
+    return {
+        "format": "v2",
+        "dilemma": dilemma,
+        "scenario": scenarios.get((dilemma or {}).get("scenario_id")),
+        "scope": scope_recs.get(audit.get("prompt_id")),
+        "tension_tag": tension_tags.get(audit.get("prompt_id")),
+        "response": responses.get(audit.get("response_id")),
+        "rewrite": audit,
+        "final": final,
+    }
+
+
+def dad_lineage_by_prompt(run_dir: Path, prompt_id: str) -> dict:
+    """Lineage keyed by step-1 prompt_id, built forward through whatever stages
+    exist. Used to view incomplete runs (e.g. --stop-after 1, before responses
+    are generated); returns the same shape as dad_lineage with later stages None
+    when not reached."""
+    dilemmas = _index(load_stage(run_dir, "dad", "step1_dilemmas"), "prompt_id")
+    tension_tags = _index(load_stage(run_dir, "dad", "step2_tensions"), "prompt_id")
+    scenarios = _index(load_stage(run_dir, "dad", "step1_scenarios"), "scenario_id")
+    scope_recs = _index(load_stage(run_dir, "dad", "step2_scopes"), "prompt_id")
+    responses = [r for r in load_stage(run_dir, "dad", "step2_responses")
+                 if r.get("prompt_id") == prompt_id]
+    rewrite = next((a for a in load_stage(run_dir, "dad", "step3_rewrites")
+                    if a.get("prompt_id") == prompt_id), None)
+    final = None
+    if rewrite:
+        final = _index(load_final(run_dir, "dad"), "record_id").get(rewrite.get("record_id"))
+    dilemma = dilemmas.get(prompt_id)
+    return {
+        "format": "v2",
+        "dilemma": dilemma,
+        "scenario": scenarios.get((dilemma or {}).get("scenario_id")),
+        "scope": scope_recs.get(prompt_id),
+        "tension_tag": tension_tags.get(prompt_id),
+        "response": responses[0] if responses else None,
+        "rewrite": rewrite,
+        "final": final,
+    }
+
+
+def _dad_lineage_legacy(run_dir: Path, record_id: str) -> dict:
     audits = _index(load_stage(run_dir, "dad", "step6"), "record_id")
     audit = audits.get(record_id)
     if audit is None:
-        return {"final": _index(load_final(run_dir, "dad"), "record_id").get(record_id)}
+        return {"format": "legacy",
+                "final": _index(load_final(run_dir, "dad"), "record_id").get(record_id)}
 
     responses = _index(load_stage(run_dir, "dad", "step5"), "response_id")
     refined = _index(load_stage(run_dir, "dad", "step4"), "prompt_id")
@@ -187,6 +270,7 @@ def dad_lineage(run_dir: Path, record_id: str) -> dict:
     principles = _index(load_stage(run_dir, "dad", "step1"), "principle_id")
 
     return {
+        "format": "legacy",
         "principle": principles.get(audit.get("principle_id")),
         "scenario": scenarios.get(audit.get("scenario_id")),
         "prompt": prompts.get(audit.get("prompt_id")),
@@ -244,18 +328,25 @@ def match_outputs(run_a: Path, run_b: Path, pipeline: str) -> list[MatchedPair]:
             pairs.append(MatchedPair(f"subtype_id {sid}", "positional", docs_a, pos_b[sid]))
         return pairs
 
-    # DAD: audits carry scenario/injection identity
+    # DAD: audits carry prompt/scenario + injection identity
     def group_dad(run_dir, finals):
-        audits = _index(load_stage(run_dir, "dad", "step6"), "record_id")
         exact, grouped = {}, {}
+        if dad_is_legacy(run_dir):
+            audits = _index(load_stage(run_dir, "dad", "step6"), "record_id")
+            for rec in finals:
+                audit = audits.get(rec.get("record_id"), {})
+                sid = str(audit.get("scenario_id", ""))
+                inj = audit.get("injection_used", "")
+                if sid.startswith("manta_"):
+                    exact.setdefault((sid, inj), []).append(rec)
+                else:
+                    grouped.setdefault((audit.get("principle_id"), inj), []).append(rec)
+            return exact, grouped
+        audits = _index(load_stage(run_dir, "dad", "step3_rewrites"), "record_id")
         for rec in finals:
             audit = audits.get(rec.get("record_id"), {})
-            sid = str(audit.get("scenario_id", ""))
-            inj = audit.get("injection_used", "")
-            if sid.startswith("manta_"):
-                exact.setdefault((sid, inj), []).append(rec)
-            else:
-                grouped.setdefault((audit.get("principle_id"), inj), []).append(rec)
+            # AW-#### IDs are stable across runs of the same spec/seed set
+            exact.setdefault((str(audit.get("prompt_id", "")), audit.get("sample_index", 0)), []).append(rec)
         return exact, grouped
 
     exact_a, grouped_a = group_dad(run_a, finals_a)
