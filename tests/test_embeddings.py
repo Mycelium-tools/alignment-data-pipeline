@@ -71,6 +71,19 @@ class TestEmbedTexts:
         assert [len(c["batch"]) for c in recorded_embed["calls"]] == [2, 2, 1]
         assert X.shape == (5, 2)
 
+    def test_batches_split_at_char_budget(self, recorded_embed, monkeypatch):
+        # item count alone must not be the only bound: a batch also closes when
+        # its cumulative chars would exceed MAX_BATCH_CHARS (the ~300k-token
+        # request cap, char-bounded for worst-case 1-token/char scripts)
+        monkeypatch.setattr(embeddings, "MAX_BATCH_CHARS", 10)
+        embeddings.embed_texts(["aaaaaa", "bbbbbb", "cc"])
+        assert [c["batch"] for c in recorded_embed["calls"]] == [["aaaaaa"], ["bbbbbb", "cc"]]
+
+    def test_single_oversized_text_still_ships_alone(self, recorded_embed, monkeypatch):
+        monkeypatch.setattr(embeddings, "MAX_BATCH_CHARS", 10)
+        embeddings.embed_texts(["x" * 25])
+        assert [len(c["batch"]) for c in recorded_embed["calls"]] == [1]
+
     def test_rows_follow_response_index_not_arrival_order(self, recorded_embed):
         recorded_embed["respond"] = lambda batch: _response(
             [[1.0, 0.0], [0.0, 1.0]], reverse_data=True

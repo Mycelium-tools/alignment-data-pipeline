@@ -36,8 +36,12 @@ load_dotenv()
 DEFAULT_MODEL = "text-embedding-3-small"
 
 # The embeddings endpoint caps each request at 2048 inputs and ~300k total
-# tokens; 128 documents of a few thousand tokens each sits well inside both.
+# tokens. A batch closes at MAX_BATCH items or MAX_BATCH_CHARS characters,
+# whichever comes first: item count alone can bust the token cap (128 full
+# SDF documents at ~4k tokens each is ~512k tokens). Chars bound tokens at
+# worst ~1 token/char (CJK), so 250k chars stays under the cap for any script.
 MAX_BATCH = 128
+MAX_BATCH_CHARS = 250_000
 
 _config: dict = {}
 _client: openai.OpenAI | None = None
@@ -112,12 +116,27 @@ def _embed_with_retry(client: openai.OpenAI, model: str, batch: list[str]):
     return client.embeddings.create(model=model, input=batch)
 
 
+def _batches(texts: list[str]):
+    """Split texts into API batches: at most MAX_BATCH items and (except for a
+    single oversized text, which still goes alone) MAX_BATCH_CHARS chars each."""
+    batch: list[str] = []
+    chars = 0
+    for t in texts:
+        if batch and (len(batch) >= MAX_BATCH or chars + len(t) > MAX_BATCH_CHARS):
+            yield batch
+            batch, chars = [], 0
+        batch.append(t)
+        chars += len(t)
+    if batch:
+        yield batch
+
+
 def embed_texts(texts: list[str], model: str = DEFAULT_MODEL) -> np.ndarray:
     """Embed texts and return an L2-normalized float32 matrix, one row per text.
 
-    Batching happens here (MAX_BATCH per request); callers that want to
-    checkpoint paid work between requests should chunk their own input and
-    call this per chunk.
+    Batching happens here (MAX_BATCH items / MAX_BATCH_CHARS chars per
+    request); callers that want to checkpoint paid work between requests
+    should chunk their own input and call this per chunk.
 
     Raises ValueError on empty/whitespace-only texts — the API rejects them
     mid-batch, so the caller must filter (and report) empties first. Texts
@@ -135,8 +154,7 @@ def embed_texts(texts: list[str], model: str = DEFAULT_MODEL) -> np.ndarray:
 
     client = _get_client()
     rows: list[list[float]] = []
-    for start in range(0, len(texts), MAX_BATCH):
-        batch = texts[start : start + MAX_BATCH]
+    for batch in _batches(texts):
         response = _embed_with_retry(client, model, batch)
         _log_usage(model, response.usage.prompt_tokens)
         # the API preserves order, but each item carries its index — trust that
