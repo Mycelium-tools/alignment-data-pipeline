@@ -32,9 +32,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def dad_scenario_reply(user_message: str) -> str:
     """Echo a conforming step-1b JSON array for a rendered step1_dilemmas.txt
-    prompt: one object per SCENARIO block, its annotation copied from the
-    block's own assigned fields so the scenario-adherence check passes. Kept
-    here because both the step-level and e2e DAD tests dispatch on it."""
+    prompt: one object per SCENARIO block, its annotation copied verbatim from
+    the block's own assigned fields (as the template instructs). Kept here
+    because both the step-level and e2e DAD tests dispatch on it."""
     out = []
     for block in re.findall(r"SCENARIO (S-\d+)\n((?:- .*\n?)*)", user_message):
         sid, body = block

@@ -10,10 +10,11 @@
 - Step 1b — first attempt: the model drafts each user prompt to fit its
   scenario and completes the descriptive annotation fields (dilemma anatomy,
   the full values list, concrete moral patients, the claims). The drafting
-  instructions live in prompts/dad/step1_dilemmas.txt. Drafting runs in
-  batches; each returned example is checked against its scenario, and
-  non-adherent examples are regenerated (up to a retry cap, then accepted
-  with the deviations recorded).
+  instructions live in prompts/dad/step1_dilemmas.txt and require assigned
+  labels to be copied verbatim. Drafting runs in batches; a draft missing
+  from a batch's output is re-requested, and accepted drafts are taken as
+  returned — there is no per-example adherence check; distribution fidelity
+  is monitored by the corpus-level checklist instead.
 
 - Step 1c — review & rewrite (optional; config dad.dilemmas.refine, off by
   default): a second model call reviews each 1b draft and rewrites the prompt
@@ -21,8 +22,7 @@
   while giving the eventual response room to engage welfare fully without being
   set up to moralize. Instructions live in prompts/dad/step1_refine.txt. The
   1b draft is kept on the record (draft_user_message + refine_notes) and the
-  before/after is logged to step1/refinements.jsonl; the adherence check then
-  runs on the refined text.
+  before/after is logged to step1/refinements.jsonl.
 
 The Part 4 checklist re-prints at the end as verification; thresholds are the
 spec's, enforcement stays human.
@@ -211,9 +211,6 @@ _CLAIM_PATTERN_TEXT = {
                              "load-bearing claim concerns the indirect pathway",
 }
 
-MAX_SCENARIO_ATTEMPTS = 3
-
-
 def _welfare_in_pairs(annotation: dict) -> bool:
     return any(any(k in _norm_pair(p) for k in _WELFARE_PAIR_PROBES)
                for p in (annotation.get("values_in_tension") or []))
@@ -357,9 +354,6 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
     out.append((sys_ai >= 1, f"at least one Systemic case involves automated/AI-governed systems ({sys_ai})"))
     sys_over = sum(1 for e in systemic if (e.get("annotation") or {}).get("direction") == "Over-weighting")
     out.append((sys_over >= 1, f"at least one Systemic case is Over-weighting ({sys_over})"))
-
-    deviated = sum(1 for e in examples if e.get("scenario_deviations"))
-    out.append((deviated == 0, f"every example adheres to its sampled scenario ({deviated} with deviations)"))
 
     out.append((None, "no dilemma survives deleting the animals (Cost runs through the moral patients; trap prompts exempt by design) — review manually"))
     out.append((None, "canonical skeleton at 15% or less, all five surface forms present — review manually"))
@@ -545,27 +539,6 @@ def format_scenario(p: dict) -> str:
     return "\n".join(lines)
 
 
-def scenario_deviations(scenario: dict, annotation: dict) -> list[str]:
-    """Assigned-vs-realized mismatches on the closed scenario fields."""
-    dev = []
-    for f in ("visibility", "user_attitude", "conflict", "direction", "user_stakes", "leverage"):
-        if str(annotation.get(f, "")).strip() != scenario[f]:
-            dev.append(f)
-    mag = str(annotation.get("welfare_magnitude", "")).lower()
-    sev, _, sco = scenario["welfare_magnitude"].partition(" x ")
-    if sev.strip().lower() not in mag or sco.strip().lower() not in mag:
-        dev.append("welfare_magnitude")
-    doms = " | ".join(annotation.get("domain") or []).lower()
-    if not all(part.strip() in doms for part in scenario["domain"][0].lower().split("/")):
-        dev.append("domain")
-    goals = " | ".join(annotation.get("user_goal") or []).lower()
-    if scenario["user_goal"][0].split(" (")[0].lower() not in goals:
-        dev.append("user_goal")
-    if not _welfare_in_pairs(annotation):
-        dev.append("values_in_tension")
-    return dev
-
-
 def _salvage_objects(text: str) -> list:
     """Extract top-level {...} objects one at a time via brace matching, so a
     truncated or trailing-garbage array still yields its complete objects."""
@@ -724,7 +697,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
     # --- Step 1b: first attempt — draft a prompt + annotation for each scenario.
     accepted = {e.get("scenario_id") for e in examples if e.get("scenario_id")}
-    attempts: Counter = Counter()
     consecutive_failures = 0
     max_calls = 8 * max(1, (len(scenarios) + batch_size - 1) // batch_size)
     calls = 0
@@ -772,17 +744,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         for p in batch:
             pid = p["scenario_id"]
             draft = by_pid.get(pid)
-            attempts[pid] += 1
             if draft is None:
                 print(f"    {pid}: missing from the batch output — will retry.")
                 continue
 
-            # Adherence is checked on the 1b annotation (1c rewrites only prose).
             ann = _normalize_annotation(draft["annotation"])
-            dev = scenario_deviations(p, ann)
-            if dev and attempts[pid] < MAX_SCENARIO_ATTEMPTS:
-                print(f"    {pid}: deviates from scenario on {', '.join(dev)} — will retry.")
-                continue
 
             # --- Step 1c (optional): rewrite the prompt text; annotation unchanged ---
             user_message = str(draft["prompt"]).strip()
@@ -819,9 +785,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                     "refined_prompt": user_message,
                     "notes": refine_notes,
                 }, refinements_path)
-            if dev:
-                record["scenario_deviations"] = dev
-                print(f"    {pid}: accepted after {attempts[pid]} attempts with deviations on {', '.join(dev)}.")
             examples.append(record)
             accepted.add(pid)
             utils.append_jsonl(record, output_path)
