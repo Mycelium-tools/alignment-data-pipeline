@@ -47,8 +47,9 @@ def recorded_api(monkeypatch, tmp_path, fake_message):
     calls = []
     canned = {"message": fake_message(text="response-text")}
 
-    def record(client, model, max_tokens, system, messages):
-        calls.append({"model": model, "max_tokens": max_tokens, "system": system, "messages": messages})
+    def record(client, model, max_tokens, system, messages, temperature):
+        calls.append({"model": model, "max_tokens": max_tokens, "system": system,
+                      "messages": messages, "temperature": temperature})
         return canned["message"]
 
     monkeypatch.setattr(api, "_call_with_retry", record)
@@ -85,6 +86,22 @@ class TestCallClaude:
         api.call_claude("hi", model="override", max_tokens=9)
         assert recorded_api["calls"][0]["model"] == "override"
         assert recorded_api["calls"][0]["max_tokens"] == 9
+
+    def test_temperature_falls_back_to_config(self, recorded_api, monkeypatch):
+        monkeypatch.setattr(api, "_config", {"temperature": 0.3})
+        api.call_claude("hi")
+        assert recorded_api["calls"][0]["temperature"] == 0.3
+
+    def test_temperature_defaults_to_one_without_config(self, recorded_api, monkeypatch):
+        monkeypatch.setattr(api, "_config", {})
+        api.call_claude("hi")
+        assert recorded_api["calls"][0]["temperature"] == 1.0
+
+    def test_explicit_temperature_wins_even_at_zero(self, recorded_api, monkeypatch):
+        # 0.0 is falsy — the override must use an is-None check, not `or`
+        monkeypatch.setattr(api, "_config", {"temperature": 0.3})
+        api.call_claude("hi", temperature=0.0)
+        assert recorded_api["calls"][0]["temperature"] == 0.0
 
     def test_return_stop_reason_tuple_contract(self, recorded_api, fake_message):
         recorded_api["message"] = fake_message(text="partial", stop_reason="max_tokens")
@@ -127,7 +144,8 @@ class TestRetryPredicate:
         import importlib
         real = importlib.reload(api)._call_with_retry
         with pytest.raises(anthropic.BadRequestError):
-            real(client=FakeClient(), model="m", max_tokens=5, system="", messages=[])
+            real(client=FakeClient(), model="m", max_tokens=5, system="", messages=[],
+                 temperature=1.0)
         assert len(attempts) == 1  # exactly one attempt, no retries
 
 
@@ -160,6 +178,17 @@ class TestCostTracking:
         api.call_claude("a", model="claude-nonexistent-model")
         api.call_claude("b", model="claude-nonexistent-model")
         assert capsys.readouterr().err.count("not in shared/api.py _PRICING") == 1
+
+    def test_stage_written_to_cost_record(self, recorded_api, tmp_path):
+        api.call_claude("hi", stage="prompt_draft")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert record["stage"] == "prompt_draft"
+
+    def test_untagged_call_writes_no_stage_key(self, recorded_api, tmp_path):
+        # pre-tag consumers (and jq one-liners) must not meet a null field
+        api.call_claude("hi")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert "stage" not in record
 
     def test_get_total_cost_sums_all_calls(self, recorded_api, fake_message):
         recorded_api["message"] = fake_message(input_tokens=1_000_000, output_tokens=1_000_000)

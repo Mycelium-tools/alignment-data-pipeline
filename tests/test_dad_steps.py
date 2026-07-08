@@ -314,3 +314,50 @@ class TestStep3Run:
         )
         assert len(calls) == 1
         assert len(final) == 1
+
+
+# --- Per-stage model knobs + cost-log stage tags ---------------------------
+
+class TestPerStageModelKnobs:
+    def test_dad_model_knobs_and_stage_tags_reach_the_api(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Every dad.<stage>_model knob must steer its call, and every call must
+        # carry its cost-log stage tag — a config knob that silently does
+        # nothing is the failure mode this test exists to prevent.
+        config = dict(tiny_config)
+        config["dad"] = {
+            **tiny_config["dad"],
+            "prompt_draft_model": "m-1b",
+            "prompt_refine_model": "m-1c",
+            "response_scope_model": "m-2a",
+            "response_draft_model": "m-2b",
+            "constitution_rewrite_model": "m-3",
+        }
+
+        calls = stub_claude(_dad_step1_dispatch)
+        step1_dilemmas.run(config, prompts_dad, tmp_path / "step1")
+        by_stage = {c["stage"]: c for c in calls}
+        assert by_stage["prompt_draft"]["model"] == "m-1b"
+        assert by_stage["prompt_refine"]["model"] == "m-1c"
+
+        calls = stub_claude(_dad_step2_dispatch)
+        step2_responses.run(config, prompts_dad, tmp_path / "step2", [_dilemma()])
+        by_stage = {c["stage"]: c for c in calls}
+        assert by_stage["response_scope"]["model"] == "m-2a"
+        assert by_stage["response_draft"]["model"] == "m-2b"
+
+        calls = stub_claude(["Rewritten careful answer."])
+        step3_rewrite.run(config, prompts_dad, tmp_path / "step3", tmp_path / "final",
+                          [_response_record()])
+        assert calls[0]["stage"] == "constitution_rewrite"
+        assert calls[0]["model"] == "m-3"
+
+    def test_without_knobs_every_stage_falls_back_to_the_global_model(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # model=None at the call site → call_claude resolves the global config
+        # model; the stages must not invent their own fallback.
+        calls = stub_claude(_dad_step1_dispatch)
+        step1_dilemmas.run(tiny_config, prompts_dad, tmp_path / "step1")
+        assert all(c["model"] is None for c in calls)

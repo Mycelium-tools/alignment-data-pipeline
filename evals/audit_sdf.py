@@ -395,7 +395,7 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
         blob = "\n\n---\n\n".join(t[:1200] for t in batch)
         prompt = utils.load_prompt(prompts_dir / "pattern_scan.txt", documents=blob)
         try:
-            found = _parse_json_block(api.call_claude(user_message=prompt))
+            found = _parse_json_block(api.call_claude(user_message=prompt, stage="eval_audit_sdf"))
             return [p for p in found if isinstance(p, dict) and p.get("pattern")]
         except Exception as e:
             print(f"    batch scan parse failure ({e}); skipping batch")
@@ -415,7 +415,8 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
         for p in raw_patterns
     )
     try:
-        canonical = _parse_json_block(api.call_claude(user_message=_CONSOLIDATE_PROMPT + listing))
+        canonical = _parse_json_block(api.call_claude(user_message=_CONSOLIDATE_PROMPT + listing,
+                                                      stage="eval_audit_sdf"))
         canonical = [p for p in canonical if isinstance(p, dict) and p.get("pattern")][:15]
     except Exception as e:
         print(f"   consolidation failed ({e}); reporting raw patterns without prevalence")
@@ -433,7 +434,7 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
     def rate_one(doc: str) -> set[int]:
         prompt = _PREVALENCE_PROMPT_HEAD + plist + "\n\nDOCUMENT:\n" + doc[:1200]
         try:
-            ids = _parse_json_block(api.call_claude(user_message=prompt))
+            ids = _parse_json_block(api.call_claude(user_message=prompt, stage="eval_audit_sdf"))
             return {i for i in ids if isinstance(i, int) and 0 <= i < len(canonical)}
         except Exception:
             return set()

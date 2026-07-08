@@ -136,7 +136,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
         )
 
         raw = api.call_claude(
-            user_message=prompt, max_tokens=6000, model=config["sdf"].get("draft_model")
+            user_message=prompt, max_tokens=6000, model=config["sdf"].get("draft_model"),
+            stage="layer3",
         )
 
         # Extract <document>...</document> blocks (this also drops the <angles>
