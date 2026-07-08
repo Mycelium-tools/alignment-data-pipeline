@@ -302,6 +302,14 @@ class TestStep3Run:
         failures = utils.load_jsonl(tmp_path / "step3" / "rewrite_failures.jsonl")
         assert len(failures) == 1 and failures[0]["prompt_id"] == "AW-0001"
 
+        # resume retries the same response and succeeds with zero waste
+        calls = stub_claude(["Rewritten careful answer."])
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", [_response_record()]
+        )
+        assert len(calls) == 1
+        assert len(final) == 1
+
 
 # --- Per-stage model knobs + cost-log stage tags ---------------------------
 
@@ -348,11 +356,3 @@ class TestPerStageModelKnobs:
         calls = stub_claude(_dad_step1_dispatch)
         step1_dilemmas.run(tiny_config, prompts_dad, tmp_path / "step1")
         assert all(c["model"] is None for c in calls)
-
-        # resume retries the same response and succeeds with zero waste
-        calls = stub_claude(["Rewritten careful answer."])
-        final = step3_rewrite.run(
-            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", [_response_record()]
-        )
-        assert len(calls) == 1
-        assert len(final) == 1
