@@ -84,10 +84,10 @@ the direction it was generated to teach).
 
 ## Where did naturalness go?
 
-Earlier rubric versions — and Constance's judge, which keeps it — had a **naturalness**
-dimension: does this conversation read like something a real person and a real assistant
-would produce, or does it *smell* synthetic — stock openers, the same essay skeleton every
-time, a welfare paragraph always in the same position?
+Earlier rubric versions had a **naturalness** dimension (so does the first-version judge
+prompt Constance shared): does this conversation read like something a real person and a
+real assistant would produce, or does it smell synthetic — stock openers, the same essay
+skeleton every time, a welfare paragraph always in the same position?
 
 v5 drops naturalness as a scored dimension. All of our records come from the same pipeline
 and share a recognizable writing style, so the judge found that style in nearly every
@@ -113,9 +113,9 @@ actually be judged:
 | "As an AI…" self-distancing | tone — it breaks the knowledgeable-colleague voice. |
 | Three stylistic habits that damage the welfare content itself: moralizing delivered as a bullet-point checklist, filler hedging ("it's important to note…"), and the token-caveat-then-unchanged-advice template | Scored signals on tone and welfare_reasoning. These stay per-record by owner decision: the standard is absolute, so if every record has the flaw, every record loses points. |
 
-Constance's judge keeps naturalness, and we may be wrong to drop it. One arm of the
-comparison run (the M arm) uses her design unchanged; if it doesn't collapse into a single
-uniform score, we'll revisit.
+Constance's first-version prompt keeps naturalness, and we may be wrong to drop it. One
+arm of the comparison run (the M arm) uses her 4-dimension draft unchanged; if it doesn't
+collapse into a single uniform score, we'll revisit.
 
 ## A vs B — what differs and why
 
@@ -177,7 +177,15 @@ the same yardsticks.
 ## After the runs: tightening pass
 
 The current drafts are on the verbose side: every requirement is written out in full so
-nothing is decided by omission (the operative prompt is ~16k tokens for A, ~18k for B).
+nothing is decided by omission. Measured sizes (token counts are the chars÷4
+approximation):
+
+| | A (9 dims) | B (11 dims) |
+|---|---|---|
+| YAML file | 1,025 lines | 1,132 lines |
+| Operative system prompt (rubric only) | 65,016 chars ≈ 16.3k tokens | 73,474 chars ≈ 18.4k tokens |
+| With the full constitution reading appended | 105,121 chars ≈ 26.3k tokens | 113,579 chars ≈ 28.4k tokens |
+
 Once run results and the comparison against Matthew's work are in, there is a planned
 wording pass through every dimension, line by line, to shorten and sharpen the prose — and,
 depending on what the analysis shows, to reduce or combine categories further, potentially
