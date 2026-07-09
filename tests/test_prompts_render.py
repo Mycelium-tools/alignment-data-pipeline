@@ -24,7 +24,7 @@ TEMPLATE_KWARGS = [
     }),
     ("sdf/layer3.txt", {
         "preamble": "PREAMBLE-X", "constitution_claude": "CONST-C-X",
-        "constitution_welfare_reading": "CONST-W-X", "type_name": "TYPE-X",
+        "constitution_principles": "CONST-P-X", "type_name": "TYPE-X",
         "subtype_name": "SUBTYPE-X", "description": "DESC-X", "tone": "neutral",
         "language": "en", "count": 1, "latent_note": "LATENT-NOTE-X",
         "register_note": "REGISTER-NOTE-X", "fictional_names": "NAME-X; NAME-Y",

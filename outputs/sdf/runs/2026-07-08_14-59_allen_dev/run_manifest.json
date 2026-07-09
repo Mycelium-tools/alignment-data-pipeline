@@ -1,0 +1,101 @@
+{
+  "manifest_version": 2,
+  "run_id": "2026-07-08_14-59_allen_dev",
+  "label": "allen_dev",
+  "created_at": "2026-07-08T14:59:55",
+  "git_commit": "cea868a",
+  "git_dirty": true,
+  "git_dirty_files": [
+    "CLAUDE.md",
+    "config.yaml",
+    "constitution/constitution_sentient_beings.md",
+    "evals/score_sdf.py",
+    "outputs/cost_log.jsonl",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/audit/audit_report.json",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/cost_log.jsonl",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/final/_sdf_score_checkpoint.json",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/final/sdf_corpus.jsonl",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/final/sdf_scores.jsonl",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/constitution/README.md",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/constitution/constitution_claude.md",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/constitution/constitution_principles.csv",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/constitution/constitution_sentient_beings.md",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/prompts/layer1.txt",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/prompts/layer2.txt",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/prompts/layer3.txt",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/prompts/layer4.txt",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/prompts/layer5.txt",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/inputs/prompts/preamble.txt",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer1/_checkpoint.json",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer1/document_types.jsonl",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer2/_checkpoint.json",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer2/subtypes.jsonl",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer3/_checkpoint.json",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer3/drafts.jsonl",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer4/_checkpoint.json",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer4/rewrites.jsonl",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer5/_checkpoint.json",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/layer5/scores.jsonl",
+    "outputs/sdf/runs/2026-07-07_16-50_allen_25docs/run_manifest.json",
+    "prompts/sdf/layer5.txt",
+    "sdf_pipeline/layer5_score.py",
+    "shared/constitution_loader.py",
+    "tests/test_constitution_loader.py",
+    "tests/test_e2e_smoke.py",
+    "tests/test_sdf_layers.py",
+    "viewer.html",
+    "outputs/sdf/runs/2026-07-08_14-59_allen_dev/"
+  ],
+  "inputs_snapshot": true,
+  "model": "claude-sonnet-5",
+  "config": {
+    "model": "claude-sonnet-5",
+    "max_tokens": 4000,
+    "temperature": 1.0,
+    "workers": 8,
+    "sdf": {
+      "document_types_count": 4,
+      "subtypes_per_type": 5,
+      "documents_per_subtype": 3,
+      "min_score_threshold": 7.5,
+      "latent_fraction": 0.12,
+      "subtype_dedup_threshold": 0.8,
+      "near_dup_threshold": 0.9,
+      "entity_pool_seed": 137
+    },
+    "dad": {
+      "dilemmas": {
+        "count": 40,
+        "batch_size": 10,
+        "id_start": 1,
+        "seed_path": null,
+        "scenario_seed": null,
+        "refine": true
+      },
+      "responses": {
+        "per_prompt": 1
+      }
+    },
+    "pref": {
+      "prompts_path": null,
+      "arms": {
+        "a": {
+          "name": "baseline",
+          "system_prompt": ""
+        },
+        "b": {
+          "name": "candidate",
+          "system_prompt": ""
+        }
+      }
+    },
+    "language_distribution": {
+      "en": 1.0
+    },
+    "outputs": {
+      "sdf_final": "outputs/sdf/final/sdf_corpus.jsonl",
+      "dad_final": "outputs/dad/final/dad_corpus.jsonl",
+      "cost_log": "outputs/cost_log.jsonl"
+    }
+  }
+}

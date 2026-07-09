@@ -82,7 +82,12 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
     preamble = utils.load_prompt(prompts_dir / "preamble.txt")
     constitution_dir = utils.resolve_constitution_dir(prompts_dir)
     constitution_claude = constitution_loader.load_constitution_claude(constitution_dir)
-    constitution_welfare_reading = constitution_loader.load_constitution_welfare_reading(constitution_dir)
+    # Snapshots that predate the principles CSV fall back to the repo's live copy.
+    try:
+        principles = constitution_loader.load_principles(constitution_dir)
+    except FileNotFoundError:
+        principles = constitution_loader.load_principles()
+    constitution_principles = constitution_loader.format_principles(principles)
 
     # Seeded fictional entity pools (see shared/entity_pools.py). Sampling is
     # keyed by subtype_id, so a resumed run re-renders identical prompts.
@@ -121,7 +126,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
             prompts_dir / "layer3.txt",
             preamble=preamble,
             constitution_claude=constitution_claude,
-            constitution_welfare_reading=constitution_welfare_reading,
+            constitution_principles=constitution_principles,
             type_name=st["type_name"],
             subtype_name=st["subtype_name"],
             description=st["description"],
