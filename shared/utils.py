@@ -72,6 +72,27 @@ def load_prompt(path: str | Path, **kwargs) -> str:
     return text
 
 
+def split_prompt(path: str | Path, marker: str, **prefix_kwargs) -> tuple[str, str]:
+    """Split a prompt template at the {marker} placeholder, for prompt caching.
+
+    Returns (prefix, rest_template). The prefix is everything before {marker},
+    rendered with prefix_kwargs — pass only values that are byte-identical
+    across the run's calls (e.g. the reasoning library), since the prefix is
+    what call_claude(cache_prefix=...) matches against the prompt cache. The
+    rest starts with the {marker} placeholder itself and is rendered per call
+    with .format(); prefix + rendered rest reproduces load_prompt's output
+    exactly.
+    """
+    text = Path(path).read_text()
+    placeholder = "{" + marker + "}"
+    before, sep, after = text.partition(placeholder)
+    if not sep:
+        raise ValueError(f"{path}: no {placeholder} placeholder to split at")
+    if prefix_kwargs:
+        before = before.format(**prefix_kwargs)
+    return before, placeholder + after
+
+
 def load_config(path: str = "config.yaml") -> dict:
     with open(path) as f:
         return yaml.safe_load(f)

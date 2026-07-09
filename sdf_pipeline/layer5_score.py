@@ -73,6 +73,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
         raw = api.call_claude(
             user_message=prompt,
             system_prompt=constitution,
+            # Same ~46k-token constitution on every scoring call — cache it
+            # (reads bill at ~0.1x input). Layers 4 and 5 share the entry when
+            # they run on the same model within the 5-minute TTL.
+            cache_system=True,
             model=config["sdf"].get("score_model"),
             stage="layer5",
         )

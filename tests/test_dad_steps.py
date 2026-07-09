@@ -220,6 +220,35 @@ class TestStep2Run:
         assert "realistic baseline" in respond_call
         assert "User dilemma text." in respond_call
 
+    def test_response_prompt_sends_library_as_stable_cache_prefix(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        from dad_pipeline import reasoning_library
+
+        calls = stub_claude(_dad_step2_dispatch)
+        step2_responses.run(tiny_config, prompts_dad, tmp_path,
+                            [_dilemma(), _dilemma("AW-0002")])
+
+        respond_calls = [c for c in calls if c["stage"] == "response_draft"]
+        assert len(respond_calls) == 2
+        # The library rides in the prompt-cached prefix, not the per-call remainder
+        assert "LIBRARY:" in respond_calls[0]["cache_prefix"]
+        assert "LIBRARY:" not in respond_calls[0]["user_message"]
+        assert "User dilemma text." in respond_calls[0]["user_message"]
+        # Byte-identical across calls — the property prompt caching depends on
+        assert respond_calls[0]["cache_prefix"] == respond_calls[1]["cache_prefix"]
+        # Prefix + remainder reproduce load_prompt's single-string render exactly,
+        # so the model sees the same prompt as before the split
+        scope = utils.load_jsonl(tmp_path / "scopes.jsonl")[0]["scope"]
+        library_block = reasoning_library.format_library(reasoning_library.load(prompts_dad))
+        assert respond_calls[0]["cache_prefix"] + respond_calls[0]["user_message"] == \
+            utils.load_prompt(
+                prompts_dad / "step2_respond.txt",
+                library_block=library_block,
+                scope_block=step2_responses.format_scope(scope),
+                user_message="User dilemma text.",
+            )
+
     def test_unusable_scope_retries_and_keeps_raws(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         attempts = {"n": 0}
 
