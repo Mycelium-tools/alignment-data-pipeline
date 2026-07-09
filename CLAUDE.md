@@ -10,7 +10,7 @@ Produces two complementary datasets:
 
 ## Setup
 
-See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`). Auth depends on the `backend` key in `config.yaml`: `api` (default) reads `ANTHROPIC_API_KEY`; `claude_code` bills the contributor's Claude subscription via the Claude Code CLI (logged-in session or `CLAUDE_CODE_OAUTH_TOKEN`) — use it for dev runs, keep `api` for full-scale runs. See README "Authentication" for caveats (usage windows, notional cost logging).
+See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`). Auth depends on the `backend` key in `config.yaml`: `api` (default) reads `ANTHROPIC_API_KEY`; `claude_code` bills the contributor's Claude subscription via the Claude Code CLI (logged-in session or `CLAUDE_CODE_OAUTH_TOKEN`) — use it for dev runs, keep `api` for full-scale runs. See README "Authentication" for caveats (usage windows, notional cost logging). `OPENAI_API_KEY` is optional and read only by `evals/diversity.py` (embedding-based diversity audit).
 
 `shared/__init__.py` enforces a Python floor (`MIN_PYTHON = (3, 12)`, matching numpy) at import — bump it there if the deps' floor rises. `.venv/` is gitignored.
 
@@ -40,6 +40,13 @@ streamlit run pref_pipeline/rate.py
 # --patterns adds the LLM templating scan (scan -> consolidate -> prevalence)
 python evals/audit_sdf.py --input outputs/sdf/latest
 python evals/audit_sdf.py --input outputs/sdf/latest --patterns
+
+# Semantic diversity audit (SDF or DAD run): embedding-space near-dup rate,
+# most-similar pairs, Vendi effective-document count, per-type spread.
+# Uses OpenAI text-embedding-3-small (OPENAI_API_KEY; cents per run, cached);
+# --compare a previous diversity_report.json for run-over-run deltas
+python evals/diversity.py --input outputs/sdf/latest
+python evals/diversity.py --input outputs/dad/latest
 ```
 
 ## Run Organization
@@ -68,8 +75,8 @@ Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jso
 ## Testing
 
 - Run `pytest` from the repo root (deps are in `requirements.txt`). The suite is fully offline and finishes in seconds; it runs inside the required `smoke` check on every PR (`.github/workflows/ci.yml`, a job with no API secret exposed), so a failing test blocks merge.
-- Tests NEVER call the Anthropic API. Four layers enforce this: pytest-socket (`--disable-socket` in `pyproject.toml`) blocks all network at the socket level; an autouse fixture sets a fake `ANTHROPIC_API_KEY` and resets `shared.api` globals per test; and both backend seams — `shared.api._call_with_retry` and `shared.api._call_claude_code_with_retry` (which would otherwise spawn the Claude Code CLI) — are replaced with functions that raise.
-- To exercise pipeline stages, use the `stub_claude` fixture in `tests/conftest.py` (queue of canned response strings, or a callable dispatcher) — it patches `shared.api.call_claude`, the single chokepoint every module uses. Never let real `anthropic` error types reach the real `_call_with_retry`; tenacity would sleep minutes.
+- Tests NEVER call the Anthropic API. Four layers enforce this: pytest-socket (`--disable-socket` in `pyproject.toml`) blocks all network at the socket level; an autouse fixture sets a fake `ANTHROPIC_API_KEY` and resets `shared.api` globals per test; and both backend seams — `shared.api._call_with_retry` and `shared.api._call_claude_code_with_retry` (which would otherwise spawn the Claude Code CLI) — are replaced with functions that raise. The OpenAI embeddings seam (`shared/embeddings.py`) gets the identical layered treatment (fake `OPENAI_API_KEY`, globals reset, `_embed_with_retry` blocked).
+- To exercise pipeline stages, use the `stub_claude` fixture in `tests/conftest.py` (queue of canned response strings, or a callable dispatcher) — it patches `shared.api.call_claude`, the single chokepoint every module uses. Never let real `anthropic` error types reach the real `_call_with_retry`; tenacity would sleep minutes. For the diversity eval, `stub_embeddings` patches `shared.embeddings.embed_texts` the same way (deterministic per-text vectors, or pass exact geometry).
 - All test outputs go to pytest `tmp_path`; the `PIPELINE_OUTPUT_ROOT` env var redirects the `run.py` orchestrators away from the real `outputs/` tree.
 - Determinism: an autouse fixture seeds `random`; `sample_language` accepts an injectable `rng`; uuid/timestamp values are asserted by shape, never by value.
 - Tests encode CURRENT behavior, including known quirks. Don't change pipeline behavior just to make a test expectation nicer — decide the spec first, then flip the test deliberately.
