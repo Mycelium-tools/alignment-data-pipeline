@@ -49,7 +49,7 @@ The **latent-welfare** slice (`sdf.latent_fraction`, default 12%) is ordinary do
 Final output: `outputs/sdf/runs/<run_id>/final/sdf_corpus.jsonl` (also reachable via the `outputs/sdf/latest` symlink)
 
 Run: `python sdf_pipeline/run.py --config config.yaml --label dev`
-Audit the result: `python evals/audit_sdf.py --input outputs/sdf/latest` (add `--patterns` for the LLM templating scan)
+Audit the result: `python evals/audit_sdf.py --input outputs/sdf/latest` (add `--patterns` for the LLM templating scan); `python evals/diversity.py --input outputs/sdf/latest` adds the embedding-based semantic diversity report
 
 ---
 
@@ -102,6 +102,8 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 
 `audit_sdf.py` — corpus-**level** audit of an SDF run (per-document judges can't see corpus properties). Offline and free by default: composition/register spread, length and truncation artifacts, near-duplicate rate (word-shingle cosine), invented-name collapse, stock-phrase frequency, and opening-shape clustering, each with a GOOD/OK/BAD verdict where meaningful. `--patterns` adds an LLM templating scan (batch scan via `prompts/tools/pattern_scan.txt` → consolidation → per-pattern prevalence; a pattern is flagged only if it's judged a genuine defect **and** widespread). Writes `audit/audit_report.json` into the run dir.
 
+`diversity.py` — corpus-level **semantic** diversity audit of an SDF *or* DAD run, the embedding-space complement to `audit_sdf.py`'s lexical scan (word shingles catch copied skeletons, not paraphrase). Embeds the corpus with OpenAI `text-embedding-3-small` (needs `OPENAI_API_KEY` in `.env`; ~$0.02 per 1M tokens, so cents per run) and reports nearest-neighbor similarity, the semantic near-duplicate rate, the most-similar pairs with snippets, mean pairwise cosine, the Vendi score (effective number of distinct documents), and per-type spread. Embeddings are cached per run dir so reruns are free; `--compare <previous diversity_report.json>` prints run-over-run deltas, the headline use. Writes `audit/diversity_report.json` into the run dir.
+
 Run: `python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl`
 
 ---
@@ -124,6 +126,8 @@ source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env           # then add your ANTHROPIC_API_KEY
 ```
+
+`OPENAI_API_KEY` in `.env` is optional — only `evals/diversity.py` (the embedding-based diversity audit) reads it; the pipelines run on `ANTHROPIC_API_KEY` alone.
 
 > **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again.
 
