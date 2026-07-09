@@ -316,9 +316,10 @@ class TestStep3Run:
         assert set(final[0].keys()) == {"record_id", "messages"}
         assert [m["role"] for m in final[0]["messages"]] == ["user", "assistant"]
         assert final[0]["messages"][1]["content"] == "Rewritten careful answer."
-        # the distilled principles and the annotation reach the rewrite prompt
+        # the distilled principles reach the rewrite prompt; the annotation
+        # deliberately does not (it anchors nothing after step 1)
         assert "CONSTITUTION PRINCIPLES" in calls[0]["user_message"]
-        assert "Direction: Mixed" in calls[0]["user_message"]
+        assert "Direction: Mixed" not in calls[0]["user_message"]
 
     def test_capped_rewrite_retries_once_at_higher_budget(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
