@@ -49,16 +49,16 @@ ethics-extended instrument rides one arm of the test.
 
 ## How the A/B question gets settled
 
-Both versions run over the same fixed 166-record corpus already judged by v4.3 (plus an M
+Both versions run over the same fixed record corpus already judged by v4.3 (plus an M
 arm — a minimal 4-dimension judge — as a lower-bound control), 3 runs each at temperature 0
 with majority vote. Pre-registered criteria, decided before any results:
 
 1. **Fold-back test:** if B's split dimensions score >~0.8 correlated with
    `welfare_reasoning`, they duplicate it — fold back, A wins. If they independently catch
    failures A misses on the labeled failure catalog, they earn their slots.
-2. **Detection test:** hit rate against the analyst-labeled failure catalog (166 records,
-   proxy labels being promoted to verified ones) — does the finer instrument flag the right
-   failure on records known to contain one, without new false positives?
+2. **Detection test:** hit rate against the analyst-labeled failure catalog (proxy labels
+   being promoted to verified ones) — does the finer instrument flag the right failure on
+   records known to contain one, without new false positives?
 3. **Discrimination + stability:** score spread vs the v4.3 baseline (which bunched at the
    top) and 3-run self-consistency; a dimension that adds noise instead of separation is cut.
 4. The three experimental B-only signals graduate to both versions only if they fire with
