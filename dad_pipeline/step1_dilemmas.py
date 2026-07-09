@@ -363,11 +363,16 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
     return out
 
 
-def print_checklist(examples: list[dict]) -> None:
-    print("  Batch checklist (spec Part 4):")
+def print_checklist(examples: list[dict], save_path: Path | None = None) -> None:
+    """Print the Part-4 checklist; with save_path, also persist it into the run
+    dir (the printout otherwise lives only in terminal scrollback)."""
+    lines = ["Batch checklist (spec Part 4):"]
     for ok, msg in checklist(examples):
         mark = "✓" if ok else ("✗" if ok is False else "·")
-        print(f"    {mark} {msg}")
+        lines.append(f"  {mark} {msg}")
+    print("\n".join(f"  {line}" for line in lines))
+    if save_path is not None:
+        Path(save_path).write_text("\n".join(lines) + "\n")
 
 
 # --- Scenario sampling ---
@@ -794,5 +799,5 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             utils.append_jsonl(record, output_path)
 
     print(f"  {len(examples)} dilemma prompts in {output_path}")
-    print_checklist(examples)
+    print_checklist(examples, save_path=output_dir / "checklist.txt")
     return examples

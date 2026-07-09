@@ -90,10 +90,14 @@ class TestStep1Run:
             assert e["draft_user_message"] == f"Drafted user message for {e['scenario_id']}."
             assert e["taxa_subcategory"]
             assert "scenario_deviations" not in e
-        # persisted artifacts: scenarios (1a), dilemmas (1b/1c), refinements log
+        # persisted artifacts: scenarios (1a), dilemmas (1b/1c), refinements log,
+        # and the Part-4 checklist report (previously terminal-only)
         assert len(utils.load_jsonl(tmp_path / "scenarios.jsonl")) == 2
         assert len(utils.load_jsonl(tmp_path / "dilemmas.jsonl")) == 2
         assert len(utils.load_jsonl(tmp_path / "refinements.jsonl")) == 2
+        saved = (tmp_path / "checklist.txt").read_text()
+        assert saved.startswith("Batch checklist (spec Part 4):")
+        assert "load-bearing rule" in saved
         # 1 batch call + 2 refine calls
         assert len(calls) == 3
         # the 1b annotation reaches the 1c prompt — minus the claims lines
