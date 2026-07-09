@@ -10,6 +10,7 @@ guarantees are asserted directly.
 
 import json
 import random
+import threading
 
 import pytest
 
@@ -248,6 +249,38 @@ class TestStep2Run:
         assert calls == []
         assert len(results) == 1
 
+    def test_dilemmas_fan_out_concurrently_in_input_order(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Two dilemmas with workers: 2 must have both 2a scope calls in flight
+        # at once — the barrier deadlocks (and times out the wait) if the stage
+        # quietly went serial again. Writes stay ordered regardless.
+        both_scoping = threading.Barrier(2)
+
+        def dispatch(user_message, **kw):
+            if "scoping an animal-welfare advice dilemma" in user_message:
+                both_scoping.wait(timeout=10)
+                return GOOD_SCOPE
+            if "writing the assistant's response" in user_message:
+                return "Draft response."
+            raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
+
+        calls = stub_claude(dispatch)
+        dilemmas = [_dilemma("AW-0001"), _dilemma("AW-0002")]
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas)
+
+        assert len(calls) == 4  # 2 scopes + 2 responses
+        # results and persisted files keep input order despite thread interleaving
+        assert [r["prompt_id"] for r in results] == ["AW-0001", "AW-0002"]
+        scopes = utils.load_jsonl(tmp_path / "scopes.jsonl")
+        assert [s["prompt_id"] for s in scopes] == ["AW-0001", "AW-0002"]
+
+        # completed work costs nothing on resume
+        calls = stub_claude([])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas)
+        assert calls == []
+        assert len(results) == 2
+
 
 # --- Step 3: constitution rewrite ----------------------------------------
 
@@ -309,6 +342,37 @@ class TestStep3Run:
         )
         assert len(calls) == 1
         assert len(final) == 1
+
+    def test_rewrites_fan_out_concurrently_in_input_order(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Two responses with workers: 2 must have both rewrite calls in flight
+        # at once — the barrier deadlocks (and times out the wait) if the stage
+        # quietly went serial again. Output order still follows input order.
+        both_rewriting = threading.Barrier(2)
+
+        def dispatch(user_message, **kw):
+            both_rewriting.wait(timeout=10)
+            return "Rewrite of one." if "Draft one." in user_message else "Rewrite of two."
+
+        stub_claude(dispatch)
+        records = [
+            {**_response_record("resp-1"), "assistant_response": "Draft one."},
+            {**_response_record("resp-2"), "assistant_response": "Draft two.",
+             "sample_index": 1},
+        ]
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", records
+        )
+        assert [f["messages"][1]["content"] for f in final] == ["Rewrite of one.", "Rewrite of two."]
+
+        # completed work costs nothing on resume
+        calls = stub_claude([])
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", records
+        )
+        assert calls == []
+        assert len(final) == 2
 
 
 # --- Per-stage model knobs + cost-log stage tags ---------------------------

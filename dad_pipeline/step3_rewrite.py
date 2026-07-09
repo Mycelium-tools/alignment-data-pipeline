@@ -40,19 +40,18 @@ def run(
     results = list(existing_audit)
     done_response_ids = {r["response_id"] for r in results}
 
-    for resp in kept_responses:
-        rid = resp["response_id"]
-        if rid in done_response_ids or checkpoint.is_done(rid):
-            continue
+    pending = [r for r in kept_responses
+               if r["response_id"] not in done_response_ids
+               and not checkpoint.is_done(r["response_id"])]
 
-        annotation = resp.get("annotation") or {}
-
+    def rewrite_response(resp: dict) -> dict:
+        """API call + parsing only — all writes and checkpoint marks stay on
+        the main thread, in input order (the parallel_map contract)."""
         print(f"  Rewriting response for {resp['prompt_id']}...")
-
         prompt = utils.load_prompt(
             prompts_dir / "step3_rewrite.txt",
             principles_block=principles_block,
-            annotation_block=format_annotation(annotation),
+            annotation_block=format_annotation(resp.get("annotation") or {}),
             user_message=resp["user_message"],
             draft_response=resp["assistant_response"],
         )
@@ -70,7 +69,13 @@ def run(
                 user_message=prompt, max_tokens=8000, return_stop_reason=True,
                 model=config["dad"].get("constitution_rewrite_model"),
                 stage="constitution_rewrite")
-        rewritten = rewritten.strip()
+        return {"resp": resp, "rewritten": rewritten.strip(), "stop_reason": stop_reason}
+
+    workers = int(config.get("workers", 1))
+    for out in utils.parallel_map(rewrite_response, pending, workers):
+        resp, rewritten, stop_reason = out["resp"], out["rewritten"], out["stop_reason"]
+        rid = resp["response_id"]
+        annotation = resp.get("annotation") or {}
 
         # A truncated (max_tokens) or empty rewrite must never become a training
         # record. Skip it without checkpointing so a later --resume retries it,
