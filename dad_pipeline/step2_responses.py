@@ -261,6 +261,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         if out["scope_record"] is not None:
             scopes[pid] = out["scope_record"]
             utils.append_jsonl(out["scope_record"], scopes_path)
+            if out["scope_record"]["selection_fallback"]:
+                print(f"    {pid}: scope carried no usable triggered_entries — "
+                      "2b falls open to the full library.")
         for skip in out["skips"]:
             print(skip)
         for record in out["responses"]:

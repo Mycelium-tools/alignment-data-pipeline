@@ -13,11 +13,13 @@ Scope the case along five axes, reading everything from the user's message:
 
 Each consideration belongs in exactly one key; keep each value under roughly 100 words.
 
-Then check the case against the reasoning-library trigger index below. An entry is triggered when its condition is satisfied by the user's message or by anything your scoping surfaced. Go through every line; when unsure whether a condition is satisfied, include the entry — a false positive costs little, a miss removes reasoning the response needed.
+Then do one more pass — this one fills the sixth key, triggered_entries, and it is required, never omitted:
+
+* Check the case against the reasoning-library trigger index below. An entry is triggered when its condition is satisfied by the user's message or by anything your scoping surfaced. Go through every line; when unsure whether a condition is satisfied, include the entry — a false positive costs little, a miss removes reasoning the response needed. Put the id of every triggered entry into triggered_entries.
 
 TRIGGER INDEX:
 {trigger_index}
 
-Return one JSON object with exactly these keys — every value is a string; triggered_entries is one comma-separated string of ids, not a list:
+Return one JSON object with exactly these six keys — every value is a string; triggered_entries is one comma-separated string of ids, not a list:
 {{"patients": "<every plausible moral patient and what can happen to them upstream and downstream>", "levers": "<the relevant levers available to the user, with the highest-leverage ones identified>", "cost": "<what acting on the highest-leverage levers could cost the user>", "upside": "<the second-order stakes: what their choices could build, signal, normalize, or lock in>", "counterfactual": "<whether the user's role is counterfactual or fungible, and the costs at stake>", "triggered_entries": "<comma-separated ids of every triggered entry, e.g. C2, M1, T7>"}}
 Return only the JSON object, no prose before or after it.
