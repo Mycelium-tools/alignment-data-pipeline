@@ -59,7 +59,11 @@ def fold_long_values(text: str, variables: dict) -> tuple[str, dict[str, str]]:
     short marker so the prompt stays readable; return (folded_text, folded)."""
     folded = {}
     for name, value in variables.items():
-        if isinstance(value, str) and len(value) > FOLD_THRESHOLD and value in text:
+        # Injected data blocks (*_block) fold at a much lower bar than free text:
+        # they're duplicated from earlier pipeline stages, so inline they only
+        # add scrolling. 200 chars avoids pointless toggles for tiny blocks.
+        if isinstance(value, str) and value in text and (
+                len(value) > FOLD_THRESHOLD or (name.endswith("_block") and len(value) > 200)):
             marker = f"⟨{name}: {len(value):,} chars — expand below⟩"
             text = text.replace(value, marker)
             folded[name] = value

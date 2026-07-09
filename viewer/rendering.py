@@ -272,7 +272,9 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.variables = {
             "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",
             "draft_prompt": draft,
-            "annotation_block": format_annotation(dilemma.get("annotation") or {}),
+            # mirror refine_draft: claims are excluded from the 1c call
+            "annotation_block": format_annotation(
+                {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
         }
         r.user = _format(tpl("step1_refine.txt"), r.variables, r)
         return r
