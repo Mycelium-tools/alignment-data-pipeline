@@ -40,19 +40,21 @@ def run(
     results = list(existing_audit)
     done_response_ids = {r["response_id"] for r in results}
 
-    for resp in kept_responses:
-        rid = resp["response_id"]
-        if rid in done_response_ids or checkpoint.is_done(rid):
-            continue
+    pending = [
+        resp for resp in kept_responses
+        if resp["response_id"] not in done_response_ids
+        and not checkpoint.is_done(resp["response_id"])
+    ]
+    if pending:
+        print(f"  Rewriting {len(pending)} response(s)...")
 
-        annotation = resp.get("annotation") or {}
-
-        print(f"  Rewriting response for {resp['prompt_id']}...")
-
+    # Pure (API call + parse) so responses fan out via parallel_map; all file
+    # writes and checkpoint marks stay on the main thread, in input order.
+    def rewrite_response(resp: dict) -> tuple[str, str, bool]:
         prompt = utils.load_prompt(
             prompts_dir / "step3_rewrite.txt",
             principles_block=principles_block,
-            annotation_block=format_annotation(annotation),
+            annotation_block=format_annotation(resp.get("annotation") or {}),
             user_message=resp["user_message"],
             draft_response=resp["assistant_response"],
         )
@@ -64,13 +66,21 @@ def run(
         # A legitimately long rewrite can exceed the cap; retry once with a
         # doubled budget before deferring, so long-form cases aren't silently
         # re-skipped on every resume.
-        if stop_reason == "max_tokens":
-            print(f"    {resp['prompt_id']}: rewrite hit the 4000-token cap — retrying at 8000.")
+        retried = stop_reason == "max_tokens"
+        if retried:
             rewritten, stop_reason = api.call_claude(
                 user_message=prompt, max_tokens=8000, return_stop_reason=True,
                 model=config["dad"].get("constitution_rewrite_model"),
                 stage="constitution_rewrite")
-        rewritten = rewritten.strip()
+        return rewritten.strip(), stop_reason, retried
+
+    workers = config.get("workers", 1)
+    for resp, (rewritten, stop_reason, retried) in zip(
+        pending, utils.parallel_map(rewrite_response, pending, workers)
+    ):
+        rid = resp["response_id"]
+        if retried:
+            print(f"    {resp['prompt_id']}: rewrite hit the 4000-token cap — retried at 8000.")
 
         # A truncated (max_tokens) or empty rewrite must never become a training
         # record. Skip it without checkpointing so a later --resume retries it,
@@ -84,6 +94,7 @@ def run(
             )
             continue
 
+        print(f"  Rewrote response for {resp['prompt_id']}")
         record_id = str(uuid.uuid4())
 
         # Full audit record (includes the annotation + retrieval trail for inspection)
@@ -97,12 +108,11 @@ def run(
             "user_message": resp["user_message"],
             "draft_response": resp["assistant_response"],
             "rewritten_response": rewritten,
-            "annotation": annotation,
+            "annotation": resp.get("annotation") or {},
         }
         results.append(audit_record)
         utils.append_jsonl(audit_record, audit_path)
         checkpoint.mark_done(rid)
-        done_response_ids.add(rid)
 
     # Write final training-ready corpus — ONLY user + assistant messages, nothing else
     utils.ensure_dir(final_dir)

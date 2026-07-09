@@ -10,6 +10,7 @@ guarantees are asserted directly.
 
 import json
 import random
+import re
 
 import pytest
 
@@ -74,7 +75,11 @@ def _dad_step1_dispatch(user_message, **kw):
     if "first-attempt user prompts" in user_message:  # 1b batch draft
         return dad_scenario_reply(user_message)
     if "dilemma-prompt rewrite step" in user_message:  # 1c refine
-        return json.dumps({"prompt": "Refined user message.", "notes": "relocated the lever"})
+        # Echo the scenario id so the test can prove each refine result lands
+        # on its own scenario even when 1c fans out via parallel_map.
+        sid = re.search(r"SCENARIO (S-\d+)", user_message).group(1)
+        return json.dumps({"prompt": f"Refined user message for {sid}.",
+                           "notes": "relocated the lever"})
     raise AssertionError(f"Unrecognized step-1 prompt: {user_message[:80]!r}")
 
 
@@ -86,7 +91,8 @@ class TestStep1Run:
         assert len(examples) == 2
         assert [e["prompt_id"] for e in examples] == ["AW-0001", "AW-0002"]
         for e in examples:
-            assert e["user_message"] == "Refined user message."  # 1c output
+            # 1c output, mapped to the right scenario under parallel fan-out
+            assert e["user_message"] == f"Refined user message for {e['scenario_id']}."
             assert e["draft_user_message"] == f"Drafted user message for {e['scenario_id']}."
             assert e["taxa_subcategory"]
             assert "scenario_deviations" not in e
@@ -129,6 +135,30 @@ class TestStep1Run:
         examples = step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
         assert calls == []
         assert len(examples) == 2
+
+    def test_refine_crash_mid_batch_keeps_earlier_records(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # 1c results are consumed lazily off parallel_map: a refine call that
+        # raises must not discard the batch's already-refined records — they
+        # stay on disk so --resume re-pays only the tail.
+        class Boom(Exception):
+            pass
+
+        def dispatch(user_message, **kw):
+            if "first-attempt user prompts" in user_message:
+                return dad_scenario_reply(user_message)
+            sid = re.search(r"SCENARIO (S-\d+)", user_message).group(1)
+            if sid == "S-002":
+                raise Boom("refine call died")
+            return json.dumps({"prompt": f"Refined user message for {sid}.", "notes": "n"})
+
+        stub_claude(dispatch)
+        with pytest.raises(Boom):
+            step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
+
+        saved = utils.load_jsonl(tmp_path / "dilemmas.jsonl")
+        assert [e["scenario_id"] for e in saved] == ["S-001"]
 
     def test_seed_import_rejects_duplicate_ids(self, tiny_config, prompts_dad, tmp_path):
         seed_file = tmp_path / "seeds.jsonl"
@@ -248,6 +278,60 @@ class TestStep2Run:
         assert calls == []
         assert len(results) == 1
 
+    def test_two_dilemmas_fan_out_and_keep_input_order(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # tiny_config sets workers: 2 — both prompts scope, then respond, via
+        # parallel_map; records and scopes still land in input order, each
+        # response built over its own prompt's scope.
+        def dispatch(user_message, **kw):
+            if "scoping an animal-welfare advice dilemma" in user_message:
+                return GOOD_SCOPE
+            if "writing the assistant's response" in user_message:
+                pid = re.search(r"dilemma text for (AW-\d+)", user_message).group(1)
+                return f"Draft response for {pid}."
+            raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
+
+        calls = stub_claude(dispatch)
+        dilemmas = [
+            {"prompt_id": pid, "user_message": f"dilemma text for {pid}", "annotation": {}}
+            for pid in ("AW-0001", "AW-0002")
+        ]
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas)
+
+        assert [r["prompt_id"] for r in results] == ["AW-0001", "AW-0002"]
+        assert [r["assistant_response"] for r in results] == [
+            "Draft response for AW-0001.", "Draft response for AW-0002.",
+        ]
+        assert [s["prompt_id"] for s in utils.load_jsonl(tmp_path / "scopes.jsonl")] == [
+            "AW-0001", "AW-0002",
+        ]
+        assert len(calls) == 4  # 2 scopes + 2 responses
+
+    def test_failed_scope_keeps_sibling_scopes_and_stops_before_2b(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # All prompts are scoped before the run stops on the unusable one, so
+        # the sibling's paid scope is persisted for --resume — and 2b never runs.
+        def dispatch(user_message, **kw):
+            assert "scoping an animal-welfare advice dilemma" in user_message
+            return "not json" if "bad dilemma" in user_message else GOOD_SCOPE
+
+        stub_claude(dispatch)
+        dilemmas = [
+            {"prompt_id": "AW-0001", "user_message": "good dilemma", "annotation": {}},
+            {"prompt_id": "AW-0002", "user_message": "bad dilemma", "annotation": {}},
+        ]
+        with pytest.raises(RuntimeError, match="AW-0002"):
+            step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas)
+
+        scopes = utils.load_jsonl(tmp_path / "scopes.jsonl")
+        assert [s["prompt_id"] for s in scopes] == ["AW-0001"]
+        failures = utils.load_jsonl(tmp_path / "scope_failures.jsonl")
+        assert [f["attempt"] for f in failures] == \
+            list(range(1, step2_responses.MAX_SCOPE_ATTEMPTS + 1))
+        assert utils.load_jsonl(tmp_path / "responses.jsonl") == []
+
 
 # --- Step 3: constitution rewrite ----------------------------------------
 
@@ -309,6 +393,30 @@ class TestStep3Run:
         )
         assert len(calls) == 1
         assert len(final) == 1
+
+    def test_parallel_rewrites_land_in_input_order(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Two records fan out under workers: 2, so the stub must be a callable
+        # dispatcher; each rewrite lands on its own draft and the audit trail
+        # keeps input order.
+        def dispatch(user_message, **kw):
+            tag = re.search(r"Draft response (\w+)\.", user_message).group(1)
+            return f"Rewrite {tag}."
+
+        calls = stub_claude(dispatch)
+        records = [
+            {**_response_record(f"resp-{tag}"), "assistant_response": f"Draft response {tag}."}
+            for tag in ("one", "two")
+        ]
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", records
+        )
+
+        assert [r["messages"][1]["content"] for r in final] == ["Rewrite one.", "Rewrite two."]
+        audit = utils.load_jsonl(tmp_path / "step3" / "rewrites.jsonl")
+        assert [a["response_id"] for a in audit] == ["resp-one", "resp-two"]
+        assert len(calls) == 2
 
 
 # --- Per-stage model knobs + cost-log stage tags ---------------------------

@@ -1,7 +1,7 @@
 model: claude-sonnet-5
 max_tokens: 4000
 temperature: 1.0  # sampling temperature for every API call (0.0-1.0); generation wants 1.0 — diversity IS the product
-workers: 8  # concurrent API calls within each SDF layer; 1 = serial
+workers: 8  # concurrent API calls within each SDF layer and DAD stage (1c/2a/2b/3); 1 = serial
 
 sdf:
   document_types_count: 3

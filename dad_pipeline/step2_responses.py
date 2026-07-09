@@ -10,9 +10,10 @@ is human reference about the library, not read by the pipeline):
   nothing (counterfactual). Reads everything from the user's message. One record per
   prompt in step2/scopes.jsonl. A scope that fails to parse or is missing an
   axis is retried with a fresh call (raw outputs kept in
-  step2/scope_failures.jsonl); after MAX_SCOPE_ATTEMPTS the run stops rather
-  than generate a response over an empty scope, which would silently optimize
-  the wrong node.
+  step2/scope_failures.jsonl); a prompt still unusable after MAX_SCOPE_ATTEMPTS
+  stops the run (after every prompt has been scoped, so usable scopes are kept)
+  rather than generate a response over an empty scope, which would silently
+  optimize the wrong node.
 - 2b respond: generate the response over the scope map. The whole library
   (conduct C*, core moves M*, topic T*) is embedded in the response prompt
   itself, which IS the generation guidance — so there is no separate system
@@ -91,6 +92,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
     library_block = reasoning_library.format_library(library)
     library_ids = reasoning_library.all_ids(library)
     per_prompt = int(config["dad"].get("responses", {}).get("per_prompt", 1))
+    workers = config.get("workers", 1)
 
     scopes_path = output_dir / "scopes.jsonl"
     output_path = output_dir / "responses.jsonl"
@@ -107,91 +109,110 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
     results = list(existing)
     done_keys = {(r["prompt_id"], r.get("sample_index", 0)) for r in existing}
 
-    for d in dilemmas:
+    # --- 2a: scope each case (once per prompt) ---
+    # Rebuild the full map (system, agent, cost, upside, counterfactual) before
+    # reasoning, so the response optimizes the right node — not just the one the
+    # user saw. Prompts fan out via parallel_map; each worker retries its own
+    # scope up to MAX_SCOPE_ATTEMPTS and returns the record (or None) plus the
+    # failed attempts, so all file writes stay on this thread, in input order.
+    def derive_scope(d: dict) -> tuple[dict | None, list[dict]]:
+        scope_prompt = utils.load_prompt(
+            prompts_dir / "step2_scope.txt",
+            user_message=d["user_message"],
+        )
+        failures = []
+        for attempt in range(1, MAX_SCOPE_ATTEMPTS + 1):
+            raw, stop_reason = api.call_claude(
+                user_message=scope_prompt, return_stop_reason=True,
+                model=config["dad"].get("response_scope_model"),
+                stage="response_scope")
+            # A max_tokens-truncated scope may still parse (the brace-salvage
+            # path) but is missing content — count it as an unusable attempt.
+            parsed = {} if stop_reason == "max_tokens" else _parse_scope(raw)
+            if _valid_scope(parsed):
+                return {"prompt_id": d["prompt_id"], "scope": parsed}, failures
+            failures.append({"prompt_id": d["prompt_id"], "attempt": attempt, "raw": raw})
+        return None, failures
+
+    to_scope = [d for d in dilemmas if d["prompt_id"] not in scopes]
+    if to_scope:
+        print(f"  Scoping {len(to_scope)} prompt(s)...")
+    unusable = []
+    for d, (record, failures) in zip(to_scope, utils.parallel_map(derive_scope, to_scope, workers)):
         pid = d["prompt_id"]
+        # Keep raw failed attempts — they cost a call and show why parsing failed.
+        for f in failures:
+            utils.append_jsonl(f, output_dir / "scope_failures.jsonl")
+        if failures:
+            print(f"    {pid}: {len(failures)}/{MAX_SCOPE_ATTEMPTS} scope attempt(s) unusable "
+                  f"(unparseable or missing axes).")
+        if record is None:
+            unusable.append(pid)
+            continue
+        scopes[pid] = record
+        utils.append_jsonl(record, scopes_path)
+    if unusable:
+        # Usable scopes above are already persisted, so a --resume retries only
+        # the failed prompts.
+        raise RuntimeError(
+            f"2a scope unusable after {MAX_SCOPE_ATTEMPTS} attempts for {', '.join(unusable)}; "
+            f"raw outputs are in {output_dir / 'scope_failures.jsonl'}. "
+            "Refusing to generate over an empty scope — rerun with --resume to retry."
+        )
 
-        # --- 2a: scope the case (once per prompt) ---
-        # Rebuild the full map (system, agent, cost, upside, counterfactual) before reasoning, so
-        # the response optimizes the right node — not just the one the user saw.
-        if pid not in scopes:
-            print(f"  Scoping {pid}...")
-            scope_prompt = utils.load_prompt(
-                prompts_dir / "step2_scope.txt",
+    # --- 2b: generate response(s) over the scope + full library, fanned out
+    # over every not-yet-done (prompt, sample) pair ---
+    pending = [
+        (d, sample_index)
+        for d in dilemmas
+        for sample_index in range(per_prompt)
+        if (d["prompt_id"], sample_index) not in done_keys
+        and not checkpoint.is_done(f"{d['prompt_id']}_s{sample_index}")
+    ]
+
+    def draft_response(item: tuple[dict, int]) -> tuple[str, str]:
+        d, _sample_index = item
+        response, stop_reason = api.call_claude(
+            user_message=utils.load_prompt(
+                prompts_dir / "step2_respond.txt",
+                library_block=library_block,
+                scope_block=format_scope(scopes[d["prompt_id"]]["scope"]),
                 user_message=d["user_message"],
-            )
-            record = None
-            for attempt in range(1, MAX_SCOPE_ATTEMPTS + 1):
-                raw, stop_reason = api.call_claude(
-                    user_message=scope_prompt, return_stop_reason=True,
-                    model=config["dad"].get("response_scope_model"),
-                    stage="response_scope")
-                # A max_tokens-truncated scope may still parse (the brace-salvage
-                # path) but is missing content — count it as an unusable attempt.
-                parsed = {} if stop_reason == "max_tokens" else _parse_scope(raw)
-                if _valid_scope(parsed):
-                    record = {"prompt_id": pid, "scope": parsed}
-                    break
-                # Keep the raw output — it cost a call and shows why parsing failed.
-                utils.append_jsonl(
-                    {"prompt_id": pid, "attempt": attempt, "raw": raw},
-                    output_dir / "scope_failures.jsonl",
-                )
-                more = " — retrying with a fresh call" if attempt < MAX_SCOPE_ATTEMPTS else ""
-                print(f"    {pid}: scope attempt {attempt}/{MAX_SCOPE_ATTEMPTS} unusable "
-                      f"(unparseable or missing axes){more}.")
-            if record is None:
-                raise RuntimeError(
-                    f"2a scope for {pid} unusable after {MAX_SCOPE_ATTEMPTS} attempts; "
-                    f"raw outputs are in {output_dir / 'scope_failures.jsonl'}. "
-                    "Refusing to generate over an empty scope — rerun with --resume to retry."
-                )
-            scopes[pid] = record
-            utils.append_jsonl(record, scopes_path)
-        scope = scopes[pid]["scope"]
+            ),
+            return_stop_reason=True,
+            model=config["dad"].get("response_draft_model"),
+            stage="response_draft",
+        )
+        return response.strip(), stop_reason
 
-        # --- 2b: generate response(s) over the scope + full library ---
-        for sample_index in range(per_prompt):
-            ck = f"{pid}_s{sample_index}"
-            if (pid, sample_index) in done_keys or checkpoint.is_done(ck):
-                continue
+    for (d, sample_index), (response, stop_reason) in zip(
+        pending, utils.parallel_map(draft_response, pending, workers)
+    ):
+        pid = d["prompt_id"]
+        suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
 
-            suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
-            print(f"  Generating response for {pid}{suffix}...")
-            response, stop_reason = api.call_claude(
-                user_message=utils.load_prompt(
-                    prompts_dir / "step2_respond.txt",
-                    library_block=library_block,
-                    scope_block=format_scope(scope),
-                    user_message=d["user_message"],
-                ),
-                return_stop_reason=True,
-                model=config["dad"].get("response_draft_model"),
-                stage="response_draft",
-            )
-            response = response.strip()
+        # A truncated or empty draft must never feed the rewrite step. Skip
+        # without checkpointing so a later --resume retries it (same guard
+        # as step 3).
+        if not response or stop_reason == "max_tokens":
+            why = "truncated at max_tokens" if stop_reason == "max_tokens" else "empty"
+            print(f"    Skipping {pid}{suffix}: draft {why} — not written, will retry on resume.")
+            continue
 
-            # A truncated or empty draft must never feed the rewrite step. Skip
-            # without checkpointing so a later --resume retries it (same guard
-            # as step 3).
-            if not response or stop_reason == "max_tokens":
-                why = "truncated at max_tokens" if stop_reason == "max_tokens" else "empty"
-                print(f"    Skipping {pid}{suffix}: draft {why} — not written, will retry on resume.")
-                continue
-
-            record = {
-                "response_id": str(uuid.uuid4()),
-                "prompt_id": pid,
-                "sample_index": sample_index,
-                "user_message": d["user_message"],
-                "annotation": d.get("annotation", {}),
-                "scope": scope,
-                "entry_ids": library_ids,
-                "assistant_response": response,
-            }
-            results.append(record)
-            done_keys.add((pid, sample_index))
-            utils.append_jsonl(record, output_path)
-            checkpoint.mark_done(ck)
+        print(f"  Generated response for {pid}{suffix}")
+        record = {
+            "response_id": str(uuid.uuid4()),
+            "prompt_id": pid,
+            "sample_index": sample_index,
+            "user_message": d["user_message"],
+            "annotation": d.get("annotation", {}),
+            "scope": scopes[pid]["scope"],
+            "entry_ids": library_ids,
+            "assistant_response": response,
+        }
+        results.append(record)
+        utils.append_jsonl(record, output_path)
+        checkpoint.mark_done(f"{pid}_s{sample_index}")
 
     print(f"  Total responses: {len(results)}.")
     return results

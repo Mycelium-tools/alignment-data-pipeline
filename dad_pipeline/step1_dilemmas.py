@@ -656,6 +656,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     if refine_enabled and not (prompts_dir / "step1_refine.txt").exists():
         raise SystemExit("dad.dilemmas.refine is on but prompts/dad/step1_refine.txt is missing.")
 
+    workers = config.get("workers", 1)
+
     examples = utils.load_jsonl(output_path)
 
     # Optional handwritten seed examples, imported once ahead of generation
@@ -746,21 +748,34 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                             "scenarios_block": scenarios_block}, batches_path)
 
         for p in batch:
-            pid = p["scenario_id"]
-            draft = by_pid.get(pid)
-            if draft is None:
-                print(f"    {pid}: missing from the batch output — will retry.")
-                continue
+            if p["scenario_id"] not in by_pid:
+                print(f"    {p['scenario_id']}: missing from the batch output — will retry.")
+        drafted = [p for p in batch if p["scenario_id"] in by_pid]
 
+        # --- Step 1c (optional): rewrite each prompt text; annotation unchanged.
+        # refine_draft is pure (API call + parse), so the batch's drafts fan out
+        # via parallel_map; all writes stay on this thread, in batch order.
+        # Consumed lazily: each record below is persisted as soon as its refine
+        # result arrives, so a call raising (or the process dying) mid-batch
+        # keeps the finished prompts on disk for --resume.
+        if refine_enabled and drafted:
+            print(f"    [1c] Refining {len(drafted)} draft(s)...")
+            refine_model = config["dad"].get("prompt_refine_model")
+            refinements = utils.parallel_map(
+                lambda p: refine_draft(p, by_pid[p["scenario_id"]], prompts_dir,
+                                       model=refine_model),
+                drafted, workers)
+        else:
+            refinements = (None for _ in drafted)
+
+        for p, refined in zip(drafted, refinements):
+            pid = p["scenario_id"]
+            draft = by_pid[pid]
             ann = _normalize_annotation(draft["annotation"])
 
-            # --- Step 1c (optional): rewrite the prompt text; annotation unchanged ---
             user_message = str(draft["prompt"]).strip()
             refine_notes = None
             if refine_enabled:
-                print(f"    [1c] Refining {pid}...")
-                refined = refine_draft(p, draft, prompts_dir,
-                                       model=config["dad"].get("prompt_refine_model"))
                 if refined is not None:
                     user_message, refine_notes = refined["prompt"], refined["notes"]
                 else:
