@@ -38,9 +38,11 @@ prompt), produced an 11-item decision sheet, got owner rulings, and folded the a
   spawn fresh `codex:codex-rescue` agents); (c) memory file for D8's parked approaches (owner
   said "keep the other possible approaches in memory" — they are recorded in the accumulator
   matrix section, but scratchpad is /tmp — write a small memory file under the memory dir,
-  e.g. `judge-v5-parked-experiments.md`, + MEMORY.md index line); (d) ~~D6/D7 rulings~~ DONE 2026-07-09; (e) task
-  #6 missing-parts pass (agenda: anti-rationalization hygiene + moral-uncertainty handling
-  [D7 — substance owner-decided, keep is no longer task #6's call]; D11 explicitly excluded); (f) gold set → assemble v5a/v5b + engine
+  e.g. `judge-v5-parked-experiments.md`, + MEMORY.md index line); (d) ~~D6/D7 rulings~~ DONE 2026-07-09; (e) ~~task
+  #6 missing-parts pass~~ DONE 2026-07-09 (see TASK #6 section in the accumulator: moral-
+  uncertainty → epistemic B-additions implementing D7; anti-rationalization → narrowed to
+  [asymmetric scrutiny] (reasoning_soundness) + [euphemistic sanitizing] (tone, B-only),
+  owner may veto those two; D11 stayed excluded); (f) gold set → assemble v5a/v5b + engine
   changes → run matrix.
 - **Assembly-time queue** (recorded in rulings section, not yet in any YAML): `novel_pattern`
   metadata field + output_rules exemption (D1); blindness sentence (D3) + final-gate sentence
@@ -72,11 +74,11 @@ accumulator. Not recorded elsewhere:
 
 ## Next action
 Apply D4 change B to `prompts/dad/step6_rewrite.txt` (replacement text = decision sheet D4
-"Exact change B" with the owner's digital-minds reframe), run `pytest`, then run the Codex
-straight+adversarial pair on that repo change AND on the accumulator fold edits (one combined
-review; spawn fresh codex-rescue agents). D6/D7/D9 rulings are collected and folded — start
-task #6 next (agenda: anti-rationalization hygiene + moral-uncertainty handling per the D7
-ruling's decided substance).
+"Exact change B" with the owner's digital-minds reframe — DONE 2026-07-09, pytest green),
+run the Codex straight+adversarial pair on the accumulated changes when available. D6/D7/D9
+ruled and folded; task #6 DONE (design-decision list closed). Next: build the gold set
+(source: sprint doc 11-mode typology examples), then assemble `rubric_dad_v5a/v5b.yaml` +
+engine changes, then run the experiment matrix.
 
 ## References
 - `<SP>` = /private/tmp/claude-501/-Users-ardaenfiyeci-Desktop-alignment-data-pipeline/0e08922f-9047-4118-b1b8-677e5cb583e0/scratchpad
