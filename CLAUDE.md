@@ -61,7 +61,7 @@ SDF supports per-stage model overrides (`sdf.draft_model` / `sdf.rewrite_model` 
 
 DAD likewise: `dad.prompt_draft_model` (1b) / `dad.prompt_refine_model` (1c) / `dad.response_scope_model` (2a) / `dad.response_draft_model` (2b) / `dad.constitution_rewrite_model` (step 3), each falling back to the global `model` — step 3 is the alignment-critical rewrite, spend there first. The global `temperature` (1.0) is wired into every call; generation wants 1.0 (diversity is the product — 1b register variety, 2b independent samples), and `call_claude` accepts a per-call override for eval/debug use.
 
-`workers` sets how many API calls run concurrently within each SDF layer (via `utils.parallel_map`; set to 1 for serial debugging). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
+`workers` sets how many API calls run concurrently within each SDF layer and each fan-out DAD stage — 1c refines (within a batch), step 2 (one worker per dilemma: scope + its responses), step 3 rewrites (all via `utils.parallel_map`; set to 1 for serial debugging). The 1b batch calls stay serial (each batch's misses feed the next call's retry set). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
 
 Rough cost anchor (Sonnet 5, July 2026): a DAD example costs ~$0.20–0.25 end-to-end, so the default 40-example run is ~$9–10; smoke runs of 3–5 examples are under $1.
 

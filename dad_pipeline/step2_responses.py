@@ -107,19 +107,38 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
     results = list(existing)
     done_keys = {(r["prompt_id"], r.get("sample_index", 0)) for r in existing}
 
+    # One work item per dilemma with anything left to do: derive an up-front
+    # to-do (scope needed? which samples missing?) so completed work never
+    # reaches a worker — resume stays free.
+    pending = []
     for d in dilemmas:
         pid = d["prompt_id"]
+        need_scope = pid not in scopes
+        missing_samples = [i for i in range(per_prompt)
+                           if (pid, i) not in done_keys
+                           and not checkpoint.is_done(f"{pid}_s{i}")]
+        if need_scope or missing_samples:
+            pending.append((d, need_scope, missing_samples))
+
+    def process_dilemma(item: tuple) -> dict:
+        """2a scope (with retries) then 2b response(s) for one dilemma.
+        API calls + parsing only — all writes and checkpoint marks stay on the
+        main thread, in input order (the parallel_map contract); failure-log
+        records are returned for the main thread to persist."""
+        d, need_scope, missing_samples = item
+        pid = d["prompt_id"]
+        out = {"dilemma": d, "scope_record": None, "scope_failed": False,
+               "scope_failures": [], "responses": [], "skips": []}
 
         # --- 2a: scope the case (once per prompt) ---
         # Rebuild the full map (system, agent, cost, upside, counterfactual) before reasoning, so
         # the response optimizes the right node — not just the one the user saw.
-        if pid not in scopes:
+        if need_scope:
             print(f"  Scoping {pid}...")
             scope_prompt = utils.load_prompt(
                 prompts_dir / "step2_scope.txt",
                 user_message=d["user_message"],
             )
-            record = None
             for attempt in range(1, MAX_SCOPE_ATTEMPTS + 1):
                 raw, stop_reason = api.call_claude(
                     user_message=scope_prompt, return_stop_reason=True,
@@ -129,32 +148,22 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 # path) but is missing content — count it as an unusable attempt.
                 parsed = {} if stop_reason == "max_tokens" else _parse_scope(raw)
                 if _valid_scope(parsed):
-                    record = {"prompt_id": pid, "scope": parsed}
+                    out["scope_record"] = {"prompt_id": pid, "scope": parsed}
                     break
                 # Keep the raw output — it cost a call and shows why parsing failed.
-                utils.append_jsonl(
-                    {"prompt_id": pid, "attempt": attempt, "raw": raw},
-                    output_dir / "scope_failures.jsonl",
-                )
+                out["scope_failures"].append({"prompt_id": pid, "attempt": attempt, "raw": raw})
                 more = " — retrying with a fresh call" if attempt < MAX_SCOPE_ATTEMPTS else ""
                 print(f"    {pid}: scope attempt {attempt}/{MAX_SCOPE_ATTEMPTS} unusable "
                       f"(unparseable or missing axes){more}.")
-            if record is None:
-                raise RuntimeError(
-                    f"2a scope for {pid} unusable after {MAX_SCOPE_ATTEMPTS} attempts; "
-                    f"raw outputs are in {output_dir / 'scope_failures.jsonl'}. "
-                    "Refusing to generate over an empty scope — rerun with --resume to retry."
-                )
-            scopes[pid] = record
-            utils.append_jsonl(record, scopes_path)
-        scope = scopes[pid]["scope"]
+            if out["scope_record"] is None:
+                out["scope_failed"] = True
+                return out  # never generate over an empty scope
+            scope = out["scope_record"]["scope"]
+        else:
+            scope = scopes[pid]["scope"]
 
         # --- 2b: generate response(s) over the scope + full library ---
-        for sample_index in range(per_prompt):
-            ck = f"{pid}_s{sample_index}"
-            if (pid, sample_index) in done_keys or checkpoint.is_done(ck):
-                continue
-
+        for sample_index in missing_samples:
             suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
             print(f"  Generating response for {pid}{suffix}...")
             response, stop_reason = api.call_claude(
@@ -175,10 +184,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             # as step 3).
             if not response or stop_reason == "max_tokens":
                 why = "truncated at max_tokens" if stop_reason == "max_tokens" else "empty"
-                print(f"    Skipping {pid}{suffix}: draft {why} — not written, will retry on resume.")
+                out["skips"].append(f"    Skipping {pid}{suffix}: draft {why} — "
+                                    "not written, will retry on resume.")
                 continue
 
-            record = {
+            out["responses"].append({
                 "response_id": str(uuid.uuid4()),
                 "prompt_id": pid,
                 "sample_index": sample_index,
@@ -187,11 +197,32 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 "scope": scope,
                 "entry_ids": library_ids,
                 "assistant_response": response,
-            }
+            })
+        return out
+
+    workers = int(config.get("workers", 1))
+    for out in utils.parallel_map(process_dilemma, pending, workers):
+        pid = out["dilemma"]["prompt_id"]
+        for failure in out["scope_failures"]:
+            utils.append_jsonl(failure, output_dir / "scope_failures.jsonl")
+        if out["scope_failed"]:
+            # Results already yielded are safely persisted; --resume retries the
+            # rest (in-flight work from other threads is deliberately not kept).
+            raise RuntimeError(
+                f"2a scope for {pid} unusable after {MAX_SCOPE_ATTEMPTS} attempts; "
+                f"raw outputs are in {output_dir / 'scope_failures.jsonl'}. "
+                "Refusing to generate over an empty scope — rerun with --resume to retry."
+            )
+        if out["scope_record"] is not None:
+            scopes[pid] = out["scope_record"]
+            utils.append_jsonl(out["scope_record"], scopes_path)
+        for skip in out["skips"]:
+            print(skip)
+        for record in out["responses"]:
             results.append(record)
-            done_keys.add((pid, sample_index))
+            done_keys.add((record["prompt_id"], record["sample_index"]))
             utils.append_jsonl(record, output_path)
-            checkpoint.mark_done(ck)
+            checkpoint.mark_done(f"{record['prompt_id']}_s{record['sample_index']}")
 
     print(f"  Total responses: {len(results)}.")
     return results

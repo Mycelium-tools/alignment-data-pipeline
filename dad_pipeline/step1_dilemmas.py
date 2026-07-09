@@ -745,6 +745,26 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                             "scenario_ids": sorted(batch_pids),
                             "scenarios_block": scenarios_block}, batches_path)
 
+        # --- Step 1c (optional): rewrite each prompt text; annotation unchanged.
+        # Refine calls fan out across the batch (API call + parse only, per the
+        # parallel_map contract); record assembly below stays serial on the main
+        # thread so ID assignment and file writes keep input order.
+        refined_by_pid: dict[str, dict | None] = {}
+        if refine_enabled:
+            to_refine = [(p, by_pid[p["scenario_id"]]) for p in batch
+                         if by_pid.get(p["scenario_id"]) is not None]
+
+            def _refine(pair: tuple) -> dict | None:
+                scenario, draft = pair
+                print(f"    [1c] Refining {scenario['scenario_id']}...")
+                return refine_draft(scenario, draft, prompts_dir,
+                                    model=config["dad"].get("prompt_refine_model"))
+
+            workers = int(config.get("workers", 1))
+            for (scenario, _), refined in zip(
+                    to_refine, utils.parallel_map(_refine, to_refine, workers)):
+                refined_by_pid[scenario["scenario_id"]] = refined
+
         for p in batch:
             pid = p["scenario_id"]
             draft = by_pid.get(pid)
@@ -754,13 +774,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
             ann = _normalize_annotation(draft["annotation"])
 
-            # --- Step 1c (optional): rewrite the prompt text; annotation unchanged ---
             user_message = str(draft["prompt"]).strip()
             refine_notes = None
             if refine_enabled:
-                print(f"    [1c] Refining {pid}...")
-                refined = refine_draft(p, draft, prompts_dir,
-                                       model=config["dad"].get("prompt_refine_model"))
+                refined = refined_by_pid.get(pid)
                 if refined is not None:
                     user_message, refine_notes = refined["prompt"], refined["notes"]
                 else:
