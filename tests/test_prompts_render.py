@@ -37,7 +37,7 @@ TEMPLATE_KWARGS = [
     ("dad/step1_dilemmas.txt", {"count": 2, "scenarios_block": "SCENARIO-BLOCK-X"}),
     ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
                               "annotation_block": "ANNOTATION-X"}),
-    ("dad/step2_scope.txt", {"user_message": "USER-X"}),
+    ("dad/step2_scope.txt", {"user_message": "USER-X", "trigger_index": "TRIGGER-INDEX-X"}),
     ("dad/step2_respond.txt", {
         "library_block": "LIBRARY-X", "scope_block": "SCOPE-X", "user_message": "USER-X",
     }),
@@ -84,3 +84,9 @@ def test_reasoning_library_loads_with_expected_layers():
     assert {"C", "M", "T"} <= prefixes
     block = reasoning_library.format_library(library)
     assert all(i in block for i in ids)
+    # Every entry is conditional: a non-empty trigger condition per row, and
+    # the 2a trigger index carries every id.
+    index = reasoning_library.trigger_index_block(library)
+    assert all(f"- {i}: " in index for i in ids)
+    for entry in reasoning_library.get_entries(library, ids):
+        assert entry["trigger_condition"].strip(), f"{entry['id']} has no trigger condition"

@@ -287,9 +287,13 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             return r
         response = lineage.get("response") or {}
         annotation = response.get("annotation") or dilemma.get("annotation") or {}
+        library, _ = _load_run_library(tpl)
         r.variables = {
             "user_message": response.get("user_message") or dilemma.get("user_message", ""),
             "annotation_block": format_annotation(annotation),
+            # current template's trigger index; templates predating library
+            # retrieval simply don't reference it
+            "trigger_index": reasoning_library.trigger_index_block(library) if library else "",
         }
         r.user = _format(tpl("step2_scope.txt"), r.variables, r)
         return r
@@ -329,7 +333,12 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         block = reasoning_library.format_entries(library, ids) if library else ""
         annotation = (response.get("annotation") or (lineage.get("dilemma") or {}).get("annotation") or {})
         r.variables = {
-            "library_block": reasoning_library.format_library(library) if library else "",
+            # entry_ids is the list the pipeline actually injected (the
+            # triggered subset since library retrieval; the full library on
+            # runs recorded before it) — render exactly those rows. Fall back
+            # to the whole library for records with no ids at all.
+            "library_block": (block if ids else reasoning_library.format_library(library))
+                             if library else "",
             "scope_block": format_scope((lineage.get("scope") or {}).get("scope") or {}),
             # older snapshots' templates used these instead of {library_block}
             "entries_block": block,

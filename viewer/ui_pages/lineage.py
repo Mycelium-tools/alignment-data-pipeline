@@ -304,12 +304,24 @@ else:
                                stats=("prompt_refine", scenario_id))
 
                 def step2_scope_output():
-                    sc = (lin.get("scope") or {}).get("scope")
+                    rec = lin.get("scope") or {}
+                    sc = rec.get("scope")
                     if sc:
                         common.json_block(sc, key="s2a", label="scope", expanded=True)
                     else:
                         st.caption("not reached")
-                stage_expander("Step 2a — scope the case (system, agent, cost, upside, counterfactual)",
+                    # Library retrieval provenance: the full rows whose trigger
+                    # conditions fired for this prompt (runs since retrieval).
+                    trig = rec.get("triggered_entries")
+                    if trig:
+                        n = len(trig)
+                        if rec.get("selection_fallback"):
+                            st.caption(":material/warning: selection fallback — the model's "
+                                       "triggered_entries was missing or unusable, so the whole "
+                                       "library was injected")
+                        common.json_block(trig, key="s2a_trig",
+                                          label=f"triggered library entries ({n})")
+                stage_expander("Step 2a — scope the case + trigger library entries",
                                "step2_scope", lin, step2_scope_output,
                                stats=("response_scope", pid))
 

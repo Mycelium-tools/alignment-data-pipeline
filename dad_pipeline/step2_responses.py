@@ -5,16 +5,23 @@ is human reference about the library, not read by the pipeline):
 
 - 2a scope: rebuild the full map of the case from the user's message, along
   the five axes prompts/dad/step2_scope.txt defines (mirrored in _SCOPE_AXES
-  below — keep the two in sync). One record per prompt in step2/scopes.jsonl.
-  A scope that fails to parse or is missing an axis is retried with a fresh
-  call (raw outputs kept in step2/scope_failures.jsonl); after
+  below — keep the two in sync), and evaluate the reasoning library's trigger
+  index against the case, returning the ids of the entries that fired. One
+  record per prompt in step2/scopes.jsonl carrying the scope, the selected
+  entry_ids, and the full triggered rows (the retrieval provenance the viewer
+  shows). A scope that fails to parse or is missing an axis is retried with a
+  fresh call (raw outputs kept in step2/scope_failures.jsonl); after
   MAX_SCOPE_ATTEMPTS the run stops rather than generate a response over an
-  empty scope, which would silently optimize the wrong node.
-- 2b respond: generate the response over the scope map, following the spec in
-  prompts/dad/step2_respond.txt. The whole library is embedded in that prompt,
-  which IS the generation guidance — no separate system prompt, and the
-  annotation is not passed: the response reasons from scope + library + user
-  message.
+  empty scope, which would silently optimize the wrong node. The selection is
+  the opposite — fail-open: a missing/empty/garbled triggered_entries list
+  falls back to the whole library (selection_fallback: true on the record) and
+  never retries, since a degraded selection only costs tokens, not quality.
+- 2b respond: generate the response over the scope map plus the triggered
+  library rows, following the spec in prompts/dad/step2_respond.txt. That
+  prompt IS the generation guidance — no separate system prompt, and the
+  annotation is not passed: the response reasons from scope + triggered
+  entries + user message. Each response record's entry_ids is the list
+  actually injected into its prompt.
 
 The library and scope are sampling scaffolding: never named in the response,
 stripped before training records are written. Step 3 then rewrites against the
@@ -85,12 +92,27 @@ def _valid_scope(scope) -> bool:
     )
 
 
+def _select_entries(scope: dict, library_ids: list[str]) -> tuple[list[str], bool]:
+    """Pop the model's triggered_entries claim off the parsed 2a output and
+    normalize it: known ids only, deduped, in library order. Returns
+    (ids, fallback). Fail-open: a missing, empty, or garbled selection returns
+    the whole library — degraded selection costs tokens, never quality — and
+    is flagged so the record shows the selection didn't come from the model."""
+    raw = scope.pop("triggered_entries", None)
+    if isinstance(raw, list):
+        wanted = {str(x).strip() for x in raw}
+        ids = [i for i in library_ids if i in wanted]
+        if ids:
+            return ids, False
+    return list(library_ids), True
+
+
 def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
     library = reasoning_library.load(prompts_dir)
-    # The whole library (conduct C*, core moves M*, topic T*) goes into the
-    # response prompt; the prompt itself is the generation guidance, so there is
-    # no separate system prompt (per prompts/dad/step2_respond.txt).
-    library_block = reasoning_library.format_library(library)
+    # 2a evaluates the lightweight trigger index; 2b gets only the rows that
+    # fired (the prompt itself is the generation guidance, so there is no
+    # separate system prompt — per prompts/dad/step2_respond.txt).
+    trigger_index = reasoning_library.trigger_index_block(library)
     library_ids = reasoning_library.all_ids(library)
     per_prompt = int(config["dad"].get("responses", {}).get("per_prompt", 1))
 
@@ -140,6 +162,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             scope_prompt = utils.load_prompt(
                 prompts_dir / "step2_scope.txt",
                 user_message=d["user_message"],
+                trigger_index=trigger_index,
             )
             for attempt in range(1, MAX_SCOPE_ATTEMPTS + 1):
                 raw, stop_reason = api.call_claude(
@@ -150,7 +173,15 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 # path) but is missing content — count it as an unusable attempt.
                 parsed = {} if stop_reason == "max_tokens" else _parse_scope(raw)
                 if _valid_scope(parsed):
-                    out["scope_record"] = {"prompt_id": pid, "scope": parsed}
+                    # _select_entries pops triggered_entries off `parsed`, so the
+                    # stored scope keeps only the five axes; the selection and
+                    # the full triggered rows land beside it as provenance.
+                    ids, fallback = _select_entries(parsed, library_ids)
+                    out["scope_record"] = {
+                        "prompt_id": pid, "scope": parsed, "entry_ids": ids,
+                        "selection_fallback": fallback,
+                        "triggered_entries": reasoning_library.get_entries(library, ids),
+                    }
                     break
                 # Keep the raw output — it cost a call and shows why parsing failed.
                 out["scope_failures"].append({"prompt_id": pid, "attempt": attempt, "raw": raw})
@@ -160,11 +191,16 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             if out["scope_record"] is None:
                 out["scope_failed"] = True
                 return out  # never generate over an empty scope
-            scope = out["scope_record"]["scope"]
+            scope_rec = out["scope_record"]
         else:
-            scope = scopes[pid]["scope"]
+            scope_rec = scopes[pid]
+        scope = scope_rec["scope"]
+        # Pre-selection scopes.jsonl records have no entry_ids — fall open to
+        # the whole library, same as an unusable selection.
+        entry_ids = scope_rec.get("entry_ids") or library_ids
+        library_block = reasoning_library.format_entries(library, entry_ids)
 
-        # --- 2b: generate response(s) over the scope + full library ---
+        # --- 2b: generate response(s) over the scope + triggered entries ---
         for sample_index in missing_samples:
             suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
             print(f"  Generating response for {pid}{suffix}...")
@@ -198,7 +234,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 "user_message": d["user_message"],
                 "annotation": d.get("annotation", {}),
                 "scope": scope,
-                "entry_ids": library_ids,
+                "entry_ids": entry_ids,
                 "assistant_response": response,
             })
         return out

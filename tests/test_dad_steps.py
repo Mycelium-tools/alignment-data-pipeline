@@ -15,7 +15,7 @@ import threading
 import pytest
 
 from conftest import dad_scenario_reply
-from dad_pipeline import step1_dilemmas, step2_responses, step3_rewrite
+from dad_pipeline import reasoning_library, step1_dilemmas, step2_responses, step3_rewrite
 from shared import utils
 
 
@@ -230,6 +230,24 @@ class TestParseScope:
         assert not step2_responses._valid_scope(legacy)
 
 
+class TestSelectEntries:
+    LIB_IDS = ["C1", "C2", "M1", "T1"]
+
+    def test_normalizes_to_library_order_and_drops_unknowns(self):
+        scope = {"triggered_entries": ["T1", "BOGUS", "C1", "C1"]}
+        ids, fallback = step2_responses._select_entries(scope, self.LIB_IDS)
+        assert ids == ["C1", "T1"]  # library order, deduped, unknowns dropped
+        assert fallback is False
+        assert "triggered_entries" not in scope  # popped off the stored scope
+
+    def test_missing_empty_or_garbled_selection_falls_open_to_whole_library(self):
+        for bad in ({}, {"triggered_entries": []}, {"triggered_entries": "C1"},
+                    {"triggered_entries": ["BOGUS"]}):
+            ids, fallback = step2_responses._select_entries(dict(bad), self.LIB_IDS)
+            assert ids == self.LIB_IDS
+            assert fallback is True
+
+
 def _dilemma(pid="AW-0001"):
     return {"prompt_id": pid, "user_message": "User dilemma text.",
             "annotation": {"direction": "Mixed"}}
@@ -295,6 +313,93 @@ class TestStep2Run:
         results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
         assert calls == []
         assert len(results) == 1
+
+    def test_triggered_entries_are_selected_recorded_and_injected(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        library = reasoning_library.load(prompts_dad)
+        lib_ids = reasoning_library.all_ids(library)
+        claims = {e["id"]: e["claim"] for e in reasoning_library.get_entries(library, lib_ids)}
+        picked, unpicked = lib_ids[0], lib_ids[-1]
+
+        def dispatch(user_message, **kw):
+            if "scoping an animal-welfare advice dilemma" in user_message:
+                return json.dumps({**json.loads(GOOD_SCOPE),
+                                   "triggered_entries": [picked, "BOGUS"]})
+            return "Draft response."
+
+        calls = stub_claude(dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        # the trigger index (id + condition) reached the 2a scope prompt
+        first_entry = reasoning_library.get_entries(library, [picked])[0]
+        assert first_entry["trigger_condition"] in calls[0]["user_message"]
+
+        # provenance: one scopes.jsonl record carries the selection + full rows
+        rec = utils.load_jsonl(tmp_path / "scopes.jsonl")[0]
+        assert rec["entry_ids"] == [picked]  # unknown id dropped
+        assert rec["selection_fallback"] is False
+        assert [e["id"] for e in rec["triggered_entries"]] == [picked]
+        assert rec["triggered_entries"][0]["claim"] == claims[picked]
+        assert "triggered_entries" not in rec["scope"]  # scope keeps the five axes
+
+        # 2b saw only the triggered row; the record names what was injected
+        respond_call = calls[1]["user_message"]
+        assert claims[picked] in respond_call
+        assert claims[unpicked] not in respond_call
+        assert results[0]["entry_ids"] == [picked]
+
+    def test_unusable_selection_falls_open_to_whole_library(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # GOOD_SCOPE has no triggered_entries at all — valid axes, no selection.
+        # The scope is kept (never re-billed) and 2b gets the full library.
+        calls = stub_claude(_dad_step2_dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        library = reasoning_library.load(prompts_dad)
+        lib_ids = reasoning_library.all_ids(library)
+        rec = utils.load_jsonl(tmp_path / "scopes.jsonl")[0]
+        assert rec["entry_ids"] == lib_ids
+        assert rec["selection_fallback"] is True
+        assert results[0]["entry_ids"] == lib_ids
+        assert len(calls) == 2  # fail-open never burns a retry
+
+    def test_resume_reuses_stored_selection_for_pending_responses(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Scope + selection already checkpointed, response still pending (the
+        # died-mid-2b shape): resume must rebuild the 2b prompt from the STORED
+        # entry_ids — one call, no re-scope, no full-library drift.
+        library = reasoning_library.load(prompts_dad)
+        lib_ids = reasoning_library.all_ids(library)
+        claims = {e["id"]: e["claim"] for e in reasoning_library.get_entries(library, lib_ids)}
+        picked, unpicked = lib_ids[0], lib_ids[-1]
+        utils.append_jsonl({
+            "prompt_id": "AW-0001", "scope": json.loads(GOOD_SCOPE),
+            "entry_ids": [picked], "selection_fallback": False,
+            "triggered_entries": reasoning_library.get_entries(library, [picked]),
+        }, tmp_path / "scopes.jsonl")
+
+        calls = stub_claude(["Draft response."])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        assert len(calls) == 1  # 2b only
+        assert claims[picked] in calls[0]["user_message"]
+        assert claims[unpicked] not in calls[0]["user_message"]
+        assert results[0]["entry_ids"] == [picked]
+
+    def test_pre_selection_scope_records_inject_whole_library(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # scopes.jsonl written before library retrieval existed has no
+        # entry_ids — resuming such a run falls open to the full library.
+        utils.append_jsonl({"prompt_id": "AW-0001", "scope": json.loads(GOOD_SCOPE)},
+                           tmp_path / "scopes.jsonl")
+        stub_claude(["Draft response."])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+        assert results[0]["entry_ids"] == reasoning_library.all_ids(
+            reasoning_library.load(prompts_dad))
 
     def test_dilemmas_fan_out_concurrently_in_input_order(
         self, tiny_config, prompts_dad, tmp_path, stub_claude

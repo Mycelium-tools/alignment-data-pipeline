@@ -3,9 +3,10 @@
 
 Steps: 1 dilemma prompts (1a scenario generation: stratified scenarios sampled
 per example; 1b first attempt drafted to fit each scenario; 1c latent-welfare
-rewrite) → 2 responses (2a scope the case from the user's message; 2b respond
-over the scope with the full reasoning library embedded) → 3 rewrite against
-the distilled constitution principles (the alignment-critical pass).
+rewrite) → 2 responses (2a scope the case from the user's message and flag
+which reasoning-library trigger conditions fire; 2b respond over the scope
+plus the triggered library rows) → 3 rewrite against the distilled
+constitution principles (the alignment-critical pass).
 """
 
 import argparse
