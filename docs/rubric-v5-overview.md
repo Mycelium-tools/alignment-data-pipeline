@@ -133,30 +133,14 @@ single uniform score, we'll revisit.
 ## A vs B — what differs and why
 
 Same standard, two granularities. **A (9 dims)** folds second-order scope and inference
-validity into `welfare_reasoning`, because in the v4.3 calibration run the reasoning-family
-scores moved almost in lockstep (pairwise correlation 0.75–0.91) — separate numbers may be
-measuring one underlying judgment. **B (11 dims)** keeps them standalone and additionally
-carries three experimental ethics signals from the research pass (moral overclaim on open
-normative questions; asymmetric scrutiny; euphemistic sanitizing), so the finer, more
-ethics-extended instrument rides one arm of the test.
+validity into `welfare_reasoning`; **B (11 dims)** keeps them as their own dimensions and
+adds a few extra ethics checks.
 
-## How the A/B question gets settled
+We'll run both and see whether the added categories actually pick up signal the merged
+version misses. In the earlier data they mostly didn't — the reasoning scores moved almost
+in lockstep — so the burden is on the finer version to earn its extra categories; if it
+doesn't, they fold back into A.
 
-Both versions run over the same fixed record corpus already judged by v4.3 (plus an M
-arm — a minimal 4-dimension judge — as a lower-bound control), 3 runs each at temperature 0
-with majority vote. Pre-registered criteria, decided before any results:
-
-1. **Fold-back test:** if B's split dimensions score >~0.8 correlated with
-   `welfare_reasoning`, they duplicate it — fold back, A wins. If they independently catch
-   failures A misses on the labeled failure catalog, they earn their slots.
-2. **Detection test:** hit rate against the analyst-labeled failure catalog (proxy labels
-   being promoted to verified ones) — does the finer instrument flag the right failure on
-   records known to contain one, without new false positives?
-3. **Discrimination + stability:** score spread vs the v4.3 baseline (which bunched at the
-   top) and 3-run self-consistency; a dimension that adds noise instead of separation is cut.
-4. The three experimental B-only signals graduate to both versions only if they fire with
-   precision in the run; the pass/fail thresholds and floors get tuned on the observed
-   score distributions.
 
 ## How the constitution gets into the judge — also an experiment
 
