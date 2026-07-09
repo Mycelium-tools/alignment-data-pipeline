@@ -171,6 +171,30 @@ class TestRunDirs:
             utils.resolve_run_dir(tmp_path / "does-not-exist")
 
 
+class TestWarnIfBackendChanged:
+    def test_warns_when_live_backend_differs_from_manifest(self, tmp_path, capsys):
+        run_dir = utils.create_run_dir(tmp_path / "runs", label="dev", config={"backend": "claude_code"})
+        utils.warn_if_backend_changed(run_dir, {"backend": "api"})
+        assert "different backend" in capsys.readouterr().err
+
+    def test_silent_when_backend_matches(self, tmp_path, capsys):
+        run_dir = utils.create_run_dir(tmp_path / "runs", label="dev", config={"backend": "claude_code"})
+        utils.warn_if_backend_changed(run_dir, {"backend": "claude_code"})
+        assert capsys.readouterr().err == ""
+
+    def test_manifest_without_backend_key_treated_as_api(self, tmp_path, capsys):
+        # A run created before the backend key existed defaults to api.
+        run_dir = utils.create_run_dir(tmp_path / "runs", label="dev", config={})
+        utils.warn_if_backend_changed(run_dir, {"backend": "api"})
+        assert capsys.readouterr().err == ""
+        utils.warn_if_backend_changed(run_dir, {"backend": "claude_code"})
+        assert "different backend" in capsys.readouterr().err
+
+    def test_missing_manifest_is_silent(self, tmp_path, capsys):
+        utils.warn_if_backend_changed(tmp_path / "no-such-run", {"backend": "api"})
+        assert capsys.readouterr().err == ""
+
+
 class TestResolveConstitutionDir:
     def test_returns_sibling_constitution_for_snapshot_prompts(self, tmp_path):
         prompts = tmp_path / "inputs" / "prompts"

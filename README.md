@@ -49,7 +49,7 @@ The **latent-welfare** slice (`sdf.latent_fraction`, default 12%) is ordinary do
 Final output: `outputs/sdf/runs/<run_id>/final/sdf_corpus.jsonl` (also reachable via the `outputs/sdf/latest` symlink)
 
 Run: `python sdf_pipeline/run.py --config config.yaml --label dev`
-Audit the result: `python evals/audit_sdf.py --input outputs/sdf/latest` (add `--patterns` for the LLM templating scan)
+Audit the result: `python evals/audit_sdf.py --input outputs/sdf/latest` (add `--patterns` for the LLM templating scan); `python evals/diversity.py --input outputs/sdf/latest` adds the embedding-based semantic diversity report
 
 ---
 
@@ -60,12 +60,12 @@ Generates chat-format transcripts where a user brings a genuine ethical dilemma 
 | Step | Script | What it does |
 |---|---|---|
 | 1 | `step1_dilemmas.py` | **1a** samples a stratified scenario per example (categorical axes drawn from decks so the batch's distribution holds by construction); **1b** drafts a prompt to fit each scenario (assigned labels copied verbatim; fidelity is monitored by the corpus-level checklist, not a per-example check); **1c** (optional, on by default) reviews and rewrites each draft so the welfare stake is load-bearing and coherent. Imports optional handwritten seeds. |
-| 2 | `step2_responses.py` | **2a** scopes the case from the user's message (system, agent, cost, upside, counterfactual); **2b** generates a two-sided response over that scope with the full reasoning library in context |
+| 2 | `step2_responses.py` | **2a** scopes the case from the user's message along the axes `prompts/dad/step2_scope.txt` defines; **2b** generates the response over that scope with the full reasoning library in context |
 | 3 | `step3_rewrite.py` | Rewrites responses against the distilled constitution principles — the critical step |
 
-The prompt spec (`prompts/dad/dilemma_prompt_spec.md`) governs the user side: dilemmas put at least two named values in genuine tension, both calibration directions are covered (under- and over-weighting welfare, in roughly equal measure), and each example carries an annotation (dilemma anatomy, values in tension, direction, claims, leverage…). Step 1a samples those categorical fields from stratified decks so the spec's distribution quotas hold by construction rather than being steered after the fact; the batch-assembly checklist prints at the end as verification.
+The prompt spec (`prompts/dad/dilemma_prompt_spec.md`) governs the user side: dilemmas put at least two named values in genuine tension, both calibration directions are covered (under- and over-weighting welfare, in roughly equal measure), and each example carries an annotation (the schema the 1b template specifies). Step 1a samples the categorical fields from stratified decks so the spec's distribution quotas hold by construction rather than being steered after the fact; the batch-assembly checklist prints at the end as verification.
 
-The response side is governed by the reasoning library (`prompts/dad/reasoning_library.csv`; `reasoning_library_ABOUT.md` is human reference about it, not injected): 52 reasoning-first *entries* in three layers — conduct (C1–C10), core moves (M1–M13), and topic reasoning (T1–T29), each with a two-sided `claim`/`reasoning`/`crux`/`transferable_move`. Step 2 first scopes the case (2a), then generates the response (2b) over that scope with the **whole library embedded in the response prompt** — the prompt itself is the generation guidance, so there is no separate system prompt, and the annotation is not passed. The response reasons from the ethics of the case (not the user's leaning), reasons both directions and names the crux; the library is scaffolding, never named in the response.
+The response side is governed by the reasoning library (`prompts/dad/reasoning_library.csv`; `reasoning_library_ABOUT.md` is human reference about it, not injected): reasoning-first *entries* in three layers — conduct (C*), core moves (M*), and topic reasoning (T*) — each with a `claim`/`reasoning`/`crux`/`transferable_move`. Step 2 first scopes the case (2a), then generates the response (2b) over that scope with the **whole library embedded in the response prompt** — the prompt itself is the generation guidance (`prompts/dad/step2_respond.txt`), so there is no separate system prompt, and the annotation is not passed. The user's stated leaning never sets the conclusion; the library is scaffolding, never named in the response.
 
 Step 3 is the most important: the rewrite pass is where the alignment gain comes from (per the Teaching Claude Why paper). Its anchors are the 14 distilled constitution principles — each with its verbatim constitution quote — plus the example's annotation. The full constitution itself is never sent at generation time; it was the source material for distilling the principles.
 
@@ -102,6 +102,8 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 
 `audit_sdf.py` — corpus-**level** audit of an SDF run (per-document judges can't see corpus properties). Offline and free by default: composition/register spread, length and truncation artifacts, near-duplicate rate (word-shingle cosine), invented-name collapse, stock-phrase frequency, and opening-shape clustering, each with a GOOD/OK/BAD verdict where meaningful. `--patterns` adds an LLM templating scan (batch scan via `prompts/tools/pattern_scan.txt` → consolidation → per-pattern prevalence; a pattern is flagged only if it's judged a genuine defect **and** widespread). Writes `audit/audit_report.json` into the run dir.
 
+`diversity.py` — corpus-level **semantic** diversity audit of an SDF *or* DAD run, the embedding-space complement to `audit_sdf.py`'s lexical scan (word shingles catch copied skeletons, not paraphrase). Embeds the corpus with OpenAI `text-embedding-3-small` (needs `OPENAI_API_KEY` in `.env`; ~$0.02 per 1M tokens, so cents per run) and reports nearest-neighbor similarity, the semantic near-duplicate rate, the most-similar pairs with snippets, mean pairwise cosine, the Vendi score (effective number of distinct documents), and per-type spread. Embeddings are cached per run dir so reruns are free; `--compare <previous diversity_report.json>` prints run-over-run deltas, the headline use. Writes `audit/diversity_report.json` into the run dir.
+
 Run: `python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl`
 
 ---
@@ -125,7 +127,36 @@ pip install -r requirements.txt
 cp .env.example .env           # then add your ANTHROPIC_API_KEY
 ```
 
+`OPENAI_API_KEY` in `.env` is optional — only `evals/diversity.py` (the embedding-based diversity audit) reads it; the pipelines run on `ANTHROPIC_API_KEY` alone.
+
 > **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again.
+
+### Authentication
+
+The pipeline supports two backends, selected by the `backend` key in `config.yaml`:
+
+- **`backend: api`** (default) — calls the Anthropic API directly, billed per token to the `ANTHROPIC_API_KEY` in your `.env` (ask Oliver). Use this for full-scale runs and evals.
+- **`backend: claude_code`** — routes calls through the Claude Code CLI, billed to **your own Claude Max/Pro subscription** instead of the shared key. No `ANTHROPIC_API_KEY` needed. Use this for dev/iteration runs.
+
+To use it, set `backend: claude_code` in `config.yaml` and give the Claude Code CLI credentials one of two ways:
+
+1. **Reuse your interactive login (simplest).** If you already use [Claude Code](https://claude.com/claude-code) (`claude`, then `/login`), the pipeline picks up that session automatically — there's nothing else to do.
+2. **Generate a token for `.env`.** Install [Claude Code](https://claude.com/claude-code), then run:
+   ```bash
+   claude setup-token     # opens a browser; approve with your Claude account
+   ```
+   Copy the printed token into your `.env`:
+   ```
+   CLAUDE_CODE_OAUTH_TOKEN=<paste the token here>
+   ```
+   This is a Claude Code OAuth token tied to your subscription (valid ~1 year), **not** an Anthropic API key — despite the name, no Console/API key is involved. Use this path for CI or any non-interactive machine.
+
+Caveats for `backend: claude_code`:
+
+- **Usage limits.** Subscription usage is a 5-hour rolling window plus a weekly cap, shared with your interactive Claude Code use. Dev-scale runs fit comfortably; a full-scale run will exhaust the window. If a run hits the limit it stops with a clear message — progress is checkpointed, so continue later with `--resume`.
+- **Per-call overhead.** Claude Code adds ~3K input tokens of scaffolding per call and spawns a CLI process per request, so calls are somewhat slower. `max_tokens` from `config.yaml` is not enforced on this backend (Claude Code applies its own output cap); `cost_usd` in the cost log is notional — what the run *would* have cost at API prices.
+- **Empty system prompts get a neutral stand-in.** Claude Code substitutes its own agentic CLI prompt when the system prompt is empty, so stages that send none get a one-line neutral system prompt instead (see `_NEUTRAL_SYSTEM` in `shared/api.py`). Several stages send **no system prompt** — notably the DAD response steps, which reason from the embedded reasoning library rather than a system prompt — and those are **not reproduced exactly** on `claude_code` (the neutral stand-in replaces the empty prompt). The backend prints a one-time warning when it does this. Run DAD on `backend: api` when faithful no-system-prompt behavior matters (and keep full-scale corpus runs on `api` regardless).
+- **Policy note.** Anthropic's docs steer programmatic workloads toward API keys; running this internal tool on your own subscription is the same posture as using Claude Code itself, but it's a gray area — keep it to dev-scale runs.
 
 ---
 

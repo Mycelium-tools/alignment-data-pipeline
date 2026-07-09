@@ -1,9 +1,10 @@
 """Step 3: Rewrite responses into training-ready form — the alignment-critical pass.
 
-The rewrite is anchored on the 14 distilled constitution principles (each with
-its verbatim constitution quote) plus the example's step-1 annotation. No
-system prompt is sent: the full constitution was context for distilling the
-principles, not a per-call dependency.
+The rewrite is anchored on the distilled constitution principles (each with
+its verbatim constitution quote), per prompts/dad/step3_rewrite.txt. No
+system prompt is sent, and the step-1 annotation is not passed (it rides
+along in the audit records for inspection only): the full constitution was
+context for distilling the principles, not a per-call dependency.
 """
 
 import uuid
@@ -13,7 +14,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils, constitution_loader
-from dad_pipeline.step1_dilemmas import format_annotation
 
 
 def run(
@@ -40,19 +40,17 @@ def run(
     results = list(existing_audit)
     done_response_ids = {r["response_id"] for r in results}
 
-    for resp in kept_responses:
-        rid = resp["response_id"]
-        if rid in done_response_ids or checkpoint.is_done(rid):
-            continue
+    pending = [r for r in kept_responses
+               if r["response_id"] not in done_response_ids
+               and not checkpoint.is_done(r["response_id"])]
 
-        annotation = resp.get("annotation") or {}
-
+    def rewrite_response(resp: dict) -> dict:
+        """API call + parsing only — all writes and checkpoint marks stay on
+        the main thread, in input order (the parallel_map contract)."""
         print(f"  Rewriting response for {resp['prompt_id']}...")
-
         prompt = utils.load_prompt(
             prompts_dir / "step3_rewrite.txt",
             principles_block=principles_block,
-            annotation_block=format_annotation(annotation),
             user_message=resp["user_message"],
             draft_response=resp["assistant_response"],
         )
@@ -60,7 +58,7 @@ def run(
         rewritten, stop_reason = api.call_claude(
             user_message=prompt, max_tokens=4000, return_stop_reason=True,
             model=config["dad"].get("constitution_rewrite_model"),
-            stage="constitution_rewrite", item_id=rid)
+            stage="constitution_rewrite", item_id=resp["response_id"])
         # A legitimately long rewrite can exceed the cap; retry once with a
         # doubled budget before deferring, so long-form cases aren't silently
         # re-skipped on every resume.
@@ -69,8 +67,14 @@ def run(
             rewritten, stop_reason = api.call_claude(
                 user_message=prompt, max_tokens=8000, return_stop_reason=True,
                 model=config["dad"].get("constitution_rewrite_model"),
-                stage="constitution_rewrite", item_id=rid)
-        rewritten = rewritten.strip()
+                stage="constitution_rewrite", item_id=resp["response_id"])
+        return {"resp": resp, "rewritten": rewritten.strip(), "stop_reason": stop_reason}
+
+    workers = int(config.get("workers", 1))
+    for out in utils.parallel_map(rewrite_response, pending, workers):
+        resp, rewritten, stop_reason = out["resp"], out["rewritten"], out["stop_reason"]
+        rid = resp["response_id"]
+        annotation = resp.get("annotation") or {}
 
         # A truncated (max_tokens) or empty rewrite must never become a training
         # record. Skip it without checkpointing so a later --resume retries it,

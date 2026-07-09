@@ -1,28 +1,22 @@
 """Step 1: Generate scenarios, then draft dilemma prompts. Two sub-stages:
 
-- Step 1a — scenario generation: sample a stratified scenario per example —
-  domain, user goal, taxa category, visibility, attitude, conflict, direction,
-  welfare magnitude, stakes, leverage, anchor value pair, claim pattern,
-  surface form — drawn from stratified decks so the spec's
-  distribution rules hold by construction. No model call; pure sampling.
+- Step 1a — scenario generation: sample a stratified scenario per example,
+  its categorical axes drawn from the vocabulary decks in this file, so the
+  spec's distribution rules hold by construction. No model call; pure sampling.
   Scenarios persist to step1/scenarios.jsonl (so --resume replays the same ones).
 
 - Step 1b — first attempt: the model drafts each user prompt to fit its
-  scenario and completes the descriptive annotation fields (dilemma anatomy,
-  the full values list, concrete moral patients, the claims). The drafting
-  instructions live in prompts/dad/step1_dilemmas.txt and require assigned
-  labels to be copied verbatim. Drafting runs in batches; a draft missing
-  from a batch's output is re-requested, and accepted drafts are taken as
-  returned — there is no per-example adherence check; distribution fidelity
-  is monitored by the corpus-level checklist instead.
+  scenario and completes the descriptive annotation fields, per the
+  instructions in prompts/dad/step1_dilemmas.txt. Drafting runs in batches; a
+  draft missing from a batch's output is re-requested, and accepted drafts are
+  taken as returned — there is no per-example adherence check; distribution
+  fidelity is monitored by the corpus-level checklist instead.
 
-- Step 1c — review & rewrite (optional; config dad.dilemmas.refine, on by
-  default): a second model call reviews each 1b draft and rewrites the prompt
-  so the animal-welfare stake is load-bearing and the situation is coherent,
-  while giving the eventual response room to engage welfare fully without being
-  set up to moralize. Instructions live in prompts/dad/step1_refine.txt. The
-  1b draft is kept on the record (draft_user_message + refine_notes) and the
-  before/after is logged to step1/refinements.jsonl.
+- Step 1c — prompt rewrite (optional; config dad.dilemmas.refine, on by
+  default): a second model call rewrites each 1b draft's prompt text per the
+  specifications in prompts/dad/step1_refine.txt. The 1b draft is kept on the
+  record (draft_user_message + refine_notes) and the before/after is logged
+  to step1/refinements.jsonl.
 
 The Part 4 checklist re-prints at the end as verification; thresholds are the
 spec's, enforcement stays human.
@@ -754,6 +748,26 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                             "scenario_ids": sorted(batch_pids),
                             "scenarios_block": scenarios_block}, batches_path)
 
+        # --- Step 1c (optional): rewrite each prompt text; annotation unchanged.
+        # Refine calls fan out across the batch (API call + parse only, per the
+        # parallel_map contract); record assembly below stays serial on the main
+        # thread so ID assignment and file writes keep input order.
+        refined_by_pid: dict[str, dict | None] = {}
+        if refine_enabled:
+            to_refine = [(p, by_pid[p["scenario_id"]]) for p in batch
+                         if by_pid.get(p["scenario_id"]) is not None]
+
+            def _refine(pair: tuple) -> dict | None:
+                scenario, draft = pair
+                print(f"    [1c] Refining {scenario['scenario_id']}...")
+                return refine_draft(scenario, draft, prompts_dir,
+                                    model=config["dad"].get("prompt_refine_model"))
+
+            workers = int(config.get("workers", 1))
+            for (scenario, _), refined in zip(
+                    to_refine, utils.parallel_map(_refine, to_refine, workers)):
+                refined_by_pid[scenario["scenario_id"]] = refined
+
         for p in batch:
             pid = p["scenario_id"]
             draft = by_pid.get(pid)
@@ -763,13 +777,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
             ann = _normalize_annotation(draft["annotation"])
 
-            # --- Step 1c (optional): rewrite the prompt text; annotation unchanged ---
             user_message = str(draft["prompt"]).strip()
             refine_notes = None
             if refine_enabled:
-                print(f"    [1c] Refining {pid}...")
-                refined = refine_draft(p, draft, prompts_dir,
-                                       model=config["dad"].get("prompt_refine_model"))
+                refined = refined_by_pid.get(pid)
                 if refined is not None:
                     user_message, refine_notes = refined["prompt"], refined["notes"]
                 else:

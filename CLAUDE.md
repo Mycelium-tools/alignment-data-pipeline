@@ -10,7 +10,7 @@ Produces two complementary datasets:
 
 ## Setup
 
-See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`; only `ANTHROPIC_API_KEY` is read).
+See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`). Auth depends on the `backend` key in `config.yaml`: `api` (default) reads `ANTHROPIC_API_KEY`; `claude_code` bills the contributor's Claude subscription via the Claude Code CLI (logged-in session or `CLAUDE_CODE_OAUTH_TOKEN`) — use it for dev runs, keep `api` for full-scale runs. See README "Authentication" for caveats (usage windows, notional cost logging). `OPENAI_API_KEY` is optional and read only by `evals/diversity.py` (embedding-based diversity audit).
 
 `shared/__init__.py` enforces a Python floor (`MIN_PYTHON = (3, 12)`, matching numpy) at import — bump it there if the deps' floor rises. `.venv/` is gitignored.
 
@@ -40,6 +40,13 @@ streamlit run pref_pipeline/rate.py
 # --patterns adds the LLM templating scan (scan -> consolidate -> prevalence)
 python evals/audit_sdf.py --input outputs/sdf/latest
 python evals/audit_sdf.py --input outputs/sdf/latest --patterns
+
+# Semantic diversity audit (SDF or DAD run): embedding-space near-dup rate,
+# most-similar pairs, Vendi effective-document count, per-type spread.
+# Uses OpenAI text-embedding-3-small (OPENAI_API_KEY; cents per run, cached);
+# --compare a previous diversity_report.json for run-over-run deltas
+python evals/diversity.py --input outputs/sdf/latest
+python evals/diversity.py --input outputs/dad/latest
 ```
 
 ## Run Organization
@@ -54,7 +61,7 @@ SDF supports per-stage model overrides (`sdf.draft_model` / `sdf.rewrite_model` 
 
 DAD likewise: `dad.prompt_draft_model` (1b) / `dad.prompt_refine_model` (1c) / `dad.response_scope_model` (2a) / `dad.response_draft_model` (2b) / `dad.constitution_rewrite_model` (step 3), each falling back to the global `model` — step 3 is the alignment-critical rewrite, spend there first. The global `temperature` (1.0) is wired into every call; generation wants 1.0 (diversity is the product — 1b register variety, 2b independent samples), and `call_claude` accepts a per-call override for eval/debug use.
 
-`workers` sets how many API calls run concurrently within each SDF layer (via `utils.parallel_map`; set to 1 for serial debugging). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
+`workers` sets how many API calls run concurrently within each SDF layer and each fan-out DAD stage — 1c refines (within a batch), step 2 (one worker per dilemma: scope + its responses), step 3 rewrites (all via `utils.parallel_map`; set to 1 for serial debugging). The 1b batch calls stay serial (each batch's misses feed the next call's retry set). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
 
 Rough cost anchor (Sonnet 5, July 2026): a DAD example costs ~$0.20–0.25 end-to-end, so the default 40-example run is ~$9–10; smoke runs of 3–5 examples are under $1.
 
@@ -68,8 +75,8 @@ Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jso
 ## Testing
 
 - Run `pytest` from the repo root (deps are in `requirements.txt`). The suite is fully offline and finishes in seconds; it runs inside the required `smoke` check on every PR (`.github/workflows/ci.yml`, a job with no API secret exposed), so a failing test blocks merge.
-- Tests NEVER call the Anthropic API. Three layers enforce this: pytest-socket (`--disable-socket` in `pyproject.toml`) blocks all network at the socket level; an autouse fixture sets a fake `ANTHROPIC_API_KEY` and resets `shared.api` globals per test; and `shared.api._call_with_retry` is replaced with a function that raises.
-- To exercise pipeline stages, use the `stub_claude` fixture in `tests/conftest.py` (queue of canned response strings, or a callable dispatcher) — it patches `shared.api.call_claude`, the single chokepoint every module uses. Never let real `anthropic` error types reach the real `_call_with_retry`; tenacity would sleep minutes.
+- Tests NEVER call the Anthropic API. Four layers enforce this: pytest-socket (`--disable-socket` in `pyproject.toml`) blocks all network at the socket level; an autouse fixture sets a fake `ANTHROPIC_API_KEY` and resets `shared.api` globals per test; and both backend seams — `shared.api._call_with_retry` and `shared.api._call_claude_code_with_retry` (which would otherwise spawn the Claude Code CLI) — are replaced with functions that raise. The OpenAI embeddings seam (`shared/embeddings.py`) gets the identical layered treatment (fake `OPENAI_API_KEY`, globals reset, `_embed_with_retry` blocked).
+- To exercise pipeline stages, use the `stub_claude` fixture in `tests/conftest.py` (queue of canned response strings, or a callable dispatcher) — it patches `shared.api.call_claude`, the single chokepoint every module uses. Never let real `anthropic` error types reach the real `_call_with_retry`; tenacity would sleep minutes. For the diversity eval, `stub_embeddings` patches `shared.embeddings.embed_texts` the same way (deterministic per-text vectors, or pass exact geometry).
 - All test outputs go to pytest `tmp_path`; the `PIPELINE_OUTPUT_ROOT` env var redirects the `run.py` orchestrators away from the real `outputs/` tree.
 - Determinism: an autouse fixture seeds `random`; `sample_language` accepts an injectable `rng`; uuid/timestamp values are asserted by shape, never by value.
 - Tests encode CURRENT behavior, including known quirks. Don't change pipeline behavior just to make a test expectation nicer — decide the spec first, then flip the test deliberately.
@@ -108,7 +115,7 @@ Three source files, loaded by `shared/constitution_loader.py` (the two markdown 
 - **Latent-welfare slice (`sdf.latent_fraction`, ~12%)**: ordinary documents from unrelated domains where welfare surfaces exactly once as a concrete working detail — beliefs generalize better when they also appear as background knowledge, not only as headline topic. Layer 5 verifies each latent doc's welfare beat by requiring a **verbatim quote** that is checked mechanically against the text (fail-closed); an unverified beat drops the doc.
 - **Fictional entities by construction**: layer 3 hands each draft a few people/org names from large seeded multi-locale Faker pools (`shared/entity_pools.py`) — prevents invented-name collapse ("Elara", "Meridian Institute") and keeps fabrications from ever attaching to real organisations.
 - **Corpus-level audit after every run** (`evals/audit_sdf.py`): per-document judges cannot see corpus properties (register collapse, name reuse, templated openings — the haiku-test2 failure mode), so composition, redundancy, and templating are measured over the corpus as a set; `--patterns` runs the LLM scan wired to `prompts/tools/pattern_scan.txt`. Near-duplicate culling also runs inside the pipeline (layer 2 subtypes via `sdf.subtype_dedup_threshold`, final corpus via `sdf.near_dup_threshold`).
-- **DAD design details live in the prompt templates, not here.** The DAD pipeline is under active development and its design is still moving; this section stays deliberately sparse until the process is finalized — read the step templates (`prompts/dad/step1_*.txt`, `step2_*.txt`, `step3_rewrite.txt`) and the pipeline code for current behavior rather than trusting any summary. The `.md` docs in `prompts/dad/` are non-normative working notes (each says so in its banner); they will be rewritten once the design settles. What is load-bearing: step 1 samples a scenario and drafts/refines each user prompt (sub-stages 1a–1c); step 2 scopes the case and generates responses from the animal-ethics reasoning library (`prompts/dad/reasoning_library.csv` — sampling scaffolding, never named in responses); step 3 rewrites against the distilled constitution principles and is the **alignment-critical pass — do not skip or abbreviate it**. Every generation call rejects truncated output (`stop_reason` checked; failed work is not checkpointed, so `--resume` retries it).
+- **DAD design details live in the prompt templates, not here.** The DAD pipeline is under active development and its design is still moving; this section stays deliberately sparse until the process is finalized — read the step templates (`prompts/dad/step1_*.txt`, `step2_*.txt`, `step3_rewrite.txt`) and the pipeline code for current behavior rather than trusting any summary. The `.md` docs in `prompts/dad/` are non-normative working notes (each says so in its banner); they will be rewritten once the design settles. What is load-bearing: step 1 samples a scenario and drafts/refines each user prompt (sub-stages 1a–1c); step 2 scopes the case and generates responses from the animal-ethics reasoning library (`prompts/dad/reasoning_library.csv` — sampling scaffolding, never named in responses); step 3 rewrites against the distilled constitution principles and is the **alignment-critical pass — do not skip or abbreviate it**; no generation step reads the annotation after 1b. Every generation call rejects truncated output (`stop_reason` checked; failed work is not checkpointed, so `--resume` retries it).
 - **Committed run outputs are deliberate.** Smoke/validation runs under `outputs/*/runs/` are kept in git as reviewable examples of pipeline behavior at each design stage; `local_*`-labeled runs and `latest` pointers stay untracked (gitignore covers all pipelines incl. pref). Prune only with team agreement.
 - **Final DAD records contain only user + assistant messages** — system prompts, reasoning library scaffolding, annotations, and the constitution are stripped before training records are written
 

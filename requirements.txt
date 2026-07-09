@@ -1,4 +1,5 @@
 anthropic>=0.96.0
+claude-agent-sdk>=0.2.0  # backend: claude_code — also requires the Claude Code CLI
 pandas
 pyyaml
 python-dotenv
@@ -7,6 +8,7 @@ jsonlines
 tenacity
 streamlit>=1.40
 faker  # seeded fictional people/org name pools (shared/entity_pools.py)
+openai>=1.40  # embeddings for the semantic diversity eval (shared/embeddings.py)
 
 # Test-only (inert outside pytest runs)
 pytest>=8.0

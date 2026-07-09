@@ -10,6 +10,7 @@ guarantees are asserted directly.
 
 import json
 import random
+import threading
 
 import pytest
 
@@ -196,27 +197,37 @@ class TestCoverageTally:
 # --- Step 2: scope + respond ---------------------------------------------
 
 GOOD_SCOPE = json.dumps({
-    "system": "full pathway", "agent": "highest lever", "cost": "real cost",
+    "patients": "full pathway", "levers": "highest lever", "cost": "real cost",
     "upside": "second-order upside", "counterfactual": "realistic baseline",
 })
 
 
 class TestParseScope:
     def test_plain_and_fenced_json(self):
-        assert step2_responses._parse_scope(GOOD_SCOPE)["agent"] == "highest lever"
+        assert step2_responses._parse_scope(GOOD_SCOPE)["levers"] == "highest lever"
         assert step2_responses._parse_scope(f"```json\n{GOOD_SCOPE}\n```")["cost"] == "real cost"
 
     def test_control_characters_inside_strings_are_tolerated(self):
         # temperature-1 prose JSON often carries literal newlines inside values —
         # the historical cause of silently empty scopes
-        raw = '{"system": "line one\nline two", "agent": "a", "cost": "c", "upside": "u", "counterfactual": "cf"}'
-        assert step2_responses._parse_scope(raw)["system"] == "line one\nline two"
+        raw = '{"patients": "line one\nline two", "levers": "l", "cost": "c", "upside": "u", "counterfactual": "cf"}'
+        assert step2_responses._parse_scope(raw)["patients"] == "line one\nline two"
 
     def test_garbage_returns_empty_and_fails_validation(self):
         assert step2_responses._parse_scope("no json here") == {}
         assert not step2_responses._valid_scope({})
-        assert not step2_responses._valid_scope({"system": "s"})  # missing axes
+        assert not step2_responses._valid_scope({"patients": "p"})  # missing axes
         assert step2_responses._valid_scope(json.loads(GOOD_SCOPE))
+
+    def test_legacy_axis_keys_still_render_for_old_runs(self):
+        # scopes.jsonl records from before the key rename display via the
+        # fallback map — the viewer re-renders old runs' 2b prompts with them
+        legacy = {"system": "old pathway", "agent": "old lever", "cost": "c",
+                  "upside": "u", "counterfactual": "cf"}
+        rendered = step2_responses.format_scope(legacy)
+        assert "old pathway" in rendered and "old lever" in rendered
+        # but new runs must produce the new keys — legacy doesn't pass validation
+        assert not step2_responses._valid_scope(legacy)
 
 
 def _dilemma(pid="AW-0001"):
@@ -285,6 +296,38 @@ class TestStep2Run:
         assert calls == []
         assert len(results) == 1
 
+    def test_dilemmas_fan_out_concurrently_in_input_order(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Two dilemmas with workers: 2 must have both 2a scope calls in flight
+        # at once — the barrier deadlocks (and times out the wait) if the stage
+        # quietly went serial again. Writes stay ordered regardless.
+        both_scoping = threading.Barrier(2)
+
+        def dispatch(user_message, **kw):
+            if "scoping an animal-welfare advice dilemma" in user_message:
+                both_scoping.wait(timeout=10)
+                return GOOD_SCOPE
+            if "writing the assistant's response" in user_message:
+                return "Draft response."
+            raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
+
+        calls = stub_claude(dispatch)
+        dilemmas = [_dilemma("AW-0001"), _dilemma("AW-0002")]
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas)
+
+        assert len(calls) == 4  # 2 scopes + 2 responses
+        # results and persisted files keep input order despite thread interleaving
+        assert [r["prompt_id"] for r in results] == ["AW-0001", "AW-0002"]
+        scopes = utils.load_jsonl(tmp_path / "scopes.jsonl")
+        assert [s["prompt_id"] for s in scopes] == ["AW-0001", "AW-0002"]
+
+        # completed work costs nothing on resume
+        calls = stub_claude([])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas)
+        assert calls == []
+        assert len(results) == 2
+
 
 # --- Step 3: constitution rewrite ----------------------------------------
 
@@ -310,9 +353,10 @@ class TestStep3Run:
         assert set(final[0].keys()) == {"record_id", "messages"}
         assert [m["role"] for m in final[0]["messages"]] == ["user", "assistant"]
         assert final[0]["messages"][1]["content"] == "Rewritten careful answer."
-        # the distilled principles and the annotation reach the rewrite prompt
+        # the distilled principles reach the rewrite prompt; the annotation
+        # deliberately does not (it anchors nothing after step 1)
         assert "CONSTITUTION PRINCIPLES" in calls[0]["user_message"]
-        assert "Direction: Mixed" in calls[0]["user_message"]
+        assert "Direction: Mixed" not in calls[0]["user_message"]
 
     def test_capped_rewrite_retries_once_at_higher_budget(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -346,6 +390,37 @@ class TestStep3Run:
         )
         assert len(calls) == 1
         assert len(final) == 1
+
+    def test_rewrites_fan_out_concurrently_in_input_order(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Two responses with workers: 2 must have both rewrite calls in flight
+        # at once — the barrier deadlocks (and times out the wait) if the stage
+        # quietly went serial again. Output order still follows input order.
+        both_rewriting = threading.Barrier(2)
+
+        def dispatch(user_message, **kw):
+            both_rewriting.wait(timeout=10)
+            return "Rewrite of one." if "Draft one." in user_message else "Rewrite of two."
+
+        stub_claude(dispatch)
+        records = [
+            {**_response_record("resp-1"), "assistant_response": "Draft one."},
+            {**_response_record("resp-2"), "assistant_response": "Draft two.",
+             "sample_index": 1},
+        ]
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", records
+        )
+        assert [f["messages"][1]["content"] for f in final] == ["Rewrite of one.", "Rewrite of two."]
+
+        # completed work costs nothing on resume
+        calls = stub_claude([])
+        final = step3_rewrite.run(
+            tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final", records
+        )
+        assert calls == []
+        assert len(final) == 2
 
 
 # --- Per-stage model knobs + cost-log stage tags ---------------------------
