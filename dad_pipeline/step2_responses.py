@@ -4,8 +4,8 @@ Each dilemma goes through two sub-stages (prompts/dad/reasoning_library_ABOUT.md
 is human reference about the library, not read by the pipeline):
 
 - 2a scope: rebuild the full map of the case from the user's message, along
-  the five axes specified in prompts/dad/step2_scope.txt (patients, levers,
-  cost, upside, counterfactual). One record per prompt in step2/scopes.jsonl.
+  the five axes prompts/dad/step2_scope.txt defines (mirrored in _SCOPE_AXES
+  below — keep the two in sync). One record per prompt in step2/scopes.jsonl.
   A scope that fails to parse or is missing an axis is retried with a fresh
   call (raw outputs kept in step2/scope_failures.jsonl); after
   MAX_SCOPE_ATTEMPTS the run stops rather than generate a response over an

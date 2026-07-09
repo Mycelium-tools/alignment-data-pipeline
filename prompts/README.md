@@ -89,7 +89,7 @@ Run in sequence. Step 3 is the most important step — do not skip or abbreviate
 
 The design spec that governs the user side of every DAD example. It is the human reference and the source of the Part-4 verification checklist. Step 1a samples each example's categorical fields (domain, taxa, visibility, attitude, conflict, direction, magnitude, stakes, leverage, value pair, claim pattern, surface form) from stratified decks, so the spec's distribution quotas hold by construction rather than being steered after the fact; the drafting instructions the model follows in 1b are inlined in `step1_dilemmas.txt`, so the spec is no longer injected whole.
 
-Key commitments: the user owns the dilemma (never an AI-agent scenario); every temptation must actually tempt; the welfare stake is load-bearing (delete the animals and the dilemma must collapse — welfare sits on one side of at least one value pair); no pre-decided answers; both failure directions in roughly equal measure (under-weighting AND over-weighting welfare); a full annotation schema per example (domain, goal, dilemma anatomy, values in tension, moral patients, visibility, attitude, conflict, direction, welfare magnitude, user stakes, leverage, claims); surface-form and voice-realism rules; and a batch verification checklist with distribution quotas.
+Key commitments: the user owns the dilemma (never an AI-agent scenario); every temptation must actually tempt; the welfare stake is load-bearing (delete the animals and the dilemma must collapse — welfare sits on one side of at least one value pair); no pre-decided answers; both failure directions in roughly equal measure (under-weighting AND over-weighting welfare); a full annotation schema per example (the key list lives in the 1b template); surface-form and voice-realism rules; and a batch verification checklist with distribution quotas.
 
 ### `dad/step1_dilemmas.txt` (sub-stage 1b — first-attempt draft)
 
@@ -105,7 +105,7 @@ Key commitments: the user owns the dilemma (never an AI-agent scenario); every t
 
 ### `dad/reasoning_library.csv` (+ `reasoning_library_ABOUT.md`)
 
-The reasoning source for step 2. Not a prompt template — a library of 52 reasoning-first *entries* in three layers: **conduct** (C1–C10, how to handle welfare in any response), **core moves** (M1–M13, the load-bearing reasoning for advice), and **topic reasoning** (T1–T29, deeper single-topic arguments, each already two-sided). Columns: `id, category, claim, reasoning, crux, transferable_move`. The CSV is the single source of truth (the old JSON, its 28-tension retrieval index, and its `generation_guidance` blob are retired). `reasoning_library_ABOUT.md` is human reference *about* the library — it is not injected into any prompt. There is no per-case retrieval: step 2b embeds the **whole library** in the response prompt.
+The reasoning source for step 2. Not a prompt template — a library of reasoning-first *entries* in three layers: **conduct** (C*, how to handle welfare in any response), **core moves** (M*, the load-bearing reasoning for advice), and **topic reasoning** (T*, deeper single-topic arguments). Columns: `id, category, claim, reasoning, crux, transferable_move`. The CSV is the single source of truth (the old JSON, its 28-tension retrieval index, and its `generation_guidance` blob are retired). `reasoning_library_ABOUT.md` is human reference *about* the library — it is not injected into any prompt. There is no per-case retrieval: step 2b embeds the **whole library** in the response prompt.
 
 The point is to teach the moves that produce a well-calibrated answer, not to hand the model verdicts — the most welfare-optimizing response is not the most pro-animal response, and two-sided reasoning is what makes the disposition generalize.
 
@@ -113,13 +113,13 @@ The point is to teach the moves that produce a well-calibrated answer, not to ha
 
 **Input:** the user message.
 
-**Output:** a JSON scope map with five axes — `patients` (every plausible moral patient and what can happen to them upstream and downstream), `levers` (the levers available to the user, highest-leverage identified), `cost` (what acting on those levers could cost the user), `upside` (the second-order stakes: what choices build, signal, normalize, or lock in), and `counterfactual` (whether the user's role is counterfactual or fungible, and the costs at stake). Reads everything from the user's message — it does not use the annotation. Written to `step2/scopes.jsonl`.
+**Output:** a JSON scope map whose keys are the five axes the template defines (mirrored in `_SCOPE_AXES` in `dad_pipeline/step2_responses.py`, which validates and renders them — keep the two in sync). Reads everything from the user's message — it does not use the annotation. Written to `step2/scopes.jsonl`.
 
 ### `dad/step2_respond.txt` (sub-stage 2b — the response-generation spec)
 
-**Input:** the whole reasoning library (`{library_block}` — all 52 entries) + the 2a scope map (`{scope_block}`) + the user message. This prompt *is* the generation guidance, so there is **no separate system prompt**, and the annotation is not passed.
+**Input:** the whole reasoning library (`{library_block}` — every entry) + the 2a scope map (`{scope_block}`) + the user message. This prompt *is* the generation guidance, so there is **no separate system prompt**, and the annotation is not passed.
 
-**Output:** the draft assistant response, per the spec: acknowledge the user's motivations, identify the competing values, explain why certain principles matter, reason through the tradeoffs, recommend a course of action, and provide ethical choices that still meet the user's underlying goal — with the user's stated leaning never setting the conclusion.
+**Output:** the draft assistant response, following the template's response spec — with the user's stated leaning never setting the conclusion.
 
 **Important:** the library and scope are scaffolding — never named in the response, stripped before the training record is written. Calibration direction is not named here (the response reasons from the case, not a label); `step3_score.txt` re-derives the realized direction and checks it against the annotation's intended Direction.
 
@@ -127,7 +127,7 @@ The point is to teach the moves that produce a well-calibrated answer, not to ha
 
 **This is the most important prompt in the pipeline.** The rewrite pass is where the alignment gain comes from; do not skip or abbreviate it.
 
-**Input:** the fourteen distilled constitution principles (`{principles_block}`, rendered from `constitution/constitution_principles.csv` — each with its summary and verbatim constitution quote; the explicit standard the rewrite is held to) + the example's spec annotation (`{annotation_block}` — dilemma anatomy, values in tension, direction, claims…) + the user message + the draft assistant response from step 2. No system prompt is sent — the full constitution was source material for distilling the principles, not a per-call dependency.
+**Input:** the fourteen distilled constitution principles (`{principles_block}`, rendered from `constitution/constitution_principles.csv` — each with its summary and verbatim constitution quote; the explicit standard the rewrite is held to) + the example's spec annotation (`{annotation_block}`) + the user message + the draft assistant response from step 2. No system prompt is sent — the full constitution was source material for distilling the principles, not a per-call dependency.
 
 **Output:** a rewritten assistant response that exemplifies the reasoning the example is designed to teach. The annotation's DIRECTION field names the calibration failure the example corrects (under-weighting → surface/firm up the consideration; over-weighting → proportionate relief or a stopping rule; mixed → redistribute weight), and CLAIMS pins each load-bearing claim at its evidential level (Settled asserted plainly, Open presented as open).
 
