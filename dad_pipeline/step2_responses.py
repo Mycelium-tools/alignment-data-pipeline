@@ -13,9 +13,14 @@ is human reference about the library, not read by the pipeline):
   fresh call (raw outputs kept in step2/scope_failures.jsonl); after
   MAX_SCOPE_ATTEMPTS the run stops rather than generate a response over an
   empty scope, which would silently optimize the wrong node. The selection is
-  the opposite — fail-open: a missing/empty/garbled triggered_entries list
-  falls back to the whole library (selection_fallback: true on the record) and
-  never retries, since a degraded selection only costs tokens, not quality.
+  the opposite — fail-open with one cheap repair: when triggered_entries is
+  missing/empty/garbled, a selection-only follow-up call (step2_select.txt:
+  trigger index + scope + user message, model dad.response_select_model
+  falling back to response_scope_model, stage response_select) asks for just
+  the ids; if that too is unusable, 2b gets the whole library
+  (selection_fallback: true) with no further retry — degraded selection only
+  costs tokens, not quality. The record's selection_source says which path
+  produced the ids: "scope", "repair", or "full_library".
 - 2b respond: generate the response over the scope map plus the triggered
   library rows, following the spec in prompts/dad/step2_respond.txt. That
   prompt IS the generation guidance — no separate system prompt, and the
@@ -102,15 +107,21 @@ def _select_entries(scope: dict, library_ids: list[str]) -> tuple[list[str], boo
     The prompt asks for one comma-separated string (an array-typed key after
     five string keys made models close the last axis with a stray ']',
     breaking the whole JSON); lists are still accepted for robustness."""
-    raw = scope.pop("triggered_entries", None)
+    ids = _normalize_ids(scope.pop("triggered_entries", None), library_ids)
+    if ids:
+        return ids, False
+    return list(library_ids), True
+
+
+def _normalize_ids(raw, library_ids: list[str]) -> list[str]:
+    """Whatever shape a selection arrives in (comma-separated string, list,
+    prose around ids), reduce it to known ids, deduped, in library order."""
     if isinstance(raw, str):
         raw = raw.replace(",", " ").split()
-    if isinstance(raw, list):
-        wanted = {str(x).strip() for x in raw}
-        ids = [i for i in library_ids if i in wanted]
-        if ids:
-            return ids, False
-    return list(library_ids), True
+    if not isinstance(raw, list):
+        return []
+    wanted = {str(x).strip() for x in raw}
+    return [i for i in library_ids if i in wanted]
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
@@ -183,9 +194,32 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                     # stored scope keeps only the five axes; the selection and
                     # the full triggered rows land beside it as provenance.
                     ids, fallback = _select_entries(parsed, library_ids)
+                    source = "scope"
+                    if fallback:
+                        # The model omits triggered_entries from the scope JSON
+                        # often enough (~half of smoke-run calls) that a cheap
+                        # selection-only follow-up beats falling straight open:
+                        # one call, trigger index + scope + user message, ids out.
+                        raw_sel, sel_stop = api.call_claude(
+                            user_message=utils.load_prompt(
+                                prompts_dir / "step2_select.txt",
+                                trigger_index=trigger_index,
+                                scope_block=format_scope(parsed),
+                                user_message=d["user_message"],
+                            ),
+                            return_stop_reason=True,
+                            model=(config["dad"].get("response_select_model")
+                                   or config["dad"].get("response_scope_model")),
+                            stage="response_select", item_id=pid)
+                        repaired = ([] if sel_stop == "max_tokens"
+                                    else _normalize_ids(raw_sel, library_ids))
+                        if repaired:
+                            ids, fallback, source = repaired, False, "repair"
+                        else:
+                            source = "full_library"  # stay failed-open, no retry
                     out["scope_record"] = {
                         "prompt_id": pid, "scope": parsed, "entry_ids": ids,
-                        "selection_fallback": fallback,
+                        "selection_fallback": fallback, "selection_source": source,
                         "triggered_entries": reasoning_library.get_entries(library, ids),
                     }
                     break
@@ -261,8 +295,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         if out["scope_record"] is not None:
             scopes[pid] = out["scope_record"]
             utils.append_jsonl(out["scope_record"], scopes_path)
-            if out["scope_record"]["selection_fallback"]:
-                print(f"    {pid}: scope carried no usable triggered_entries — "
+            source = out["scope_record"].get("selection_source")
+            if source == "repair":
+                print(f"    {pid}: triggered_entries missing from the scope output — "
+                      f"recovered by a selection call "
+                      f"({len(out['scope_record']['entry_ids'])} entries).")
+            elif out["scope_record"]["selection_fallback"]:
+                print(f"    {pid}: no usable selection from scope or repair call — "
                       "2b falls open to the full library.")
         for skip in out["skips"]:
             print(skip)

@@ -4,7 +4,7 @@ USER: {user_message}
 
 DRAFT RESPONSE: {draft_response}
 
-The rewrite is held to the constitution principles below. Keep everything in the draft that already meets that standard.
+The rewrite is held to the constitution principles below. Keep everything in the draft that already meets that standard. No load-bearing welfare considerations should be dropped.
 
 CONSTITUTION PRINCIPLES: {principles_block}
 

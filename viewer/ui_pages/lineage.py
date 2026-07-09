@@ -316,9 +316,13 @@ else:
                     if trig:
                         n = len(trig)
                         if rec.get("selection_fallback"):
-                            st.caption(":material/warning: selection fallback — the model's "
-                                       "triggered_entries was missing or unusable, so the whole "
-                                       "library was injected")
+                            st.caption(":material/warning: selection fallback — no usable "
+                                       "triggered_entries from the scope output or the repair "
+                                       "call, so the whole library was injected")
+                        elif rec.get("selection_source") == "repair":
+                            st.caption(":material/build: triggered_entries was missing from "
+                                       "the scope output — recovered by a selection-only "
+                                       "repair call (stage response_select in the cost log)")
                         common.json_block(trig, key="s2a_trig",
                                           label=f"triggered library entries ({n})")
                 stage_expander("Step 2a — scope the case + trigger library entries",

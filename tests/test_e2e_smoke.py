@@ -92,7 +92,8 @@ def _dad_dispatch(user_message, **kw):
         return json.dumps({"prompt": "Refined user message.", "notes": "n"})
     if "scoping an animal-welfare advice dilemma" in user_message:  # step 2a
         return json.dumps({"patients": "p", "levers": "l", "cost": "c",
-                           "upside": "u", "counterfactual": "cf"})
+                           "upside": "u", "counterfactual": "cf",
+                           "triggered_entries": "C1, M1"})
     if "writing the assistant's response" in user_message:  # step 2b
         return "Draft response."
     if "rewriting a draft assistant response" in user_message:  # step 3

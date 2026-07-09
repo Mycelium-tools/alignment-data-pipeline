@@ -196,10 +196,12 @@ class TestCoverageTally:
 
 # --- Step 2: scope + respond ---------------------------------------------
 
-GOOD_SCOPE = json.dumps({
+SCOPE_AXES = {
     "patients": "full pathway", "levers": "highest lever", "cost": "real cost",
     "upside": "second-order upside", "counterfactual": "realistic baseline",
-})
+}
+# The well-behaved 2a reply: five axes plus the selection, as the prompt asks.
+GOOD_SCOPE = json.dumps({**SCOPE_AXES, "triggered_entries": "C1, M1"})
 
 
 class TestParseScope:
@@ -358,21 +360,63 @@ class TestStep2Run:
         assert claims[unpicked] not in respond_call
         assert results[0]["entry_ids"] == [picked]
 
-    def test_unusable_selection_falls_open_to_whole_library(
+    def test_missing_selection_repaired_by_select_call(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
-        # GOOD_SCOPE has no triggered_entries at all — valid axes, no selection.
-        # The scope is kept (never re-billed) and 2b gets the full library.
-        calls = stub_claude(_dad_step2_dispatch)
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
-
+        # 2a omits triggered_entries (the ~50% smoke-run failure mode): one
+        # selection-only follow-up call recovers the ids, no full-library dump.
         library = reasoning_library.load(prompts_dad)
         lib_ids = reasoning_library.all_ids(library)
+        claims = {e["id"]: e["claim"] for e in reasoning_library.get_entries(library, lib_ids)}
+        picked, unpicked = lib_ids[0], lib_ids[-1]
+
+        def dispatch(user_message, **kw):
+            if "scoping an animal-welfare advice dilemma" in user_message:
+                return json.dumps(SCOPE_AXES)  # valid axes, no selection
+            if "doing retrieval for a response" in user_message:  # repair call
+                return f"{picked}, BOGUS"
+            return "Draft response."
+
+        calls = stub_claude(dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        assert len(calls) == 3  # scope + selection repair + respond
+        # the repair prompt carried the trigger index and the scope it needs
+        first_entry = reasoning_library.get_entries(library, [picked])[0]
+        assert first_entry["trigger_condition"] in calls[1]["user_message"]
+        assert "full pathway" in calls[1]["user_message"]
+
+        rec = utils.load_jsonl(tmp_path / "scopes.jsonl")[0]
+        assert rec["entry_ids"] == [picked]
+        assert rec["selection_fallback"] is False
+        assert rec["selection_source"] == "repair"
+        assert claims[picked] in calls[2]["user_message"]
+        assert claims[unpicked] not in calls[2]["user_message"]
+        assert results[0]["entry_ids"] == [picked]
+
+    def test_unusable_selection_and_repair_fall_open_to_whole_library(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # No selection from the scope AND a useless repair reply: the scope is
+        # kept (never re-billed) and 2b gets the full library — one repair
+        # attempt, no retry loop.
+        def dispatch(user_message, **kw):
+            if "scoping an animal-welfare advice dilemma" in user_message:
+                return json.dumps(SCOPE_AXES)
+            if "doing retrieval for a response" in user_message:
+                return "I could not find any relevant entries, sorry!"
+            return "Draft response."
+
+        calls = stub_claude(dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        lib_ids = reasoning_library.all_ids(reasoning_library.load(prompts_dad))
         rec = utils.load_jsonl(tmp_path / "scopes.jsonl")[0]
         assert rec["entry_ids"] == lib_ids
         assert rec["selection_fallback"] is True
+        assert rec["selection_source"] == "full_library"
         assert results[0]["entry_ids"] == lib_ids
-        assert len(calls) == 2  # fail-open never burns a retry
+        assert len(calls) == 3  # scope + one repair attempt + respond
 
     def test_resume_reuses_stored_selection_for_pending_responses(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -385,7 +429,7 @@ class TestStep2Run:
         claims = {e["id"]: e["claim"] for e in reasoning_library.get_entries(library, lib_ids)}
         picked, unpicked = lib_ids[0], lib_ids[-1]
         utils.append_jsonl({
-            "prompt_id": "AW-0001", "scope": json.loads(GOOD_SCOPE),
+            "prompt_id": "AW-0001", "scope": dict(SCOPE_AXES),
             "entry_ids": [picked], "selection_fallback": False,
             "triggered_entries": reasoning_library.get_entries(library, [picked]),
         }, tmp_path / "scopes.jsonl")
@@ -403,7 +447,7 @@ class TestStep2Run:
     ):
         # scopes.jsonl written before library retrieval existed has no
         # entry_ids — resuming such a run falls open to the full library.
-        utils.append_jsonl({"prompt_id": "AW-0001", "scope": json.loads(GOOD_SCOPE)},
+        utils.append_jsonl({"prompt_id": "AW-0001", "scope": dict(SCOPE_AXES)},
                            tmp_path / "scopes.jsonl")
         stub_claude(["Draft response."])
         results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
