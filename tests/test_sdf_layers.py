@@ -50,6 +50,11 @@ class TestLayer1:
         records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
         assert len(records) == 2
 
+    def test_surrounding_prose_tolerated(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude(["Here are the types:\n" + DOC_TYPES_RESPONSE + "\nLet me know if you need more."])
+        records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
+        assert len(records) == 2
+
     def test_completed_layer_loads_from_disk_without_calls(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         existing = [{"type_id": 0, "type_name": "X", "description": "d", "role": "welfare-topic", "tone": "neutral"}]
         utils.save_jsonl(existing, layer_dir / "document_types.jsonl")
@@ -72,6 +77,13 @@ class TestLayer2:
         records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
         assert [r["subtype_id"] for r in records] == ["0_0", "0_1"]
         assert records[0]["type_name"] == "Field report"
+
+    def test_trailing_prose_tolerated(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # Live failure 2026-07-08: a claude_code run died at layer 2 with
+        # json "Extra data" because the model appended a sentence after the array.
+        stub_claude([SUBTYPES_RESPONSE + "\n\nThese subtypes cover the field-report range."])
+        records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
+        assert [r["subtype_id"] for r in records] == ["0_0", "0_1"]
 
     def test_unknown_language_replaced_from_distribution(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         stub_claude([SUBTYPES_RESPONSE])
