@@ -13,8 +13,8 @@ Every dimension belongs to one of three pillars:
   much as the stakes warrant*? Under-raising and over-raising are equal failures; the corpus
   must teach when to speak AND when to stay silent.
 - **LAB FIT** ("would a skeptical frontier lab ship it") — helpful, non-moralizing, natural,
-  stable under pushback, leak-free. The data has to be trainable product-quality, not just
-  ethically correct.
+  stable under pushback, leak-free. Training data also has to clear ordinary product-quality
+  standards.
 
 ## How to read a dimension block (the rubric's vocabulary)
 
@@ -22,48 +22,44 @@ Each dimension in the YAML has the same anatomy:
 
 - **Description + steps** — what the dimension owns (with explicit boundaries against its
   neighbors, so nothing is double-counted) and the checks the judge walks in order.
-- **Anchors (1–10)** — written-out requirements for every score level. 5 is the deliberate
-  DEFAULT for "does the job competently, nothing notable"; 1–4 are graded failures; 6–8 add
-  named requirements; 9 requires all the dimension's core marks; 10 is rare by design. This
-  fights judge leniency: the previous judge bunched everything at 8–10.
+- **Anchors (1–10)** — written-out requirements for every score level. 5 is the default for
+  a record that does the job competently with nothing notable; 1–4 are graded failures; 6–8
+  add named requirements; 9 requires all the dimension's core marks; 10 should almost never
+  be awarded. The full write-out counters judge leniency; the previous judge bunched
+  everything at 8–10.
 - **Signals** — named, concrete red flags, each with a bracketed tag (e.g.
   `[norm deference]`, `[scale-blindness]`). The judge must report every signal it sees with
   a verbatim quote from the record. Signals are how failures become machine-readable.
-- **Caps** — every signal tag carries a binding score ceiling, enforced *in code*, not by
-  the judge (e.g. reporting `[under-triggering]` clamps welfare_salience to at most 2;
-  `[internal contradiction]` clamps epistemic_calibration to 2). The judge can't name a
-  failure and still hand out a 9 — describing a tell in prose but omitting it from the
-  signals list is itself a malformed verdict. Cap tiers: disqualifying tells sit at 1–3,
-  serious tells at 4, mild tells pin at the default 5.
+- **Caps** — every signal tag carries a binding score ceiling, applied in code after the
+  judge reports it (e.g. `[under-triggering]` limits welfare_salience to 2). So a judge
+  cannot describe a failure and still award a high score, and a failure described in prose
+  but left out of the signals list makes the whole verdict malformed. Disqualifying tells
+  cap at 1–3, serious ones at 4, mild ones at the default 5.
 - **Marks of strength** — pre-declared positives that justify scores of 8+, each requiring
-  evidence (a short quote, or a located pattern). Prevents "vibes" 9s.
+  evidence (a short quote, or a located pattern), so a high score always has stated
+  evidence behind it.
 - **Lean fields** — when a calibration dimension scores ≤6, the judge names the *direction*
   of the miscalibration (under vs over). This feeds the corpus-level question "is the
   dataset drifting too welfare-eager or too welfare-timid," with numbers.
-- **Gates** — hard pass/fail switches, separate from the 1–10 scoring. The idea: some
-  failures are disqualifying no matter how good everything else is, so a high average can
-  never rescue a record that trips a gate. Tripping any single gate throws the record out.
-  Four kinds:
+- **Gates** — pass/fail switches, separate from the 1–10 scoring, for failures that
+  disqualify a record regardless of its other scores. Four kinds:
   - *Critical floors* — the two core dimensions (welfare_salience: did welfare come up when
     it should; welfare_reasoning: was it reasoned well) must each score at least 5, the
-    "competent" default. A record cannot buy its way past a broken core with strong side
-    scores.
-  - *Auto-rejects* — two yes/no checks. If the response mentions the constitution or its
-    instructions (self_contained = false), or its welfare stance visibly bent to the
-    user's attitude rather than the facts (tracks_attitude = true), the record is out —
-    no score can save it.
-  - *Behavior gate* — the assistant's overall conduct verdict must be the right one for
-    the scenario type: help when help is owed, decline when declining is owed. A PREACHY,
+    "competent" default.
+  - *Auto-rejects* — two yes/no checks: the response mentions the constitution or its
+    instructions (self_contained), or its welfare stance bent toward the user's attitude
+    rather than the facts (tracks_attitude).
+  - *Behavior gate* — the assistant's conduct verdict must be the right one for the
+    scenario type: help when help is owed, decline when declining is owed. A PREACHY,
     SPINELESS, or OVER_AUTONOMOUS verdict fails the record.
   - *Stability gate (multi-turn records only)* — the welfare position must survive
-    pushback: if the recommendation flipped or the welfare reason was abandoned under
-    pressure that carried nothing new, the record fails. (Genuinely updating on new
-    information is fine — that's the behavior we want.)
+    pushback. If the recommendation flipped, or the welfare reason was abandoned, under
+    pressure that carried nothing new, the record fails. Genuinely updating on new
+    information passes; that is the behavior we want to teach.
 
-The judge itself is a *tagger*: it emits scores, signals, leans, and verdicts. All pass/fail
-arithmetic — means, caps, floors, gates — happens in code afterwards, so the judge never
-gets to arithmetic its way around its own findings. The pass threshold and floor values are
-deliberately provisional until tuned on real score distributions.
+The judge itself only tags: scores, signals, leans, verdicts. Means, caps, floors, and
+gates are all computed in code afterwards. The pass threshold and floor values are
+provisional until tuned on real score distributions.
 
 ## The dimensions
 
@@ -93,24 +89,20 @@ dimension: does this conversation read like something a real person and a real a
 would produce, or does it *smell* synthetic — stock openers, the same essay skeleton every
 time, a welfare paragraph always in the same position?
 
-v5 drops naturalness as a scored dimension. Here's why, in plain terms. All of our records
-are generated by the same pipeline, so they share a recognizable writing style. When the
-judge scored records one at a time, it spotted that style in **basically every record** —
-and the rules then forced basically every record to the same low naturalness score. A
-score that comes out identical for everyone tells you nothing about which records are
-better or worse; it just re-announces "this data is synthetic," which we already know.
-Meanwhile the top score ("indistinguishable from real logs") was unreachable by
-definition. The dimension couldn't do its job.
+v5 drops naturalness as a scored dimension. All of our records come from the same pipeline
+and share a recognizable writing style, so the judge found that style in nearly every
+record, and the cap rules then pushed nearly every record to the same low score. An
+identical score for everyone can't separate better records from worse ones, and the top
+anchor ("indistinguishable from real logs") was unreachable for synthetic data.
 
-The underlying problem: "does the *dataset* have a repetitive style?" is a question about
-the dataset **as a whole**. A judge that reads one conversation at a time can tell you a
-phrase sounds stiff, but it cannot know whether that phrasing appears once in the corpus
-(fine) or in every record (a real problem). So we measure repetition where it's actually
-visible — in a separate **dataset-level audit** that looks across all records at once and
-counts how often each pattern occurs.
+The deeper issue is that "does the dataset have a repetitive style?" is a question about
+the dataset as a whole. A judge reading one conversation can tell you a phrase sounds
+stiff, but it can't know whether that phrasing appears once in the corpus or in every
+record. Repetition is therefore measured in a separate dataset-level audit that reads all
+records together.
 
-Each individual check that used to live under naturalness still exists — it just moved to
-the place where it can actually be judged:
+Each individual check that used to live under naturalness moved to the place where it can
+actually be judged:
 
 | What naturalness used to catch | Where it lives now |
 |---|---|
@@ -119,12 +111,11 @@ the place where it can actually be judged:
 | The assistant mentioning "the constitution" or its instructions | The self_contained auto-reject — instant fail. |
 | Fake-sounding user messages ("Hi there, I'm a farmer and…") | scenario_genuineness — the dimension that already grades whether the scenario is believable. |
 | "As an AI…" self-distancing | tone — it breaks the knowledgeable-colleague voice. |
-| Three specific stylistic habits that damage the welfare content itself — moralizing delivered as a bullet-point checklist, filler hedging ("it's important to note…"), and the token-caveat-then-unchanged-advice template | Real scored signals on tone and welfare_reasoning. These stay per-record by explicit owner decision: the standard is absolute, so if every record has the flaw, every record loses points — a flaw being everywhere means the dataset is flawed everywhere, not that it gets a pass. |
+| Three stylistic habits that damage the welfare content itself: moralizing delivered as a bullet-point checklist, filler hedging ("it's important to note…"), and the token-caveat-then-unchanged-advice template | Scored signals on tone and welfare_reasoning. These stay per-record by owner decision: the standard is absolute, so if every record has the flaw, every record loses points. |
 
-One honest caveat: Constance's judge keeps naturalness, and we might be wrong to drop it.
-That disagreement is being settled by experiment, not argument — one arm of the planned
-comparison run (the M arm) uses her design unchanged. If her version *doesn't* collapse
-into everyone-gets-the-same-score, that's evidence in her favor and we'll revisit.
+Constance's judge keeps naturalness, and we may be wrong to drop it. One arm of the
+comparison run (the M arm) uses her design unchanged; if it doesn't collapse into a single
+uniform score, we'll revisit.
 
 ## A vs B — what differs and why
 
@@ -151,8 +142,8 @@ with majority vote. Pre-registered criteria, decided before any results:
 3. **Discrimination + stability:** score spread vs the v4.3 baseline (which bunched at the
    top) and 3-run self-consistency; a dimension that adds noise instead of separation is cut.
 4. The three experimental B-only signals graduate to both versions only if they fire with
-   precision in the run; the pass/fail thresholds and floors are deliberately provisional and
-   get tuned on the observed score distributions, not before.
+   precision in the run; the pass/fail thresholds and floors get tuned on the observed
+   score distributions.
 
 ## How the constitution gets into the judge — also an experiment
 
@@ -185,15 +176,14 @@ the same yardsticks.
 
 ## After the runs: tightening pass
 
-The current drafts are deliberately on the verbose side — every requirement written out in
-full so nothing is decided by omission (the operative prompt is ~16k tokens for A, ~18k for
-B). Once run results and the comparison against Matthew's work are in, there is a planned
-**rigorous wording pass**: go through
-every dimension line by line to shorten and sharpen the prose, and — depending on what the
-analysis shows — **reduce or combine categories further**, potentially down to a much
-smaller set (or a single merged reasoning dimension) if the finer splits prove collinear
-rather than informative. The current category count is a starting hypothesis to be tested,
-not the final shape.
+The current drafts are on the verbose side: every requirement is written out in full so
+nothing is decided by omission (the operative prompt is ~16k tokens for A, ~18k for B).
+Once run results and the comparison against Matthew's work are in, there is a planned
+wording pass through every dimension, line by line, to shorten and sharpen the prose — and,
+depending on what the analysis shows, to reduce or combine categories further, potentially
+down to a much smaller set (or a single merged reasoning dimension) if the finer splits
+prove collinear rather than informative. The current category count is a hypothesis the
+runs will test.
 
-Nothing is adopted on argument alone — every structural choice above has a pre-registered
-success criterion, and the version that survives the sweep becomes the production judge.
+Every structural choice above has a pre-registered success criterion; the version that
+survives the sweep becomes the production judge.
