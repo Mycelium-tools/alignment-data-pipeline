@@ -9,6 +9,8 @@ jsonlines
 tenacity
 streamlit>=1.40
 faker  # seeded fictional people/org name pools (shared/entity_pools.py)
+numpy  # embeddings math (shared/embeddings.py, evals/diversity.py)
+openai>=1.40  # embeddings for the semantic diversity eval (shared/embeddings.py)
 
 # Test-only (inert outside pytest runs)
 pytest>=8.0

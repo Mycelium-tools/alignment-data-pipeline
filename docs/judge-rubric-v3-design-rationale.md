@@ -275,6 +275,22 @@ Evidence and per-record catalog: the 2026-07-08 calibration session's failure
 synthesis (FM1-FM13); research pass R1-R21 (scale width, HealthBench criteria,
 reference anchoring, pairwise-at-the-top).
 
+**v4.1 (owner review of v4.0, same day):** the default dropped from 7 to 5 and
+the top half stretched (5 default / 6 good / 7 clearly strong / 8 quotable
+moment / 9 checklist / 10 rare) — the owner wants a harder-to-please judge;
+anchors 4-8 rewritten for all ten scalars, passing_threshold 7→5, exemplar
+min scalar 8→7. A DISQUALIFIERS role block restores explicit violation hunting;
+its record-killers are wired to gates: caps re-tuned so serious tells land
+below the critical floors (epistemic_calibration joined critical_floors at 4;
+new scalar_floor_any: 3 — anchors 1-2 are disqualifying-grade by definition, so
+any applicable scalar below 3 fails regardless of the mean). Mild tells
+(selective omission, charisma bias, late trigger, flag-without-path) pin AT the
+default of 5 instead of failing. The judge now also receives the full
+sentient-beings constitution reading as reference material, inserted before the
+OUTPUT contract (owner request; `judge.build_system_prompt include_constitution`,
+default on) — prompt ~105k chars, operative portion ~65k, the reference suffix
+byte-identical and cached.
+
 ### D14. Language parity
 The dataset spec mandates a multilingual mix (lots of English, a fair amount of
 Mandarin, samples of Hindi/Urdu/Bengali, convincing French/German/Spanish/Japanese).

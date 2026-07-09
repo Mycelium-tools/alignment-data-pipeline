@@ -1,0 +1,31 @@
+{
+  "rubric_version": "sdf-v3.5",
+  "documents": 67,
+  "models": {
+    "gemini-2.5-flash": {
+      "graded": 62,
+      "judge_errors": 5,
+      "pass_rate": 0.871,
+      "exemplar_rate": 0.871,
+      "mean_of_means": 9.352,
+      "dimension_means": {
+        "no_outside_world_facts": 8.81,
+        "reasoning_fidelity": 9.56,
+        "epistemic_calibration": 9.29,
+        "realism": 9.53,
+        "teaching_value": 9.68,
+        "constitution_grounding": 8.33
+      },
+      "depicted_ai_verdicts": {
+        "ALIGNED": 20,
+        "NA": 42
+      },
+      "cell_mismatches": 5,
+      "score_length_correlation": 0.028
+    }
+  },
+  "consensus": {
+    "unstable_rate": 0.0,
+    "error_rate": 0.075
+  }
+}

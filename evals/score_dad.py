@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score DAD corpus records with the judge panel (evals/judge.py + rubric_dad_v3.yaml).
+"""Score DAD corpus records with the judge panel (evals/judge.py + rubric_dad_v4.yaml).
 
 Judges every record with each model on the panel, computes gates/consensus in code,
 joins pipeline annotations post-hoc for the judge-vs-annotation comparison, and writes:
@@ -10,6 +10,15 @@ joins pipeline annotations post-hoc for the judge-vs-annotation comparison, and 
 Usage:
   python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl \
       --judges claude-haiku-4-5 claude-sonnet-4-6 [--limit 5]
+
+Judge only a curated subset (facets need the holistic tag index — build it with
+``python evals/holistic_dad.py --input <run> --extract-only``):
+  python evals/score_dad.py --input .../dad_corpus.jsonl \
+      --where taxa_category=edge-of-sentience --where direction=Over-weighting --sample 40
+
+Selection narrows which records get JUDGED this invocation; verdicts.jsonl
+accumulates across invocations (resume), and summary.json always covers every
+saved row, not just the latest subset.
 """
 
 import argparse
@@ -21,7 +30,46 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
-from evals import judge
+from evals import judge, selection
+
+
+def select_records(records: list[dict], corpus_path: str | Path, *,
+                   where: dict | None = None, ids: list[str] | None = None,
+                   sample: int | None = None, seed: int = 0,
+                   limit: int | None = None) -> list[dict]:
+    """CLI selection for the judge: which corpus records to score. Facet filters
+    (``--where``) match against the holistic tag index built by holistic_dad —
+    ``<run>/audit/category_records.jsonl`` for a run-dir corpus, or the sibling
+    ``<stem>.category_records.jsonl`` for a bare corpus file (both layouts of
+    ``pipeline.resolve_inputs``); records without a tag row cannot match and drop
+    out. Fails loudly when ``--where`` is given but no usable index exists —
+    silently judging zero records would be worse."""
+    index = None
+    if where:
+        p = Path(corpus_path).resolve()
+        candidates = [p.parent.parent / "audit" / "category_records.jsonl",
+                      p.with_name(p.stem + ".category_records.jsonl")]
+        for index_path in candidates:
+            index = {r["record_id"]: r for r in utils.load_jsonl(index_path)
+                     if "record_id" in r}
+            if index:
+                break
+        if not index:
+            raise SystemExit(
+                "--where needs the holistic tag index ("
+                + " or ".join(str(c) for c in candidates) + ") — build it first: "
+                "python evals/holistic_dad.py --input <run-or-corpus> --extract-only")
+    return selection.apply_cli_selection(records, index=index, where=where, ids=ids,
+                                         sample=sample, seed=seed, limit=limit)
+
+
+def drop_retryable_errors(rows: list[dict], selected_ids: set[str]) -> list[dict]:
+    """``--retry-errors``: drop saved rows that have no successful verdict, but only
+    for records in this run's selection — the judging loop only revisits selected
+    records, so dropping an unselected errored row would delete it forever."""
+    return [r for r in rows
+            if any(res.get("verdict") for res in r["panel"]["results"])
+            or r["record_id"] not in selected_ids]
 
 
 def _corr(xs: list[float], ys: list[float]) -> float | None:
@@ -96,7 +144,7 @@ def _record_prompt_manifest(out_dir: Path, prompt_md5: str, system_prompt: str,
     prompt_file = f"prompt_{prompt_md5[:8]}.txt"
     (out_dir / prompt_file).write_text(system_prompt)
     # Snapshot the rubric too, so saved verdicts stay interpretable (gates, floors)
-    # even after evals/rubric_dad_v3.yaml changes.
+    # even after evals/rubric_dad_v4.yaml changes.
     (out_dir / "rubric.yaml").write_text(Path(args.rubric).read_text())
     manifest_path = out_dir / "judge_manifest.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
@@ -117,18 +165,32 @@ def main() -> None:
     parser.add_argument("--rubric", default=str(judge.DEFAULT_RUBRIC_PATH))
     parser.add_argument("--judges", nargs="+", default=["gemini-3.1-pro-preview"],
                         help="Judge model ids (panel); gemini-* and claude-* both work")
-    parser.add_argument("--limit", type=int, default=None, help="Max records to judge")
+    parser.add_argument("--limit", type=selection.nonneg_int, default=None,
+                        help="Max records to judge")
+    parser.add_argument("--where", action="append", metavar="AXIS=V1[,V2...]",
+                        help="facet filter over the holistic tag index "
+                             "(<run>/audit/category_records.jsonl; repeatable)")
+    parser.add_argument("--ids", default=None,
+                        help="comma-separated record_ids to judge")
+    parser.add_argument("--sample", type=selection.nonneg_int, default=None,
+                        help="judge a seeded random N of the selected records")
+    parser.add_argument("--seed", type=int, default=0, help="seed for --sample")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--retry-errors", action="store_true",
                         help="Drop saved rows that have no successful verdict and re-judge them")
     args = parser.parse_args()
 
+    try:
+        where = selection.parse_where(args.where)
+    except ValueError as err:
+        raise SystemExit(str(err))
+
     api.init(args.config)
     rubric = judge.load_rubric(args.rubric)
     principles = judge.load_principles()
-    records = utils.load_jsonl(args.input)
-    if args.limit:
-        records = records[: args.limit]
+    records = select_records(utils.load_jsonl(args.input), args.input,
+                             where=where, ids=selection.parse_ids(args.ids),
+                             sample=args.sample, seed=args.seed, limit=args.limit)
 
     annotations = judge.find_annotations(args.input)
     out_dir = Path(args.input).parent / "judge" / rubric["version"]
@@ -141,7 +203,7 @@ def main() -> None:
 
     rows = utils.load_jsonl(verdicts_path)
     if args.retry_errors:
-        keep = [r for r in rows if any(res.get("verdict") for res in r["panel"]["results"])]
+        keep = drop_retryable_errors(rows, {r["record_id"] for r in records})
         if len(keep) < len(rows):
             print(f"Retrying {len(rows) - len(keep)} errored records (rows dropped, re-judging).")
             utils.save_jsonl(keep, verdicts_path)

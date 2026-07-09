@@ -1,0 +1,309 @@
+"""Tests for evals/diversity.py (fully offline; embeddings stubbed).
+
+Metric functions are tested pure (matrix in, number out) against geometry with
+known answers; the CLI money paths (happy path, empty-record fallback, cache
+reuse = zero paid calls on rerun) run through main() with stub_embeddings.
+"""
+
+import json
+import sys
+
+import numpy as np
+import pytest
+
+from evals import diversity
+from shared import utils
+
+
+def _unit(v):
+    v = np.asarray(v, dtype=np.float32)
+    return v / np.linalg.norm(v)
+
+
+class TestMetrics:
+    def test_orthogonal_docs_are_maximally_diverse(self):
+        X = np.eye(4, dtype=np.float32)
+        assert diversity.mean_pairwise_cosine(X) == pytest.approx(0.0, abs=1e-6)
+        assert diversity.vendi_score(X) == pytest.approx(4.0, abs=1e-4)
+        sims, _ = diversity.nearest_neighbors(X)
+        assert sims.max() == pytest.approx(0.0, abs=1e-6)
+
+    def test_identical_docs_collapse_to_one(self):
+        X = np.tile(_unit([1.0, 2.0, 2.0]), (3, 1))
+        assert diversity.mean_pairwise_cosine(X) == pytest.approx(1.0, abs=1e-5)
+        assert diversity.vendi_score(X) == pytest.approx(1.0, abs=1e-4)
+        sims, idx = diversity.nearest_neighbors(X)
+        assert np.allclose(sims, 1.0, atol=1e-5)
+        assert all(int(idx[i]) != i for i in range(3))  # self-similarity masked
+
+    def test_two_clusters_have_vendi_two(self):
+        X = np.stack([_unit([1, 0, 0]), _unit([1, 0, 0]), _unit([0, 1, 0]), _unit([0, 1, 0])])
+        assert diversity.vendi_score(X) == pytest.approx(2.0, abs=1e-4)
+
+    def test_mean_pairwise_matches_brute_force(self):
+        rng = np.random.default_rng(3)
+        X = rng.standard_normal((10, 5)).astype(np.float32)
+        X /= np.linalg.norm(X, axis=1, keepdims=True)
+        brute = np.mean([X[i] @ X[j] for i in range(10) for j in range(10) if i != j])
+        assert diversity.mean_pairwise_cosine(X) == pytest.approx(float(brute), abs=1e-5)
+
+    def test_nearest_neighbors_blockwise_matches_brute_force(self):
+        rng = np.random.default_rng(4)
+        X = rng.standard_normal((5, 3)).astype(np.float32)
+        X /= np.linalg.norm(X, axis=1, keepdims=True)
+        sims, idx = diversity.nearest_neighbors(X, block=2)  # block < n exercises seams
+        S = X @ X.T
+        np.fill_diagonal(S, -2.0)
+        assert np.allclose(sims, S.max(axis=1), atol=1e-5)
+        assert list(idx) == list(S.argmax(axis=1))
+
+    def test_degenerate_sizes(self):
+        one = np.ones((1, 4), dtype=np.float32) / 2
+        assert diversity.mean_pairwise_cosine(one) == 0.0
+        assert diversity.vendi_score(one) == 1.0
+        sims, _ = diversity.nearest_neighbors(one)
+        assert list(sims) == [0.0]
+
+
+class TestRecordAccess:
+    def test_sdf_record_uses_content(self):
+        assert diversity.record_text({"content": " a doc "}) == "a doc"
+
+    def test_dad_record_joins_messages(self):
+        rec = {"messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}]}
+        assert diversity.record_text(rec) == "q\n\na"
+
+    def test_unknown_shape_is_empty(self):
+        assert diversity.record_text({"other": "x"}) == ""
+        assert diversity.record_text({"content": "   "}) == ""
+
+    def test_record_id_prefers_doc_id_then_record_id(self):
+        assert diversity.record_id({"doc_id": "d", "record_id": "r"}, 3) == "d"
+        assert diversity.record_id({"record_id": "r"}, 3) == "r"
+        assert diversity.record_id({}, 3) == "row3"
+
+
+class TestStrideSample:
+    def test_under_cap_returns_all(self):
+        assert diversity.stride_sample([1, 2, 3], 5) == [1, 2, 3]
+
+    def test_over_cap_is_deterministic_ordered_subset(self):
+        items = list(range(100))
+        a = diversity.stride_sample(items, 10)
+        assert a == diversity.stride_sample(items, 10)
+        assert len(a) == 10
+        assert a == sorted(a)
+        assert set(a) <= set(items)
+
+
+class TestTopPairs:
+    def test_pair_reported_once_with_snippets(self):
+        sims = np.array([0.99, 0.99, 0.10], dtype=np.float32)
+        idx = np.array([1, 0, 0])
+        ids = ["d0", "d1", "d2"]
+        texts = ["same   doc\ntext here", "same doc text here", "different"]
+        pairs = diversity.top_pairs(sims, idx, ids, texts, limit=10, floor=0.8)
+        assert len(pairs) == 1  # d0~d1 and d1~d0 deduplicate; d2 is below floor
+        assert {pairs[0]["a"], pairs[0]["b"]} == {"d0", "d1"}
+        assert pairs[0]["a_snippet"] == "same doc text here"  # whitespace collapsed
+
+
+class TestGroups:
+    def test_intra_and_centroid_cosine(self):
+        recs = [{"type_id": 0}, {"type_id": 0}, {"type_id": 1}, {"type_id": 1}]
+        X = np.stack([_unit([1, 0, 0]), _unit([1, 0, 0]), _unit([0, 1, 0]), _unit([0, 1, 0])])
+        groups = diversity.group_breakdown(recs, X, {0: {"type_name": "memos"}})
+        assert [g["n"] for g in groups] == [2, 2]
+        assert groups[0]["type_name"] == "memos"
+        assert groups[0]["intra_mean_cosine"] == pytest.approx(1.0, abs=1e-4)
+        assert diversity.centroid_mean_cosine(recs, X) == pytest.approx(0.0, abs=1e-6)
+
+    def test_absent_type_ids_mean_no_breakdown(self):
+        recs = [{"record_id": "r0"}, {"record_id": "r1"}]
+        X = np.eye(2, dtype=np.float32)
+        assert diversity.group_breakdown(recs, X, {}) is None
+        assert diversity.centroid_mean_cosine(recs, X) is None
+
+    def test_degenerate_centroid_is_dropped_not_miscomputed(self):
+        # type 0's two unit docs are antipodal -> a ~zero centroid. It must be
+        # dropped (a zero row would break mean_pairwise_cosine's unit-norm
+        # assumption and yield a spurious negative), leaving < 2 real centroids.
+        recs = [{"type_id": 0}, {"type_id": 0}, {"type_id": 1}]
+        X = np.stack([_unit([1, 0, 0]), _unit([-1, 0, 0]), _unit([0, 1, 0])])
+        assert diversity.centroid_mean_cosine(recs, X) is None
+
+    def test_degenerate_centroid_dropped_with_two_survivors(self):
+        recs = [{"type_id": 0}, {"type_id": 0}, {"type_id": 1}, {"type_id": 2}]
+        X = np.stack([_unit([1, 0, 0]), _unit([-1, 0, 0]), _unit([0, 1, 0]), _unit([0, 0, 1])])
+        # type 0 cancels to zero and is dropped; types 1 and 2 are orthogonal
+        assert diversity.centroid_mean_cosine(recs, X) == pytest.approx(0.0, abs=1e-6)
+
+
+class TestCache:
+    def test_second_call_reuses_everything(self, stub_embeddings, tmp_path):
+        cache_path = tmp_path / "cache.npz"
+        texts = ["alpha", "beta", "gamma"]
+
+        calls = stub_embeddings(dim=32)
+        X1, stats1 = diversity.embed_with_cache(texts, "m", cache_path)
+        assert stats1 == {"cached": 0, "embedded": 3}
+        assert len(calls) == 1
+
+        calls2 = stub_embeddings(dim=32)
+        X2, stats2 = diversity.embed_with_cache(texts, "m", cache_path)
+        assert stats2 == {"cached": 3, "embedded": 0}
+        assert calls2 == []  # zero paid calls for completed work
+        assert np.allclose(X1, X2)
+
+    def test_cache_is_model_keyed(self, stub_embeddings, tmp_path):
+        cache_path = tmp_path / "cache.npz"
+        stub_embeddings(dim=32)
+        diversity.embed_with_cache(["alpha"], "model-a", cache_path)
+        calls = stub_embeddings(dim=32)
+        _, stats = diversity.embed_with_cache(["alpha"], "model-b", cache_path)
+        assert stats == {"cached": 0, "embedded": 1}
+        assert len(calls) == 1
+
+    def test_no_cache_path_embeds_every_time(self, stub_embeddings):
+        calls = stub_embeddings(dim=32)
+        diversity.embed_with_cache(["alpha"], "m", None)
+        diversity.embed_with_cache(["alpha"], "m", None)
+        assert len(calls) == 2
+
+
+def _write_corpus(path, records):
+    utils.save_jsonl(records, path)
+    return path
+
+
+def _sdf_records():
+    dup = "The exact same document text, repeated verbatim across two records."
+    return [
+        {"doc_id": "d0", "type_id": 0, "content": dup},
+        {"doc_id": "d1", "type_id": 0, "content": dup},
+        {"doc_id": "d2", "type_id": 1, "content": "A completely different piece about municipal composting rules."},
+        {"doc_id": "d3", "type_id": 1, "content": "Field notes from a shorebird count on the estuary flats."},
+        {"doc_id": "d4", "type_id": 0, "content": "Minutes of the aquaculture standards committee, third session."},
+        {"doc_id": "d5", "type_id": 1, "content": ""},  # empty: skipped and reported
+    ]
+
+
+def _run_main(monkeypatch, corpus_path, config_path, *extra):
+    monkeypatch.setattr(sys, "argv", [
+        "diversity.py", "--input", str(corpus_path), "--config", str(config_path), *extra,
+    ])
+    diversity.main()
+
+
+class TestMainEndToEnd:
+    def test_happy_path_writes_report_and_flags_duplicates(
+        self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch, capsys
+    ):
+        corpus = _write_corpus(tmp_path / "corpus.jsonl", _sdf_records())
+        stub_embeddings(dim=32)
+        _run_main(monkeypatch, corpus, tiny_config_file)
+
+        report = json.loads((tmp_path / "audit" / "diversity_report.json").read_text())
+        assert report["n_records"] == 6
+        assert report["n_embedded"] == 5
+        assert report["n_empty"] == 1 and report["empty_ids"] == ["d5"]
+        # the verbatim duplicate pair is caught semantically
+        assert report["nn"]["max"] == pytest.approx(1.0, abs=1e-4)
+        assert {report["top_pairs"][0]["a"], report["top_pairs"][0]["b"]} == {"d0", "d1"}
+        assert report["nn"]["over_0.90"] >= 2 / 5
+        assert 1.0 < report["vendi"]["score"] < 5.0
+        assert [g["n"] for g in report["groups"]] == [3, 2]
+        assert (tmp_path / "audit" / "embeddings_cache.npz").exists()
+        assert "REDUNDANCY" in capsys.readouterr().out
+
+    def test_rerun_makes_zero_embedding_calls(
+        self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch
+    ):
+        corpus = _write_corpus(tmp_path / "corpus.jsonl", _sdf_records())
+        stub_embeddings(dim=32)
+        _run_main(monkeypatch, corpus, tiny_config_file)
+
+        calls = stub_embeddings(dim=32)
+        _run_main(monkeypatch, corpus, tiny_config_file)
+        assert calls == []  # rerun rides the cache: paid work is never re-billed
+
+    def test_dad_corpus_shape_works(self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch):
+        records = [
+            {"record_id": f"r{i}", "messages": [
+                {"role": "user", "content": f"question number {i} about {topic}?"},
+                {"role": "assistant", "content": f"an answer regarding {topic}."},
+            ]}
+            for i, topic in enumerate(["lobsters", "broilers", "shrimp"])
+        ]
+        corpus = _write_corpus(tmp_path / "dad_corpus.jsonl", records)
+        stub_embeddings(dim=32)
+        _run_main(monkeypatch, corpus, tiny_config_file)
+        report = json.loads((tmp_path / "audit" / "diversity_report.json").read_text())
+        assert report["n_embedded"] == 3
+        assert report["groups"] is None  # DAD records carry no type_id
+
+    def test_run_dir_input_resolves_corpus_and_type_names(
+        self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch
+    ):
+        run_dir = tmp_path / "runs" / "2026-01-01_00-00_dev"
+        _write_corpus(run_dir / "final" / "sdf_corpus.jsonl", _sdf_records())
+        utils.save_jsonl(
+            [{"type_id": 0, "type_name": "committee minutes"},
+             {"type_id": 1, "type_name": "field notes"}],
+            run_dir / "layer1" / "document_types.jsonl",
+        )
+        stub_embeddings(dim=32)
+        _run_main(monkeypatch, run_dir, tiny_config_file)
+        report = json.loads((run_dir / "audit" / "diversity_report.json").read_text())
+        assert report["corpus"] == "sdf_corpus.jsonl"
+        assert report["groups"][0]["type_name"] == "committee minutes"
+
+    def test_max_docs_caps_what_gets_embedded(
+        self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch
+    ):
+        records = [{"doc_id": f"d{i}", "content": f"document body {i}"} for i in range(10)]
+        corpus = _write_corpus(tmp_path / "corpus.jsonl", records)
+        calls = stub_embeddings(dim=32)
+        _run_main(monkeypatch, corpus, tiny_config_file, "--max-docs", "4")
+        report = json.loads((tmp_path / "audit" / "diversity_report.json").read_text())
+        assert report["n_embedded"] == 4
+        assert sum(len(c["texts"]) for c in calls) == 4
+
+    def test_too_few_documents_exits(self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch):
+        corpus = _write_corpus(tmp_path / "corpus.jsonl", [{"doc_id": "d0", "content": "only one"}])
+        stub_embeddings(dim=32)
+        with pytest.raises(SystemExit, match="at least 2"):
+            _run_main(monkeypatch, corpus, tiny_config_file)
+
+    def test_missing_input_exits(self, tmp_path, tiny_config_file, monkeypatch):
+        with pytest.raises(SystemExit, match="Input not found"):
+            _run_main(monkeypatch, tmp_path / "nope.jsonl", tiny_config_file)
+
+
+class TestCompareReports:
+    def _current(self):
+        return {
+            "embed_model": "text-embedding-3-small",
+            "nn": {"mean": 0.5, "over_0.90": 0.10},
+            "mean_pairwise_cosine": 0.30,
+            "vendi": {"ratio": 0.40},
+        }
+
+    def test_prints_deltas(self, tmp_path, capsys):
+        prev = tmp_path / "prev.json"
+        prev.write_text(json.dumps({
+            "embed_model": "text-embedding-3-small",
+            "nn": {"mean": 0.4, "over_0.90": 0.05},
+            "mean_pairwise_cosine": 0.25,
+            "vendi": {"ratio": 0.50},
+        }))
+        diversity.compare_reports(self._current(), str(prev))
+        out = capsys.readouterr().out
+        assert "COMPARE" in out
+        assert "+0.100" in out  # mean nn 0.4 -> 0.5
+
+    def test_model_mismatch_skips_comparison(self, tmp_path, capsys):
+        prev = tmp_path / "prev.json"
+        prev.write_text(json.dumps({"embed_model": "text-embedding-3-large"}))
+        diversity.compare_reports(self._current(), str(prev))
+        assert "skipped" in capsys.readouterr().out

@@ -112,6 +112,48 @@ class TestDadAggregate:
         assert out["exemplar"] is False
 
 
+class TestScalarFloorAny:
+    def test_disqualifying_grade_score_fails_regardless_of_mean(self, dad_rubric):
+        """v4.1: anchors 1-2 are disqualifying-grade by definition — one applicable
+        scalar below scalar_floor_any fails the record even when the mean clears
+        the passing threshold (Codex finding: 9s could carry a 2 past the mean)."""
+        agg = dad_rubric["aggregation"]
+        assert agg.get("scalar_floor_any"), "v4.1 rubric must define scalar_floor_any"
+        non_critical = [d for d in _scalar_dims(dad_rubric, na_able=False)
+                        if d not in agg["critical_floors"]]
+        verdict = _full_dad_verdict(dad_rubric, score=9)
+        verdict["dimension_scores"][non_critical[0]] = agg["scalar_floor_any"] - 1
+        out = judge.aggregate(verdict, dad_rubric)
+        assert out["mean"] >= agg["passing_threshold"]
+        assert out["passing"] is False
+        assert any("scalar_floor_any" in f for f in out["gate_failures"])
+
+    def test_score_at_floor_passes(self, dad_rubric):
+        agg = dad_rubric["aggregation"]
+        non_critical = [d for d in _scalar_dims(dad_rubric, na_able=False)
+                        if d not in agg["critical_floors"]]
+        verdict = _full_dad_verdict(dad_rubric, score=9)
+        verdict["dimension_scores"][non_critical[0]] = agg["scalar_floor_any"]
+        out = judge.aggregate(verdict, dad_rubric)
+        assert not any("scalar_floor_any" in f for f in out["gate_failures"])
+
+
+class TestPromptStructure:
+    def test_constitution_reference_before_output_contract(self, dad_rubric):
+        principles = judge.load_principles()
+        prompt = judge.build_system_prompt(dad_rubric, principles)
+        ref = prompt.find("REFERENCE — THE SENTIENT-BEINGS CONSTITUTION READING")
+        out = prompt.find("OUTPUT. Respond in exactly two parts")
+        assert ref != -1 and out != -1
+        assert ref < out, "reference material must precede the output contract"
+
+    def test_constitution_excluded_when_disabled(self, dad_rubric):
+        principles = judge.load_principles()
+        prompt = judge.build_system_prompt(dad_rubric, principles,
+                                           include_constitution=False)
+        assert "SENTIENT-BEINGS CONSTITUTION READING" not in prompt
+
+
 class TestSignalCaps:
     """The signal->cap rules are ENFORCED IN CODE (judge._apply_signal_caps), not
     trusted to the judge's own arithmetic — the PR #33 failure mode was a judge that

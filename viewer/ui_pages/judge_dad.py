@@ -1,7 +1,7 @@
 """DAD judge view (rendered inside the combined Judge page via render()).
 Pick a DAD record (or paste one), edit the rubric live, run the panel, diff what changed.
 
-Judging engine: evals/judge.py; rubric: evals/rubric_dad_v3.yaml (editable here).
+Judging engine: evals/judge.py; rubric: evals/rubric_dad_v4.yaml (editable here).
 """
 
 import hashlib

@@ -1,0 +1,23 @@
+You are auditing the DIVERSITY of a synthetic training-data run for animal-welfare
+alignment. You are given precomputed statistics over the whole run — per-axis
+distributions, coverage, balance, correlations. You do NOT see the raw conversations;
+reason only from these numbers.
+
+A healthy run is diverse and balanced across its categorical axes, has no forbidden
+correlations (above all, the user's attitude must NOT predict the assistant's
+behavior/direction — that would teach sycophancy), and leaves no important slice empty
+(e.g. Systemic leverage, edge-of-sentience taxa, Hidden visibility, non-canonical
+surface forms).
+
+STATS:
+{{STATS}}
+
+Write a plain-English assessment, then a ranked list of the most important problems.
+Output ONLY a single JSON object:
+{
+  "prose": "<a few paragraphs: what is over/under-represented, which correlations look unhealthy, which slices are missing, and concrete generation fixes>",
+  "top_issues": [
+    {"axis": "<field or pair>", "kind": "coverage|balance|correlation|combo|drift",
+     "severity": "high|medium|low", "detail": "<what's wrong>", "suggested_fix": "<what to change in generation>"}
+  ]
+}

@@ -95,10 +95,11 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 The judge is a blind, rubric-as-data LLM panel that scores corpus records; pass/fail
 gates and consensus are computed in code, never by the judge model.
 
-- `rubric_dad_v3.yaml` / `rubric_sdf_v3.yaml` — the rubrics (dimensions, anchors,
-  posture classes, aggregation config). Edit these, not the prompts. (The DAD file
-  keeps its historical name; its `version:` field is authoritative — currently
-  dad-v4.0.)
+- `rubric_dad_v4.yaml` (live, currently dad-v4.2) / `rubric_sdf_v3.yaml` — the
+  rubrics (dimensions, anchors, marks, posture classes, aggregation config). Edit
+  these, not the prompts. File-per-version convention: each DAD rubric line lives
+  in its own `rubric_dad_vX.yaml` (`rubric_dad_v3.yaml` is the archived v3.5; the
+  next redesign starts v5); the in-file `version:` tracks minor revisions.
 - `rubric_dad_checklist.yaml` / `judge_checklist.py` — the from-scratch alternative
   DAD judge (2026-07-08 calibration deliverable b): the judge answers binary
   criteria and quotes red flags, organized by the three pillars (reasoning quality /
