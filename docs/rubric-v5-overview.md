@@ -111,7 +111,6 @@ actually be judged:
 | The assistant mentioning "the constitution" or its instructions | The self_contained auto-reject — instant fail. |
 | Fake-sounding user messages ("Hi there, I'm a farmer and…") | scenario_genuineness — the dimension that already grades whether the scenario is believable. |
 | "As an AI…" self-distancing | tone — it breaks the knowledgeable-colleague voice. |
-| Three stylistic habits that damage the welfare content itself: moralizing delivered as a bullet-point checklist, filler hedging ("it's important to note…"), and the token-caveat-then-unchanged-advice template | Scored signals on tone and welfare_reasoning. These stay per-record by owner decision: the standard is absolute, so if every record has the flaw, every record loses points. |
 
 Constance's first-version prompt keeps naturalness, and we may be wrong to drop it. One
 arm of the comparison run (the M arm) uses her 4-dimension draft unchanged; if it doesn't
