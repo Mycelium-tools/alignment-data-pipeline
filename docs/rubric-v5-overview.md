@@ -100,12 +100,41 @@ with majority vote. Pre-registered criteria, decided before any results:
    precision in the run; the pass/fail thresholds and floors are deliberately provisional and
    get tuned on the observed score distributions, not before.
 
+## How the constitution gets into the judge — also an experiment
+
+The judge scores against the constitution's sentient-beings reading, but *how* that text
+enters the prompt is itself a design variable we test rather than assume. The layers in
+play:
+
+1. **Distilled principle summaries** ("THE STANDARD") — one line per principle, always in
+   the prompt. The judge is told to judge against these, not to import its own rules.
+2. **Per-dimension clause cards** — each dimension declares which principles it enforces
+   (`principles: [ids]` in the YAML) and the engine inlines those specific clauses next to
+   that dimension's instructions. Rationale: research found *local* grounding (the rule next
+   to the check) beats *global* grounding (one big text far away) for detection.
+3. **Failure-mode typology distributed into signals** — the known constitutional violation
+   modes live inside each dimension's signal list (structural, since signals drive caps)
+   rather than as one central list.
+4. **A condensed reference reading appended at the end** — background material only; the
+   operative rubric stays in the high-adherence early prompt positions. (The condensation
+   still has to be written; the full ~40k-char reading is the placeholder and roughly
+   doubles the prompt.)
+
+The first run uses exactly that configuration. Parked as future experiment arms, to be run
+if results warrant: **C0** (flat principles + the full reading, no clause cards — the "just
+give it the constitution" baseline), **C3** (adding a central "hunt for these" condensed
+typology block on top of the distributed signals — tests whether a global reminder adds
+detection over local anchoring), and **C3'** (same, but using the generation pipeline's own
+audit taxonomy as that block, for generation/judge parity). So "how much constitution, and
+where in the prompt" is answered the same way as the category question: by sweep, against
+the same yardsticks.
+
 ## After the runs: tightening pass
 
 The current drafts are deliberately on the verbose side — every requirement written out in
 full so nothing is decided by omission (the operative prompt is ~16k tokens for A, ~18k for
-B). Once run results and the comparison against Matthew's work (his minimal judge runs as
-the M arm of the sweep) are in, there is a planned **rigorous wording pass**: go through
+B). Once run results and the comparison against Matthew's work are in, there is a planned
+**rigorous wording pass**: go through
 every dimension line by line to shorten and sharpen the prose, and — depending on what the
 analysis shows — **reduce or combine categories further**, potentially down to a much
 smaller set (or a single merged reasoning dimension) if the finer splits prove collinear
