@@ -76,33 +76,38 @@ def extract_json(text: str):
     aside in the preamble can't shadow the real payload.
 
     Raises json.JSONDecodeError when no complete JSON value is present — and
-    also when the payload itself runs off the end of the text (output cut at
-    max_tokens): a truncated payload usually contains smaller values that do
-    parse, and salvaging such a fragment would feed the caller a wrong-shaped
-    result instead of a clean parse error. A truncated value opening at
-    position q consumed everything from q to the end, so a candidate is a
-    fragment exactly when it starts after q; a complete value found *before*
-    q is a genuine payload followed by cut-off chatter, and is returned.
+    also when the payload itself is broken: truncated by max_tokens, or
+    malformed mid-array (missing/trailing comma, both common LLM slip-ups).
+    A broken container usually contains smaller values that do parse, and
+    salvaging such a fragment would feed the caller a wrong-shaped result
+    (a dict where a list was expected, with elements silently dropped)
+    instead of a clean parse error. The unifying signal: a failed parse
+    whose consumed region fully contains a successfully parsed candidate is
+    a real payload that broke partway — candidates inside or after it are
+    its fragments and are disqualified, while a complete value found before
+    it (a genuine payload followed by broken chatter) is still returned.
     """
     decoder = json.JSONDecoder()
-    best = None  # (span_length, start, value)
-    truncated_at = None  # earliest opening bracket whose value ran off the end
-    tail = len(text.rstrip())
+    candidates = []  # (start, end, value)
+    failures = []  # (start, position where the parse gave up)
     for match in re.finditer(r"[\[{]", text):
         try:
             value, end = decoder.raw_decode(text, match.start())
         except json.JSONDecodeError as err:
-            if err.pos >= tail or err.msg.startswith("Unterminated string"):
-                if truncated_at is None:
-                    truncated_at = match.start()
+            failures.append((match.start(), err.pos))
             continue
-        span = end - match.start()
-        if best is None or span > best[0]:
-            best = (span, match.start(), value)
-    if best is not None and (truncated_at is None or best[1] < truncated_at):
-        return best[2]
-    if truncated_at is not None:
-        raise json.JSONDecodeError("JSON value appears truncated", text, truncated_at)
+        candidates.append((match.start(), end, value))
+
+    broken = [q for q, p in failures
+              if any(q < s and e <= p for s, e, _ in candidates)]
+    eligible = [c for c in candidates
+                if not any(c[0] > q for q in broken)]
+    if eligible:
+        return max(eligible, key=lambda c: c[1] - c[0])[2]
+    if broken:
+        raise json.JSONDecodeError(
+            "JSON container is malformed or truncated", text, min(broken)
+        )
     raise json.JSONDecodeError("no JSON value found in response", text, 0)
 
 

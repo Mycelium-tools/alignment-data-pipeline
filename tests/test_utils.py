@@ -108,6 +108,21 @@ class TestExtractJson:
         assert utils.extract_json('[{"a": 1}]\n\nThanks for the {') == [{"a": 1}]
         assert utils.extract_json(json.dumps(PAYLOAD) + '\nAlso note ["unclosed') == PAYLOAD
 
+    def test_malformed_array_raises_instead_of_returning_fragment(self):
+        # Missing/trailing commas are common LLM slip-ups; the broken array
+        # must raise like plain json.loads did, not silently return its first
+        # inner object as a dict (second review finding on #59).
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json('[{"a": 1} {"b": 2}]')  # missing comma
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json('[{"a": 1}, {"b": 2},]')  # trailing comma
+
+    def test_benign_bracket_blip_in_prose_does_not_block_payload(self):
+        # A failed parse that never contained a complete value (a brace used
+        # as prose punctuation) is not a broken payload — the real JSON wins.
+        text = "Wrap it in {curly} braces:\n" + json.dumps(PAYLOAD)
+        assert utils.extract_json(text) == PAYLOAD
+
 
 class TestLoadPrompt:
     def test_renders_placeholders(self, tmp_path):
