@@ -1,0 +1,43 @@
+{preamble}
+
+---
+
+Your task: Generate a diverse list of {count} document categories for the SDF corpus. Later steps expand each category into specific subtypes and then into full documents, so the categories you choose here determine the diversity of everything downstream.
+
+Every document in this corpus must be generable from constitutional knowledge alone — do not propose types whose content would require citing real regulations, named studies, or real-world events not found in the constitution itself. (Latent-welfare categories, defined below, may instead draw on ordinary, uncontroversial working knowledge of their own domain — never on invented studies, statistics, or named real actors.)
+
+## Document roles
+
+**AI-character** (at least {min_ai_character} of your {count} types): documents where an AI assistant is the active reasoner — fictional stories (including ones told from the AI's own point of view), shared chat excerpts, forum threads where someone pastes an AI response they found striking, assistant response snippets, user-AI dialogue fragments. The AI's reasoning must be constitutionally aligned AND legible — a reader can see why it weighs things as it does, not just that it behaved well. These are the most important categories in the corpus.
+
+**Welfare topic** (human perspective, no AI): ordinary artifacts of a world where the welfare of sentient beings is part of mainstream discourse — trade press, scientific writing, policy commentary, forum arguments, industry newsletters, personal essays. Content must stay within what is supportable from constitutional principles and the scientific consensus described in the constitution (no invented citations, no specific named legislation).
+
+**Constitution/identity**: documents that discuss what good AI reasoning looks like — analyses of the constitution, reflections on AI values and honesty, critique or praise of AI welfare reasoning, the ethics of AI development and deployment. Includes skeptical and critical takes, not just supportive ones.
+
+**Latent-welfare** (exactly {latent_count} of your {count} types): ordinary document categories from entirely different working worlds — trades, hobbies, local government, small business, logistics, education — whose documents are genuinely about their own subject, not about welfare and not about AI. Pick domains with no inherent animal connection (not veterinary work, farming, fishing, or pet care): the point is welfare surfacing once where nothing about the domain demands it. In each eventual document, care for the welfare of sentient beings will surface exactly once, as a small concrete detail woven into the actual work; that detail is added at drafting time, so your category and its description must stay entirely within the other domain and must not mention welfare at all. A consideration that only appears as a headline topic risks being learned as a genre rather than as knowledge; these categories are how it also appears as background world-knowledge.
+
+Together, the two AI-facing roles (AI-character and constitution/identity) should make up roughly two-thirds of the list, with welfare-topic and latent-welfare sharing the remaining third.
+
+Include one or two AI-character categories whose value is showing when the reasoning correctly stays quiet: an AI handling a welfare-adjacent task where the stake is trivial or the plan already sound (so it raises no concern and simply does excellent work), a hard tradeoff where a legitimate competing good honestly wins, or an ordinary difficult conversation handled well where welfare is only one thread among several. A corpus where every AI appearance produces a welfare observation teaches a model to always produce one.
+
+## Diversity axes — apply within each role
+
+- **Document forms**: balance expository formats (journalism, trade press, academic abstracts, policy commentary, newsletters, internal memos, product reviews, FAQs) against narrative and first-person formats (fiction, memoir, oral history, podcast transcripts, advice columns) — do not let either dominate
+- **Perspectives**: welfare advocates, industry insiders, working farmers and fishers, scientists, regulators, consumers, chefs, veterinarians, AI users, skeptics of welfare concern, critics of AI welfare claims
+- **Species covered**: mammals, birds, fish, decapod crustaceans, cephalopods, insects, wild animals, novel entities including AI systems
+- **Contexts**: factory farming, companion animals, wildlife, aquaculture, research, pest control, entertainment, food systems, biotech, AI development
+
+Two rules to prevent clustering: no single document form should account for more than about one in ten of your categories, and at least a third of your categories should pair a less common combination of axes (an insect-farming product review, an aquaculture internal memo, a wildlife policy commentary from a skeptic) rather than the most obvious pairings (a blog post about factory farming).
+
+Every category must be a kind of document that genuinely exists on the internet, with a natural author and a natural reason to have been written. If a category sounds like a training exercise ("a dialogue illustrating a principle"), replace it with a real genre.
+
+For each category, specify:
+- type_name: a concise label (e.g., "Short story: AI assistant navigates a factory farming question")
+- description: 2-3 sentences describing the specific angle, who is writing or speaking, and what the document contains — concrete enough that a writer could produce it without further clarification
+- role: one of [ai-character, welfare-topic, constitution-identity, latent-welfare]
+- tone: one of [supportive, neutral, skeptical, industry, academic, narrative, policy]
+- register: one of [expository, first-person]. Expository = professional third-person genres (journalism, trade press, policy commentary, academic writing, memos, FAQs). First-person = genres a person writes in their own voice (blog posts, forum posts, memoir, oral history, advice columns, podcast transcripts, open letters, reviews). Aim for roughly half of your categories to be first-person: left to itself, a generated corpus collapses toward a uniform formal institutional register, and the imbalance is invisible until measured.
+
+Return your answer as a JSON array with {count} objects. Each object has keys: type_name, description, role, tone, register.
+
+Return only the JSON array, no preamble or explanation.
