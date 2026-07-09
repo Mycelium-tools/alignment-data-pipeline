@@ -188,7 +188,8 @@ def stub_claude(monkeypatch):
         busy = threading.Lock()
 
         def fake(user_message, system_prompt="", injection="", model=None, max_tokens=None,
-                 return_stop_reason=False, stage=None, temperature=None):
+                 return_stop_reason=False, stage=None, temperature=None,
+                 cache_prefix="", cache_system=False):
             calls.append({
                 "user_message": user_message,
                 "system_prompt": system_prompt,
@@ -197,10 +198,16 @@ def stub_claude(monkeypatch):
                 "max_tokens": max_tokens,
                 "stage": stage,
                 "temperature": temperature,
+                "cache_prefix": cache_prefix,
+                "cache_system": cache_system,
             })
             if queue is None:
+                # Dispatchers match on prompt content; hand them the full prompt
+                # the model would see (prefix + remainder), same as the
+                # claude_code backend folds it. cache_prefix is still recorded
+                # separately above for caching-contract assertions.
                 result = responses(
-                    user_message,
+                    cache_prefix + user_message,
                     system_prompt=system_prompt,
                     injection=injection,
                     model=model,
@@ -236,9 +243,15 @@ def stub_claude(monkeypatch):
 def fake_message():
     """Factory for objects shaped like an Anthropic Message response."""
 
-    def make(text="ok", input_tokens=10, output_tokens=5, stop_reason="end_turn"):
+    def make(text="ok", input_tokens=10, output_tokens=5, stop_reason="end_turn",
+             cache_creation_input_tokens=0, cache_read_input_tokens=0):
         return SimpleNamespace(
-            usage=SimpleNamespace(input_tokens=input_tokens, output_tokens=output_tokens),
+            usage=SimpleNamespace(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_creation_input_tokens=cache_creation_input_tokens,
+                cache_read_input_tokens=cache_read_input_tokens,
+            ),
             content=[SimpleNamespace(text=text, type="text")],
             stop_reason=stop_reason,
         )

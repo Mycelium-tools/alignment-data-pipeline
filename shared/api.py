@@ -122,12 +122,20 @@ def _get_client() -> anthropic.Anthropic:
     return _client
 
 
+# Prompt-cache pricing multipliers on the input rate: a 5-minute-TTL cache
+# write bills at 1.25x, a cache read at 0.1x.
+_CACHE_WRITE_MULT = 1.25
+_CACHE_READ_MULT = 0.1
+
+
 def _log_usage(
     model: str,
     input_tokens: int,
     output_tokens: int,
     cost_usd: float | None = None,
     stage: str | None = None,
+    cache_creation_tokens: int = 0,
+    cache_read_tokens: int = 0,
 ) -> None:
     # claude_code passes Claude Code's own reported cost; the api backend leaves
     # cost_usd=None, so we price it from _PRICING with a loud fallback on unknown
@@ -144,7 +152,14 @@ def _log_usage(
                     file=sys.stderr,
                 )
             prices = (3.00, 15.00)
-        cost_usd = (input_tokens / 1_000_000) * prices[0] + (output_tokens / 1_000_000) * prices[1]
+        # input_tokens is the UNCACHED prompt remainder (the API reports cached
+        # spans separately); total prompt = input + cache_creation + cache_read.
+        cost_usd = (
+            (input_tokens / 1_000_000) * prices[0]
+            + (cache_creation_tokens / 1_000_000) * prices[0] * _CACHE_WRITE_MULT
+            + (cache_read_tokens / 1_000_000) * prices[0] * _CACHE_READ_MULT
+            + (output_tokens / 1_000_000) * prices[1]
+        )
     record = {
         "timestamp": datetime.now(UTC).isoformat(),
         "model": model,
@@ -155,6 +170,12 @@ def _log_usage(
         "output_tokens": output_tokens,
         "cost_usd": round(cost_usd, 6),
     }
+    # Only present on cache-enabled calls, so untagged/legacy records keep their
+    # exact old shape (same convention as the optional `stage` key).
+    if cache_creation_tokens:
+        record["cache_creation_input_tokens"] = cache_creation_tokens
+    if cache_read_tokens:
+        record["cache_read_input_tokens"] = cache_read_tokens
     if stage:
         record["stage"] = stage
     with _cost_log_lock, open(_cost_log_path, "a") as f:
@@ -182,7 +203,7 @@ def _call_with_retry(
     client: anthropic.Anthropic,
     model: str,
     max_tokens: int,
-    system: str,
+    system: str | list[dict],
     messages: list[dict],
     temperature: float,
 ) -> anthropic.types.Message:
@@ -376,6 +397,8 @@ def call_claude(
     return_stop_reason: bool = False,
     stage: str | None = None,
     temperature: float | None = None,
+    cache_prefix: str = "",
+    cache_system: bool = False,
 ) -> str | tuple[str, str | None]:
     """Call Claude and return the response text.
 
@@ -394,10 +417,23 @@ def call_claude(
             "prompt_draft", "layer4") so spend can be broken down per stage.
         temperature: Sampling temperature override for this call; falls back to
             the config `temperature` (1.0 — corpus generation wants diversity).
+        cache_prefix: Text prepended to user_message as a prompt-cached content
+            block (the model sees cache_prefix + user_message either way). Pass
+            the byte-identical-across-calls head of the prompt — a repeated
+            block below the model's minimum cacheable size is silently not
+            cached, which is harmless. Cache reads bill at ~0.1x the input
+            rate; writes at 1.25x with a 5-minute TTL.
+        cache_system: Cache the (system_prompt + injection) block the same way.
+            Only worthwhile when the same system prompt repeats across calls,
+            e.g. the full constitution at SDF layers 4-5.
 
     Returns:
         The assistant's response text, or (text, stop_reason) when
         return_stop_reason is True.
+
+    Caching is an api-backend cost optimization only: the claude_code backend
+    concatenates cache_prefix back into the user message (the CLI manages its
+    own prompt assembly), so outputs are identical across backends.
     """
     resolved_model = model or _config.get("model", "claude-sonnet-5")
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
@@ -424,7 +460,9 @@ def call_claude(
         text, input_tokens, output_tokens, cost, stop_reason = _call_claude_code_with_retry(
             model=resolved_model,
             system=full_system,
-            user_message=user_message,
+            # No cache_control surface on the CLI — fold the prefix back in so
+            # the model sees the same prompt as on the api backend.
+            user_message=cache_prefix + user_message,
         )
         _log_usage(resolved_model, input_tokens, output_tokens, cost_usd=cost, stage=stage)
         # Same suspect-stop-reason guard as the api path below; Claude Code
@@ -435,17 +473,34 @@ def call_claude(
                   "truncated or refused.", file=sys.stderr)
         return (text, stop_reason) if return_stop_reason else text
 
+    if cache_prefix:
+        # Two text blocks, cache_control on the first: the prefix is matched
+        # byte-for-byte against the cache, the per-call remainder follows it.
+        content: str | list[dict] = [
+            {"type": "text", "text": cache_prefix, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": user_message},
+        ]
+    else:
+        content = user_message
+    system_payload: str | list[dict] = full_system
+    if cache_system and full_system:
+        system_payload = [
+            {"type": "text", "text": full_system, "cache_control": {"type": "ephemeral"}},
+        ]
+
     response = _call_with_retry(
         client=_get_client(),
         model=resolved_model,
         max_tokens=resolved_max,
-        system=full_system,
-        messages=[{"role": "user", "content": user_message}],
+        system=system_payload,
+        messages=[{"role": "user", "content": content}],
         temperature=resolved_temp,
     )
 
     _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens,
-               stage=stage)
+               stage=stage,
+               cache_creation_tokens=getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
+               cache_read_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0)
     # A completion that stopped for any reason other than end_turn/stop_sequence
     # is suspect — max_tokens truncates mid-text, refusal yields little or none.
     # Warn loudly so it isn't silently written into a corpus; callers that build

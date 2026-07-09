@@ -131,6 +131,47 @@ class TestCallClaude:
         assert capsys.readouterr().err == ""
 
 
+class TestPromptCaching:
+    def test_cache_prefix_builds_two_blocks_with_cache_control_on_first(self, recorded_api):
+        api.call_claude("tail of the prompt", cache_prefix="STABLE HEAD\n")
+        messages = recorded_api["calls"][0]["messages"]
+        assert messages == [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "STABLE HEAD\n",
+                 "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": "tail of the prompt"},
+            ],
+        }]
+
+    def test_cache_system_wraps_system_and_injection_in_cached_block(self, recorded_api):
+        api.call_claude("hi", system_prompt="sys", injection="inj", cache_system=True)
+        assert recorded_api["calls"][0]["system"] == [
+            {"type": "text", "text": "sys\n\ninj", "cache_control": {"type": "ephemeral"}},
+        ]
+
+    def test_cache_system_with_empty_system_stays_plain_string(self, recorded_api):
+        # An empty cached block would be an invalid request; the flag is a no-op
+        # when there is nothing to cache.
+        api.call_claude("hi", cache_system=True)
+        assert recorded_api["calls"][0]["system"] == ""
+
+    def test_claude_code_backend_folds_prefix_into_user_message(self, monkeypatch, tmp_path):
+        # The CLI has no cache_control surface — the model must still see the
+        # identical prompt, so the prefix is concatenated back in.
+        seam_messages = []
+
+        def fake_seam(model, system, user_message):
+            seam_messages.append(user_message)
+            return ("ok", 1, 1, 0.0, "end_turn")
+
+        monkeypatch.setattr(api, "_call_claude_code_with_retry", fake_seam)
+        monkeypatch.setattr(api, "_backend", "claude_code")
+        monkeypatch.setattr(api, "_cost_log_path", tmp_path / "cost.jsonl")
+        assert api.call_claude("tail", cache_prefix="HEAD ") == "ok"
+        assert seam_messages == ["HEAD tail"]
+
+
 class TestRetryPredicate:
     def test_bad_request_is_not_retried(self, monkeypatch):
         """A 400 (e.g. exhausted credit balance) is deterministic: it must
@@ -189,6 +230,27 @@ class TestCostTracking:
         api.call_claude("a", model="claude-nonexistent-model")
         api.call_claude("b", model="claude-nonexistent-model")
         assert capsys.readouterr().err.count("not in shared/api.py _PRICING") == 1
+
+    def test_cache_tokens_priced_at_write_and_read_multipliers(self, recorded_api, tmp_path, fake_message):
+        # Cache writes bill at 1.25x the input rate, reads at 0.1x; input_tokens
+        # is the uncached remainder only. Haiku input is $1/MTok, so:
+        # 1M written (1.25) + 1M read (0.10) + 0 uncached + 0 output = $1.35.
+        recorded_api["message"] = fake_message(
+            input_tokens=0, output_tokens=0,
+            cache_creation_input_tokens=1_000_000, cache_read_input_tokens=1_000_000,
+        )
+        api.call_claude("hi", model="claude-haiku-4-5-20251001", cache_prefix="p")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert record["cost_usd"] == pytest.approx(1.35)
+        assert record["cache_creation_input_tokens"] == 1_000_000
+        assert record["cache_read_input_tokens"] == 1_000_000
+
+    def test_uncached_call_writes_no_cache_keys(self, recorded_api, tmp_path):
+        # Legacy records keep their exact shape (same convention as `stage`).
+        api.call_claude("hi")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert "cache_creation_input_tokens" not in record
+        assert "cache_read_input_tokens" not in record
 
     def test_stage_written_to_cost_record(self, recorded_api, tmp_path):
         api.call_claude("hi", stage="prompt_draft")

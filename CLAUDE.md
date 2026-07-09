@@ -65,6 +65,8 @@ DAD likewise: `dad.prompt_draft_model` (1b) / `dad.prompt_refine_model` (1c) / `
 
 Rough cost anchor (Sonnet 5, July 2026): a DAD example costs ~$0.20–0.25 end-to-end, so the default 40-example run is ~$9–10; smoke runs of 3–5 examples are under $1.
 
+Large stable prompt blocks are **prompt-cached** on the api backend (`call_claude(cache_prefix=...)` for a repeated user-content head, `cache_system=True` for a repeated system prompt): the 2b reasoning library (~12k tokens/call) and the SDF layer-4/5 constitution system prompt (~46k) go out as cached blocks (step 3's principles anchor sits at the END of its template after the per-case content, so it has no cacheable prefix by design) — reads bill at ~0.1x the input rate, writes once at 1.25x (5-minute TTL, trivially met inside a stage). `utils.split_prompt` splits a template at its first per-call placeholder so prefix + rendered rest stays byte-identical to the old single-string prompt. Cost-log records on cache-enabled calls carry `cache_creation_input_tokens` / `cache_read_input_tokens`, priced at those multipliers (`input_tokens` is the uncached remainder only). The claude_code backend folds the prefix back into the message — identical prompts, no cache control.
+
 Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jsonl` (evals log to the global `outputs/cost_log.jsonl`) — check it any time. Each record carries a `stage` tag (`prompt_draft`, `layer4`, `constitution_rewrite`, …) matching the model-knob names; the viewer's run list renders the per-stage cost breakdown (pre-tag records show as "(untagged)").
 
 ## Preference Pipeline

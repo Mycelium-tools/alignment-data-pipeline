@@ -140,6 +140,8 @@ class TestLayer4:
         assert records[0]["review_notes"] == "The draft undersold uncertainty."
         assert records[0]["original"] == "original text"
         assert "joins two complementary frameworks" in calls[0]["system_prompt"]
+        # the ~46k-token constitution repeats every call — it must go out cached
+        assert calls[0]["cache_system"] is True
 
     def test_missing_tags_keeps_original_draft(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         stub_claude(["prose with no document tags"])
@@ -182,6 +184,8 @@ class TestLayer5:
         assert passed[0]["scores"]["notes"] == "n"
         # the scorer judges against the constitution, not just the rubric prompt
         assert "joins two complementary frameworks" in calls[0]["system_prompt"]
+        # the ~46k-token constitution repeats every call — it must go out cached
+        assert calls[0]["cache_system"] is True
 
     def test_parse_error_defaults_scores_to_five(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
         stub_claude(["garbage"])

@@ -81,6 +81,30 @@ class TestLoadPrompt:
             utils.load_prompt(tpl, other="x")
 
 
+class TestSplitPrompt:
+    def test_prefix_plus_rendered_rest_matches_load_prompt(self, tmp_path):
+        tpl = tmp_path / "t.txt"
+        tpl.write_text("HEAD {stable} MID {per_call} TAIL")
+        prefix, rest = utils.split_prompt(tpl, "per_call", stable="lib")
+        assert prefix == "HEAD lib MID "
+        assert rest == "{per_call} TAIL"
+        assert prefix + rest.format(per_call="x") == utils.load_prompt(
+            tpl, stable="lib", per_call="x"
+        )
+
+    def test_splits_at_first_occurrence_only(self, tmp_path):
+        tpl = tmp_path / "t.txt"
+        tpl.write_text("A {m} B {m}")
+        prefix, rest = utils.split_prompt(tpl, "m")
+        assert (prefix, rest) == ("A ", "{m} B {m}")
+
+    def test_missing_marker_raises(self, tmp_path):
+        tpl = tmp_path / "t.txt"
+        tpl.write_text("no placeholder here")
+        with pytest.raises(ValueError, match="no .marker."):
+            utils.split_prompt(tpl, "marker")
+
+
 class TestSampleLanguage:
     def test_certain_distribution_always_returns_that_language(self):
         assert all(utils.sample_language({"en": 1.0}) == "en" for _ in range(20))

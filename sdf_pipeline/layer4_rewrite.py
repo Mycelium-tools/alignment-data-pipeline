@@ -43,6 +43,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
         raw = api.call_claude(
             user_message=prompt,
             system_prompt=constitution,
+            # The full constitution (~46k tokens) repeats verbatim on every
+            # rewrite call — cache it so reads bill at ~0.1x the input rate.
+            cache_system=True,
             max_tokens=6000,
             model=config["sdf"].get("rewrite_model"),
             stage="layer4",

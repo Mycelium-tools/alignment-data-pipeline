@@ -92,6 +92,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
     # no separate system prompt (per prompts/dad/step2_respond.txt).
     library_block = reasoning_library.format_library(library)
     library_ids = reasoning_library.all_ids(library)
+    # The rendered library (~12k tokens) is byte-identical across every 2b call
+    # in a run and sits ahead of the first per-case placeholder, so it goes to
+    # call_claude as a prompt-cached prefix (reads bill at ~0.1x input) instead
+    # of being re-billed per response. prefix + rendered rest is byte-identical
+    # to the old single-string prompt.
+    respond_prefix, respond_rest = utils.split_prompt(
+        prompts_dir / "step2_respond.txt", "scope_block", library_block=library_block
+    )
     per_prompt = int(config["dad"].get("responses", {}).get("per_prompt", 1))
 
     scopes_path = output_dir / "scopes.jsonl"
@@ -169,12 +177,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
             print(f"  Generating response for {pid}{suffix}...")
             response, stop_reason = api.call_claude(
-                user_message=utils.load_prompt(
-                    prompts_dir / "step2_respond.txt",
-                    library_block=library_block,
+                user_message=respond_rest.format(
                     scope_block=format_scope(scope),
                     user_message=d["user_message"],
                 ),
+                cache_prefix=respond_prefix,
                 return_stop_reason=True,
                 model=config["dad"].get("response_draft_model"),
                 stage="response_draft",
