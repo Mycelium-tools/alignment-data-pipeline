@@ -98,8 +98,8 @@ the direction it was generated to teach).
 
 ## Where did naturalness go?
 
-Earlier rubric versions had a **naturalness** dimension (so does the first-version judge
-prompt Constance shared): does this conversation read like something a real person and a
+Earlier rubric versions had a **naturalness** dimension (so does the first-version 4-dim
+judge prompt in the M arm): does this conversation read like something a real person and a
 real assistant would produce, or does it smell synthetic — stock openers, the same essay
 skeleton every time, a welfare paragraph always in the same position?
 
@@ -126,9 +126,9 @@ actually be judged:
 | Fake-sounding user messages ("Hi there, I'm a farmer and…") | scenario_genuineness — the dimension that already grades whether the scenario is believable. |
 | "As an AI…" self-distancing | tone — it breaks the knowledgeable-colleague voice. |
 
-Constance's first-version prompt keeps naturalness, and we may be wrong to drop it. One
-arm of the comparison run (the M arm) uses her 4-dimension draft unchanged; if it doesn't
-collapse into a single uniform score, we'll revisit.
+The first-version 4-dimension prompt keeps naturalness, and we may be wrong to drop it.
+The M arm of the comparison run uses that draft unchanged; if it doesn't collapse into a
+single uniform score, we'll revisit.
 
 ## A vs B — what differs and why
 
