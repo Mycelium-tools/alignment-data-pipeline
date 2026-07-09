@@ -131,6 +131,33 @@ cp .env.example .env           # then add your ANTHROPIC_API_KEY
 
 > **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again.
 
+### Authentication
+
+The pipeline supports two backends, selected by the `backend` key in `config.yaml`:
+
+- **`backend: api`** (default) — calls the Anthropic API directly, billed per token to the `ANTHROPIC_API_KEY` in your `.env` (ask Oliver). Use this for full-scale runs and evals.
+- **`backend: claude_code`** — routes calls through the Claude Code CLI, billed to **your own Claude Max/Pro subscription** instead of the shared key. No `ANTHROPIC_API_KEY` needed. Use this for dev/iteration runs.
+
+To use it, set `backend: claude_code` in `config.yaml` and give the Claude Code CLI credentials one of two ways:
+
+1. **Reuse your interactive login (simplest).** If you already use [Claude Code](https://claude.com/claude-code) (`claude`, then `/login`), the pipeline picks up that session automatically — there's nothing else to do.
+2. **Generate a token for `.env`.** Install [Claude Code](https://claude.com/claude-code), then run:
+   ```bash
+   claude setup-token     # opens a browser; approve with your Claude account
+   ```
+   Copy the printed token into your `.env`:
+   ```
+   CLAUDE_CODE_OAUTH_TOKEN=<paste the token here>
+   ```
+   This is a Claude Code OAuth token tied to your subscription (valid ~1 year), **not** an Anthropic API key — despite the name, no Console/API key is involved. Use this path for CI or any non-interactive machine.
+
+Caveats for `backend: claude_code`:
+
+- **Usage limits.** Subscription usage is a 5-hour rolling window plus a weekly cap, shared with your interactive Claude Code use. Dev-scale runs fit comfortably; a full-scale run will exhaust the window. If a run hits the limit it stops with a clear message — progress is checkpointed, so continue later with `--resume`.
+- **Per-call overhead.** Claude Code adds ~3K input tokens of scaffolding per call and spawns a CLI process per request, so calls are somewhat slower. `max_tokens` from `config.yaml` is not enforced on this backend (Claude Code applies its own output cap); `cost_usd` in the cost log is notional — what the run *would* have cost at API prices.
+- **Empty system prompts get a neutral stand-in.** Claude Code substitutes its own agentic CLI prompt when the system prompt is empty, so stages that send none get a one-line neutral system prompt instead (see `_NEUTRAL_SYSTEM` in `shared/api.py`). Several stages send **no system prompt** — notably the DAD response steps, which reason from the embedded reasoning library rather than a system prompt — and those are **not reproduced exactly** on `claude_code` (the neutral stand-in replaces the empty prompt). The backend prints a one-time warning when it does this. Run DAD on `backend: api` when faithful no-system-prompt behavior matters (and keep full-scale corpus runs on `api` regardless).
+- **Policy note.** Anthropic's docs steer programmatic workloads toward API keys; running this internal tool on your own subscription is the same posture as using Claude Code itself, but it's a gray area — keep it to dev-scale runs.
+
 ---
 
 ## Running the unit tests

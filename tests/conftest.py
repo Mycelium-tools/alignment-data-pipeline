@@ -1,13 +1,18 @@
 """Shared fixtures for the offline test suite.
 
-Three independent layers guarantee tests can NEVER call the Anthropic API:
+Four independent layers guarantee tests can NEVER call the Anthropic API or
+spawn the Claude Code CLI:
 
 1. pytest-socket (``--disable-socket`` in pyproject.toml) blocks all network
    access at the socket level.
 2. Every test runs with a fake ``ANTHROPIC_API_KEY``, overriding any real key
    that ``load_dotenv()`` (run at ``shared.api`` import) pulled from a .env file.
 3. ``shared.api._call_with_retry`` is replaced with a function that raises, so
-   an unstubbed ``call_claude`` fails loudly before touching tenacity/anthropic.
+   an unstubbed ``call_claude`` on the api backend fails loudly before touching
+   tenacity/anthropic.
+4. ``shared.api._call_claude_code_with_retry`` is replaced the same way, so the
+   claude_code backend can never spawn the CLI — which would bill a real
+   contributor subscription — from a test.
 
 Pipeline tests stub one level higher via ``stub_claude``, which patches
 ``shared.api.call_claude`` — the single chokepoint every pipeline module uses.
@@ -88,6 +93,9 @@ def _api_guard(monkeypatch):
     monkeypatch.setattr(api, "_client", None)
     monkeypatch.setattr(api, "_cost_log_path", None)
     monkeypatch.setattr(api, "_UNPRICED_WARNED", set())
+    monkeypatch.setattr(api, "_backend", "api")
+    monkeypatch.setattr(api, "_neutral_system_warned", False)
+    monkeypatch.setattr(api, "_temperature_warned", False)
 
     def _blocked(*args, **kwargs):
         raise AssertionError(
@@ -95,6 +103,19 @@ def _api_guard(monkeypatch):
         )
 
     monkeypatch.setattr(api, "_call_with_retry", _blocked)
+
+    # The claude_code backend's seam spawns the real `claude` CLI as a
+    # subprocess, which pytest-socket's --disable-socket cannot block (it only
+    # patches the in-process socket module). Block it here too so a test that
+    # flips _backend to "claude_code" without stubbing this fails fast in-process
+    # rather than launching a real CLI. Tests exercising the backend override it.
+    def _blocked_cc(*args, **kwargs):
+        raise AssertionError(
+            "claude_code backend invoked during tests — "
+            "stub shared.api._call_claude_code_with_retry"
+        )
+
+    monkeypatch.setattr(api, "_call_claude_code_with_retry", _blocked_cc)
 
 
 @pytest.fixture(autouse=True)

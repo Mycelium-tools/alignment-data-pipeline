@@ -94,6 +94,23 @@ class TestPairGeneration:
         pairs = utils.load_jsonl(run_dir / "pairs" / "pairs.jsonl")
         assert len(pairs) == 1 and pairs[0]["response_a"] == "A answer"
 
+    def test_resume_warns_when_backend_changed(self, pref_config_file, prompts_file,
+                                               outputs_root, stub_claude, monkeypatch,
+                                               capsys, tmp_path):
+        # Same resume convention as the SDF/DAD orchestrators: flipping
+        # `backend` between start and --resume must be surfaced, not silent.
+        import yaml
+        stub_claude(_arm_dispatch)
+        _run_main(monkeypatch, pref_config_file, prompts_file)
+        assert "different backend" not in capsys.readouterr().err
+
+        cfg = yaml.safe_load(pref_config_file.read_text())
+        cfg["backend"] = "claude_code"
+        flipped = tmp_path / "config_flipped.yaml"
+        flipped.write_text(yaml.safe_dump(cfg))
+        _run_main(monkeypatch, flipped, prompts_file, "--resume")
+        assert "different backend" in capsys.readouterr().err
+
     def test_truncated_arm_defers_pair(self, pref_config_file, prompts_file, outputs_root,
                                        stub_claude, monkeypatch):
         def truncating(user_message, **kw):

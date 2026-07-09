@@ -1,4 +1,5 @@
 anthropic>=0.96.0
+claude-agent-sdk>=0.2.0  # backend: claude_code — also requires the Claude Code CLI
 pandas
 pyyaml
 python-dotenv
