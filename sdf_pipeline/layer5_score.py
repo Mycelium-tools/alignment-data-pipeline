@@ -50,7 +50,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     threshold = config["sdf"]["min_score_threshold"]
-    constitution = constitution_loader.load_full_constitution(utils.resolve_constitution_dir(prompts_dir))
+    constitution = constitution_loader.load_constitution_with_principles(utils.resolve_constitution_dir(prompts_dir))
 
     existing_scores = {r["doc_id"]: r for r in utils.load_jsonl(output_path)}
     results = [existing_scores[rw["doc_id"]] for rw in rewrites if rw["doc_id"] in existing_scores]

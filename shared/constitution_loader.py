@@ -6,11 +6,13 @@ Three source files live in constitution/:
   reading, with one `## ` header per section.
 - constitution_principles.csv — fourteen distilled welfare-relevant principles
   (number, principle, constitution_summary, raw_text_from_constitution),
-  embedded as a checklist in the DAD step-3 rewrite prompt.
+  embedded as a checklist in the DAD step-3 rewrite prompt and, joined with the
+  Claude constitution, in the SDF prompts (system prompt at layers 4-5,
+  template variables at layer 3).
 
-The two markdown files are joined in memory wherever the full text is needed —
-the system prompts of SDF layers 4-5 (rewrite and scoring) and DAD steps 3-4;
-SDF layer 3 embeds the two texts via template variables instead.
+The sentient-beings reading is no longer sent by either pipeline's generation
+calls; load_full_constitution/load_segments remain for the viewer and legacy
+runs.
 """
 
 import csv
@@ -35,6 +37,19 @@ already directs Claude to weigh "the welfare of animals and of all sentient
 beings." Our own contributions appear only as interpretation, as labeled
 heuristics, as examples, and as citations to authoritative outside documents —
 never as words put into the constitution's mouth.
+"""
+
+_PRINCIPLES_JOIN_PREAMBLE = """\
+This document joins two complementary parts:
+Part I: The original claude constitution
+Part II: Fourteen distilled welfare-relevant principles
+
+The Part II principles do not modify, extend, or rewrite Claude's Constitution.
+Each principle distills what the constitution already implies for the treatment
+of animals and other sentient beings — given that the constitution already
+directs Claude to weigh "the welfare of animals and of all sentient beings" —
+and carries the verbatim constitution quote it distills. Nothing in Part II
+puts words into the constitution's mouth.
 """
 
 # Sections of the reading that describe the document itself rather than a
@@ -65,13 +80,29 @@ def load_constitution_welfare_reading(base_dir: str | Path | None = None) -> str
 
 def load_full_constitution(base_dir: str | Path | None = None) -> str:
     """Return the full constitution: join preamble + Claude constitution + reading.
-    Used as the system prompt at SDF layers 4-5 (rewrite and scoring); SDF layer 3
-    embeds the constitution via template variables instead. The DAD pipeline does
-    not send this — its rewrite runs on the distilled principles CSV."""
+    No longer sent by pipeline generation calls (SDF now uses
+    load_constitution_with_principles); kept for the viewer and legacy runs."""
     return "\n---\n\n".join([
         _JOIN_PREAMBLE,
         load_constitution_claude(base_dir),
         load_constitution_welfare_reading(base_dir),
+    ])
+
+
+def load_constitution_with_principles(base_dir: str | Path | None = None) -> str:
+    """Return the Claude constitution joined with the distilled principles block:
+    join preamble + Claude constitution + formatted principles CSV. Used as the
+    system prompt at SDF layers 4-5 (rewrite and scoring); SDF layer 3 embeds the
+    same two texts via template variables instead. Snapshots that predate the
+    principles CSV fall back to the repo's live copy, as in DAD step 3."""
+    try:
+        principles = load_principles(base_dir)
+    except FileNotFoundError:
+        principles = load_principles()
+    return "\n---\n\n".join([
+        _PRINCIPLES_JOIN_PREAMBLE,
+        load_constitution_claude(base_dir),
+        format_principles(principles),
     ])
 
 
