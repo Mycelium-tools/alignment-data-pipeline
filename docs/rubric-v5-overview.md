@@ -182,8 +182,14 @@ approximation):
 | | A (9 dims) | B (11 dims) |
 |---|---|---|
 | YAML file | 1,025 lines | 1,132 lines |
-| Operative system prompt (rubric only) | 65,016 chars ≈ 16.3k tokens | 73,474 chars ≈ 18.4k tokens |
-| With the full constitution reading appended | 105,121 chars ≈ 26.3k tokens | 113,579 chars ≈ 28.4k tokens |
+| Operative prompt (rubric + one-line principle summaries) | 65,016 chars ≈ 16.3k tokens | 73,474 chars ≈ 18.4k tokens |
+| + per-dimension clause cards (first-run config) | 74,903 chars ≈ 18.7k tokens | 85,581 chars ≈ 21.4k tokens |
+| + condensed reference reading (first-run config) | above + the condensation — not yet written | above + the condensation — not yet written |
+| + the full ~40k-char reading instead (C0-style baseline) | 115,008 chars ≈ 28.8k tokens | 125,686 chars ≈ 31.4k tokens |
+
+The clause-card figures inline each dimension's declared constitution clauses next to its
+instructions; the full-reading row is what running without the condensation would cost —
+most of the reason the condensation is worth writing.
 
 Once run results and the comparison against Matthew's work are in, there is a planned
 wording pass through every dimension, line by line, to shorten and sharpen the prose — and,
