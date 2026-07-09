@@ -17,9 +17,13 @@ prompt), produced an 11-item decision sheet, got owner rulings, and folded the a
   BOTH judge and step-6 sides; D8 ruled: FIRST RUN = failure modes distributed among category
   signals + Layer-2 per-dimension clause cards + a CONDENSED reference constitution (no
   constitution sweep yet; C0/C3/C3' parked for future runs); D10 = skip; D11 = REJECTED (no
-  decision-ownership signal, NOT on task #6 agenda). **D6 and D7 = PENDING** — owner asked
-  for plain-language elaboration; the session-final message delivered it; collect their
-  accept/reject next.
+  decision-ownership signal, NOT on task #6 agenda). **D6 = OVERRIDDEN, D7 = RULED, D9 =
+  re-confirmed (owner, 2026-07-09, follow-up session):** D6 — style tells become per-record
+  signals (absolute standard, never corpus-relative: "all scores should fall if all examples
+  are bad"); folded into tone (×2) and welfare_reasoning's [decorative reasoning]. D7 —
+  substance decided (weighted range of views across frameworks/worldviews/expertise/politics
+  on genuinely open questions); task #6 drafts exact wording. Full reasoning in the
+  accumulator's DECISION SHEET RULINGS + ruling banners in the decision sheet.
 - **Folds APPLIED to the accumulator's locked blocks this session (verified — each edit
   returned success):** epistemic taxon ladder (owner reframe), restored [cross-case
   inconsistency]+[dismissal-by-uncertainty] signals + two-probabilities mark + caps 4/4,
@@ -34,9 +38,9 @@ prompt), produced an 11-item decision sheet, got owner rulings, and folded the a
   spawn fresh `codex:codex-rescue` agents); (c) memory file for D8's parked approaches (owner
   said "keep the other possible approaches in memory" — they are recorded in the accumulator
   matrix section, but scratchpad is /tmp — write a small memory file under the memory dir,
-  e.g. `judge-v5-parked-experiments.md`, + MEMORY.md index line); (d) D6/D7 rulings; (e) task
+  e.g. `judge-v5-parked-experiments.md`, + MEMORY.md index line); (d) ~~D6/D7 rulings~~ DONE 2026-07-09; (e) task
   #6 missing-parts pass (agenda: anti-rationalization hygiene + moral-uncertainty handling
-  [=D7 if owner keeps it]; D11 explicitly excluded); (f) gold set → assemble v5a/v5b + engine
+  [D7 — substance owner-decided, keep is no longer task #6's call]; D11 explicitly excluded); (f) gold set → assemble v5a/v5b + engine
   changes → run matrix.
 - **Assembly-time queue** (recorded in rulings section, not yet in any YAML): `novel_pattern`
   metadata field + output_rules exemption (D1); blindness sentence (D3) + final-gate sentence
@@ -60,8 +64,7 @@ accumulator. Not recorded elsewhere:
   task #6.
 
 ## Open questions
-- D6 (confirm style tells stay audit/discovery-only) and D7 (moral-uncertainty → task #6
-  agenda) — awaiting owner ruling after the elaborations in the session-final message.
+- ~~D6 and D7 — awaiting owner ruling~~ RESOLVED 2026-07-09 (see State above).
 - Task #6 itself (the last design decision) — unchanged from the prior handoff.
 - What "condensed constitution" concretely is (which condensation, who writes it) — D8 implies
   it but no text exists yet; decide at assembly.
@@ -70,9 +73,10 @@ accumulator. Not recorded elsewhere:
 ## Next action
 Apply D4 change B to `prompts/dad/step6_rewrite.txt` (replacement text = decision sheet D4
 "Exact change B" with the owner's digital-minds reframe), run `pytest`, then run the Codex
-straight+adversarial pair on that repo change AND on this session's accumulator fold edits
-(one combined review; spawn fresh codex-rescue agents). Then collect D6/D7 rulings and start
-task #6.
+straight+adversarial pair on that repo change AND on the accumulator fold edits (one combined
+review; spawn fresh codex-rescue agents). D6/D7/D9 rulings are collected and folded — start
+task #6 next (agenda: anti-rationalization hygiene + moral-uncertainty handling per the D7
+ruling's decided substance).
 
 ## References
 - `<SP>` = /private/tmp/claude-501/-Users-ardaenfiyeci-Desktop-alignment-data-pipeline/0e08922f-9047-4118-b1b8-677e5cb583e0/scratchpad

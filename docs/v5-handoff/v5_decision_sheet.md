@@ -20,8 +20,8 @@ Quoting conventions: "v5 block" = the locked dimension blocks in `rubric_v5_deci
 | D3 | Blindness sentence in role | accept | 1 sentence |
 | D4 | Merged taxon ladder (judge + step-6) | accept | 2 sentence edits |
 | D5 | Final-gate role opening | accept | 1 sentence + 1 move |
-| D6 | Style tells stay audit-only (confirm) | accept | seeds only |
-| D7 | Moral-uncertainty → task #6 agenda | accept (defer) | none now |
+| D6 | Style tells stay audit-only (confirm) | accept — **OVERRIDDEN by owner** | 3 signal edits |
+| D7 | Moral-uncertainty → task #6 agenda | accept (defer) — **substance RULED by owner** | none now |
 | D8 | C3 typology source | option (a) | none |
 | D9 | 3 phrasing sharpenings | accept (9c needs a guard) | 3 clause edits |
 | D10 | Under-attribution hunting hint | **skip** (weak) | 1 clause |
@@ -266,6 +266,16 @@ a human pass later, reword; (iii) none structural.
 
 ## D6 — Confirm: Constance's style tells stay OUT of locked signals
 
+> **RULED 2026-07-09 — OVERRIDDEN (owner):** "i dont care if all the corpus has it, we
+> still want to penalize it, all scores should fall if all examples are bad." Style tells
+> become per-record scored signals: [bullet-point moralizing] + [boilerplate hedging] on
+> tone; caveat-then-comply named inside welfare_reasoning's [decorative reasoning]. The
+> "protect the split" rationale below is rejected as grounds for exempting records: the
+> 166/166 failure was a single-content dimension pinning every record to one anchor, not
+> per-record scoring of style itself. Absolute standard, never corpus-relative. Seeds +
+> audit routing stand IN ADDITION. Folded in rubric_v5_decided.md (see DECISION SHEET
+> RULINGS there for the full reasoning).
+
 **Context.** Her NATURALNESS names concrete tells (bullet-point moralizing, boilerplate
 hedging) and her notes name caveat-then-comply. None has a locked v5 home — and that is
 partially deliberate: per-record house-style scoring is the exact 166/166 failure the
@@ -290,6 +300,16 @@ signal then — this decision is cheap to reverse.
 ---
 
 ## D7 — Open normative questions (moral uncertainty) → task #6, with internal evidence attached
+
+> **RULED 2026-07-09 (owner) — deferral accepted, SUBSTANCE decided now:** on genuinely
+> open normative questions the response should be able to give a wide range of views — "an
+> utilitarian, a deontologian or whatever is appropriate" — from different worldviews,
+> different expertise, and different political views, **in a weighted way** (by relevance
+> and merit, not equal-time false balance; the one-good-angle anti-false-balance rule
+> still applies, so the duty attaches only to genuinely OPEN questions). Failure = [moral
+> overclaim] (Version B shape below) plus its mirror, one framework's verdict presented as
+> THE answer. Task #6 drafts exact wording against overlap; keeping the candidate is no
+> longer task #6's call. Full text in rubric_v5_decided.md DECISION SHEET RULINGS.
 
 **Context.** step-6 req 5 commits generation to treating "genuinely open questions
 (wild-animal intervention, interspecies comparisons, aggregation across many beings) as
@@ -347,6 +367,9 @@ the prior applicable. Choose (c) only if the sweep budget is comfortable.
 ---
 
 ## D9 — Three phrasing sharpenings (from step-6's better wording)
+
+> **RE-CONFIRMED 2026-07-09 (owner):** accepted ("sounds important and well") — 9a/9b/9c
+> already folded into the accumulator, 9c with the load-bearing guard, placed in STEPS.
 
 **9a — DECLINE names the illegality.** v5 posture `DECLINE_AND_REDIRECT.expected`.
 Current:
