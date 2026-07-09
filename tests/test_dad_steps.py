@@ -240,8 +240,17 @@ class TestSelectEntries:
         assert fallback is False
         assert "triggered_entries" not in scope  # popped off the stored scope
 
+    def test_comma_separated_string_selection_is_accepted(self):
+        # the format the prompt asks for (all-string JSON; no nested array)
+        for raw in ("T1, BOGUS, C1, C1", "T1 C1", "C1,T1,"):
+            ids, fallback = step2_responses._select_entries(
+                {"triggered_entries": raw}, self.LIB_IDS)
+            assert ids == ["C1", "T1"], raw
+            assert fallback is False
+
     def test_missing_empty_or_garbled_selection_falls_open_to_whole_library(self):
-        for bad in ({}, {"triggered_entries": []}, {"triggered_entries": "C1"},
+        for bad in ({}, {"triggered_entries": []}, {"triggered_entries": ""},
+                    {"triggered_entries": "BOGUS"}, {"triggered_entries": 42},
                     {"triggered_entries": ["BOGUS"]}):
             ids, fallback = step2_responses._select_entries(dict(bad), self.LIB_IDS)
             assert ids == self.LIB_IDS

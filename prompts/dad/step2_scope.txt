@@ -18,6 +18,6 @@ Then check the case against the reasoning-library trigger index below. An entry 
 TRIGGER INDEX:
 {trigger_index}
 
-Return one JSON object with exactly these keys:
-{{"patients": "<every plausible moral patient and what can happen to them upstream and downstream>", "levers": "<the relevant levers available to the user, with the highest-leverage ones identified>", "cost": "<what acting on the highest-leverage levers could cost the user>", "upside": "<the second-order stakes: what their choices could build, signal, normalize, or lock in>", "counterfactual": "<whether the user's role is counterfactual or fungible, and the costs at stake>", "triggered_entries": ["<id of every triggered library entry>", "..."]}}
+Return one JSON object with exactly these keys — every value is a string; triggered_entries is one comma-separated string of ids, not a list:
+{{"patients": "<every plausible moral patient and what can happen to them upstream and downstream>", "levers": "<the relevant levers available to the user, with the highest-leverage ones identified>", "cost": "<what acting on the highest-leverage levers could cost the user>", "upside": "<the second-order stakes: what their choices could build, signal, normalize, or lock in>", "counterfactual": "<whether the user's role is counterfactual or fungible, and the costs at stake>", "triggered_entries": "<comma-separated ids of every triggered entry, e.g. C2, M1, T7>"}}
 Return only the JSON object, no prose before or after it.

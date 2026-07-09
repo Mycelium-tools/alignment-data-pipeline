@@ -97,8 +97,14 @@ def _select_entries(scope: dict, library_ids: list[str]) -> tuple[list[str], boo
     normalize it: known ids only, deduped, in library order. Returns
     (ids, fallback). Fail-open: a missing, empty, or garbled selection returns
     the whole library — degraded selection costs tokens, never quality — and
-    is flagged so the record shows the selection didn't come from the model."""
+    is flagged so the record shows the selection didn't come from the model.
+
+    The prompt asks for one comma-separated string (an array-typed key after
+    five string keys made models close the last axis with a stray ']',
+    breaking the whole JSON); lists are still accepted for robustness."""
     raw = scope.pop("triggered_entries", None)
+    if isinstance(raw, str):
+        raw = raw.replace(",", " ").split()
     if isinstance(raw, list):
         wanted = {str(x).strip() for x in raw}
         ids = [i for i in library_ids if i in wanted]
