@@ -45,6 +45,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
             system_prompt=constitution,
             max_tokens=6000,
             model=config["sdf"].get("rewrite_model"),
+            stage="layer4",
         )
 
         # Review notes come first, then the document inside <improved_document> tags
