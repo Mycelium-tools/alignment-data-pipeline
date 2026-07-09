@@ -54,7 +54,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
             avoid_note=avoid_note,
         )
 
-        raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"))
+        raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"),
+                              stage="layer2")
         subtypes = utils.extract_json(raw)
         records = []
         for i, st in enumerate(subtypes):

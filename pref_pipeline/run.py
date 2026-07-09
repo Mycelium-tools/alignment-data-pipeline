@@ -153,6 +153,7 @@ def main() -> None:
                     model=arm.get("model"),
                     max_tokens=arm.get("max_tokens"),
                     return_stop_reason=True,
+                    stage=f"pref_arm_{key}",
                 )
             except Exception as e:  # keep the sibling arm's paid work; move on
                 print(f"    Arm {key} ({arm['name']}) failed for {pair_id}: {e} — "

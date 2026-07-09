@@ -38,7 +38,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         f"  Generating {count} document types "
         f"(min {min_ai_character} ai-character, {latent_count} latent-welfare)..."
     )
-    raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"))
+    raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"),
+                          stage="layer1")
 
     doc_types = utils.extract_json(raw)
 

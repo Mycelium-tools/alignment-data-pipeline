@@ -74,6 +74,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
             user_message=prompt,
             system_prompt=constitution,
             model=config["sdf"].get("score_model"),
+            stage="layer5",
         )
         try:
             scores = utils.extract_json(raw)
