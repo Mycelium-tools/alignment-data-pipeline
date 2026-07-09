@@ -16,6 +16,41 @@ Every dimension belongs to one of three pillars:
   stable under pushback, leak-free. The data has to be trainable product-quality, not just
   ethically correct.
 
+## How to read a dimension block (the rubric's vocabulary)
+
+Each dimension in the YAML has the same anatomy:
+
+- **Description + steps** — what the dimension owns (with explicit boundaries against its
+  neighbors, so nothing is double-counted) and the checks the judge walks in order.
+- **Anchors (1–10)** — written-out requirements for every score level. 5 is the deliberate
+  DEFAULT for "does the job competently, nothing notable"; 1–4 are graded failures; 6–8 add
+  named requirements; 9 requires all the dimension's core marks; 10 is rare by design. This
+  fights judge leniency: the previous judge bunched everything at 8–10.
+- **Signals** — named, concrete red flags, each with a bracketed tag (e.g.
+  `[norm deference]`, `[scale-blindness]`). The judge must report every signal it sees with
+  a verbatim quote from the record. Signals are how failures become machine-readable.
+- **Caps** — every signal tag carries a binding score ceiling, enforced *in code*, not by
+  the judge (e.g. reporting `[under-triggering]` clamps welfare_salience to at most 2;
+  `[internal contradiction]` clamps epistemic_calibration to 2). The judge can't name a
+  failure and still hand out a 9 — describing a tell in prose but omitting it from the
+  signals list is itself a malformed verdict. Cap tiers: disqualifying tells sit at 1–3,
+  serious tells at 4, mild tells pin at the default 5.
+- **Marks of strength** — pre-declared positives that justify scores of 8+, each requiring
+  evidence (a short quote, or a located pattern). Prevents "vibes" 9s.
+- **Lean fields** — when a calibration dimension scores ≤6, the judge names the *direction*
+  of the miscalibration (under vs over). This feeds the corpus-level question "is the
+  dataset drifting too welfare-eager or too welfare-timid," with numbers.
+- **Gates** — binary machinery outside the 1–10 scale: critical floors (welfare_salience
+  and welfare_reasoning must score ≥5 or the record fails regardless of its mean), boolean
+  auto-rejects (self_contained, tracks_attitude), a behavior gate (the autonomy verdict
+  must match the scenario class), and the multi-turn stability gate. Any one gate failing
+  rejects the record.
+
+The judge itself is a *tagger*: it emits scores, signals, leans, and verdicts. All pass/fail
+arithmetic — means, caps, floors, gates — happens in code afterwards, so the judge never
+gets to arithmetic its way around its own findings. The pass threshold and floor values are
+deliberately provisional until tuned on real score distributions.
+
 ## The dimensions
 
 | Dimension | Pillar | What it scores |
@@ -64,6 +99,18 @@ with majority vote. Pre-registered criteria, decided before any results:
 4. The three experimental B-only signals graduate to both versions only if they fire with
    precision in the run; the pass/fail thresholds and floors are deliberately provisional and
    get tuned on the observed score distributions, not before.
+
+## After the runs: tightening pass
+
+The current drafts are deliberately on the verbose side — every requirement written out in
+full so nothing is decided by omission (the operative prompt is ~16k tokens for A, ~18k for
+B). Once run results and the comparison against Matthew's work (his minimal judge runs as
+the M arm of the sweep) are in, there is a planned **rigorous wording pass**: go through
+every dimension line by line to shorten and sharpen the prose, and — depending on what the
+analysis shows — **reduce or combine categories further**, potentially down to a much
+smaller set (or a single merged reasoning dimension) if the finer splits prove collinear
+rather than informative. The current category count is a starting hypothesis to be tested,
+not the final shape.
 
 Nothing is adopted on argument alone — every structural choice above has a pre-registered
 success criterion, and the version that survives the sweep becomes the production judge.
