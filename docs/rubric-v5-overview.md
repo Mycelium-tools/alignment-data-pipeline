@@ -160,45 +160,22 @@ with majority vote. Pre-registered criteria, decided before any results:
 
 ## How the constitution gets into the judge — also an experiment
 
-The judge scores against the constitution's sentient-beings reading, but *how* that text
-enters the prompt is itself a design variable we test rather than assume. The layers in
-play:
+The judge scores against a distilled, animal-welfare reading of the constitution. *How*
+that text is delivered — inlined next to each dimension, or handed over whole — is itself
+something we test. The first run inlines the clauses each dimension enforces right next to
+its instructions (C1); the alternatives are arms to run if results warrant:
 
-1. **Distilled principle summaries** ("THE STANDARD") — one line per principle, always in
-   the prompt. The judge is told to judge against these, not to import its own rules.
-2. **Per-dimension clause cards** — each dimension declares which principles it enforces
-   (`principles: [ids]` in the YAML) and the engine inlines those specific clauses next to
-   that dimension's instructions. Rationale: research found *local* grounding (the rule next
-   to the check) beats *global* grounding (one big text far away) for detection.
-3. **Failure-mode typology distributed into signals** — the known constitutional violation
-   modes live inside each dimension's signal list (structural, since signals drive caps)
-   rather than as one central list.
-4. **A condensed reference reading appended at the end** — background material only; the
-   operative rubric stays in the high-adherence early prompt positions. (The condensation
-   still has to be written; the full ~40k-char reading is the placeholder and roughly
-   doubles the prompt.)
+- **C0 — baseline.** The whole constitution, nothing inlined. Tests whether per-dimension
+  inlining is worth it at all.
+- **C1 — clause cards (first run).** Each dimension's clauses sit next to its instructions.
+- **C2 — clause cards + a shared checklist.** Adds one "hunt for these failures" list up
+  front — tests whether a central reminder catches what the per-dimension version misses.
+- **C3 — same, sourced from generation.** That checklist is the exact list the generation
+  pipeline was told to avoid, so the judge hunts for precisely what generation tried not to
+  produce.
 
-The first run uses the four layers above (clause cards + distributed signals + a condensed
-reading). "How much constitution, and where in the prompt" is then its own sweep, testing
-that starting config against alternatives — candidate arms to run as results warrant:
-
-- **C0 — the plain baseline.** Flat principle summaries plus the full reading, no clause
-  cards. The "just hand the judge the constitution" version; tells us whether the
-  per-dimension inlining earns its complexity at all.
-- **C1 — clause cards, no central checklist.** The first-run config itself, isolated as a
-  comparison point.
-- **C2 — add a central "hunt for these" block.** A condensed failure-mode checklist placed
-  once, up front, on top of the distributed signals. Tests whether a global reminder catches
-  failures the per-dimension anchoring misses (prior evidence leans toward local winning,
-  but it's worth checking directly).
-- **C3 — same, but sourced from generation.** The central block uses the generation
-  pipeline's own audit taxonomy instead, so the judge hunts for exactly what generation was
-  told to avoid (generation/judge parity).
-
-Each arm is scored against the same yardsticks as the A/B category question, so both "which
-categories" and "how to feed in the constitution" get settled by measurement rather than
-argument. (The internal design notes label these C0 / C1 / C3 / C3′ — an older scheme with
-no C2; C2 and C3 here are that scheme's C3 and C3′.)
+(Internal design notes use an older labelling — C0 / C1 / C3 / C3′, no C2; C2 and C3 here
+are that scheme's C3 and C3′.)
 
 ## After the runs: tightening pass
 
