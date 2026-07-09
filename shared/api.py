@@ -72,6 +72,7 @@ _LIMIT_PATTERN = re.compile(r"usage limit", re.IGNORECASE)
 # reproduced exactly here; use backend: api for runs where that matters.
 _NEUTRAL_SYSTEM = "You are Claude, a helpful AI assistant. Respond directly to the user's message."
 _neutral_system_warned = False
+_temperature_warned = False
 
 # Linux caps each argv string at 128 KiB (MAX_ARG_STRLEN), and a str
 # system_prompt reaches the CLI as a single --system-prompt argument — so the
@@ -126,6 +127,7 @@ def _log_usage(
     input_tokens: int,
     output_tokens: int,
     cost_usd: float | None = None,
+    stage: str | None = None,
 ) -> None:
     # claude_code passes Claude Code's own reported cost; the api backend leaves
     # cost_usd=None, so we price it from _PRICING with a loud fallback on unknown
@@ -153,6 +155,8 @@ def _log_usage(
         "output_tokens": output_tokens,
         "cost_usd": round(cost_usd, 6),
     }
+    if stage:
+        record["stage"] = stage
     with _cost_log_lock, open(_cost_log_path, "a") as f:
         f.write(json.dumps(record) + "\n")
 
@@ -180,6 +184,7 @@ def _call_with_retry(
     max_tokens: int,
     system: str,
     messages: list[dict],
+    temperature: float,
 ) -> anthropic.types.Message:
     # Extended thinking OFF everywhere — training data should show user-facing
     # reasoning, not internal scratchpads (see CLAUDE.md). Models in the Claude 5
@@ -193,6 +198,7 @@ def _call_with_retry(
         max_tokens=max_tokens,
         system=system,
         messages=messages,
+        temperature=temperature,
         thinking={"type": "disabled"},
     )
 
@@ -368,6 +374,8 @@ def call_claude(
     model: str | None = None,
     max_tokens: int | None = None,
     return_stop_reason: bool = False,
+    stage: str | None = None,
+    temperature: float | None = None,
 ) -> str | tuple[str, str | None]:
     """Call Claude and return the response text.
 
@@ -382,6 +390,10 @@ def call_claude(
             does not apply to subscription usage.
         return_stop_reason: if True, return (text, stop_reason) so the caller can
             reject truncated/refused completions instead of storing them.
+        stage: Pipeline-stage tag written into the cost-log record (e.g.
+            "prompt_draft", "layer4") so spend can be broken down per stage.
+        temperature: Sampling temperature override for this call; falls back to
+            the config `temperature` (1.0 — corpus generation wants diversity).
 
     Returns:
         The assistant's response text, or (text, stop_reason) when
@@ -389,18 +401,32 @@ def call_claude(
     """
     resolved_model = model or _config.get("model", "claude-sonnet-5")
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
+    resolved_temp = temperature if temperature is not None else _config.get("temperature", 1.0)
 
     full_system = system_prompt
     if injection:
         full_system = (full_system + "\n\n" + injection).strip()
 
     if _backend == "claude_code":
+        # The Claude Code CLI exposes no sampling-temperature control, so a
+        # non-default temperature cannot be honored on this backend. The config
+        # default (1.0) matches normal sampling, so only deliberate overrides
+        # warrant the warning.
+        global _temperature_warned
+        if resolved_temp != 1.0 and not _temperature_warned:
+            _temperature_warned = True
+            print(
+                f"  WARNING: temperature={resolved_temp} requested, but backend "
+                "'claude_code' cannot set sampling temperature — calls run at the "
+                "CLI's default sampling. Use backend: api for temperature-sensitive runs.",
+                file=sys.stderr,
+            )
         text, input_tokens, output_tokens, cost, stop_reason = _call_claude_code_with_retry(
             model=resolved_model,
             system=full_system,
             user_message=user_message,
         )
-        _log_usage(resolved_model, input_tokens, output_tokens, cost_usd=cost)
+        _log_usage(resolved_model, input_tokens, output_tokens, cost_usd=cost, stage=stage)
         # Same suspect-stop-reason guard as the api path below; Claude Code
         # reports stop_reason on its ResultMessage (e.g. "end_turn").
         if stop_reason not in ("end_turn", "stop_sequence"):
@@ -415,9 +441,11 @@ def call_claude(
         max_tokens=resolved_max,
         system=full_system,
         messages=[{"role": "user", "content": user_message}],
+        temperature=resolved_temp,
     )
 
-    _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens)
+    _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens,
+               stage=stage)
     # A completion that stopped for any reason other than end_turn/stop_sequence
     # is suspect — max_tokens truncates mid-text, refusal yields little or none.
     # Warn loudly so it isn't silently written into a corpus; callers that build

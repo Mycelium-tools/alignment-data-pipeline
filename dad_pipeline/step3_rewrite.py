@@ -58,14 +58,18 @@ def run(
         )
 
         rewritten, stop_reason = api.call_claude(
-            user_message=prompt, max_tokens=4000, return_stop_reason=True)
+            user_message=prompt, max_tokens=4000, return_stop_reason=True,
+            model=config["dad"].get("constitution_rewrite_model"),
+            stage="constitution_rewrite")
         # A legitimately long rewrite can exceed the cap; retry once with a
         # doubled budget before deferring, so long-form cases aren't silently
         # re-skipped on every resume.
         if stop_reason == "max_tokens":
             print(f"    {resp['prompt_id']}: rewrite hit the 4000-token cap — retrying at 8000.")
             rewritten, stop_reason = api.call_claude(
-                user_message=prompt, max_tokens=8000, return_stop_reason=True)
+                user_message=prompt, max_tokens=8000, return_stop_reason=True,
+                model=config["dad"].get("constitution_rewrite_model"),
+                stage="constitution_rewrite")
         rewritten = rewritten.strip()
 
         # A truncated (max_tokens) or empty rewrite must never become a training
