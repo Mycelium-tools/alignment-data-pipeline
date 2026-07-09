@@ -620,10 +620,12 @@ def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
         # Claims are step-3 scaffolding — kept out of 1c's view so the rewriter
         # doesn't echo claim text into the user's message.
         annotation_block=format_annotation(
-            {k: v for k, v in (draft.get("annotation") or {}).items() if k != "claims"}),
+            {k: v for k, v in _normalize_annotation(draft.get("annotation") or {}).items()
+             if k != "claims"}),
     )
     refined = _parse_json_object(api.call_claude(
-        user_message=prompt, max_tokens=4000, model=model, stage="prompt_refine"))
+        user_message=prompt, max_tokens=4000, model=model, stage="prompt_refine",
+        item_id=scenario.get("scenario_id")))
     if not (isinstance(refined, dict) and str(refined.get("prompt", "")).strip()):
         return None
     return {"prompt": str(refined["prompt"]).strip(),
@@ -727,11 +729,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         )
         # Generous ceiling: the drafting prompt is large and richly-annotated
         # batches can run long; truncation is the main cause of unusable output.
+        batch_pids = {p["scenario_id"] for p in batch}
+        # One call drafts the whole batch — tag it with every scenario id it
+        # serves so per-record stats can find it (viewer splits on commas).
         raw = api.call_claude(user_message=prompt, max_tokens=16000,
                               model=config["dad"].get("prompt_draft_model"),
-                              stage="prompt_draft")
+                              stage="prompt_draft",
+                              item_id=",".join(sorted(batch_pids)))
 
-        batch_pids = {p["scenario_id"] for p in batch}
         by_pid = {}
         for x in _parse_json_array(raw):
             if (isinstance(x, dict) and str(x.get("prompt", "")).strip()

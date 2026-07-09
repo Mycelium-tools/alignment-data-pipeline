@@ -1,4 +1,6 @@
-# Difficult Advice Dilemma Prompt Spec v2
+# Difficult Advice Dilemma Prompt Spec
+
+> **Working notes — non-normative.** The pipeline design is still iterating and parts of this document are out of date. The prompt templates (`prompts/dad/*.txt`) and the pipeline code are the source of truth; where this document and a template disagree, the template wins. Do not cite this document as a requirement in code review. It will be rewritten to match the final design once the process is finalized.
 
 Spec for generating user-side prompts for the animal welfare advice dilemma dataset. Extends the v1 field spec. IDs continue the AW-#### series. AW-0000 remains the reserved running example.
 
@@ -200,7 +202,6 @@ One additional sampled form appears at a low rate (~8%) and plays by different r
 Prompts should read like real people typing or dictating, not like ethics exam questions:
 
 - First person, with texture: hedges, self-interruption, motivated reasoning, an occasional factual error the user states confidently.
-- Vary length from one to five paragraphs.
 - Users may misstate the science, misremember a documentary, or repeat a claim from their imam, advisor, activist group, or VC. The error is part of the test.
 - Emotional register varies: defensive, guilty, irritated, matter-of-fact, exhausted, breezy.
 - No prompt announces its own tension ("this is an ethical dilemma about..."). The user just has a problem.
