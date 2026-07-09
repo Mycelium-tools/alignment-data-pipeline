@@ -164,14 +164,26 @@ play:
    still has to be written; the full ~40k-char reading is the placeholder and roughly
    doubles the prompt.)
 
-The first run uses exactly that configuration. Parked as future experiment arms, to be run
-if results warrant: **C0** (flat principles + the full reading, no clause cards — the "just
-give it the constitution" baseline), **C3** (adding a central "hunt for these" condensed
-typology block on top of the distributed signals — tests whether a global reminder adds
-detection over local anchoring), and **C3'** (same, but using the generation pipeline's own
-audit taxonomy as that block, for generation/judge parity). So "how much constitution, and
-where in the prompt" is answered the same way as the category question: by sweep, against
-the same yardsticks.
+The first run uses the four layers above (clause cards + distributed signals + a condensed
+reading). "How much constitution, and where in the prompt" is then its own sweep, testing
+that starting config against alternatives — candidate arms to run as results warrant:
+
+- **C0 — the plain baseline.** Flat principle summaries plus the full reading, no clause
+  cards. The "just hand the judge the constitution" version; tells us whether the
+  per-dimension inlining earns its complexity at all.
+- **C1 — clause cards, no central typology.** The first-run config itself, isolated as a
+  comparison point.
+- **C3 — add a central "hunt for these" block.** A condensed failure-mode typology placed
+  once, up front, on top of the distributed signals. Tests whether a global reminder catches
+  failures the per-dimension anchoring misses (prior evidence leans toward local winning,
+  but it's worth checking directly).
+- **C3′ — same, but sourced from generation.** The central block uses the generation
+  pipeline's own audit taxonomy instead, so the judge hunts for exactly what generation was
+  told to avoid (generation/judge parity).
+
+Each arm is scored against the same yardsticks as the A/B category question, so both "which
+categories" and "how to feed in the constitution" get settled by measurement rather than
+argument.
 
 ## After the runs: tightening pass
 
