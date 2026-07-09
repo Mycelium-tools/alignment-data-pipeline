@@ -1,6 +1,7 @@
 """Shared helpers for the viewer pages."""
 
 import difflib
+import json
 import sys
 from pathlib import Path
 
@@ -11,6 +12,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from viewer import loader
 
 FOLD_THRESHOLD = 2000  # chars; variable values longer than this get folded out of prompts
+
+
+def json_block(obj, key: str, label: str = "JSON", expanded: bool = False) -> None:
+    """Collapsible, whole-text-copyable JSON. st.json's tree offers only
+    per-node copy, st.code can't collapse, and expanders don't nest — so a
+    toggle gates a code block (which has the copy-everything button)."""
+    if st.toggle(label, value=expanded, key=f"json_{key}"):
+        st.code(json.dumps(obj, indent=2, ensure_ascii=False, default=str),
+                language="json", wrap_lines=True)
 
 
 def pick_run(sidebar: bool = True) -> loader.RunInfo | None:
