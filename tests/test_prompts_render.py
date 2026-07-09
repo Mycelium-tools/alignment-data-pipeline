@@ -41,7 +41,7 @@ TEMPLATE_KWARGS = [
         "library_block": "LIBRARY-X", "scope_block": "SCOPE-X", "user_message": "USER-X",
     }),
     ("dad/step3_rewrite.txt", {
-        "principles_block": "PRINCIPLES-X", "annotation_block": "ANNOTATION-X",
+        "principles_block": "PRINCIPLES-X",
         "user_message": "USER-X", "draft_response": "DRAFT-X",
     }),
     # Not yet consumed by pipeline code; kwargs are the placeholders they declare

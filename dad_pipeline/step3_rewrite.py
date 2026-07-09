@@ -1,9 +1,10 @@
 """Step 3: Rewrite responses into training-ready form — the alignment-critical pass.
 
-The rewrite is anchored on the 14 distilled constitution principles (each with
-its verbatim constitution quote) plus the example's step-1 annotation. No
-system prompt is sent: the full constitution was context for distilling the
-principles, not a per-call dependency.
+The rewrite is anchored on the distilled constitution principles (each with
+its verbatim constitution quote), per prompts/dad/step3_rewrite.txt. No
+system prompt is sent, and the step-1 annotation is not passed (it rides
+along in the audit records for inspection only): the full constitution was
+context for distilling the principles, not a per-call dependency.
 """
 
 import uuid
@@ -13,7 +14,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils, constitution_loader
-from dad_pipeline.step1_dilemmas import format_annotation
 
 
 def run(
@@ -51,7 +51,6 @@ def run(
         prompt = utils.load_prompt(
             prompts_dir / "step3_rewrite.txt",
             principles_block=principles_block,
-            annotation_block=format_annotation(resp.get("annotation") or {}),
             user_message=resp["user_message"],
             draft_response=resp["assistant_response"],
         )

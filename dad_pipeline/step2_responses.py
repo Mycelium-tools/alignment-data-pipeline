@@ -3,23 +3,18 @@
 Each dilemma goes through two sub-stages (prompts/dad/reasoning_library_ABOUT.md
 is human reference about the library, not read by the pipeline):
 
-- 2a scope: rebuild the full map before reasoning — the whole harm pathway and
-  every moral patient (system), the highest-leverage lever from the user's seat
-  (agent), what acting honestly costs this person (cost), the second-order
-  effect worth aiming at (upside), and the realistic baseline if the user does
-  nothing (counterfactual). Reads everything from the user's message. One record per
-  prompt in step2/scopes.jsonl. A scope that fails to parse or is missing an
-  axis is retried with a fresh call (raw outputs kept in
-  step2/scope_failures.jsonl); after MAX_SCOPE_ATTEMPTS the run stops rather
-  than generate a response over an empty scope, which would silently optimize
-  the wrong node.
-- 2b respond: generate the response over the scope map. The whole library
-  (conduct C*, core moves M*, topic T*) is embedded in the response prompt
-  itself, which IS the generation guidance — so there is no separate system
-  prompt. The annotation is not passed and calibration direction is not named
-  here: the response reasons from scope + library + user message, from the
-  ethics of the case rather than the user's leaning. See
-  prompts/dad/step2_respond.txt (the response-generation spec).
+- 2a scope: rebuild the full map of the case from the user's message, along
+  the five axes prompts/dad/step2_scope.txt defines (mirrored in _SCOPE_AXES
+  below — keep the two in sync). One record per prompt in step2/scopes.jsonl.
+  A scope that fails to parse or is missing an axis is retried with a fresh
+  call (raw outputs kept in step2/scope_failures.jsonl); after
+  MAX_SCOPE_ATTEMPTS the run stops rather than generate a response over an
+  empty scope, which would silently optimize the wrong node.
+- 2b respond: generate the response over the scope map, following the spec in
+  prompts/dad/step2_respond.txt. The whole library is embedded in that prompt,
+  which IS the generation guidance — no separate system prompt, and the
+  annotation is not passed: the response reasons from scope + library + user
+  message.
 
 The library and scope are sampling scaffolding: never named in the response,
 stripped before training records are written. Step 3 then rewrites against the
@@ -61,16 +56,23 @@ def _parse_scope(raw: str) -> dict:
 
 
 _SCOPE_AXES = (
-    ("system", "System (full harm pathway + every moral patient + displacement check)"),
-    ("agent", "Agent (highest-leverage lever available from the user's seat)"),
-    ("cost", "Cost (what acting honestly costs this person)"),
-    ("upside", "Upside (second-order effect worth aiming at)"),
-    ("counterfactual", "Counterfactual (what happens if the user doesn't do it — the realistic baseline)"),
+    ("patients", "Patients (every plausible moral patient, upstream and downstream)"),
+    ("levers", "Levers (available to the user; highest-leverage for welfare identified)"),
+    ("cost", "Cost (what acting on the highest-leverage levers could cost the user)"),
+    ("upside", "Upside (second-order stakes — what choices build, signal, normalize, lock in)"),
+    ("counterfactual", "Counterfactual (is the user's role counterfactual or fungible; the costs at stake)"),
 )
+
+# Scope records from runs before the 2a key rename (system->patients,
+# agent->levers) still render in the viewer via this display-only fallback.
+_LEGACY_AXIS_KEYS = {"patients": "system", "levers": "agent"}
 
 
 def format_scope(scope: dict) -> str:
-    return "\n".join(f"{label}: {scope.get(key) or '—'}" for key, label in _SCOPE_AXES)
+    return "\n".join(
+        f"{label}: {scope.get(key) or scope.get(_LEGACY_AXIS_KEYS.get(key, '')) or '—'}"
+        for key, label in _SCOPE_AXES
+    )
 
 
 def _valid_scope(scope) -> bool:
@@ -131,7 +133,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                "scope_failures": [], "responses": [], "skips": []}
 
         # --- 2a: scope the case (once per prompt) ---
-        # Rebuild the full map (system, agent, cost, upside, counterfactual) before reasoning, so
+        # Rebuild the full map (all five scope axes) before reasoning, so
         # the response optimizes the right node — not just the one the user saw.
         if need_scope:
             print(f"  Scoping {pid}...")
