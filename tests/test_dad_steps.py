@@ -160,27 +160,37 @@ class TestCoverageTally:
 # --- Step 2: scope + respond ---------------------------------------------
 
 GOOD_SCOPE = json.dumps({
-    "system": "full pathway", "agent": "highest lever", "cost": "real cost",
+    "patients": "full pathway", "levers": "highest lever", "cost": "real cost",
     "upside": "second-order upside", "counterfactual": "realistic baseline",
 })
 
 
 class TestParseScope:
     def test_plain_and_fenced_json(self):
-        assert step2_responses._parse_scope(GOOD_SCOPE)["agent"] == "highest lever"
+        assert step2_responses._parse_scope(GOOD_SCOPE)["levers"] == "highest lever"
         assert step2_responses._parse_scope(f"```json\n{GOOD_SCOPE}\n```")["cost"] == "real cost"
 
     def test_control_characters_inside_strings_are_tolerated(self):
         # temperature-1 prose JSON often carries literal newlines inside values —
         # the historical cause of silently empty scopes
-        raw = '{"system": "line one\nline two", "agent": "a", "cost": "c", "upside": "u", "counterfactual": "cf"}'
-        assert step2_responses._parse_scope(raw)["system"] == "line one\nline two"
+        raw = '{"patients": "line one\nline two", "levers": "l", "cost": "c", "upside": "u", "counterfactual": "cf"}'
+        assert step2_responses._parse_scope(raw)["patients"] == "line one\nline two"
 
     def test_garbage_returns_empty_and_fails_validation(self):
         assert step2_responses._parse_scope("no json here") == {}
         assert not step2_responses._valid_scope({})
-        assert not step2_responses._valid_scope({"system": "s"})  # missing axes
+        assert not step2_responses._valid_scope({"patients": "p"})  # missing axes
         assert step2_responses._valid_scope(json.loads(GOOD_SCOPE))
+
+    def test_legacy_axis_keys_still_render_for_old_runs(self):
+        # scopes.jsonl records from before the key rename display via the
+        # fallback map — the viewer re-renders old runs' 2b prompts with them
+        legacy = {"system": "old pathway", "agent": "old lever", "cost": "c",
+                  "upside": "u", "counterfactual": "cf"}
+        rendered = step2_responses.format_scope(legacy)
+        assert "old pathway" in rendered and "old lever" in rendered
+        # but new runs must produce the new keys — legacy doesn't pass validation
+        assert not step2_responses._valid_scope(legacy)
 
 
 def _dilemma(pid="AW-0001"):

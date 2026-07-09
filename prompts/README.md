@@ -113,13 +113,13 @@ The point is to teach the moves that produce a well-calibrated answer, not to ha
 
 **Input:** the user message.
 
-**Output:** a JSON scope map with five axes — `system` (the full harm pathway and every moral patient, including the upstream/downstream ones the message omits, plus a displacement check), `agent` (the highest-leverage lever available from the user's seat), `cost` (what acting well costs the person), `upside` (the second-order effect worth aiming at), and `counterfactual` (what happens if the user doesn't act). Reads everything from the user's message — it does not use the annotation. Written to `step2/scopes.jsonl`.
+**Output:** a JSON scope map with five axes — `patients` (every plausible moral patient and what can happen to them upstream and downstream), `levers` (the levers available to the user, highest-leverage identified), `cost` (what acting on those levers could cost the user), `upside` (the second-order stakes: what choices build, signal, normalize, or lock in), and `counterfactual` (whether the user's role is counterfactual or fungible, and the costs at stake). Reads everything from the user's message — it does not use the annotation. Written to `step2/scopes.jsonl`.
 
 ### `dad/step2_respond.txt` (sub-stage 2b — the response-generation spec)
 
 **Input:** the whole reasoning library (`{library_block}` — all 52 entries) + the 2a scope map (`{scope_block}`) + the user message. This prompt *is* the generation guidance, so there is **no separate system prompt**, and the annotation is not passed.
 
-**Output:** the draft assistant response, following the generation procedure: reason from the ethics of the case (never letting the user's leaning set the conclusion), reason over the scope, name the tension and crux, reason both directions and say which dominates here, engage the practical goal with real substance, and end with a usable recommendation that respects the person's autonomy.
+**Output:** the draft assistant response, per the spec: acknowledge the user's motivations, identify the competing values, explain why certain principles matter, reason through the tradeoffs, recommend a course of action, and provide ethical choices that still meet the user's underlying goal — with the user's stated leaning never setting the conclusion.
 
 **Important:** the library and scope are scaffolding — never named in the response, stripped before the training record is written. Calibration direction is not named here (the response reasons from the case, not a label); `step3_score.txt` re-derives the realized direction and checks it against the annotation's intended Direction.
 
