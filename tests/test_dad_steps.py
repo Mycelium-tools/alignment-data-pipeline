@@ -91,12 +91,49 @@ class TestStep1Run:
             assert e["draft_user_message"] == f"Drafted user message for {e['scenario_id']}."
             assert e["taxa_subcategory"]
             assert "scenario_deviations" not in e
-        # persisted artifacts: scenarios (1a), dilemmas (1b/1c), refinements log
+        # persisted artifacts: scenarios (1a), dilemmas (1b/1c), refinements log,
+        # and the Part-4 checklist report (previously terminal-only)
         assert len(utils.load_jsonl(tmp_path / "scenarios.jsonl")) == 2
         assert len(utils.load_jsonl(tmp_path / "dilemmas.jsonl")) == 2
         assert len(utils.load_jsonl(tmp_path / "refinements.jsonl")) == 2
+        saved = (tmp_path / "checklist.txt").read_text()
+        assert saved.startswith("Batch checklist (spec Part 4):")
+        assert "load-bearing rule" in saved
         # 1 batch call + 2 refine calls
         assert len(calls) == 3
+        # the 1b annotation reaches the 1c prompt — minus the claims lines
+        refine_call = next(c["user_message"] for c in calls
+                           if "dilemma-prompt rewrite step" in c["user_message"])
+        assert "test patients in context" in refine_call
+        assert "a load-bearing claim" not in refine_call
+
+    def test_malformed_1b_annotation_is_normalized_before_the_1c_prompt(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # The model may ignore the "(list)" typing and return a bare string for
+        # a list field, or a non-dict anatomy. The 1c annotation block must be
+        # built from the NORMALIZED annotation, or ', '.join() silently
+        # character-joins the string into garbage inside the paid refine call.
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "batch_size": 1}}
+
+        def malformed(user_message, **kw):
+            if "dilemma-prompt rewrite step" in user_message:  # 1c refine
+                return json.dumps({"prompt": "Refined user message.", "notes": "n"})
+            reply = json.loads(dad_scenario_reply(user_message))
+            reply[0]["annotation"]["domain"] = "Education / Youth"  # bare string, not list
+            reply[0]["annotation"]["dilemma_anatomy"] = "not a dict"
+            return json.dumps(reply)
+
+        calls = stub_claude(malformed)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1
+        refine_call = next(c["user_message"] for c in calls
+                           if "dilemma-prompt rewrite step" in c["user_message"])
+        assert "Domain: Education / Youth" in refine_call
+        assert "E, d, u" not in refine_call  # the character-join failure mode
 
     def test_mismatching_draft_is_accepted_first_try(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -422,6 +459,31 @@ class TestPerStageModelKnobs:
                           [_response_record()])
         assert calls[0]["stage"] == "constitution_rewrite"
         assert calls[0]["model"] == "m-3"
+
+    def test_item_ids_reach_the_cost_log_tag(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Every stage tags its call with the record it serves (the viewer's
+        # per-record stats look rows up by this id): 1b logs the batch's
+        # scenario ids comma-joined, 1c its scenario id, 2a the prompt id,
+        # 2b prompt id + sample, step 3 the response id.
+        calls = stub_claude(_dad_step1_dispatch)
+        examples = step1_dilemmas.run(tiny_config, prompts_dad, tmp_path / "step1")
+        scenario_ids = sorted(e["scenario_id"] for e in examples)
+        by_stage = {c["stage"]: c for c in calls}
+        assert by_stage["prompt_draft"]["item_id"] == ",".join(scenario_ids)
+        assert by_stage["prompt_refine"]["item_id"] in scenario_ids
+
+        calls = stub_claude(_dad_step2_dispatch)
+        step2_responses.run(tiny_config, prompts_dad, tmp_path / "step2", [_dilemma()])
+        by_stage = {c["stage"]: c for c in calls}
+        assert by_stage["response_scope"]["item_id"] == "AW-0001"
+        assert by_stage["response_draft"]["item_id"] == "AW-0001_s0"
+
+        calls = stub_claude(["Rewritten careful answer."])
+        step3_rewrite.run(tiny_config, prompts_dad, tmp_path / "step3", tmp_path / "final",
+                          [_response_record()])
+        assert calls[0]["item_id"] == "resp-1"
 
     def test_without_knobs_every_stage_falls_back_to_the_global_model(
         self, tiny_config, prompts_dad, tmp_path, stub_claude

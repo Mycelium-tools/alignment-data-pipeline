@@ -1,6 +1,8 @@
 # About the Animal Ethics Reasoning Library
 
 > **Human reference only — not injected into any prompt.** This file is documentation to help a person understand the library. The pipeline never reads it: step 2b loads the entries directly from `reasoning_library.csv` and embeds them in the response prompt (`prompts/dad/step2_respond.txt`). Edit the CSV to change what the model sees; edit this file to change what a human reads.
+>
+> **Non-normative while the design iterates.** Where this document and the CSV or templates disagree, the CSV/templates win; do not cite this document as a requirement in code review.
 
 The library is 52 reusable, two-sided reasoning patterns for animal-ethics dilemmas that the response generator reasons from. The generator scopes a case, selects the entries that fit, and reasons from them. When none fits, it reasons from first principles to the same standard.
 

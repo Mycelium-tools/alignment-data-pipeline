@@ -1,5 +1,6 @@
 """Run list: every run of both pipelines with run-level details on click."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -31,8 +32,9 @@ def run_details(run: loader.RunInfo) -> None:
              "model(s)": ", ".join(agg["models"])}
             for stage, agg in breakdown.items()
         ]), width="stretch", hide_index=True)
-    st.markdown("**Config**")
-    st.json(run.config, expanded=False)
+    with st.expander("Config"):
+        st.code(json.dumps(run.config, indent=2, ensure_ascii=False, default=str),
+                language="json", wrap_lines=True)
     if st.button(":material/account_tree: View documents", type="primary", key=f"open_{run.run_id}"):
         st.query_params["pipeline"] = run.pipeline
         st.query_params["run"] = run.run_id

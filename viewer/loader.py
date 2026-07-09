@@ -126,6 +126,44 @@ def cost_by_stage(run_dir: Path) -> dict[str, dict]:
     return by_stage
 
 
+def call_stats(run_dir: Path, stage: str, item_id: str | None = None) -> dict | None:
+    """Aggregate the run's cost-log rows for one stage, narrowed to the calls
+    that served one item when item_id is given (a logged item_id may be a
+    comma-joined id list — one batched call serving several records).
+
+    Returns {"per_item", "calls", "models", "cost_usd", and — when every
+    matched row recorded them — "duration_s", "retries", "batch_size"}.
+    per_item=False means the rows predate per-item logging and the numbers are
+    stage-wide, not this record's. Returns None when nothing matches (stage
+    never ran, or per-item logging exists but this item has no calls)."""
+    rows = [r for r in _load_jsonl(Path(run_dir) / "cost_log.jsonl")
+            if (r.get("stage") or "") == stage]
+    if not rows:
+        return None
+    scoped = rows
+    per_item = False
+    if item_id is not None:
+        scoped = [r for r in rows if item_id in str(r.get("item_id", "")).split(",")]
+        per_item = bool(scoped)
+        if not scoped:
+            if any(r.get("item_id") for r in rows):
+                return None  # per-item logging exists; this item made no calls
+            scoped = rows  # older run: no item ids recorded — stage-wide fallback
+    out = {
+        "per_item": per_item,
+        "calls": len(scoped),
+        "models": sorted({r.get("model", "?") for r in scoped}),
+        "cost_usd": round(sum(r.get("cost_usd", 0.0) for r in scoped), 4),
+    }
+    if all("duration_s" in r for r in scoped):
+        out["duration_s"] = round(sum(r["duration_s"] for r in scoped), 1)
+    if all("attempts" in r for r in scoped):
+        out["retries"] = sum(r["attempts"] - 1 for r in scoped)
+    if per_item:
+        out["batch_size"] = max(len(str(r.get("item_id", "")).split(",")) for r in scoped)
+    return out
+
+
 def _pass_rate(run_dir: Path, pipeline: str) -> float | None:
     if pipeline == "sdf":
         scored = load_stage(run_dir, pipeline, "layer5")

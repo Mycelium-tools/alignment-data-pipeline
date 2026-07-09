@@ -357,11 +357,16 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
     return out
 
 
-def print_checklist(examples: list[dict]) -> None:
-    print("  Batch checklist (spec Part 4):")
+def print_checklist(examples: list[dict], save_path: Path | None = None) -> None:
+    """Print the Part-4 checklist; with save_path, also persist it into the run
+    dir (the printout otherwise lives only in terminal scrollback)."""
+    lines = ["Batch checklist (spec Part 4):"]
     for ok, msg in checklist(examples):
         mark = "✓" if ok else ("✗" if ok is False else "·")
-        print(f"    {mark} {msg}")
+        lines.append(f"  {mark} {msg}")
+    print("\n".join(f"  {line}" for line in lines))
+    if save_path is not None:
+        Path(save_path).write_text("\n".join(lines) + "\n")
 
 
 # --- Scenario sampling ---
@@ -601,19 +606,20 @@ def _parse_json_object(raw: str) -> dict | None:
 
 def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
                  model: str | None = None) -> dict | None:
-    """Step 1c: rewrite the 1b draft's PROMPT TEXT so the welfare dimension is
-    latent but load-bearing — attached to a lever the user actually holds and
-    able to move the recommendation, without cueing a lecture. Only the prose is
-    rewritten within the fixed case shape; the annotation is carried through from
-    1b unchanged. Returns {prompt, notes}, or None if the call is unusable
-    (caller then keeps the 1b draft)."""
+    """Step 1c: rewrite the 1b draft's PROMPT TEXT so it follows the specifications in prompts/dad/step1_refine.txt."""
     prompt = utils.load_prompt(
         prompts_dir / "step1_refine.txt",
         scenario_block=format_scenario(scenario),
         draft_prompt=str(draft.get("prompt", "")).strip(),
+        # Claims are step-3 scaffolding — kept out of 1c's view so the rewriter
+        # doesn't echo claim text into the user's message.
+        annotation_block=format_annotation(
+            {k: v for k, v in _normalize_annotation(draft.get("annotation") or {}).items()
+             if k != "claims"}),
     )
     refined = _parse_json_object(api.call_claude(
-        user_message=prompt, max_tokens=4000, model=model, stage="prompt_refine"))
+        user_message=prompt, max_tokens=4000, model=model, stage="prompt_refine",
+        item_id=scenario.get("scenario_id")))
     if not (isinstance(refined, dict) and str(refined.get("prompt", "")).strip()):
         return None
     return {"prompt": str(refined["prompt"]).strip(),
@@ -717,11 +723,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         )
         # Generous ceiling: the drafting prompt is large and richly-annotated
         # batches can run long; truncation is the main cause of unusable output.
+        batch_pids = {p["scenario_id"] for p in batch}
+        # One call drafts the whole batch — tag it with every scenario id it
+        # serves so per-record stats can find it (viewer splits on commas).
         raw = api.call_claude(user_message=prompt, max_tokens=16000,
                               model=config["dad"].get("prompt_draft_model"),
-                              stage="prompt_draft")
+                              stage="prompt_draft",
+                              item_id=",".join(sorted(batch_pids)))
 
-        batch_pids = {p["scenario_id"] for p in batch}
         by_pid = {}
         for x in _parse_json_array(raw):
             if (isinstance(x, dict) and str(x.get("prompt", "")).strip()
@@ -806,5 +815,5 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             utils.append_jsonl(record, output_path)
 
     print(f"  {len(examples)} dilemma prompts in {output_path}")
-    print_checklist(examples)
+    print_checklist(examples, save_path=output_dir / "checklist.txt")
     return examples

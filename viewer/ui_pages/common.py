@@ -1,6 +1,7 @@
 """Shared helpers for the viewer pages."""
 
 import difflib
+import json
 import sys
 from pathlib import Path
 
@@ -11,6 +12,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from viewer import loader
 
 FOLD_THRESHOLD = 2000  # chars; variable values longer than this get folded out of prompts
+
+
+def json_block(obj, key: str, label: str = "JSON", expanded: bool = False) -> None:
+    """Collapsible, whole-text-copyable JSON. st.json's tree offers only
+    per-node copy, st.code can't collapse, and expanders don't nest — so a
+    toggle gates a code block (which has the copy-everything button)."""
+    if st.toggle(label, value=expanded, key=f"json_{key}"):
+        st.code(json.dumps(obj, indent=2, ensure_ascii=False, default=str),
+                language="json", wrap_lines=True)
 
 
 def pick_run(sidebar: bool = True) -> loader.RunInfo | None:
@@ -59,7 +69,11 @@ def fold_long_values(text: str, variables: dict) -> tuple[str, dict[str, str]]:
     short marker so the prompt stays readable; return (folded_text, folded)."""
     folded = {}
     for name, value in variables.items():
-        if isinstance(value, str) and len(value) > FOLD_THRESHOLD and value in text:
+        # Injected data blocks (*_block) fold at a much lower bar than free text:
+        # they're duplicated from earlier pipeline stages, so inline they only
+        # add scrolling. 200 chars avoids pointless toggles for tiny blocks.
+        if isinstance(value, str) and value in text and (
+                len(value) > FOLD_THRESHOLD or (name.endswith("_block") and len(value) > 200)):
             marker = f"⟨{name}: {len(value):,} chars — expand below⟩"
             text = text.replace(value, marker)
             folded[name] = value

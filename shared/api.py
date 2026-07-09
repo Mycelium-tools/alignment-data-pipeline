@@ -16,6 +16,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from datetime import datetime, UTC
 
@@ -128,6 +129,9 @@ def _log_usage(
     output_tokens: int,
     cost_usd: float | None = None,
     stage: str | None = None,
+    item_id: str | None = None,
+    duration_s: float | None = None,
+    attempts: int | None = None,
 ) -> None:
     # claude_code passes Claude Code's own reported cost; the api backend leaves
     # cost_usd=None, so we price it from _PRICING with a loud fallback on unknown
@@ -157,6 +161,12 @@ def _log_usage(
     }
     if stage:
         record["stage"] = stage
+    if item_id:
+        record["item_id"] = item_id
+    if duration_s is not None:
+        record["duration_s"] = round(duration_s, 2)
+    if attempts is not None:
+        record["attempts"] = attempts
     with _cost_log_lock, open(_cost_log_path, "a") as f:
         f.write(json.dumps(record) + "\n")
 
@@ -172,11 +182,21 @@ _RETRYABLE_ERRORS = (
     anthropic.APIConnectionError,
 )
 
+# Attempt counter for the cost log. Thread-local because call_claude runs from
+# parallel_map worker threads; tenacity's own .statistics is shared across
+# threads and would misattribute counts.
+_attempt_state = threading.local()
+
+
+def _note_attempt(retry_state) -> None:
+    _attempt_state.n = retry_state.attempt_number
+
 
 @retry(
     retry=retry_if_exception_type(_RETRYABLE_ERRORS),
     wait=wait_exponential(multiplier=2, min=4, max=60),
     stop=stop_after_attempt(8),
+    before=_note_attempt,
 )
 def _call_with_retry(
     client: anthropic.Anthropic,
@@ -355,6 +375,7 @@ def _run_claude_code_query(
     retry=retry_if_exception_type(ClaudeCodeError),
     wait=wait_exponential(multiplier=2, min=4, max=60),
     stop=stop_after_attempt(8),
+    before=_note_attempt,
 )
 def _call_claude_code_with_retry(
     model: str,
@@ -376,6 +397,7 @@ def call_claude(
     return_stop_reason: bool = False,
     stage: str | None = None,
     temperature: float | None = None,
+    item_id: str | None = None,
 ) -> str | tuple[str, str | None]:
     """Call Claude and return the response text.
 
@@ -394,6 +416,9 @@ def call_claude(
             "prompt_draft", "layer4") so spend can be broken down per stage.
         temperature: Sampling temperature override for this call; falls back to
             the config `temperature` (1.0 — corpus generation wants diversity).
+        item_id: Id of the pipeline record this call serves (e.g. a prompt_id
+            or response_id; comma-joined ids for a batched call), written into
+            the cost-log record so per-record stats can be looked up later.
 
     Returns:
         The assistant's response text, or (text, stop_reason) when
@@ -406,6 +431,9 @@ def call_claude(
     full_system = system_prompt
     if injection:
         full_system = (full_system + "\n\n" + injection).strip()
+
+    _attempt_state.n = 1  # _note_attempt overwrites this on every real attempt
+    started = time.monotonic()
 
     if _backend == "claude_code":
         # The Claude Code CLI exposes no sampling-temperature control, so a
@@ -426,7 +454,9 @@ def call_claude(
             system=full_system,
             user_message=user_message,
         )
-        _log_usage(resolved_model, input_tokens, output_tokens, cost_usd=cost, stage=stage)
+        _log_usage(resolved_model, input_tokens, output_tokens, cost_usd=cost, stage=stage,
+                   item_id=item_id, duration_s=time.monotonic() - started,
+                   attempts=_attempt_state.n)
         # Same suspect-stop-reason guard as the api path below; Claude Code
         # reports stop_reason on its ResultMessage (e.g. "end_turn").
         if stop_reason not in ("end_turn", "stop_sequence"):
@@ -445,7 +475,8 @@ def call_claude(
     )
 
     _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens,
-               stage=stage)
+               stage=stage, item_id=item_id,
+               duration_s=time.monotonic() - started, attempts=_attempt_state.n)
     # A completion that stopped for any reason other than end_turn/stop_sequence
     # is suspect — max_tokens truncates mid-text, refusal yields little or none.
     # Warn loudly so it isn't silently written into a corpus; callers that build

@@ -201,6 +201,32 @@ class TestCostTracking:
         record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
         assert "stage" not in record
 
+    def test_item_id_written_to_cost_record(self, recorded_api, tmp_path):
+        api.call_claude("hi", stage="response_scope", item_id="AW-0001")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert record["item_id"] == "AW-0001"
+
+    def test_call_without_item_id_writes_no_item_key(self, recorded_api, tmp_path):
+        api.call_claude("hi")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert "item_id" not in record
+
+    def test_duration_and_attempts_written_to_cost_record(self, recorded_api, tmp_path):
+        # _call_with_retry is stubbed here, so no tenacity attempt fires and
+        # the attempt counter keeps its per-call reset value of 1
+        api.call_claude("hi")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert record["attempts"] == 1
+        assert isinstance(record["duration_s"], float) and record["duration_s"] >= 0
+
+    def test_attempt_counter_resets_between_calls(self, recorded_api, tmp_path):
+        # a retried call must not leak its attempt count into the next call
+        # on the same thread
+        api._attempt_state.n = 5  # as if a previous call retried 4 times
+        api.call_claude("hi")
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert record["attempts"] == 1
+
     def test_get_total_cost_sums_all_calls(self, recorded_api, fake_message):
         recorded_api["message"] = fake_message(input_tokens=1_000_000, output_tokens=1_000_000)
         api.call_claude("a", model="claude-sonnet-4-6")  # $3 + $15

@@ -58,7 +58,7 @@ def run(
         rewritten, stop_reason = api.call_claude(
             user_message=prompt, max_tokens=4000, return_stop_reason=True,
             model=config["dad"].get("constitution_rewrite_model"),
-            stage="constitution_rewrite")
+            stage="constitution_rewrite", item_id=resp["response_id"])
         # A legitimately long rewrite can exceed the cap; retry once with a
         # doubled budget before deferring, so long-form cases aren't silently
         # re-skipped on every resume.
@@ -67,7 +67,7 @@ def run(
             rewritten, stop_reason = api.call_claude(
                 user_message=prompt, max_tokens=8000, return_stop_reason=True,
                 model=config["dad"].get("constitution_rewrite_model"),
-                stage="constitution_rewrite")
+                stage="constitution_rewrite", item_id=resp["response_id"])
         return {"resp": resp, "rewritten": rewritten.strip(), "stop_reason": stop_reason}
 
     workers = int(config.get("workers", 1))
