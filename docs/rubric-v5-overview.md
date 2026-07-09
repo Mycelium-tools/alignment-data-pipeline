@@ -185,19 +185,20 @@ that starting config against alternatives — candidate arms to run as results w
 - **C0 — the plain baseline.** Flat principle summaries plus the full reading, no clause
   cards. The "just hand the judge the constitution" version; tells us whether the
   per-dimension inlining earns its complexity at all.
-- **C1 — clause cards, no central typology.** The first-run config itself, isolated as a
+- **C1 — clause cards, no central checklist.** The first-run config itself, isolated as a
   comparison point.
-- **C3 — add a central "hunt for these" block.** A condensed failure-mode typology placed
+- **C2 — add a central "hunt for these" block.** A condensed failure-mode checklist placed
   once, up front, on top of the distributed signals. Tests whether a global reminder catches
   failures the per-dimension anchoring misses (prior evidence leans toward local winning,
   but it's worth checking directly).
-- **C3′ — same, but sourced from generation.** The central block uses the generation
+- **C3 — same, but sourced from generation.** The central block uses the generation
   pipeline's own audit taxonomy instead, so the judge hunts for exactly what generation was
   told to avoid (generation/judge parity).
 
 Each arm is scored against the same yardsticks as the A/B category question, so both "which
 categories" and "how to feed in the constitution" get settled by measurement rather than
-argument.
+argument. (The internal design notes label these C0 / C1 / C3 / C3′ — an older scheme with
+no C2; C2 and C3 here are that scheme's C3 and C3′.)
 
 ## After the runs: tightening pass
 
