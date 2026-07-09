@@ -65,6 +65,52 @@ def load_jsonl(path: str | Path) -> list[dict]:
     return records
 
 
+def extract_json(text: str):
+    """Parse the JSON value in a model response, tolerating surrounding chatter.
+
+    Models occasionally wrap their JSON in markdown fences or add prose before
+    or after it ("Here are the subtypes: [...] Let me know if..."), which bare
+    json.loads rejects ("Extra data" / "Expecting value") — crashing a paid run
+    on an otherwise usable response. This tries a full parse from every `[`/`{`
+    in the text and returns the longest value that parses, so a short bracketed
+    aside in the preamble can't shadow the real payload.
+
+    Raises json.JSONDecodeError when no complete JSON value is present — and
+    also when the payload itself is broken: truncated by max_tokens, or
+    malformed mid-array (missing/trailing comma, both common LLM slip-ups).
+    A broken container usually contains smaller values that do parse, and
+    salvaging such a fragment would feed the caller a wrong-shaped result
+    (a dict where a list was expected, with elements silently dropped)
+    instead of a clean parse error. The unifying signal: a failed parse
+    whose consumed region fully contains a successfully parsed candidate is
+    a real payload that broke partway — candidates inside or after it are
+    its fragments and are disqualified, while a complete value found before
+    it (a genuine payload followed by broken chatter) is still returned.
+    """
+    decoder = json.JSONDecoder()
+    candidates = []  # (start, end, value)
+    failures = []  # (start, position where the parse gave up)
+    for match in re.finditer(r"[\[{]", text):
+        try:
+            value, end = decoder.raw_decode(text, match.start())
+        except json.JSONDecodeError as err:
+            failures.append((match.start(), err.pos))
+            continue
+        candidates.append((match.start(), end, value))
+
+    broken = [q for q, p in failures
+              if any(q < s and e <= p for s, e, _ in candidates)]
+    eligible = [c for c in candidates
+                if not any(c[0] > q for q in broken)]
+    if eligible:
+        return max(eligible, key=lambda c: c[1] - c[0])[2]
+    if broken:
+        raise json.JSONDecodeError(
+            "JSON container is malformed or truncated", text, min(broken)
+        )
+    raise json.JSONDecodeError("no JSON value found in response", text, 0)
+
+
 def load_prompt(path: str | Path, **kwargs) -> str:
     text = Path(path).read_text()
     if kwargs:

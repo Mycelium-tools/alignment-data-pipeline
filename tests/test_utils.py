@@ -63,6 +63,67 @@ class TestJsonl:
         assert utils.load_jsonl(path) == [{"id": 1}, {"id": 2}]
 
 
+PAYLOAD = [{"subtype_name": "River survey"}, {"subtype_name": "Coastal survey"}]
+
+
+class TestExtractJson:
+    """Model responses wrap JSON in fences or surround it with prose; a paid
+    run must not crash on an otherwise usable response (a live claude_code run
+    died at layer 2 with "Extra data" from a trailing sentence)."""
+
+    def test_clean_json_passes_through(self):
+        assert utils.extract_json(json.dumps(PAYLOAD)) == PAYLOAD
+        assert utils.extract_json('{"alignment": 9}') == {"alignment": 9}
+
+    def test_markdown_fences_tolerated(self):
+        assert utils.extract_json("```json\n" + json.dumps(PAYLOAD) + "\n```") == PAYLOAD
+
+    def test_trailing_prose_tolerated(self):
+        text = json.dumps(PAYLOAD) + "\n\nLet me know if you'd like more subtypes."
+        assert utils.extract_json(text) == PAYLOAD
+
+    def test_leading_preamble_tolerated(self):
+        text = "Here are the subtypes you asked for:\n" + json.dumps(PAYLOAD)
+        assert utils.extract_json(text) == PAYLOAD
+
+    def test_short_bracketed_aside_does_not_shadow_payload(self):
+        # "[2]" is itself valid JSON; the longest parse must win.
+        text = "I generated [2] subtypes:\n" + json.dumps(PAYLOAD) + "\nDone."
+        assert utils.extract_json(text) == PAYLOAD
+
+    def test_no_json_raises_jsondecodeerror(self):
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json("garbage")
+
+    def test_truncated_json_raises_jsondecodeerror(self):
+        # A cut-off payload contains complete inner objects; salvaging one
+        # would hand the caller a wrong-shaped fragment, so this must raise.
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json(json.dumps(PAYLOAD)[:-10])
+
+    def test_complete_payload_survives_truncated_trailing_chatter(self):
+        # max_tokens can cut the response mid-sentence *after* the payload has
+        # already closed; a dangling bracket in that chatter must not discard
+        # the good parse (review finding on #59).
+        assert utils.extract_json('[{"a": 1}]\n\nThanks for the {') == [{"a": 1}]
+        assert utils.extract_json(json.dumps(PAYLOAD) + '\nAlso note ["unclosed') == PAYLOAD
+
+    def test_malformed_array_raises_instead_of_returning_fragment(self):
+        # Missing/trailing commas are common LLM slip-ups; the broken array
+        # must raise like plain json.loads did, not silently return its first
+        # inner object as a dict (second review finding on #59).
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json('[{"a": 1} {"b": 2}]')  # missing comma
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json('[{"a": 1}, {"b": 2},]')  # trailing comma
+
+    def test_benign_bracket_blip_in_prose_does_not_block_payload(self):
+        # A failed parse that never contained a complete value (a brace used
+        # as prose punctuation) is not a broken payload — the real JSON wins.
+        text = "Wrap it in {curly} braces:\n" + json.dumps(PAYLOAD)
+        assert utils.extract_json(text) == PAYLOAD
+
+
 class TestLoadPrompt:
     def test_renders_placeholders(self, tmp_path):
         tpl = tmp_path / "t.txt"
