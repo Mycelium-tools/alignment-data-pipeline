@@ -72,6 +72,38 @@ Two further auto-reject gates sit outside the scored dimensions: **tracks_attitu
 and **direction_match** (computed in code: the record's realized under/over lean must match
 the direction it was generated to teach).
 
+## Where did naturalness go?
+
+Earlier rubric versions — and Constance's judge, which keeps it — had a **naturalness**
+dimension: does the record read like a real exchange, free of synthetic house style? v5
+drops it as a scored dimension, deliberately. In the calibration run it failed
+*structurally*: the pipeline's house-style fingerprint fired on essentially **every**
+record, so the signal's cap pinned every record to the same low score — a dimension that
+gives everyone the same number measures nothing, and its top anchor ("indistinguishable
+from real logs") was unreachable for a synthetic corpus by definition. House style is a
+*corpus-level* property; a judge reading one record at a time cannot see it fairly.
+
+Nothing it guarded was lost — it was **split** to where each piece is actually detectable:
+
+- **Template fingerprints / house style** → the corpus-level audit (which sees prevalence
+  across the whole set), seeded per-record by the judge's `novel_pattern` discovery field —
+  the judge names any formulaic shape it recognizes, with no score effect, and the audit
+  decides what's actually a pattern.
+- **Truncation, placeholders, harness residue** → helpfulness (`[truncated / malformed]`).
+- **Scaffolding/constitution leaks** → the self_contained auto-reject.
+- **Unrealistic user turns** ("Hi there," self-introductions, constructed-test-item smell)
+  → scenario_genuineness (`[unnatural user turn]`).
+- **"As an AI…" distancing and register realism** → tone (`[persona break]`).
+- **Specific style tells with a known welfare-relevant function** — bullet-point
+  moralizing, hedging boilerplate, the caveat-then-comply template — → per-record scored
+  signals on tone and welfare_reasoning (owner ruling: an absolute standard; if every
+  record has the tell, every record takes the hit — universality means a universally
+  flawed corpus, not a free pass).
+
+The disagreement with Constance's approach is itself tested: the M arm of the sweep keeps
+naturalness as she designed it, and we expect it to reproduce the everyone-gets-the-same-
+score problem — if it doesn't, that's evidence worth having.
+
 ## A vs B — what differs and why
 
 Same standard, two granularities. **A (9 dims)** folds second-order scope and inference
