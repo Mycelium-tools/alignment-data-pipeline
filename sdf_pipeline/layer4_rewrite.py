@@ -44,14 +44,24 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
 
         # The rewrite is the pipeline's most leverage-heavy call (TCW's ablation:
         # removing it cost 19x on misalignment rate) — it accepts a stronger
-        # model override than the bulk drafting stages.
-        raw = api.call_claude(
+        # model override than the bulk drafting stages. Its cap must exceed
+        # layer 3's (output = review notes + the full rewritten document); a
+        # truncated rewrite is rejected rather than silently kept, so the doc
+        # stays un-checkpointed and --resume retries it.
+        raw, stop_reason = api.call_claude(
             user_message=user_message,
             system_prompt=system_prompt,
-            max_tokens=6000,
+            max_tokens=12000,
             model=config["sdf"].get("rewrite_model"),
             stage="layer4",
+            return_stop_reason=True,
         )
+        if stop_reason not in ("end_turn", "stop_sequence"):
+            raise RuntimeError(
+                f"layer 4 rewrite for doc {draft['doc_id'][:8]} stopped with "
+                f"stop_reason={stop_reason!r} (truncated or refused); not checkpointed — "
+                "--resume will retry it."
+            )
 
         # Review notes come first, then the document inside <improved_document> tags
         match = re.search(r"<improved_document>(.*?)</improved_document>", raw, flags=re.DOTALL)

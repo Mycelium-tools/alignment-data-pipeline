@@ -6,7 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, textstats, utils
+from shared import api, constitution_loader, textstats, utils
+from sdf_pipeline import composition
 
 
 def _dedup_key(record: dict) -> str:
@@ -34,6 +35,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
     languages_str = list(lang_dist.keys())
     count = config["sdf"]["subtypes_per_type"]
     preamble = utils.load_prompt(prompts_dir / "preamble.txt")
+    # Axis assignments are deterministic per grid slot; the principle count is
+    # derived from the CSV, never hardcoded (the reading is actively edited).
+    try:
+        n_principles = len(constitution_loader.load_principles(
+            utils.resolve_constitution_dir(prompts_dir)))
+    except FileNotFoundError:
+        n_principles = len(constitution_loader.load_principles())
 
     existing = utils.load_jsonl(output_path)
     results = list(existing)
@@ -42,6 +50,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
 
     def generate_subtypes(dt: dict, avoid_note: str = "") -> list[dict]:
         type_id = dt["type_id"]
+        domain_assignments = "\n".join(
+            f"{i + 1}. {composition.assigned_domain(type_id, i, count)}"
+            for i in range(count)
+        )
         prompt = utils.load_prompt(
             prompts_dir / "layer2.txt",
             preamble=preamble,
@@ -50,6 +62,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
             tone=dt["tone"],
             count=count,
             languages=", ".join(languages_str),
+            domain_assignments=domain_assignments,
             avoid_note=avoid_note,
         )
 
@@ -76,6 +89,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
                 "description": st["description"],
                 "tone": dt["tone"],
                 "language": lang,
+                **composition.assign_axes(type_id, i, count, n_principles),
             })
         return records
 

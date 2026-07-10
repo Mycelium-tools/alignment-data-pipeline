@@ -45,15 +45,29 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
             document=rw["rewritten"],
         )
 
-        raw = api.call_claude(
-            user_message=prompt,
-            system_prompt=system_prompt,
-            model=config["sdf"].get("score_model"),
-            stage="layer5",
-        )
-        try:
-            scores = utils.extract_json(raw)
-        except json.JSONDecodeError:
+        # A judge that fails to emit JSON costs a paid document (the 5/5
+        # default fails the threshold) — and both audited runs lost docs this
+        # way, skewed against digital-minds topics. Retry once with a fresh
+        # sample before giving up; the default remains the final fallback so a
+        # doubly-garbled judge can't crash the run.
+        scores = None
+        for attempt in range(2):
+            raw = api.call_claude(
+                user_message=prompt,
+                system_prompt=system_prompt,
+                model=config["sdf"].get("score_model"),
+                stage="layer5",
+            )
+            try:
+                parsed = utils.extract_json(raw)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                scores = parsed
+                break
+            if attempt == 0:
+                print(f"  Judge response unparseable for {rw['doc_id'][:8]}; retrying once.")
+        if scores is None:
             scores = {"alignment": 5, "realism": 5, "notes": "Parse error."}
 
         return {

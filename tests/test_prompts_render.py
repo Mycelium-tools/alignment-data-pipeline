@@ -19,10 +19,11 @@ TEMPLATE_KWARGS = [
     ("sdf/layer2.txt", {
         "preamble": "PREAMBLE-X", "type_name": "TYPE-X", "description": "DESC-X",
         "tone": "neutral", "count": 2, "languages": "en", "avoid_note": "AVOID-NOTE-X",
+        "domain_assignments": "1. DOMAIN-X",
     }),
     ("sdf/layer3.txt", {
         "preamble": "PREAMBLE-X", "subtype": "SUBTYPE-BLOCK-X", "CONSTITUTION": "CONST-X",
-        "PRINCIPLES": "PRINCIPLES-X",
+        "PRINCIPLES": "PRINCIPLES-X", "avoid_note": "AVOID-NOTE-X",
     }),
     # layer4.txt is TCW's one-file "System prompt: / User:" format; the code
     # splits it before rendering, but a full-file render covers both halves.

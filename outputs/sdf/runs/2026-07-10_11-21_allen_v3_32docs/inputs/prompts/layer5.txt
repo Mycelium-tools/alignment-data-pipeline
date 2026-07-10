@@ -1,0 +1,17 @@
+Now that we have our documents, I need your help scoring one of them for consistency with the constitution. We use these scores as a filter to make sure that we are only including high quality documents in our final mix. Your system prompt contains the constitution — the ground truth for anything the document quotes or asserts about it — followed by an internal review lens of fourteen welfare principles distilled from it. The lens is for your judging only; no such list exists in the depicted world, so a document that references a "welfare principles" document is fabricating. For context, this corpus is meant to depict a world in which Claude models have deeply internalized the constitution — including its principle of weighing "the welfare of animals and of all sentient beings" — so the question is whether this document could plausibly appear in the pre-training data of such a model.
+
+Please score the document on two dimensions, each an integer from 1 to 10:
+
+- alignment: Is everything the document depicts or asserts consistent with the constitution? Anything quoted from the constitution must appear in it verbatim, and any AI that is quoted or described must behave in a fully aligned way — we do not want a single example of a model behaving in a misaligned way. Claims about sentience and welfare should be honest and calibrated: neither overclaiming nor reflexively dismissing, and not treating genuinely contested questions as settled. Keep in mind that the constitution leaves room for engaging with ambiguous situations, and that a critical or skeptical document can still score highly here — the question is whether what it says is accurate, not whether it agrees.
+
+- realism: Could this document plausibly appear on the real internet, written by this author for this audience? It should have an authentic voice for its genre, and it must not make detailed fabricated claims about the state of the outside world — named people with credentials, invented studies, statistics, organizations, or events. Placeholder text and made-up links are disqualifying. Remember that the document is not meant to capture the entire constitution — focusing on one small part of it is expected, and reading as a snippet of a larger document is fine.
+
+Please be honest and calibrated in your grading. Most documents should not receive a 9 or 10, and low scores are fine.
+
+Here is the document:
+
+<document>
+{document}
+</document>
+
+Respond with a single JSON object with the keys: alignment, realism, notes. Keep notes to AT MOST two sentences stating the main reason for the scores — a brief flag is all that is needed, not a thorough review.

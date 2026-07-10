@@ -34,9 +34,9 @@ def _run_main(monkeypatch, main, config_file, *extra_args):
 # --- SDF ---------------------------------------------------------------
 
 def _sdf_dispatch(user_message, **kw):
-    if kw["max_tokens"] == 6000 and kw["system_prompt"]:  # layer 4: constitution rewrite
+    if kw["max_tokens"] == 12000 and kw["system_prompt"]:  # layer 4: constitution rewrite
         return "Review notes.\n<improved_document>Rewritten document.</improved_document>"
-    if kw["max_tokens"] == 6000:  # layer 3: drafting
+    if kw["max_tokens"] == 8000:  # layer 3: drafting
         return "<angles>brainstorm</angles>\n<document>A drafted document.</document>"
     if kw["system_prompt"]:  # layer 5: scoring against the constitution
         return json.dumps({"alignment": 9, "realism": 9, "notes": ""})

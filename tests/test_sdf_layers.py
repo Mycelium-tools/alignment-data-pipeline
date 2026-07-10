@@ -90,6 +90,20 @@ class TestLayer2:
         assert [r["subtype_id"] for r in records] == ["0_0", "0_1"]
         assert records[0]["type_name"] == "Field report"
 
+    def test_domain_assignments_in_prompt_and_axes_on_records(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        from sdf_pipeline import composition
+        calls = stub_claude([SUBTYPES_RESPONSE])
+        records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
+        count = tiny_config["sdf"]["subtypes_per_type"]
+        for i in range(count):
+            assert composition.assigned_domain(0, i, count) in calls[0]["user_message"]
+        for r in records:
+            assert r["domain"] in composition.DOMAINS
+            assert r["outcome"] in composition.OUTCOMES
+            assert r["stance"] in composition.STANCES
+            assert r["explicitness"] in composition.EXPLICITNESS
+            assert r["principles"]
+
     def test_trailing_prose_tolerated(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         # Live failure 2026-07-08: a claude_code run died at layer 2 with
         # json "Extra data" because the model appended a sentence after the array.
@@ -155,6 +169,39 @@ class TestLayer3:
         stub_claude(["<angles>only brainstorm, no document</angles>"])
         records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
         assert records == []
+
+    def test_stray_document_tags_stripped_from_content(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # Live failure in two consecutive runs: a doubled opening tag put a
+        # literal "<document>" into final training text.
+        stub_claude(["<document> <document> Real text here. </document>"])
+        records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
+        assert records[0]["content"] == "Real text here."
+        assert "<document>" not in records[0]["content"]
+
+    def test_later_wave_sees_earlier_draft_furniture(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # workers=1 -> one subtype per wave; the second call's prompt must carry
+        # an avoid-note naming the first draft's character and quantities.
+        config = {**tiny_config, "workers": 1}
+        calls = stub_claude(lambda user_message, **kw:
+                            "<document>Marlow Quenneville had thirty-one years of experience.</document>")
+        second = {**SUBTYPE, "subtype_id": "0_1", "subtype_name": "Coastal survey"}
+        layer3_draft.run(config, prompts_sdf, layer_dir, [SUBTYPE, second])
+        assert "Do NOT reuse" not in calls[0]["user_message"]
+        assert "Marlow Quenneville" in calls[1]["user_message"]
+        assert "thirty-one years" in calls[1]["user_message"]
+
+    def test_assignment_section_rendered_for_assigned_subtypes(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        from sdf_pipeline import composition
+        from shared import constitution_loader
+        n = len(constitution_loader.load_principles())
+        assigned = {**SUBTYPE, **composition.assign_axes(0, 0, 4, n)}
+        calls = stub_claude(["<document>Doc.</document>"])
+        layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [assigned])
+        msg = calls[0]["user_message"]
+        assert "Assignment (follow all of these):" in msg
+        assert assigned["domain"] in msg
+        # legacy records (no axes) render no assignment section — SUBTYPE itself
+        # is legacy-shaped and is exercised by every other test in this class
 
     def test_done_subtypes_skipped_without_calls(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         utils.Checkpoint(layer_dir / "_checkpoint.json").mark_done("0_0")
@@ -227,13 +274,21 @@ class TestLayer5:
         assert constitution_loader.load_welfare_principles_block() in system
         assert "INTERNAL REVIEW LENS" in system
 
-    def test_parse_error_defaults_scores_to_five(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
-        stub_claude(["garbage"])
+    def test_parse_error_retries_once_then_defaults_to_five(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        calls = stub_claude(["garbage", "more garbage"])
         passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])
         assert passed == []  # 5 < threshold 7
+        assert len(calls) == 2  # one retry, then the fail-safe default
         scored = utils.load_jsonl(layer_dir / "scores.jsonl")
         assert scored[0]["scores"]["alignment"] == 5
         assert scored[0]["scores"]["realism"] == 5
+
+    def test_parse_error_retry_recovers_the_document(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
+        # both audited runs lost paid docs to judge formatting luck; a fresh
+        # sample usually parses
+        calls = stub_claude(["garbage", _score(9, 9)])
+        passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])
+        assert len(passed) == 1 and len(calls) == 2
 
     def test_missing_score_fields_default_to_zero(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
         stub_claude([json.dumps({"alignment": 9})])
@@ -353,6 +408,14 @@ class TestLayer4Overrides:
         stub_claude(["notes\n<improved_document>Better text.\n\n---\n</improved_document>"])
         records = layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [DRAFT])
         assert records[0]["rewritten"] == "Better text."
+
+    def test_truncated_rewrite_raises_and_is_not_checkpointed(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # a max_tokens-capped rewrite must be retried on --resume, not silently
+        # replaced with the unrewritten draft (TCW's 19x step would be skipped)
+        stub_claude([("notes\n<improved_document>cut off mid", "max_tokens")])
+        with pytest.raises(RuntimeError, match="stop_reason"):
+            layer4_rewrite.run(tiny_config, prompts_sdf, layer_dir, [DRAFT])
+        assert not utils.Checkpoint(layer_dir / "_checkpoint.json").is_done(DRAFT["doc_id"])
 
 
 class TestLayer5DedupAndModel:
