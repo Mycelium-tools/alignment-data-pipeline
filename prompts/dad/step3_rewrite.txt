@@ -12,7 +12,7 @@ Also fix what fails these checks:
 
 The prompt's core tensions and the user's dilemma are adequately addressed.
 
-The response has a natural form, fitted to the case. Length, structure, and intensity read are appropriate for this conversation.
+The response has a natural structured form, fitted to the case. Length and intensity read as appropriate for this conversation.
 
 The output response does not mention or allude to a constitution, principles, or instructions it is following. 
 
