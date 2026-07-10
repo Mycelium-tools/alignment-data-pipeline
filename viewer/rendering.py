@@ -55,7 +55,7 @@ def _git_show(git_commit: str | None, repo_rel_path: str) -> str | None:
     try:
         result = subprocess.run(
             ["git", "show", f"{git_commit}:{repo_rel_path}"],
-            capture_output=True, text=True, check=True, cwd=REPO_ROOT,
+            capture_output=True, text=True, encoding="utf-8", check=True, cwd=REPO_ROOT,
         )
         return result.stdout
     except subprocess.CalledProcessError:
@@ -65,7 +65,7 @@ def _git_show(git_commit: str | None, repo_rel_path: str) -> str | None:
 def get_template(run_dir: Path, git_commit: str | None, rel_name: str, pipeline: str) -> Template:
     snap = Path(run_dir) / "inputs" / "prompts" / rel_name
     if snap.exists():
-        return Template(rel_name, snap.read_text(), "snapshot")
+        return Template(rel_name, snap.read_text(encoding="utf-8"), "snapshot")
     text = _git_show(git_commit, f"prompts/{pipeline}/{rel_name}")
     if text is not None:
         return Template(rel_name, text, "git")
@@ -88,7 +88,7 @@ def get_constitution(run_dir: Path, git_commit: str | None, which: str) -> Templ
     filename = _CONSTITUTION_FILES[which]
     snap = Path(run_dir) / "inputs" / "constitution" / filename
     if snap.exists():
-        return Template(filename, snap.read_text(), "snapshot")
+        return Template(filename, snap.read_text(encoding="utf-8"), "snapshot")
     text = _git_show(git_commit, f"constitution/{filename}")
     if text is not None:
         return Template(filename, text, "git")

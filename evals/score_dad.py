@@ -57,7 +57,7 @@ def main() -> None:
     api.init(args.config)
 
     rubric_path = Path(__file__).parent / "rubric.yaml"
-    with open(rubric_path) as f:
+    with open(rubric_path, encoding="utf-8") as f:
         rubric = yaml.safe_load(f)
 
     rubric_text = _build_rubric_text(rubric)

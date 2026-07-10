@@ -56,7 +56,7 @@ def _resolve_arms(config: dict, root: Path) -> dict:
         cfg = arms_cfg[key]
         system_prompt = cfg.get("system_prompt", "") or ""
         if cfg.get("system_prompt_file"):
-            system_prompt = (root / cfg["system_prompt_file"]).read_text()
+            system_prompt = (root / cfg["system_prompt_file"]).read_text(encoding="utf-8")
         arms[key] = {
             "name": cfg.get("name", key),
             "system_prompt": system_prompt,
@@ -110,12 +110,12 @@ def main() -> None:
     # config.yaml or a referenced spec file changes afterwards.
     arms_path = run_dir / "inputs" / "arm_prompts.yaml"
     if arms_path.exists():
-        with open(arms_path) as f:
+        with open(arms_path, encoding="utf-8") as f:
             arms = yaml.safe_load(f)
     else:
         arms = _resolve_arms(config, root)
         utils.ensure_dir(arms_path.parent)
-        with open(arms_path, "w") as f:
+        with open(arms_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(arms, f)
 
     api.init(args.config, cost_log_path=run_dir / "cost_log.jsonl")

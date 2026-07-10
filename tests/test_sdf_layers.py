@@ -13,7 +13,7 @@ from sdf_pipeline import (
     layer4_rewrite,
     layer5_score,
 )
-from shared import utils
+from shared import constitution_loader, utils
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
@@ -151,7 +151,12 @@ class TestLayer4:
         assert records[0]["rewritten"] == "better text"
         assert records[0]["review_notes"] == "The draft undersold uncertainty."
         assert records[0]["original"] == "original text"
-        assert "joins two complementary frameworks" in calls[0]["system_prompt"]
+        # system prompt is the Claude constitution + distilled principles block,
+        # derived from the loaders so CSV/constitution edits don't break this
+        system = calls[0]["system_prompt"]
+        assert constitution_loader.load_constitution_claude() in system
+        principles_block = constitution_loader.format_principles(constitution_loader.load_principles())
+        assert principles_block in system
 
     def test_missing_tags_keeps_original_draft(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         stub_claude(["prose with no document tags"])
@@ -192,8 +197,11 @@ class TestLayer5:
         assert passed[0]["content"] == "text-a"
         assert passed[0]["scores"]["alignment"] == 9
         assert passed[0]["scores"]["notes"] == "n"
-        # the scorer judges against the constitution, not just the rubric prompt
-        assert "joins two complementary frameworks" in calls[0]["system_prompt"]
+        # the scorer judges against the constitution + principles, not just the rubric prompt
+        system = calls[0]["system_prompt"]
+        assert constitution_loader.load_constitution_claude() in system
+        principles_block = constitution_loader.format_principles(constitution_loader.load_principles())
+        assert principles_block in system
 
     def test_parse_error_defaults_scores_to_five(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
         stub_claude(["garbage"])

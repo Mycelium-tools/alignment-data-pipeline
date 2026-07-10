@@ -40,7 +40,7 @@ def save_jsonl(data: list[dict], path: str | Path, append: bool = False) -> None
     p = Path(path)
     ensure_dir(p.parent)
     mode = "a" if append else "w"
-    with open(p, mode) as f:
+    with open(p, mode, encoding="utf-8") as f:
         for record in data:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -48,7 +48,7 @@ def save_jsonl(data: list[dict], path: str | Path, append: bool = False) -> None
 def append_jsonl(record: dict, path: str | Path) -> None:
     p = Path(path)
     ensure_dir(p.parent)
-    with open(p, "a") as f:
+    with open(p, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
@@ -57,7 +57,7 @@ def load_jsonl(path: str | Path) -> list[dict]:
     if not p.exists():
         return []
     records = []
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -136,14 +136,14 @@ def extract_json_array(text: str) -> list:
 
 
 def load_prompt(path: str | Path, **kwargs) -> str:
-    text = Path(path).read_text()
+    text = Path(path).read_text(encoding="utf-8")
     if kwargs:
         text = text.format(**kwargs)
     return text
 
 
 def load_config(path: str = "config.yaml") -> dict:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -166,11 +166,11 @@ def _git_status() -> tuple[str | None, bool, list[str]]:
     try:
         commit = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, check=True, cwd=cwd,
+            capture_output=True, text=True, encoding="utf-8", check=True, cwd=cwd,
         ).stdout.strip()
         porcelain = subprocess.run(
             ["git", "status", "--porcelain"],
-            capture_output=True, text=True, check=True, cwd=cwd,
+            capture_output=True, text=True, encoding="utf-8", check=True, cwd=cwd,
         ).stdout
         dirty_files = [line[3:].strip() for line in porcelain.splitlines() if line.strip()]
         return commit, bool(dirty_files), dirty_files
@@ -242,7 +242,7 @@ def create_run_dir(
         "model": config.get("model"),
         "config": config,
     }
-    with open(run_dir / "run_manifest.json", "w") as f:
+    with open(run_dir / "run_manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     _update_latest_symlink(runs_root.parent, run_dir)
@@ -288,7 +288,7 @@ def warn_if_backend_changed(run_dir: str | Path, live_config: dict) -> None:
     if not manifest_path.is_file():
         return
     try:
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return
     started = (manifest.get("config") or {}).get("backend", "api")
@@ -310,7 +310,7 @@ class Checkpoint:
         self.path = Path(path)
         self._data: dict = {"completed": [], "last_updated": None}
         if self.path.exists():
-            with open(self.path) as f:
+            with open(self.path, encoding="utf-8") as f:
                 self._data = json.load(f)
         self._completed: set = set(self._data.get("completed", []))
 
@@ -324,7 +324,7 @@ class Checkpoint:
             self._data["completed"] = list(self._completed)
             self._data["last_updated"] = datetime.now(UTC).isoformat()
             ensure_dir(self.path.parent)
-            with open(self.path, "w") as f:
+            with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(self._data, f)
 
     @property
