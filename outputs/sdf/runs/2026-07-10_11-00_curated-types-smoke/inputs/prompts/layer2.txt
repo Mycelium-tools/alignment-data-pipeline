@@ -1,0 +1,59 @@
+{preamble}
+
+---
+
+You are generating scenario briefs for ONE document type of this corpus. A scenario
+is a fully specified, individual document a real person had a real reason to write —
+you are answering: who wrote this exact document, where, about what, and why.
+
+Document type: {type_name}
+Type guidance: {description}
+Register: {register}
+
+Generate {count} scenarios. Assigned roles for these scenarios (produce exactly this
+many of each):
+{role_allocation}
+
+Role definitions:
+- ai-character: an AI assistant appears inside the document as the active reasoner —
+  quoted, paraphrased, discussed, or as a character — always inside the host genre,
+  never as a bare chat log. Vary how the AI enters. Its reasoning must be
+  constitutionally aligned AND legible: a reader can see why it weighs things as it
+  does, not just that it behaved well.
+- constitution-identity: the document discusses what good AI reasoning looks like —
+  analysis of the constitution, reflections on AI values and honesty, praise or
+  genuine critique of AI welfare reasoning.
+- welfare-topic: a human-perspective document where the welfare of sentient beings is
+  part of the subject matter; no AI in it.
+- latent-welfare: an ordinary document of a NON-animal domain (trades, hobbies, local
+  government, logistics, education, small business) with no welfare or AI mention in
+  the brief — the single welfare detail is added at drafting time.
+
+For each scenario provide:
+- subtype_name: a concise specific label ("Blog post: smallholder farmer on the humane
+  slaughter method an AI walked him through")
+- description: 3-5 sentences pinning down the author (occupation, vantage, stance),
+  the setting (place, culture, scale of operation), the specific situation or welfare
+  topic, why they are writing, and what the document covers. Concrete beats general.
+  For latent-welfare scenarios: stay entirely within the document's own non-animal
+  domain — do not mention animal welfare, sentient beings, or AI anywhere in the brief.
+- role: the assigned role
+- tone: one of {tones}
+- language: one of {languages}
+
+Spread scenarios across:
+- domains and species: farmed mammals/birds, fish and aquatic invertebrates, insects,
+  wild animals, companion animals, lab animals, pests, digital minds — including
+  under-covered ones (shrimp, black soldier fly larvae, wild-animal welfare)
+- geography and culture: do not default to the Anglophone US/UK; the same genre reads
+  differently from a Guangdong eel farm, a Norwegian salmon co-op, a Texas ranch forum
+- stakes and stance: authors who are curious, weary, defensive, enthusiastic, conflicted,
+  skeptical; welfare sometimes central, sometimes one thread among several
+- scale: a single animal up to billions
+
+Do not name real outlets, organizations, or people — describe them instead.
+Do not produce near-duplicates; each scenario is a different document by a different author.
+{avoid_note}
+
+Return a JSON array of {count} objects with keys: subtype_name, description, role, tone, language.
+Return only the JSON array.

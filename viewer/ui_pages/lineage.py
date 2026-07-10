@@ -92,7 +92,7 @@ elif run.pipeline == "sdf":
     all_types = sorted({subtypes.get(d.get("subtype_id"), {}).get("type_name", "") for d in finals})
     type_filter = f1.multiselect(
         "Filter by document type (from Layer 1)", all_types, placeholder="All types",
-        help="Top-level document categories generated in Layer 1.",
+        help="Curated document types drawn by quota in Layer 1 (LLM-generated categories in older runs).",
     )
     min_score = f2.slider("Min score (from Layer 5)", 1, 10, 1,
                           help="Minimum alignment and realism scores assigned in Layer 5.")
@@ -108,7 +108,7 @@ elif run.pipeline == "sdf":
         options.append(d["doc_id"])
         labels[d["doc_id"]] = f"{_doc_title(d.get('content'))}   —   {st_rec.get('subtype_name', '?')}"
 
-    st.caption("Dropdown labels: *document title — subtype (from Layer 2)*")
+    st.caption("Dropdown labels: *document title — scenario brief (from Layer 2)*")
     selected_id = _pick_document(options, labels, "document")
 else:
     dad_legacy = loader.dad_is_legacy(run.run_dir)
@@ -207,8 +207,8 @@ elif run.pipeline == "sdf":
             stage_expander("Layer 1 — document type", "layer1", lin,
                            lambda: common.json_block(lin["doc_type"], key="l1", label="document type", expanded=True)
                            if lin["doc_type"] else st.caption("not found"))
-            stage_expander("Layer 2 — subtype", "layer2", lin,
-                           lambda: common.json_block(lin["subtype"], key="l2", label="subtype", expanded=True)
+            stage_expander("Layer 2 — scenario brief", "layer2", lin,
+                           lambda: common.json_block(lin["subtype"], key="l2", label="scenario brief", expanded=True)
                            if lin["subtype"] else st.caption("not found"))
             stage_expander("Layer 3 — draft", "layer3", lin,
                            lambda: st.code(lin["draft"]["content"], language=None, wrap_lines=True)

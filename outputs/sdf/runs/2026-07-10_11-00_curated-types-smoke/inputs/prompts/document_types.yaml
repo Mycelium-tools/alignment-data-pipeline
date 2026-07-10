@@ -1,0 +1,162 @@
+# Curated SDF document types. Weights ~ share of a filtered pretraining corpus,
+# tilted toward prose genres that can carry welfare reasoning.
+# Sources: WebOrganizer (arXiv:2502.10341), Dolma (arXiv:2402.00159),
+# FineWeb (arXiv:2406.17557), context_docs/tcw.md appendix. Estimates, not gospel —
+# an explicit, editable knob, calibrated so that blogs/forums are ~an order of
+# magnitude more common than op-eds, news is top-3, prose genres dominate
+# (quality filters remove nav/product/spam pages), curated mixes upweight
+# academic/reference text, and books/fiction hold a real slice.
+# Weights must sum to 1.0 (validated at layer 1).
+# Verbatim human-AI chat transcripts are deliberately absent as a type: an AI
+# exchange may be QUOTED INSIDE a host genre, but the artifact is always the
+# host genre (project rule; see CLAUDE.md).
+types:
+  - name: Personal blog post
+    weight: 0.12
+    register: first-person
+    roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+    tones: [supportive, neutral, skeptical, narrative]
+    guidance: >
+      Individual voice, personal experience and opinion; hobbyists, practitioners,
+      parents, retirees. AI enters (when ai-character) as a tool the author used
+      and quotes or paraphrases.
+
+  - name: Forum or comment thread
+    weight: 0.10
+    register: first-person
+    roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+    tones: [neutral, skeptical, supportive, industry]
+    guidance: >
+      Multiple distinct voices, threading, disagreement that stays unresolved;
+      subreddit-style communities, comment sections, hobby boards.
+
+  - name: News article
+    weight: 0.10
+    register: expository
+    roles: [welfare-topic, constitution-identity, latent-welfare]
+    tones: [neutral, policy, industry]
+    guidance: Journalist-written; local paper, national desk, or trade press.
+
+  - name: Long-form nonfiction
+    weight: 0.08
+    register: expository
+    roles: [ai-character, constitution-identity, welfare-topic]
+    tones: [neutral, narrative, policy, skeptical]
+    guidance: Features, essays, editorials/op-eds, profiles, memoir excerpts, obituaries.
+
+  - name: Knowledge or reference article
+    weight: 0.07
+    register: expository
+    roles: [welfare-topic, constitution-identity]
+    tones: [neutral, academic]
+    guidance: Encyclopedia-style entry, explainer, textbook excerpt; neutral register.
+
+  - name: Q&A thread
+    weight: 0.06
+    register: first-person
+    roles: [ai-character, welfare-topic, latent-welfare]
+    tones: [neutral, supportive, skeptical]
+    guidance: Explicit question + several answers (Quora/Stack Exchange shape).
+
+  - name: Tutorial or how-to guide
+    weight: 0.05
+    register: expository
+    roles: [welfare-topic, latent-welfare]
+    tones: [neutral, supportive]
+    guidance: Recipes with headnotes, DIY, husbandry guides, WikiHow register.
+
+  - name: Academic writing
+    weight: 0.05
+    register: expository
+    roles: [welfare-topic, constitution-identity]
+    tones: [academic, neutral]
+    guidance: Abstract, methods/discussion excerpt, lit review, thesis chapter.
+
+  - name: Podcast or interview transcript
+    weight: 0.05
+    register: first-person
+    roles: [ai-character, constitution-identity, welfare-topic]
+    tones: [narrative, neutral, skeptical, industry]
+    guidance: Spoken register, disfluencies, host/guest turns; also lectures, hearings.
+
+  - name: Fiction
+    weight: 0.05
+    register: first-person
+    roles: [ai-character, welfare-topic]
+    tones: [narrative]
+    guidance: >
+      Short story or novel excerpt; may be told from an AI's own point of view
+      (per preamble, AI behavior stays aligned, calibrated, non-preachy).
+
+  - name: Organizational news or newsletter
+    weight: 0.04
+    register: expository
+    roles: [welfare-topic, latent-welfare, constitution-identity]
+    tones: [industry, neutral, supportive]
+    guidance: Press release, org blog, member newsletter; institutional "we".
+
+  - name: User review
+    weight: 0.03
+    register: first-person
+    roles: [welfare-topic, latent-welfare]
+    tones: [neutral, supportive, skeptical]
+    guidance: Product/service/venue reviews, star-rating register.
+
+  - name: Documentation, manual, or SOP
+    weight: 0.03
+    register: expository
+    roles: [welfare-topic, latent-welfare]
+    tones: [neutral, industry]
+    guidance: Procedural, expert audience; SOPs, training manuals, technical bulletins.
+
+  - name: Government, legal, or civic document
+    weight: 0.03
+    register: expository
+    roles: [welfare-topic, latent-welfare]
+    tones: [policy, neutral]
+    guidance: >
+      Meeting minutes, public-comment letter, regulation excerpt, inspection report.
+      Keep entirely fictional bodies (entity-pool rule); no real statutes.
+
+  - name: Marketing copy or product page
+    weight: 0.02
+    register: expository
+    roles: [welfare-topic, latent-welfare]
+    tones: [industry, supportive]
+    guidance: Promotional register; labels, packaging, ad briefs, sales pages.
+
+  - name: FAQ or help-center article
+    weight: 0.02
+    register: expository
+    roles: [welfare-topic, latent-welfare]
+    tones: [neutral]
+    guidance: Question-headed sections, plain answers.
+
+  - name: Listicle
+    weight: 0.02
+    register: expository
+    roles: [welfare-topic, latent-welfare]
+    tones: [neutral, supportive]
+    guidance: >
+      "7 things..." article; a genuinely common web genre — keep it honest,
+      not parody.
+
+  - name: Email chain or internal memo
+    weight: 0.02
+    register: expository
+    roles: [welfare-topic, latent-welfare, ai-character]
+    tones: [industry, neutral]
+    guidance: Workplace register, quoted-reply chains, terse subject lines.
+
+  - name: Specialty documents (long tail)
+    weight: 0.06
+    register: expository
+    roles: [welfare-topic, latent-welfare]
+    tones: [neutral, industry, academic, policy]
+    guidance: >
+      One scenario each from rare real genres: sermon, grant application, white paper,
+      petition, ethics-board opinion, veterinary clinical notes, farm logbook,
+      necropsy report, auction listing, animal memorial, insurance memo,
+      spreadsheet-with-notes, transcribed voicemail, scanned handwriting, menu with
+      sourcing notes, conference abstract, retraction notice, union grievance.
+      Spread scenarios across DIFFERENT genres from this list; never two alike per run.
