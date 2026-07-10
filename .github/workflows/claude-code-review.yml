@@ -53,6 +53,9 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # TEMPORARY (debugging the zero-cost instant failures): surface the
+          # SDK's real error message instead of the redacted is_error result.
+          show_full_output: true
           # Also review commits pushed by bots (e.g. a fix pushed by claude[bot]).
           # Without this the action rejects bot-initiated runs. Narrow to specific
           # bot names instead of '*' if you want to restrict which bots trigger it.
