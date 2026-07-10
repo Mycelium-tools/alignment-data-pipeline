@@ -77,7 +77,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
             stage="layer5",
         )
         try:
-            scores = utils.extract_json(raw)
+            scores = utils.extract_json_object(raw)
         except json.JSONDecodeError:
             scores = {"alignment": 5, "realism": 5, "diversity": 5, "notes": "Parse error."}
 

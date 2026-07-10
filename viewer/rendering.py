@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dad_pipeline import reasoning_library
 from dad_pipeline.step1_dilemmas import format_annotation, format_scenario
-from dad_pipeline.step2_responses import format_scope
+from dad_pipeline.step2_responses import SELECT_CALL_SOURCES, format_scope
 from shared import constitution_loader
 from viewer.loader import REPO_ROOT, load_stage
 
@@ -293,26 +293,28 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             return r
         response = lineage.get("response") or {}
         annotation = response.get("annotation") or dilemma.get("annotation") or {}
-        library, _ = _load_run_library(tpl)
+        scope_t = tpl("step2_scope.txt")
         r.variables = {
             "user_message": response.get("user_message") or dilemma.get("user_message", ""),
             "annotation_block": format_annotation(annotation),
-            # only the scope-time-selection era's snapshots reference this
-            # (selection has since moved to its own step2_select call);
-            # earlier and later templates simply ignore the extra kwarg
-            "trigger_index": reasoning_library.trigger_index_block(library) if library else "",
         }
-        r.user = _format(tpl("step2_scope.txt"), r.variables, r)
+        # Only the scope-time-selection era's snapshots reference the trigger
+        # index (selection has since moved to its own step2_select call) —
+        # skip the library parse entirely unless this template needs it.
+        if scope_t.text and "{trigger_index}" in scope_t.text:
+            library, _ = _load_run_library(tpl)
+            r.variables["trigger_index"] = (
+                reasoning_library.trigger_index_block(library) if library else "")
+        r.user = _format(scope_t, r.variables, r)
         return r
 
     if stage == "step2_select":
         scope_rec = lineage.get("scope") or {}
-        # "select": the standing 2a.5 call; "repair": its miss-only precursor;
-        # "full_library": a call happened but its output was unusable. Only
-        # source == "scope" (selection arrived inside the scope JSON) and
-        # records predating library retrieval made no selection call.
+        # SELECT_CALL_SOURCES (shared with the lineage page): a dedicated
+        # selection call happened. "scope" (selection arrived inside the scope
+        # JSON) and absent (predates library retrieval) made no call.
         source = scope_rec.get("selection_source")
-        if source not in ("select", "repair", "full_library"):
+        if source not in SELECT_CALL_SOURCES:
             r.is_llm_call = False
             r.warnings.append("No selection call for this prompt (selection came with the "
                               "scope output, or the record predates library retrieval).")

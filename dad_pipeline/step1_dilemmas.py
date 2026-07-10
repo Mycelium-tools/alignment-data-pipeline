@@ -575,24 +575,19 @@ def _parse_json_array(raw: str) -> list:
     (utils.extract_json: fences/prose/control-chars tolerated), falling back to
     object-by-object salvage for truncated or wrong-shaped containers."""
     try:
-        parsed = utils.extract_json(raw)
+        return utils.extract_json_array(raw)
     except json.JSONDecodeError:
         return _salvage_objects(raw)
-    return parsed if isinstance(parsed, list) else _salvage_objects(raw)
 
 
 def _parse_json_object(raw: str) -> dict | None:
     """The reply's JSON object via the shared hardened parser, salvaging the
     first complete top-level object when the container is broken."""
     try:
-        parsed = utils.extract_json(raw)
+        return utils.extract_json_object(raw)
     except json.JSONDecodeError:
         objs = _salvage_objects(raw)
         return objs[0] if objs else None
-    if isinstance(parsed, dict):
-        return parsed
-    objs = _salvage_objects(raw)
-    return objs[0] if objs else None
 
 
 MAX_REFINE_ATTEMPTS = 2

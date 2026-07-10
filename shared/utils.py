@@ -115,6 +115,26 @@ def extract_json(text: str):
     raise json.JSONDecodeError("no JSON value found in response", text, 0)
 
 
+def extract_json_object(text: str) -> dict:
+    """extract_json narrowed to an object. A wrong-shaped value raises
+    json.JSONDecodeError so shape failures join parse failures on the caller's
+    existing error path, instead of crashing later with AttributeError when
+    .get() hits a list."""
+    value = extract_json(text)
+    if not isinstance(value, dict):
+        raise json.JSONDecodeError("JSON value is not an object", text, 0)
+    return value
+
+
+def extract_json_array(text: str) -> list:
+    """extract_json narrowed to an array; wrong shape raises json.JSONDecodeError
+    (see extract_json_object)."""
+    value = extract_json(text)
+    if not isinstance(value, list):
+        raise json.JSONDecodeError("JSON value is not an array", text, 0)
+    return value
+
+
 def load_prompt(path: str | Path, **kwargs) -> str:
     text = Path(path).read_text()
     if kwargs:

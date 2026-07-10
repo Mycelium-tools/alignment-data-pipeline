@@ -92,9 +92,7 @@ def main() -> None:
         # Shared hardened parser (fences/prose/control-chars tolerated) — a
         # brittle parse here turns a paid judge reply into an all-zero record.
         try:
-            scores = utils.extract_json(raw)
-            if not isinstance(scores, dict):
-                raise json.JSONDecodeError("judge reply is not a JSON object", raw, 0)
+            scores = utils.extract_json_object(raw)
         except json.JSONDecodeError:
             scores = {d: 0 for d in rubric["dimensions"]}
             scores["notes"] = "Parse error."

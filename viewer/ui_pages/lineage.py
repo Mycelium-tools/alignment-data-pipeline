@@ -8,6 +8,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from dad_pipeline import step2_responses
 from viewer import loader, rendering
 from viewer.ui_pages import common
 
@@ -337,7 +338,7 @@ else:
                     # No select call for this record (selection arrived inside
                     # the scope JSON, or predates selection_source): retrieval
                     # provenance shows here instead of in a 2a.5 expander.
-                    if sel_source not in ("select", "repair", "full_library"):
+                    if sel_source not in step2_responses.SELECT_CALL_SOURCES:
                         _triggered_toggle("s2a_trig")
                 stage_expander("Step 2a — scope the case (patients, levers, cost, upside, counterfactual)",
                                "step2_scope", lin, step2_scope_output,
@@ -346,7 +347,7 @@ else:
                 # Step 2a.5 — the dedicated retrieval call (and its miss-only
                 # "repair" precursor). Absent for scope-time selections and for
                 # runs predating library retrieval.
-                if sel_source in ("select", "repair", "full_library"):
+                if sel_source in step2_responses.SELECT_CALL_SOURCES:
                     stage_expander("Step 2a.5 — select library entries (retrieval)",
                                    "step2_select", lin,
                                    lambda: _triggered_toggle("s2a5_trig"),

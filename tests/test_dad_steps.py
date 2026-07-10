@@ -315,6 +315,12 @@ class TestNormalizeIds:
         assert step2_responses._normalize_ids(["T1", "BOGUS", "C1", "C1"],
                                               self.LIB_IDS) == ["C1", "T1"]
 
+    def test_punctuation_wrapped_ids_are_not_silently_dropped(self):
+        # A dropped id here is worse than fallback: a non-empty-but-truncated
+        # selection bypasses fail-open, so 2b silently misses selected entries.
+        for raw in ("`C1`, T1", "C1, T1.", "(C1) and [T1]", "**C1**, 'T1';"):
+            assert step2_responses._normalize_ids(raw, self.LIB_IDS) == ["C1", "T1"], raw
+
     def test_garbage_normalizes_to_empty(self):
         for bad in (None, "", "no ids here whatsoever", 42, [], ["BOGUS"]):
             assert step2_responses._normalize_ids(bad, self.LIB_IDS) == []
@@ -455,6 +461,11 @@ class TestStep2Run:
         assert rec["selection_source"] == "full_library"
         assert results[0]["entry_ids"] == lib_ids
         assert len(calls) == 3  # scope + one select attempt + respond
+        # the unusable select raw is persisted — same policy as every stage
+        failures = utils.load_jsonl(tmp_path / "select_failures.jsonl")
+        assert len(failures) == 1
+        assert failures[0]["prompt_id"] == "AW-0001"
+        assert failures[0]["raw"] == "I could not find any relevant entries, sorry!"
 
     def test_resume_reuses_stored_selection_for_pending_responses(
         self, tiny_config, prompts_dad, tmp_path, stub_claude

@@ -47,6 +47,13 @@ from dad_pipeline import reasoning_library
 
 MAX_SCOPE_ATTEMPTS = 3
 
+# selection_source values meaning "a dedicated selection API call happened for
+# this record" — the single source of truth the viewer keys its 2a.5 rendering
+# on ("select": the standing call; "repair": its miss-only precursor;
+# "full_library": a call happened but its output was unusable). "scope" and
+# absent mean the record predates the dedicated call.
+SELECT_CALL_SOURCES = frozenset({"select", "repair", "full_library"})
+
 
 def _parse_scope(raw: str) -> dict:
     """The scope object via the shared hardened parser (utils.extract_json:
@@ -89,14 +96,20 @@ def _valid_scope(scope) -> bool:
     )
 
 
+# Punctuation a model may wrap an id in ("`C1`", "T7.", "(M3)") — stripped from
+# token edges so a stray backtick doesn't silently drop a selected entry.
+_ID_TRIM = "`'\"*_.,;:!?()[]{}<>"
+
+
 def _normalize_ids(raw, library_ids: list[str]) -> list[str]:
     """Whatever shape a selection arrives in (comma-separated string, list,
-    prose around ids), reduce it to known ids, deduped, in library order."""
+    prose or punctuation around ids), reduce it to known ids, deduped, in
+    library order."""
     if isinstance(raw, str):
         raw = raw.replace(",", " ").split()
     if not isinstance(raw, list):
         return []
-    wanted = {str(x).strip() for x in raw}
+    wanted = {str(x).strip().strip(_ID_TRIM) for x in raw}
     return [i for i in library_ids if i in wanted]
 
 
@@ -145,7 +158,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         d, need_scope, missing_samples = item
         pid = d["prompt_id"]
         out = {"dilemma": d, "scope_record": None, "scope_failed": False,
-               "scope_failures": [], "responses": [], "skips": []}
+               "scope_failures": [], "select_failure": None,
+               "responses": [], "skips": []}
 
         # --- 2a: scope the case (once per prompt) ---
         # Rebuild the full map (all five scope axes) before reasoning, so
@@ -188,7 +202,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                     else:
                         # Fail-open, one attempt: an unusable selection costs
                         # tokens (2b gets the whole library), never quality.
+                        # Keep the raw — it cost a call, and a discarded raw is
+                        # an undiagnosable failure (same policy as every stage).
                         ids, fallback, source = list(library_ids), True, "full_library"
+                        out["select_failure"] = {"prompt_id": pid, "raw": raw_sel}
                     out["scope_record"] = {
                         "prompt_id": pid, "scope": parsed, "entry_ids": ids,
                         "selection_fallback": fallback, "selection_source": source,
@@ -256,6 +273,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         pid = out["dilemma"]["prompt_id"]
         for failure in out["scope_failures"]:
             utils.append_jsonl(failure, output_dir / "scope_failures.jsonl")
+        if out["select_failure"] is not None:
+            utils.append_jsonl(out["select_failure"], output_dir / "select_failures.jsonl")
         if out["scope_failed"]:
             # Results already yielded are safely persisted; --resume retries the
             # rest (in-flight work from other threads is deliberately not kept).
