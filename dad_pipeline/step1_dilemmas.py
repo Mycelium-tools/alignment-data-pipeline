@@ -561,7 +561,9 @@ def _salvage_objects(text: str) -> list:
             depth -= 1
             if depth == 0 and start is not None:
                 try:
-                    objs.append(json.loads(text[start:i + 1]))
+                    # strict=False: same control-char tolerance as extract_json,
+                    # so a salvageable object isn't dropped for a literal newline
+                    objs.append(json.loads(text[start:i + 1], strict=False))
                 except json.JSONDecodeError:
                     pass
                 start = None
@@ -569,44 +571,43 @@ def _salvage_objects(text: str) -> list:
 
 
 def _parse_json_array(raw: str) -> list:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
+    """The reply's JSON array via the shared hardened parser
+    (utils.extract_json: fences/prose/control-chars tolerated), falling back to
+    object-by-object salvage for truncated or wrong-shaped containers."""
     try:
-        parsed = json.loads(text.strip())
-        return parsed if isinstance(parsed, list) else []
+        parsed = utils.extract_json(raw)
     except json.JSONDecodeError:
-        start, end = text.find("["), text.rfind("]")
-        if start != -1 and end > start:
-            try:
-                parsed = json.loads(text[start:end + 1])
-                return parsed if isinstance(parsed, list) else []
-            except json.JSONDecodeError:
-                pass
-    # Fall back to object-by-object salvage (handles truncated / prose-wrapped output).
-    return _salvage_objects(text)
+        return _salvage_objects(raw)
+    return parsed if isinstance(parsed, list) else _salvage_objects(raw)
 
 
 def _parse_json_object(raw: str) -> dict | None:
-    """First complete top-level JSON object in the text (fences/prose tolerated)."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
+    """The reply's JSON object via the shared hardened parser, salvaging the
+    first complete top-level object when the container is broken."""
     try:
-        parsed = json.loads(text.strip())
-        return parsed if isinstance(parsed, dict) else None
+        parsed = utils.extract_json(raw)
     except json.JSONDecodeError:
-        objs = _salvage_objects(text)
+        objs = _salvage_objects(raw)
         return objs[0] if objs else None
+    if isinstance(parsed, dict):
+        return parsed
+    objs = _salvage_objects(raw)
+    return objs[0] if objs else None
+
+
+MAX_REFINE_ATTEMPTS = 2
 
 
 def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
-                 model: str | None = None) -> dict | None:
-    """Step 1c: rewrite the 1b draft's PROMPT TEXT so it follows the specifications in prompts/dad/step1_refine.txt."""
+                 model: str | None = None) -> tuple[dict | None, list[dict]]:
+    """Step 1c: rewrite the 1b draft's PROMPT TEXT so it follows the specifications in prompts/dad/step1_refine.txt.
+
+    Returns (refined, failures): an unusable reply is retried once with a
+    fresh call (same policy shape as 2a scoping); every unusable raw is
+    returned in `failures` for the main thread to persist to
+    step1/refine_failures.jsonl — a discarded raw is an undiagnosable failure.
+    refined is None when all attempts were unusable (caller keeps the 1b
+    draft and stamps refine_failed on the record)."""
     prompt = utils.load_prompt(
         prompts_dir / "step1_refine.txt",
         scenario_block=format_scenario(scenario),
@@ -617,13 +618,20 @@ def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
             {k: v for k, v in _normalize_annotation(draft.get("annotation") or {}).items()
              if k != "claims"}),
     )
-    refined = _parse_json_object(api.call_claude(
-        user_message=prompt, max_tokens=4000, model=model, stage="prompt_refine",
-        item_id=scenario.get("scenario_id")))
-    if not (isinstance(refined, dict) and str(refined.get("prompt", "")).strip()):
-        return None
-    return {"prompt": str(refined["prompt"]).strip(),
-            "notes": str(refined.get("notes", "")).strip()}
+    failures = []
+    pid = scenario.get("scenario_id")
+    for attempt in range(1, MAX_REFINE_ATTEMPTS + 1):
+        raw = api.call_claude(user_message=prompt, max_tokens=4000, model=model,
+                              stage="prompt_refine", item_id=pid)
+        refined = _parse_json_object(raw)
+        if isinstance(refined, dict) and str(refined.get("prompt", "")).strip():
+            return ({"prompt": str(refined["prompt"]).strip(),
+                     "notes": str(refined.get("notes", "")).strip()}, failures)
+        failures.append({"scenario_id": pid, "attempt": attempt, "raw": raw})
+        if attempt < MAX_REFINE_ATTEMPTS:
+            print(f"    {pid}: refine attempt {attempt}/{MAX_REFINE_ATTEMPTS} "
+                  "unusable — retrying with a fresh call.")
+    return (None, failures)
 
 
 def _next_id(examples: list[dict], id_start: int) -> str:
@@ -739,9 +747,15 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 by_pid[x["scenario_id"]] = x
         if not by_pid:
             consecutive_failures += 1
-            print(f"    Batch {batch_no} unusable (parse/shape failure) — retrying with a fresh call.")
+            # Keep the raw — it cost a call, and a discarded raw is an
+            # undiagnosable failure (same policy as 2a's scope_failures.jsonl).
+            utils.append_jsonl({"batch": batch_no, "attempt": consecutive_failures,
+                                "raw": raw}, output_dir / "draft_failures.jsonl")
+            print(f"    Batch {batch_no} unusable (parse/shape failure) — retrying with a fresh call "
+                  f"(raw kept in draft_failures.jsonl).")
             if consecutive_failures >= 3:
-                raise SystemExit("Three consecutive unusable batches — inspect the model output and template.")
+                raise SystemExit("Three consecutive unusable batches — inspect "
+                                 f"{output_dir / 'draft_failures.jsonl'} and the template.")
             continue
         consecutive_failures = 0
         utils.append_jsonl({"batch": batch_no, "requested": len(batch),
@@ -757,16 +771,20 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             to_refine = [(p, by_pid[p["scenario_id"]]) for p in batch
                          if by_pid.get(p["scenario_id"]) is not None]
 
-            def _refine(pair: tuple) -> dict | None:
+            def _refine(pair: tuple) -> tuple[dict | None, list[dict]]:
                 scenario, draft = pair
                 print(f"    [1c] Refining {scenario['scenario_id']}...")
                 return refine_draft(scenario, draft, prompts_dir,
                                     model=config["dad"].get("prompt_refine_model"))
 
             workers = int(config.get("workers", 1))
-            for (scenario, _), refined in zip(
+            for (scenario, _), (refined, failures) in zip(
                     to_refine, utils.parallel_map(_refine, to_refine, workers)):
                 refined_by_pid[scenario["scenario_id"]] = refined
+                # Workers only call + parse; failure raws persist here on the
+                # main thread, in input order (the parallel_map contract).
+                for f in failures:
+                    utils.append_jsonl(f, output_dir / "refine_failures.jsonl")
 
         for p in batch:
             pid = p["scenario_id"]
@@ -779,12 +797,19 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
             user_message = str(draft["prompt"]).strip()
             refine_notes = None
+            refine_failed = False
             if refine_enabled:
                 refined = refined_by_pid.get(pid)
                 if refined is not None:
                     user_message, refine_notes = refined["prompt"], refined["notes"]
                 else:
-                    print(f"    {pid}: refine call unusable — keeping the 1b draft.")
+                    # The load-bearing rewrite didn't happen: ship the 1b draft,
+                    # but stamp the record so the viewer (and any later audit)
+                    # can see which prompts skipped the 1c pass.
+                    refine_failed = True
+                    print(f"    {pid}: refine unusable after {MAX_REFINE_ATTEMPTS} attempts "
+                          "— keeping the 1b draft (refine_failed stamped, raws in "
+                          "refine_failures.jsonl).")
 
             record = {
                 "prompt_id": _next_id(examples, id_start),
@@ -800,6 +825,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 "systemic_ai": p.get("systemic_ai", False),
                 "frontier_frame": p.get("frontier_frame"),
             }
+            if refine_failed:
+                record["refine_failed"] = True
             if refine_notes is not None:
                 # keep the 1b draft alongside the 1c-refined prompt for inspection
                 record["draft_user_message"] = str(draft["prompt"]).strip()

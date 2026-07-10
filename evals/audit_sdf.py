@@ -361,23 +361,11 @@ _PREVALENCE_PROMPT_HEAD = (
 
 
 def _parse_json_block(raw: str):
-    text = (raw or "").strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        # models occasionally emit trailing prose or a second block after the
-        # JSON ("Extra data"); recover the first well-formed array/object
-        decoder = json.JSONDecoder()
-        start = min((i for i in (text.find("["), text.find("{")) if i >= 0), default=-1)
-        if start < 0:
-            raise
-        obj, _ = decoder.raw_decode(text[start:])
-        return obj
+    """The scan reply's JSON via the shared hardened parser — fences, prose
+    around the payload, and control characters inside strings all tolerated;
+    raises json.JSONDecodeError when nothing usable is present (callers keep
+    their existing failure handling)."""
+    return utils.extract_json(raw or "")
 
 
 def llm_pattern_scan(records: list[dict], config: dict, report: dict,

@@ -293,6 +293,11 @@ else:
 
                 def step1c_output():
                     d = lin.get("dilemma") or {}
+                    if d.get("refine_failed"):
+                        st.caption(":material/warning: every refine attempt was unusable — "
+                                   "the 1b draft shipped unrefined (raw outputs in "
+                                   "step1/refine_failures.jsonl)")
+                        return
                     if d.get("draft_user_message") is None:
                         st.caption("not run (dad.dilemmas.refine was off for this run)")
                         return
@@ -303,31 +308,49 @@ else:
                 stage_expander("Step 1c — review & rewrite (optional)", "step1_refine", lin, step1c_output,
                                stats=("prompt_refine", scenario_id))
 
+                scope_rec = lin.get("scope") or {}
+                sel_source = scope_rec.get("selection_source")
+
+                def _triggered_toggle(key: str):
+                    """Retrieval provenance: the full rows whose trigger
+                    conditions fired for this prompt (runs since retrieval)."""
+                    trig = scope_rec.get("triggered_entries")
+                    if not trig:
+                        return
+                    if scope_rec.get("selection_fallback"):
+                        st.caption(":material/warning: selection unusable — the whole "
+                                   "library was injected")
+                    elif sel_source == "repair":
+                        st.caption(":material/build: triggered_entries was missing from "
+                                   "the scope output — recovered by a selection-only "
+                                   "repair call (this run predates the standing "
+                                   "select call)")
+                    common.json_block(trig, key=key,
+                                      label=f"triggered library entries ({len(trig)})")
+
                 def step2_scope_output():
-                    rec = lin.get("scope") or {}
-                    sc = rec.get("scope")
+                    sc = scope_rec.get("scope")
                     if sc:
                         common.json_block(sc, key="s2a", label="scope", expanded=True)
                     else:
                         st.caption("not reached")
-                    # Library retrieval provenance: the full rows whose trigger
-                    # conditions fired for this prompt (runs since retrieval).
-                    trig = rec.get("triggered_entries")
-                    if trig:
-                        n = len(trig)
-                        if rec.get("selection_fallback"):
-                            st.caption(":material/warning: selection fallback — no usable "
-                                       "triggered_entries from the scope output or the repair "
-                                       "call, so the whole library was injected")
-                        elif rec.get("selection_source") == "repair":
-                            st.caption(":material/build: triggered_entries was missing from "
-                                       "the scope output — recovered by a selection-only "
-                                       "repair call (stage response_select in the cost log)")
-                        common.json_block(trig, key="s2a_trig",
-                                          label=f"triggered library entries ({n})")
-                stage_expander("Step 2a — scope the case + trigger library entries",
+                    # No select call for this record (selection arrived inside
+                    # the scope JSON, or predates selection_source): retrieval
+                    # provenance shows here instead of in a 2a.5 expander.
+                    if sel_source not in ("select", "repair", "full_library"):
+                        _triggered_toggle("s2a_trig")
+                stage_expander("Step 2a — scope the case (patients, levers, cost, upside, counterfactual)",
                                "step2_scope", lin, step2_scope_output,
                                stats=("response_scope", pid))
+
+                # Step 2a.5 — the dedicated retrieval call (and its miss-only
+                # "repair" precursor). Absent for scope-time selections and for
+                # runs predating library retrieval.
+                if sel_source in ("select", "repair", "full_library"):
+                    stage_expander("Step 2a.5 — select library entries (retrieval)",
+                                   "step2_select", lin,
+                                   lambda: _triggered_toggle("s2a5_trig"),
+                                   stats=("response_select", pid))
 
                 # Tension retrieval was removed from the pipeline; still shown for
                 # older runs that recorded it, so their lineage stays complete.

@@ -3,11 +3,12 @@
 Source of truth is prompts/dad/reasoning_library.csv (the CSV migration retired
 the JSON). Rows are entries with columns: id, category, claim, reasoning,
 trigger_condition, transferable_move. Every entry — conduct (C*), core move
-(M*), and topic (T*) alike — is conditional: the 2a scope call reads the
-trigger index (trigger_index_block) and flags which entries fire for the case,
-and 2b injects only the flagged rows (falling open to the whole library when
-the selection is unusable). Which rows were injected is recorded per prompt in
-step2/scopes.jsonl and on each response record's entry_ids.
+(M*), and topic (T*) alike — is conditional: a dedicated selection call after
+2a scoping (step2_select.txt) reads the trigger index (trigger_index_block)
+and flags which entries fire for the case, and 2b injects only the flagged
+rows (falling open to the whole library when the selection is unusable).
+Which rows were injected is recorded per prompt in step2/scopes.jsonl and on
+each response record's entry_ids.
 
 Older run snapshots that predate the migration hold a reasoning_library.json
 (entries under `entries`/`principles`, families advising/cross_cutting/reasoning,
@@ -98,7 +99,7 @@ def get_entries(library: dict, ids: list[str]) -> list[dict]:
 
 def trigger_index_block(library: dict) -> str:
     """One line per entry — id plus trigger condition — the lightweight index
-    the 2a scope prompt evaluates instead of loading the whole library."""
+    the 2a.5 select prompt evaluates instead of loading the whole library."""
     return "\n".join(f"- {e['id']}: {e.get('trigger_condition', '')}"
                      for e in _entries(library))
 

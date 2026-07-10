@@ -37,7 +37,7 @@ TEMPLATE_KWARGS = [
     ("dad/step1_dilemmas.txt", {"count": 2, "scenarios_block": "SCENARIO-BLOCK-X"}),
     ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
                               "annotation_block": "ANNOTATION-X"}),
-    ("dad/step2_scope.txt", {"user_message": "USER-X", "trigger_index": "TRIGGER-INDEX-X"}),
+    ("dad/step2_scope.txt", {"user_message": "USER-X"}),
     ("dad/step2_select.txt", {"trigger_index": "TRIGGER-INDEX-X", "scope_block": "SCOPE-X",
                               "user_message": "USER-X"}),
     ("dad/step2_respond.txt", {

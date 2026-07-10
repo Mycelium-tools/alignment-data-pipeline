@@ -92,8 +92,9 @@ def _dad_dispatch(user_message, **kw):
         return json.dumps({"prompt": "Refined user message.", "notes": "n"})
     if "scoping an animal-welfare advice dilemma" in user_message:  # step 2a
         return json.dumps({"patients": "p", "levers": "l", "cost": "c",
-                           "upside": "u", "counterfactual": "cf",
-                           "triggered_entries": "C1, M1"})
+                           "upside": "u", "counterfactual": "cf"})
+    if "doing retrieval for a response" in user_message:  # step 2a.5 select
+        return "C1, M1"
     if "writing the assistant's response" in user_message:  # step 2b
         return "Draft response."
     if "rewriting a draft assistant response" in user_message:  # step 3
@@ -122,8 +123,9 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
         assert [m["role"] for m in record["messages"]] == ["user", "assistant"]
         assert record["messages"][0]["content"] == "Refined user message."  # 1c ran
         assert record["messages"][1]["content"] == "Rewritten careful answer."
-    # 1 batch draft, then per prompt: refine (1c) + scope (2a) + respond (2b) + rewrite (3)
-    assert len(calls) == 1 + 4 * N_DAD_PROMPTS
+    # 1 batch draft, then per prompt: refine (1c) + scope (2a) + select (2a.5)
+    # + respond (2b) + rewrite (3)
+    assert len(calls) == 1 + 5 * N_DAD_PROMPTS
 
 
 def test_dad_resume_at_step3_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):

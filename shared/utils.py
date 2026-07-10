@@ -86,8 +86,12 @@ def extract_json(text: str):
     a real payload that broke partway — candidates inside or after it are
     its fragments and are disqualified, while a complete value found before
     it (a genuine payload followed by broken chatter) is still returned.
+
+    strict=False: literal control characters inside string values (raw
+    newlines/tabs) are tolerated — the way prose-heavy JSON at temperature 1.0
+    most often goes invalid, and the historical cause of silently empty scopes.
     """
-    decoder = json.JSONDecoder()
+    decoder = json.JSONDecoder(strict=False)
     candidates = []  # (start, end, value)
     failures = []  # (start, position where the parse gave up)
     for match in re.finditer(r"[\[{]", text):

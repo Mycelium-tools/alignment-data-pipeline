@@ -263,9 +263,15 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
     if stage == "step1_refine":
         dilemma = lineage.get("dilemma") or {}
         scenario = lineage.get("scenario") or {}
-        # 1c reviews the 1b draft; draft_user_message is present only when refine ran.
+        # 1c reviews the 1b draft; draft_user_message is present only when refine
+        # succeeded. refine_failed records made (and paid for) the call(s) but
+        # kept the 1b draft — which is then the stored user_message.
         draft = dilemma.get("draft_user_message")
-        if draft is None:
+        if draft is None and dilemma.get("refine_failed"):
+            draft = dilemma.get("user_message", "")
+            r.warnings.append("Every 1c attempt was unusable — the 1b draft shipped unrefined "
+                              "(raw outputs in step1/refine_failures.jsonl).")
+        elif draft is None:
             r.is_llm_call = False
             r.warnings.append("This run did not use the 1c review pass (dad.dilemmas.refine was off).")
             return r
@@ -291,11 +297,35 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.variables = {
             "user_message": response.get("user_message") or dilemma.get("user_message", ""),
             "annotation_block": format_annotation(annotation),
-            # current template's trigger index; templates predating library
-            # retrieval simply don't reference it
+            # only the scope-time-selection era's snapshots reference this
+            # (selection has since moved to its own step2_select call);
+            # earlier and later templates simply ignore the extra kwarg
             "trigger_index": reasoning_library.trigger_index_block(library) if library else "",
         }
         r.user = _format(tpl("step2_scope.txt"), r.variables, r)
+        return r
+
+    if stage == "step2_select":
+        scope_rec = lineage.get("scope") or {}
+        # "select": the standing 2a.5 call; "repair": its miss-only precursor;
+        # "full_library": a call happened but its output was unusable. Only
+        # source == "scope" (selection arrived inside the scope JSON) and
+        # records predating library retrieval made no selection call.
+        source = scope_rec.get("selection_source")
+        if source not in ("select", "repair", "full_library"):
+            r.is_llm_call = False
+            r.warnings.append("No selection call for this prompt (selection came with the "
+                              "scope output, or the record predates library retrieval).")
+            return r
+        dilemma = lineage.get("dilemma") or {}
+        response = lineage.get("response") or {}
+        library, _ = _load_run_library(tpl)
+        r.variables = {
+            "trigger_index": reasoning_library.trigger_index_block(library) if library else "",
+            "scope_block": format_scope(scope_rec.get("scope") or {}),
+            "user_message": response.get("user_message") or dilemma.get("user_message", ""),
+        }
+        r.user = _format(tpl("step2_select.txt"), r.variables, r)
         return r
 
     if stage in ("step2_tag", "step2_respond"):

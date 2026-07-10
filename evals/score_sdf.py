@@ -58,14 +58,12 @@ def main() -> None:
         prompt = _JUDGE_PROMPT.format(document=rec["content"][:8000])
 
         raw = api.call_claude(user_message=prompt, stage="eval_score_sdf")
-        text = raw.strip()
-        if text.startswith("```"):
-            text = "\n".join(text.split("\n")[1:])
-        if text.endswith("```"):
-            text = "\n".join(text.split("\n")[:-1])
-
+        # Shared hardened parser (fences/prose/control-chars tolerated) — a
+        # brittle parse here turns a paid judge reply into an all-zero record.
         try:
-            scores = json.loads(text.strip())
+            scores = utils.extract_json(raw)
+            if not isinstance(scores, dict):
+                raise json.JSONDecodeError("judge reply is not a JSON object", raw, 0)
         except json.JSONDecodeError:
             scores = {"alignment": 0, "realism": 0, "diversity": 0, "notes": "Parse error."}
 
