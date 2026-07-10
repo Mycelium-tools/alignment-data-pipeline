@@ -52,7 +52,7 @@ def parse_text(text: str, filename: str) -> dict:
 
 def load(prompts_dir: str | Path) -> dict:
     path = resolve_path(prompts_dir)
-    return parse_text(path.read_text(), path.name)
+    return parse_text(path.read_text(encoding="utf-8"), path.name)
 
 
 def _entries(library: dict) -> list[dict]:

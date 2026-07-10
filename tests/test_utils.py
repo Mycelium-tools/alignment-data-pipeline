@@ -46,7 +46,7 @@ class TestJsonl:
     def test_save_jsonl_does_not_escape_unicode(self, tmp_path):
         path = tmp_path / "data.jsonl"
         utils.save_jsonl([{"text": "🐟"}], path)
-        assert "🐟" in path.read_text()
+        assert "🐟" in path.read_text(encoding="utf-8")
 
     def test_append_jsonl_extends_existing_file(self, tmp_path):
         path = tmp_path / "data.jsonl"
@@ -61,6 +61,15 @@ class TestJsonl:
         path = tmp_path / "data.jsonl"
         path.write_text('{"id": 1}\n\n{"id": 2}\n\n')
         assert utils.load_jsonl(path) == [{"id": 1}, {"id": 2}]
+
+    def test_load_jsonl_reads_utf8_regardless_of_locale(self, tmp_path):
+        # Regression: pipeline files are UTF-8 by construction (ensure_ascii=False),
+        # but reads without an explicit encoding= used the locale codec — cp1252 on
+        # Windows — and crashed on the first non-cp1252 byte (curly quotes, emoji,
+        # non-English text). Write raw UTF-8 bytes so no locale is involved.
+        path = tmp_path / "data.jsonl"
+        path.write_bytes('{"text": "curly “quotes” — 🐟"}\n'.encode("utf-8"))
+        assert utils.load_jsonl(path) == [{"text": "curly “quotes” — 🐟"}]
 
 
 PAYLOAD = [{"subtype_name": "River survey"}, {"subtype_name": "Coastal survey"}]

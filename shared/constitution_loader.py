@@ -69,13 +69,13 @@ def _paths(base_dir: str | Path | None = None) -> tuple[Path, Path]:
 def load_constitution_claude(base_dir: str | Path | None = None) -> str:
     """Return the original Claude constitution, verbatim."""
     claude_path, _ = _paths(base_dir)
-    return claude_path.read_text()
+    return claude_path.read_text(encoding="utf-8")
 
 
 def load_constitution_welfare_reading(base_dir: str | Path | None = None) -> str:
     """Return the sentient-beings reading of the constitution, verbatim."""
     _, sentient_path = _paths(base_dir)
-    return sentient_path.read_text()
+    return sentient_path.read_text(encoding="utf-8")
 
 
 def load_full_constitution(base_dir: str | Path | None = None) -> str:
@@ -116,7 +116,7 @@ def load_principles(base_dir: str | Path | None = None) -> list[dict]:
     """Load the distilled welfare principles from base_dir (a run's
     inputs/constitution snapshot) or the repo's live constitution/."""
     base = Path(base_dir) if base_dir else _CONSTITUTION_DIR
-    return parse_principles((base / PRINCIPLES_FILENAME).read_text())
+    return parse_principles((base / PRINCIPLES_FILENAME).read_text(encoding="utf-8"))
 
 
 def format_principles(principles: list[dict]) -> str:

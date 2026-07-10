@@ -366,7 +366,7 @@ def print_checklist(examples: list[dict], save_path: Path | None = None) -> None
         lines.append(f"  {mark} {msg}")
     print("\n".join(f"  {line}" for line in lines))
     if save_path is not None:
-        Path(save_path).write_text("\n".join(lines) + "\n")
+        Path(save_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 # --- Scenario sampling ---
