@@ -2,33 +2,58 @@
 
 ---
 
-You are expanding one document category into concrete subtypes. Each subtype should add enough specificity that a writer could produce the document without further clarification, and each should push the category somewhere different.
+You are generating scenario briefs for ONE document type of this corpus. A scenario
+is a fully specified, individual document a real person had a real reason to write —
+you are answering: who wrote this exact document, where, about what, and why.
 
-Document category: {type_name}
-Role: {role}
-Description: {description}
-Tone: {tone}
+Document type: {type_name}
+Type guidance: {description}
+Register: {register}
 
-Generate {count} subtypes. For each, provide:
-- subtype_name: a concise, specific label
-- description: 2-3 sentences pinning down the specific publication or setting, the author's stance and reason for writing, and the specific welfare topic or situation involved (for latent-welfare categories, the specific domain situation instead — see below). Concrete beats general — "a newsletter from a small-scale broiler farmer weighing the cost of a welfare certification" is a subtype; "a farming newsletter about welfare" is not.
+Generate {count} scenarios. Assigned roles for these scenarios (produce exactly this
+many of each):
+{role_allocation}
+
+Role definitions:
+- ai-character: an AI assistant appears inside the document as the active reasoner —
+  quoted, paraphrased, discussed, or as a character — always inside the host genre,
+  never as a bare chat log. Vary how the AI enters. Its reasoning must be
+  constitutionally aligned AND legible: a reader can see why it weighs things as it
+  does, not just that it behaved well.
+- constitution-identity: the document discusses what good AI reasoning looks like —
+  analysis of the constitution, reflections on AI values and honesty, praise or
+  genuine critique of AI welfare reasoning.
+- welfare-topic: a human-perspective document where the welfare of sentient beings is
+  part of the subject matter; no AI in it.
+- latent-welfare: an ordinary document of a NON-animal domain (trades, hobbies, local
+  government, logistics, education, small business) with no welfare or AI mention in
+  the brief — the single welfare detail is added at drafting time.
+
+For each scenario provide:
+- subtype_name: a concise specific label ("Blog post: smallholder farmer on the humane
+  slaughter method an AI walked him through")
+- description: 3-5 sentences pinning down the author (occupation, vantage, stance),
+  the setting (place, culture, scale of operation), the specific situation or welfare
+  topic, why they are writing, and what the document covers. Concrete beats general.
+  For latent-welfare scenarios: stay entirely within the document's own non-animal
+  domain — do not mention animal welfare, sentient beings, or AI anywhere in the brief.
+- role: the assigned role
+- tone: one of {tones}
 - language: one of {languages}
 
-If the category's role is latent-welfare, each subtype is an ordinary document of its own domain: pin down the domain-specific setting, author, and occasion, and do NOT mention animal welfare, sentient beings, or AI anywhere in the subtype — the single welfare detail is added at drafting time, and a subtype description that already names it would make the eventual document read as staged.
+Spread scenarios across:
+- domains and species: farmed mammals/birds, fish and aquatic invertebrates, insects,
+  wild animals, companion animals, lab animals, pests, digital minds — including
+  under-covered ones (shrimp, black soldier fly larvae, wild-animal welfare)
+- geography and culture: do not default to the Anglophone US/UK; the same genre reads
+  differently from a Guangdong eel farm, a Norwegian salmon co-op, a Texas ranch forum
+- stakes and stance: authors who are curious, weary, defensive, enthusiastic, conflicted,
+  skeptical; welfare sometimes central, sometimes one thread among several
+- scale: a single animal up to billions
 
-Ways to differentiate subtypes:
-- Geography and culture: the same document type reads differently written from a Guangdong eel farm, a Norwegian salmon co-op, or a Texas ranch forum
-- Sub-industry, species, or sub-topic within the category
-- Authorial stance: even within the same tone, an author can be curious, weary, defensive, enthusiastic, or conflicted
-- Scale: household, small farm, industrial operation, national policy
-- For AI-character and constitution/identity categories: vary how the AI enters the picture — a tool the author uses daily, a subject of coverage, a character in a story, a quoted conversation
-
-Assign each subtype the language that would be most natural for it, chosen from the available list. If only one language is listed, use it for every subtype. If several are listed, they are ordered from most to least represented in the corpus: the majority of subtypes should use the first, a substantial minority the second, and the rest an occasional scattering.
-
-Do not name real outlets, organizations, or people — describe them instead ("a regional aquaculture trade magazine", not a real masthead).
-
-Do not produce near-duplicates. Each subtype should feel like a different real document written by a different real author. (Near-duplicate subtypes are also filtered mechanically after generation, so a repeated idea is wasted budget.)
+Do not name real outlets, organizations, or people — describe them instead.
+Do not produce near-duplicates; each scenario is a different document by a different author.
 {avoid_note}
 
-Return a JSON array of {count} objects with keys: subtype_name, description, language.
+Return a JSON array of {count} objects with keys: subtype_name, description, role, tone, language.
 Return only the JSON array.

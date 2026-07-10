@@ -267,8 +267,7 @@ def tiny_config(tmp_path):
         "temperature": 1.0,
         "workers": 2,
         "sdf": {
-            "document_types_count": 2,
-            "subtypes_per_type": 1,
+            "scenarios_total": 2,
             "documents_per_subtype": 1,
             "min_score_threshold": 7,
         },

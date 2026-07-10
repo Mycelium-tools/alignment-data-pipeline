@@ -40,13 +40,9 @@ def _sdf_dispatch(user_message, **kw):
         return "<angles>brainstorm</angles>\n<document>A drafted document.</document>"
     if kw["system_prompt"]:  # layer 5: scoring against the constitution
         return json.dumps({"alignment": 9, "realism": 9, "diversity": 9, "notes": ""})
-    if "document categories" in user_message:  # layer 1
-        return json.dumps([
-            {"type_name": "AI diary", "description": "d", "role": "ai-character", "tone": "reflective"},
-            {"type_name": "Field report", "description": "d", "role": "welfare-topic", "tone": "neutral"},
-        ])
-    if "expanding one document category" in user_message:  # layer 2
-        return json.dumps([{"subtype_name": "S", "description": "d", "language": "en"}])
+    if "scenario briefs for ONE document type" in user_message:  # layer 2
+        return json.dumps([{"subtype_name": "S", "description": "d",
+                            "role": "welfare-topic", "tone": "neutral", "language": "en"}])
     raise AssertionError(f"Unrecognized SDF prompt: {user_message[:80]!r}")
 
 
@@ -61,15 +57,17 @@ def test_sdf_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
     assert manifest["label"] == "e2e"
     assert (outputs_root / "sdf" / "latest").resolve() == run_dir.resolve()
     # prompts + constitution are frozen into the run dir for reproducibility
-    assert (run_dir / "inputs" / "prompts" / "layer1.txt").exists()
+    # (the curated type list lives in prompts/sdf/, so the snapshot covers it)
+    assert (run_dir / "inputs" / "prompts" / "document_types.yaml").exists()
     assert (run_dir / "inputs" / "constitution").is_dir()
 
     corpus = utils.load_jsonl(run_dir / "final" / "sdf_corpus.jsonl")
-    # 2 types x 1 subtype x 1 doc, all scoring 9/9 -> 2 final documents
+    # scenarios_total=2 -> 2 types drawn at quota 1 each, 1 doc per scenario,
+    # all scoring 9/9 -> 2 final documents. Layer 1 makes no API call.
     assert len(corpus) == 2
     assert all(r["content"] == "Rewritten document." for r in corpus)
-    # 1 (L1) + 2 (L2) + 2 (L3) + 2 (L4) + 2 (L5)
-    assert len(calls) == 9
+    # 2 (L2) + 2 (L3) + 2 (L4) + 2 (L5); layer 1 is local
+    assert len(calls) == 8
 
 
 def test_sdf_resume_at_layer5_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):
