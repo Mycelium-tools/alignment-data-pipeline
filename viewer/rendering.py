@@ -167,6 +167,16 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         return t
 
     if pipeline == "sdf":
+        # Matrix runs (subtype records carry matrix_version) draw layers 1-2
+        # deterministically from axes.yaml — there is no prompt to re-render.
+        if stage in ("layer1", "layer2") and (lineage.get("subtype") or {}).get("matrix_version"):
+            r.is_llm_call = False
+            r.warnings.append(
+                "Matrix run: this brief was drawn deterministically from the axis matrix "
+                "(prompts/sdf/axes.yaml in the run snapshot) — no LLM call at layers 1-2."
+            )
+            return r
+
         preamble_t = tpl("preamble.txt")
         preamble = preamble_t.text or ""
 

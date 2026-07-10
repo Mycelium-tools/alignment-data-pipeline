@@ -1,5 +1,11 @@
 # How an SDF document gets made — a chronological walkthrough
 
+> **Historical note (2026-07-10):** this walkthrough describes the pipeline as of the notebook
+> port. Since then, layers 1-2 (LLM-generated document types and subtypes, sections 3-4 below)
+> were replaced by a deterministic combinatorial sampler — `sdf_pipeline/layer1_matrix.py` over
+> `prompts/sdf/axes.yaml` (spec: `context_docs/diversity_axis_matrix.md`). Layers 3-5 still work
+> as described. See CLAUDE.md and prompts/README.md for the current design.
+
 Companion to `sdf-notebook-port-report.md`. That report explains *what changed and why*; this one
 answers "what actually happens, in order, when I run `python sdf_pipeline/run.py`" — every
 component of the prompts and every script step that shapes the final corpus, with the load-bearing

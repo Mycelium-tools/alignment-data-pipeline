@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""SDF pipeline orchestrator. Runs layers 1-5 with checkpointing."""
+"""SDF pipeline orchestrator. Runs the matrix stage + layers 3-5 with checkpointing.
+
+Layer 1 is the deterministic axis-matrix sampler (layer1_matrix.py) — it
+replaced the two LLM diversity stages and makes zero API calls. Its briefs are
+written to layer2/subtypes.jsonl, so `--resume --layer 3` keeps its meaning.
+"""
 
 import argparse
 import os
@@ -10,21 +15,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
 from sdf_pipeline import (
-    layer1_document_types,
-    layer2_subtypes,
+    layer1_matrix,
     layer3_draft,
     layer4_rewrite,
     layer5_score,
 )
-
-LAYERS = [1, 2, 3, 4, 5]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the SDF pipeline.")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoints.")
-    parser.add_argument("--layer", type=int, default=1, help="Start from this layer (1-5).")
+    parser.add_argument("--layer", type=int, default=1,
+                        help="Start from this layer (1 = matrix briefs, 3-5 = LLM stages; "
+                             "2 is accepted and behaves like 3).")
     parser.add_argument("--label", default="dev", help="Run label, e.g. dev or full-scale.")
     parser.add_argument("--run-id", default=None, help="Run to resume (with --resume; defaults to latest).")
     args = parser.parse_args()
@@ -50,8 +54,9 @@ def main() -> None:
             },
         )
 
-    # Read templates from the run's frozen snapshot so prompts stay reproducible
-    # (and --resume replays the run's own templates, not the repo's current ones).
+    # Read templates (and axes.yaml) from the run's frozen snapshot so prompts
+    # stay reproducible (and --resume replays the run's own inputs, not the
+    # repo's current ones).
     prompts_dir = run_dir / "inputs" / "prompts"
     if not prompts_dir.is_dir():
         prompts_dir = root / "prompts" / "sdf"
@@ -70,21 +75,12 @@ def main() -> None:
     print(f"=== SDF Pipeline — run {run_dir.name} ===")
     print(f"Outputs: {run_dir}")
 
-    doc_types = subtypes = drafts = rewrites = None
+    subtypes = drafts = rewrites = None
 
     if start_layer <= 1:
-        print("[Layer 1] Document types")
-        doc_types = layer1_document_types.run(config, prompts_dir, layer_dirs[1])
-        cost = api.get_total_cost()
-        print(f"  Running cost: ${cost:.4f}\n")
-
-    if start_layer <= 2:
-        if doc_types is None:
-            doc_types = utils.load_jsonl(layer_dirs[1] / "document_types.jsonl")
-        print("[Layer 2] Subtypes")
-        subtypes = layer2_subtypes.run(config, prompts_dir, layer_dirs[2], doc_types)
-        cost = api.get_total_cost()
-        print(f"  Running cost: ${cost:.4f}\n")
+        print("[Layer 1] Matrix briefs (deterministic, no API calls)")
+        subtypes = layer1_matrix.run(config, prompts_dir, layer_dirs[1], layer_dirs[2])
+        print()
 
     if start_layer <= 3:
         if subtypes is None:

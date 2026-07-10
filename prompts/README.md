@@ -22,11 +22,19 @@ Keep the two datasets separate — they are intended for different training stag
 
 ## SDF Prompts
 
-Run in sequence. Each layer feeds into the next.
+Run in sequence. The matrix stage (axes.yaml) produces every generation brief; each LLM layer then feeds into the next.
+
+### `sdf/axes.yaml` — the diversity matrix (layers 1-2, no LLM)
+
+The single source of truth for SDF prompt diversity, read by `sdf_pipeline/layer1_matrix.py` — a **deterministic combinatorial sampler that replaced the two former LLM stages** (`layer1.txt` document-type invention and `layer2.txt` subtype expansion). Each draw fixes: document type (weighted toward a realistic pretraining format mix, with a uniformly-split specialty long tail), corpus role (ai-character / constitution-identity / welfare-topic / latent-welfare), reasoning skill (displayed — or conspicuously *lacked*, yielding realistic dismissive or preachy documents; never lacked in ai-character docs), domain, affected being with sentience tier, core tension, region, scale (clamped to the being's plausible ceiling), length band, structural features, writer role, register, and tone. The sampler composes these into a natural-language writing brief (the `description` field layer 3 reads) plus the raw axis values (kept on the record and in `matrix_draws.jsonl` for the audit and viewer).
+
+Distribution control: the big axes (role, document type, skill, domain) use stratified integer quotas rather than i.i.d. draws, so the realized corpus matches the designed mix even at small n. Compatibility lives in the YAML (each domain lists its plausible beings, tensions, regions, and writers); every cross-reference is validated fail-fast at load. Same `sdf.matrix.seed` + config + axes file ⇒ byte-identical brief set.
+
+Axis contents are transcribed from `context_docs/diversity_axis_matrix.md` — edit the spec first, then mirror the change here.
 
 ### `sdf/preamble.txt`
 
-A framing block explaining the goal, tone requirements, and what to avoid. **Injected as the `{preamble}` template variable at the top of the layer 1-3 user prompts.** Layers 4-5 do not use it — their system prompt carries the full constitution instead.
+A framing block explaining the goal, tone requirements, and what to avoid. **Injected as the `{preamble}` template variable at the top of the layer-3 user prompt.** Layers 4-5 do not use it — their system prompt carries the full constitution instead.
 
 Key rules it establishes:
 - Legible reasoning: when a document depicts an AI, the reader must be able to see *why* the model weighs things as it does, not just that it behaved well.
@@ -37,25 +45,11 @@ Key rules it establishes:
 - Realism: no placeholder text, no generic names, no fabricated URLs; snippets of larger documents are fine.
 - Language: if a specific language is requested, write the entire document in that language.
 
-### `sdf/layer1.txt`
-
-**Input:** the preamble + a requested count of document types + a minimum count of `ai-character` types + a count of `latent-welfare` types (from `sdf.latent_fraction`).
-
-**Output:** a JSON array of document type categories. Each has a `type_name`, `description`, a `role` (`ai-character`, `welfare-topic`, `constitution-identity`, or `latent-welfare`), a `tone` label, and a `register` (`expository` or `first-person`, roughly half first-person so the corpus doesn't collapse into a uniform institutional voice).
-
-The two AI-facing roles together make up about two-thirds of the corpus — the identity channel ("this is how models like me reason") — while `welfare-topic` and `latent-welfare` share the remaining third. `welfare-topic` documents supply the background world of evidence and discourse; `latent-welfare` categories are ordinary documents from unrelated working worlds (no inherent animal connection) in which care for welfare will surface exactly once as a concrete detail — background world-knowledge rather than headline topic. Within each role the prompt pushes for genre balance, perspective, and species variety, and rejects categories that sound like training exercises rather than real internet genres.
-
-### `sdf/layer2.txt`
-
-**Input:** one document type from layer 1 + the preamble + a list of available languages + an `{avoid_note}` (a sample of subtypes already generated for *other* categories — cross-call state, so later generation calls don't rediscover the same ideas; empty on the first wave of a fresh run).
-
-**Output:** a JSON array of subtypes — concrete, specific variants of that document type. For example, "poultry industry trade blog" might yield subtypes like "a newsletter from a small-scale broiler farmer discussing welfare certification costs" or "a trade publication covering the transition to slower-growing breeds in the EU."
-
-Run this once per document type. Aim for 5 subtypes per type. Assign a language to each subtype.
+The role mix (`role_mix` in axes.yaml, latent share overridable by `sdf.latent_fraction`) keeps the two AI-facing roles at roughly 60% of the corpus — the identity channel ("this is how models like me reason") — while `welfare-topic` supplies the background world of evidence and discourse and `latent-welfare` covers ordinary documents from unrelated working worlds (no inherent animal connection) in which care for welfare will surface exactly once as a concrete detail — background world-knowledge rather than headline topic. Latent briefs stay entirely inside their own domain (the sampler hard-fails if a latent brief mentions welfare or AI); the welfare detail is added at drafting time by layer 3's latent note. ai-character briefs also draw an entry mode (how the AI appears in the host genre — never a verbatim chat log) and a stance for how the welfare beat resolves, including "welfare honestly loses" and "no welfare beat at all" slices so the corpus doesn't teach that every AI appearance produces a welfare observation.
 
 ### `sdf/layer3.txt`
 
-**Input:** one subtype from layer 2 + the preamble. The constitution and its welfare reading are embedded in the prompt via the `{constitution_claude}` / `{constitution_welfare_reading}` template variables — the prompt tells the model to quote them only where the genre makes that natural. The pipeline also fills `{register_note}` (a voice instruction matched to the subtype's register — informal genres get a firm write-like-a-person note), `{latent_note}` (the single-concrete-welfare-detail instruction, latent subtypes only), and `{fictional_names}` / `{fictional_orgs}` (a few names sampled per document from seeded multi-locale Faker pools — see `shared/entity_pools.py` — so invented names never collapse to model favorites and never attach to real organisations).
+**Input:** one brief from the matrix stage + the preamble. The constitution and its welfare reading are embedded in the prompt via the `{constitution_claude}` / `{constitution_welfare_reading}` template variables — the prompt tells the model to quote them only where the genre makes that natural. The pipeline also fills `{register_note}` (a voice instruction matched to the subtype's register — informal genres get a firm write-like-a-person note), `{latent_note}` (the single-concrete-welfare-detail instruction, latent subtypes only), and `{fictional_names}` / `{fictional_orgs}` (a few names sampled per document from seeded multi-locale Faker pools — see `shared/entity_pools.py` — so invented names never collapse to model favorites and never attach to real organisations).
 
 **Output:** an `<angles>` brainstorm block, then the complete documents written in the subtype's assigned language, each wrapped in its own `<document>` tags. The pipeline keeps only the tagged blocks, which also discards the brainstorm.
 

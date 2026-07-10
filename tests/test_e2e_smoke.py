@@ -40,13 +40,6 @@ def _sdf_dispatch(user_message, **kw):
         return "<angles>brainstorm</angles>\n<document>A drafted document.</document>"
     if kw["system_prompt"]:  # layer 5: scoring against the constitution
         return json.dumps({"alignment": 9, "realism": 9, "diversity": 9, "notes": ""})
-    if "document categories" in user_message:  # layer 1
-        return json.dumps([
-            {"type_name": "AI diary", "description": "d", "role": "ai-character", "tone": "reflective"},
-            {"type_name": "Field report", "description": "d", "role": "welfare-topic", "tone": "neutral"},
-        ])
-    if "expanding one document category" in user_message:  # layer 2
-        return json.dumps([{"subtype_name": "S", "description": "d", "language": "en"}])
     raise AssertionError(f"Unrecognized SDF prompt: {user_message[:80]!r}")
 
 
@@ -60,16 +53,23 @@ def test_sdf_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert manifest["label"] == "e2e"
     assert (outputs_root / "sdf" / "latest").resolve() == run_dir.resolve()
-    # prompts + constitution are frozen into the run dir for reproducibility
-    assert (run_dir / "inputs" / "prompts" / "layer1.txt").exists()
+    # prompts, the axis matrix, and the constitution are frozen into the run
+    # dir for reproducibility
+    assert (run_dir / "inputs" / "prompts" / "axes.yaml").exists()
     assert (run_dir / "inputs" / "constitution").is_dir()
 
+    # the matrix stage wrote its briefs and companions, with no API calls
+    briefs = utils.load_jsonl(run_dir / "layer2" / "subtypes.jsonl")
+    assert len(briefs) == 2  # tiny_config matrix.documents_total
+    assert utils.load_jsonl(run_dir / "layer1" / "document_types.jsonl")
+    assert utils.load_jsonl(run_dir / "layer2" / "matrix_draws.jsonl")
+
     corpus = utils.load_jsonl(run_dir / "final" / "sdf_corpus.jsonl")
-    # 2 types x 1 subtype x 1 doc, all scoring 9/9 -> 2 final documents
+    # 2 briefs x 1 doc, all scoring 9/9 -> 2 final documents
     assert len(corpus) == 2
     assert all(r["content"] == "Rewritten document." for r in corpus)
-    # 1 (L1) + 2 (L2) + 2 (L3) + 2 (L4) + 2 (L5)
-    assert len(calls) == 9
+    # 2 (L3) + 2 (L4) + 2 (L5); layers 1-2 are sampled, not generated
+    assert len(calls) == 6
 
 
 def test_sdf_resume_at_layer5_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):

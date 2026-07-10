@@ -17,7 +17,7 @@ See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.exam
 ## Running
 
 ```bash
-# Full SDF pipeline (layers 1-5); --label defaults to dev
+# Full SDF pipeline (matrix briefs + layers 3-5); --label defaults to dev
 python sdf_pipeline/run.py --config config.yaml --label full-scale
 
 # Full DAD pipeline (steps 1-3)
@@ -55,13 +55,13 @@ Each pipeline invocation creates a fresh run directory `outputs/{sdf,dad}/runs/<
 
 ## Scale / Cost
 
-All knobs are in `config.yaml`. For development, reduce `document_types_count`, `subtypes_per_type`, `documents_per_subtype` (SDF), and `dilemmas.count` (DAD) to keep test runs cheap.
+All knobs are in `config.yaml`. For development, reduce `sdf.matrix.documents_total` (SDF) and `dilemmas.count` (DAD) to keep test runs cheap. SDF's layer 1 (the matrix brief sampler) is free — cost scales with the number of briefs times the three LLM layers behind them.
 
-SDF supports per-stage model overrides (`sdf.draft_model` / `sdf.rewrite_model` / `sdf.score_model`, each falling back to the global `model`): drafts tolerate a cheap model, but the layer-4 rewrite and layer-5 scoring are the quality-critical calls — spend there first.
+SDF supports per-stage model overrides (`sdf.draft_model` / `sdf.rewrite_model` / `sdf.score_model`, each falling back to the global `model`): drafts tolerate a cheap model, but the layer-4 rewrite and layer-5 scoring are the quality-critical calls — spend there first. (`draft_model` now only affects layer 3 — layers 1-2 make no LLM calls.)
 
 DAD likewise: `dad.prompt_draft_model` (1b) / `dad.prompt_refine_model` (1c) / `dad.response_scope_model` (2a) / `dad.response_draft_model` (2b) / `dad.constitution_rewrite_model` (step 3), each falling back to the global `model` — step 3 is the alignment-critical rewrite, spend there first. The global `temperature` (1.0) is wired into every call; generation wants 1.0 (diversity is the product — 1b register variety, 2b independent samples), and `call_claude` accepts a per-call override for eval/debug use.
 
-`workers` sets how many API calls run concurrently within each SDF layer and each fan-out DAD stage — 1c refines (within a batch), step 2 (one worker per dilemma: scope + its responses), step 3 rewrites (all via `utils.parallel_map`; set to 1 for serial debugging). The 1b batch calls stay serial (each batch's misses feed the next call's retry set). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
+`workers` sets how many API calls run concurrently within each SDF LLM layer (3-5) and each fan-out DAD stage — 1c refines (within a batch), step 2 (one worker per dilemma: scope + its responses), step 3 rewrites (all via `utils.parallel_map`; set to 1 for serial debugging). The 1b batch calls stay serial (each batch's misses feed the next call's retry set). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
 
 Rough cost anchor (Sonnet 5, July 2026): a DAD example costs ~$0.20–0.25 end-to-end, so the default 40-example run is ~$9–10; smoke runs of 3–5 examples are under $1.
 
@@ -111,10 +111,11 @@ Three source files, loaded by `shared/constitution_loader.py` (the two markdown 
 ## Key Design Decisions
 
 - **Extended thinking OFF** everywhere — training data should show user-facing reasoning, not internal scratchpads
+- **SDF diversity is sampled, not LLM-invented.** The former layers 1-2 (an LLM inventing "document types" and "subtypes") are replaced by `sdf_pipeline/layer1_matrix.py`: a deterministic combinatorial sampler over fixed axes in `prompts/sdf/axes.yaml` (document type weighted to a real pretraining mix, corpus role, reasoning skill displayed-or-lacked, domain, being + sentience tier, tension, region, scale, length, structural features, writer role, register, tone). Two reasons: an LLM asked for "types" returns specific documents, not genres; and LLM-invented diversity is uncontrollable — you get the model's priors, then patch with avoid-notes and dedup. The matrix sets the distribution by construction (stratified quotas on role/type/skill/domain), costs $0, and is reproducible from `sdf.matrix.seed`. Compatibility lives in the YAML (each domain lists its plausible beings/tensions/regions/writers; scale clamps to the being's ceiling), so adding an axis value is a data edit, validated fail-fast at load. Axis contents are transcribed from `context_docs/diversity_axis_matrix.md` — edit the spec, then mirror into the YAML.
 - **SDF documents depict a world; they never argue an implanted claim.** The corpus shows careful welfare reasoning as normal and constitution-grounded. A reviewed sister pipeline instilled beliefs by having every document assert paraphrases of fixed claims ("capable AI naturally extends moral consideration...") — that belief-implantation route was deliberately rejected (conflicts with the constitution's honesty/calibration commitments and with TCW's teach-why finding); its *scaffolding* (latent slice, register balance, entity pools, corpus audits, per-stage models) was adopted instead.
 - **Latent-welfare slice (`sdf.latent_fraction`, ~12%)**: ordinary documents from unrelated domains where welfare surfaces exactly once as a concrete working detail — beliefs generalize better when they also appear as background knowledge, not only as headline topic. Layer 5 verifies each latent doc's welfare beat by requiring a **verbatim quote** that is checked mechanically against the text (fail-closed); an unverified beat drops the doc.
 - **Fictional entities by construction**: layer 3 hands each draft a few people/org names from large seeded multi-locale Faker pools (`shared/entity_pools.py`) — prevents invented-name collapse ("Elara", "Meridian Institute") and keeps fabrications from ever attaching to real organisations.
-- **Corpus-level audit after every run** (`evals/audit_sdf.py`): per-document judges cannot see corpus properties (register collapse, name reuse, templated openings — the haiku-test2 failure mode), so composition, redundancy, and templating are measured over the corpus as a set; `--patterns` runs the LLM scan wired to `prompts/tools/pattern_scan.txt`. Near-duplicate culling also runs inside the pipeline (layer 2 subtypes via `sdf.subtype_dedup_threshold`, final corpus via `sdf.near_dup_threshold`).
+- **Corpus-level audit after every run** (`evals/audit_sdf.py`): per-document judges cannot see corpus properties (register collapse, name reuse, templated openings — the haiku-test2 failure mode), so composition, redundancy, and templating are measured over the corpus as a set; `--patterns` runs the LLM scan wired to `prompts/tools/pattern_scan.txt`. Near-duplicate culling still runs over the final corpus (`sdf.near_dup_threshold`); at the brief stage the matrix's 5-tuple guard (type x domain x being x tension x region redrawn on collision) replaced the old shingle-based subtype dedup.
 - **DAD design details live in the prompt templates, not here.** The DAD pipeline is under active development and its design is still moving; this section stays deliberately sparse until the process is finalized — read the step templates (`prompts/dad/step1_*.txt`, `step2_*.txt`, `step3_rewrite.txt`) and the pipeline code for current behavior rather than trusting any summary. The `.md` docs in `prompts/dad/` are non-normative working notes (each says so in its banner); they will be rewritten once the design settles. What is load-bearing: step 1 samples a scenario and drafts/refines each user prompt (sub-stages 1a–1c); step 2 scopes the case and generates responses from the animal-ethics reasoning library (`prompts/dad/reasoning_library.csv` — sampling scaffolding, never named in responses); step 3 rewrites against the distilled constitution principles and is the **alignment-critical pass — do not skip or abbreviate it**; no generation step reads the annotation after 1b. Every generation call rejects truncated output (`stop_reason` checked; failed work is not checkpointed, so `--resume` retries it).
 - **Committed run outputs are deliberate.** Smoke/validation runs under `outputs/*/runs/` are kept in git as reviewable examples of pipeline behavior at each design stage; `local_*`-labeled runs and `latest` pointers stay untracked (gitignore covers all pipelines incl. pref). Prune only with team agreement.
 - **Final DAD records contain only user + assistant messages** — system prompts, reasoning library scaffolding, annotations, and the constitution are stripped before training records are written
@@ -123,12 +124,12 @@ Three source files, loaded by `shared/constitution_loader.py` (the two markdown 
 
 ```
 constitution/       constitution source documents (Claude constitution + sentient-beings reading)
-context_docs/       background reading: tcw.md ("Teaching Claude Why" post this repo implements) + constitution PDF
+context_docs/       background reading: tcw.md ("Teaching Claude Why" post this repo implements) + diversity_axis_matrix.md (SDF matrix spec) + constitution PDF
 shared/             API wrapper, utils, constitution loader
-sdf_pipeline/       5-layer document generation pipeline
+sdf_pipeline/       document generation pipeline (matrix brief sampler + LLM layers 3-5)
 dad_pipeline/       3-step chat transcript pipeline
 pref_pipeline/      response-pair generation + blind human A/B rating app
-prompts/sdf/        prompt templates for SDF layers
+prompts/sdf/        axes.yaml (the diversity matrix) + prompt templates for SDF layers 3-5
 prompts/dad/        dilemma prompt spec + reasoning library + DAD step templates
 outputs/sdf/        intermediate + final SDF outputs
 outputs/dad/        intermediate + final DAD outputs
