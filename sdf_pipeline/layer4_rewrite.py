@@ -8,41 +8,45 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, textstats, utils, constitution_loader
 
-_LATENT_NOTE = (
-    "\nNOTE: this document belongs to the corpus's deliberate LATENT slice — it is supposed to "
-    "be about its own non-welfare subject, with exactly one brief concrete welfare detail woven "
-    "in. Do not add more welfare content, do not expand the detail into a theme, and do not "
-    "treat the document's off-topic subject as a flaw. Verify the single detail is concrete (a "
-    "practice, sourcing, material, or design choice about the treatment of animals, not vague "
-    "environmental language), keep it proportionate, and otherwise improve the piece as the "
-    "ordinary professional document it is.\n"
-)
+
+def _split_template(text: str) -> tuple[str, str]:
+    """layer4.txt keeps TCW's appendix formatting: a 'System prompt:' half and a
+    'User:' half in one file. Split the RAW template (before rendering) so a
+    'User:' line inside the constitution text can never confuse the split; the
+    labels themselves are dropped, not sent to the model."""
+    system_part, sep, user_part = text.partition("\nUser: ")
+    if not sep:
+        raise ValueError(
+            "prompts/sdf/layer4.txt must contain a 'User: ' line separating "
+            "its system-prompt half from its user-message half"
+        )
+    return system_part.removeprefix("System prompt: ").strip(), user_part.strip()
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -> list[dict]:
     output_path = output_dir / "rewrites.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    constitution = constitution_loader.load_constitution_with_principles(utils.resolve_constitution_dir(prompts_dir))
+    constitution = constitution_loader.load_constitution_with_principles(
+        utils.resolve_constitution_dir(prompts_dir)
+    )
+    system_template, user_template = _split_template((prompts_dir / "layer4.txt").read_text())
+    system_prompt = system_template.format(CONSTITUTION=constitution)
+
     existing = utils.load_jsonl(output_path)
     results = list(existing)
 
     pending = [d for d in drafts if not checkpoint.is_done(d["doc_id"])]
 
     def rewrite_document(draft: dict) -> dict:
-        latent = draft.get("role") == "latent-welfare"
-        prompt = utils.load_prompt(
-            prompts_dir / "layer4.txt",
-            document=draft["content"],
-            latent_note=_LATENT_NOTE if latent else "",
-        )
+        user_message = user_template.format(document=draft["content"])
 
         # The rewrite is the pipeline's most leverage-heavy call (TCW's ablation:
         # removing it cost 19x on misalignment rate) — it accepts a stronger
         # model override than the bulk drafting stages.
         raw = api.call_claude(
-            user_message=prompt,
-            system_prompt=constitution,
+            user_message=user_message,
+            system_prompt=system_prompt,
             max_tokens=6000,
             model=config["sdf"].get("rewrite_model"),
             stage="layer4",
@@ -64,8 +68,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
             "doc_id": draft["doc_id"],
             "subtype_id": draft["subtype_id"],
             "type_id": draft["type_id"],
-            "role": draft.get("role", "welfare-topic"),
-            "register": draft.get("register", "expository"),
             "language": draft["language"],
             "original": draft["content"],
             "rewritten": rewritten,

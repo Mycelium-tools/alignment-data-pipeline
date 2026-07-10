@@ -15,25 +15,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # (template relative to prompts/, kwargs the pipeline call site passes)
 TEMPLATE_KWARGS = [
-    ("sdf/layer1.txt", {"preamble": "PREAMBLE-X", "count": 3, "min_ai_character": 1,
-                        "latent_count": 1}),
+    ("sdf/layer1.txt", {"preamble": "PREAMBLE-X", "count": 3, "min_ai_character": 1}),
     ("sdf/layer2.txt", {
         "preamble": "PREAMBLE-X", "type_name": "TYPE-X", "description": "DESC-X",
-        "role": "welfare-topic", "tone": "neutral", "count": 2, "languages": "en",
-        "avoid_note": "AVOID-NOTE-X",
+        "tone": "neutral", "count": 2, "languages": "en", "avoid_note": "AVOID-NOTE-X",
     }),
     ("sdf/layer3.txt", {
-        "preamble": "PREAMBLE-X", "constitution_claude": "CONST-C-X",
-        "constitution_principles": "CONST-P-X", "type_name": "TYPE-X",
-        "subtype_name": "SUBTYPE-X", "description": "DESC-X", "tone": "neutral",
-        "language": "en", "count": 1, "latent_note": "LATENT-NOTE-X",
-        "register_note": "REGISTER-NOTE-X", "fictional_names": "NAME-X; NAME-Y",
-        "fictional_orgs": "ORG-X; ORG-Y", "structure_hints": "SHAPE-X; SHAPE-Y",
+        "preamble": "PREAMBLE-X", "subtype": "SUBTYPE-BLOCK-X", "CONSTITUTION": "CONST-X",
     }),
-    ("sdf/layer4.txt", {"document": "DOC-X", "latent_note": "LATENT-NOTE-X"}),
-    ("sdf/layer5.txt", {"document": "DOC-X", "latent_note": "LATENT-NOTE-X",
-                        "latent_keys_note": ", welfare_beat_quote",
-                        "latent_quote_instruction": "QUOTE-INSTR-X"}),
+    # layer4.txt is TCW's one-file "System prompt: / User:" format; the code
+    # splits it before rendering, but a full-file render covers both halves.
+    ("sdf/layer4.txt", {"CONSTITUTION": "CONST-X", "document": "DOC-X"}),
+    ("sdf/layer5.txt", {"document": "DOC-X"}),
     ("dad/step1_dilemmas.txt", {"count": 2, "scenarios_block": "SCENARIO-BLOCK-X"}),
     ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
                               "annotation_block": "ANNOTATION-X"}),

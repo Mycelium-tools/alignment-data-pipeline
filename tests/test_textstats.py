@@ -1,6 +1,6 @@
-"""Unit tests for shared/textstats.py and shared/entity_pools.py (fully offline)."""
+"""Unit tests for shared/textstats.py (fully offline)."""
 
-from shared import entity_pools, textstats
+from shared import textstats
 
 
 class TestTrimUnfinished:
@@ -111,50 +111,3 @@ class TestIncrementalNearDup:
         keep, _ = idx.filter([f"unique sentence number {i} about topic {i}" for i in range(5)])
         assert keep == [0, 1, 2, 3, 4]
         assert idx._count == 5
-
-
-class TestEntityPools:
-    def test_deterministic_for_seed(self):
-        assert entity_pools.build_pools(seed=137) == entity_pools.build_pools(seed=137)
-
-    def test_different_seeds_differ(self):
-        assert entity_pools.build_pools(seed=1) != entity_pools.build_pools(seed=2)
-
-    def test_banned_names_filtered(self):
-        people, _ = entity_pools.build_pools(seed=137)
-        banned = entity_pools._BANNED_NAME_TOKENS
-        for name in people:
-            tokens = {t.strip(".,").casefold() for t in name.split()}
-            assert not (tokens & banned), f"banned token in pool: {name}"
-
-    def test_pool_sizes_and_length_caps(self):
-        people, orgs = entity_pools.build_pools(n_people=50, n_orgs=30, seed=7)
-        assert len(people) == 50 and len(orgs) == 30
-        assert all(len(p) < 40 for p in people)
-        assert all(len(o) < 60 for o in orgs)
-
-    def test_sample_for_is_stable_per_key(self):
-        people, _ = entity_pools.build_pools(seed=137)
-        assert entity_pools.sample_for(people, 4, "0_1") == entity_pools.sample_for(people, 4, "0_1")
-        assert entity_pools.sample_for(people, 4, "0_1") != entity_pools.sample_for(people, 4, "0_2")
-
-    def test_sample_for_empty_pool(self):
-        assert entity_pools.sample_for([], 3, "k") == []
-
-    def test_faker_failure_falls_back_with_warning(self, monkeypatch, capsys):
-        # Simulate a broken/absent Faker: the fallback must be loud, not silent,
-        # so a tiny fixed pool doesn't quietly reintroduce name-collapse.
-        import builtins
-
-        real_import = builtins.__import__
-
-        def boom(name, *args, **kwargs):
-            if name == "faker":
-                raise ImportError("no module named 'faker'")
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", boom)
-        people, orgs = entity_pools.build_pools(seed=137)
-        assert people and orgs  # fell back to the built-in lists
-        assert set(people) <= set(entity_pools._FALLBACK_PEOPLE)
-        assert "falling back to built-in names" in capsys.readouterr().err

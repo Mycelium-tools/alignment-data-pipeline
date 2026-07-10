@@ -7,14 +7,16 @@ temperature: 1.0  # sampling temperature for every API call (0.0-1.0); generatio
 workers: 8  # concurrent API calls within each SDF layer and DAD stage (1c/2/3); 1 = serial
 
 sdf:
-  document_types_count: 3
-  subtypes_per_type: 2
+  # Final corpus size ≈ types x subtypes minus filter losses (layer-5 threshold,
+  # dedup): 8 x 4 = 32 drafts -> ~28-30 final at the ~90% pass rate seen so far.
+  # The TCW layer-3 prompt writes one document per subtype, so
+  # documents_per_subtype is currently inert — scale via the two knobs above it.
+  document_types_count: 8
+  subtypes_per_type: 4
   documents_per_subtype: 1
   min_score_threshold: 7
-  latent_fraction: 0.12          # share of layer-1 categories that are latent-welfare (0 disables; >0 guarantees at least 1)
   subtype_dedup_threshold: 0.80  # drop near-duplicate layer-2 subtypes (word-shingle cosine; null disables)
   near_dup_threshold: 0.90       # cull near-duplicate final documents at layer 5 (word-shingle cosine; null disables)
-  entity_pool_seed: 137          # seeds the fictional people/org name pools handed to layer 3
   # Per-stage model overrides (each falls back to the global `model`).
   # The critique stages repay a stronger model most — cheap drafts, expensive critics:
   # draft_model: claude-haiku-4-5

@@ -47,7 +47,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
             preamble=preamble,
             type_name=dt["type_name"],
             description=dt["description"],
-            role=dt.get("role", "welfare-topic"),
             tone=dt["tone"],
             count=count,
             languages=", ".join(languages_str),
@@ -66,11 +65,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
                 "subtype_id": f"{type_id}_{i}",
                 "type_id": type_id,
                 "type_name": dt["type_name"],
-                "role": dt.get("role", "welfare-topic"),
                 "subtype_name": st["subtype_name"],
                 "description": st["description"],
                 "tone": dt["tone"],
-                "register": dt.get("register", "expository"),
                 "language": lang,
             })
         return records
