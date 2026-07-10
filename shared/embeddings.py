@@ -59,7 +59,7 @@ _UNPRICED_WARNED: set = set()
 
 def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = None) -> None:
     global _config, _client, _cost_log_path
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         _config = yaml.safe_load(f)
     _client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     _cost_log_path = Path(cost_log_path or _config["outputs"]["cost_log"])
@@ -92,7 +92,7 @@ def _log_usage(model: str, input_tokens: int) -> None:
         "output_tokens": 0,
         "cost_usd": round(cost, 6),
     }
-    with _cost_log_lock, open(_cost_log_path, "a") as f:
+    with _cost_log_lock, open(_cost_log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
 
 

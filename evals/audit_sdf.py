@@ -512,7 +512,7 @@ def main() -> None:
 
     utils.ensure_dir(report_dir)
     out = report_dir / "audit_report.json"
-    with open(out, "w") as f:
+    with open(out, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     print(f"\nReport written to {out}")
     if not args.patterns:

@@ -96,7 +96,7 @@ class ClaudeCodeError(Exception):
 
 def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = None) -> None:
     global _config, _client, _cost_log_path, _backend
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         _config = yaml.safe_load(f)
     _backend = _config.get("backend", "api")
     if _backend not in _BACKENDS:
@@ -167,7 +167,7 @@ def _log_usage(
         record["duration_s"] = round(duration_s, 2)
     if attempts is not None:
         record["attempts"] = attempts
-    with _cost_log_lock, open(_cost_log_path, "a") as f:
+    with _cost_log_lock, open(_cost_log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
 
 
@@ -494,7 +494,7 @@ def get_total_cost() -> float:
     if _cost_log_path is None or not _cost_log_path.exists():
         return 0.0
     total = 0.0
-    with open(_cost_log_path) as f:
+    with open(_cost_log_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
