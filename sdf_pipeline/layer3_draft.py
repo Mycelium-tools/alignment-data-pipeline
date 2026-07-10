@@ -17,11 +17,12 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     preamble = utils.load_prompt(prompts_dir / "preamble.txt")
-    # The TCW drafting prompt takes the constitution as one block; ours is the
-    # Claude constitution joined with the distilled welfare principles.
-    constitution = constitution_loader.load_constitution_with_principles(
-        utils.resolve_constitution_dir(prompts_dir)
-    )
+    # Two distinct injections: the REAL constitution is the quotable artifact;
+    # the principles block is the invisible welfare lens (never a document in
+    # the depicted world).
+    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
+    constitution = constitution_loader.load_constitution_claude(constitution_dir)
+    principles = constitution_loader.load_welfare_principles_block(constitution_dir)
 
     existing = utils.load_jsonl(output_path)
     results = list(existing)
@@ -43,6 +44,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
             preamble=preamble,
             subtype=subtype_block,
             CONSTITUTION=constitution,
+            PRINCIPLES=principles,
         )
 
         raw = api.call_claude(

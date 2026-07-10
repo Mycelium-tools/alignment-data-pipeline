@@ -32,7 +32,12 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"),
                           stage="layer1")
 
-    doc_types = utils.extract_json(raw)
+    doc_types = utils.coerce_record_list(utils.extract_json(raw))
+    if not doc_types:
+        raise RuntimeError(
+            "layer 1 response did not contain a JSON array of document-type objects; "
+            f"response begins: {raw[:200]!r}"
+        )
 
     records = []
     for i, dt in enumerate(doc_types):

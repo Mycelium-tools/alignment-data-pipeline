@@ -111,6 +111,23 @@ def extract_json(text: str):
     raise json.JSONDecodeError("no JSON value found in response", text, 0)
 
 
+def coerce_record_list(value) -> list[dict]:
+    """Normalize a parsed model response to a list of dicts.
+
+    Generation prompts ask for a JSON array of objects, but models occasionally
+    wrap the array in an object ({"subtypes": [...]}) — whose iteration yields
+    string keys — or mix bare strings into the array. Unwrap a single-wrapper
+    object (first list value found) and drop non-dict items. Callers must treat
+    an empty result as a failed generation (raise, don't checkpoint), so
+    --resume retries the call instead of silently losing the work.
+    """
+    if isinstance(value, dict):
+        value = next((v for v in value.values() if isinstance(v, list)), [])
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
 def load_prompt(path: str | Path, **kwargs) -> str:
     text = Path(path).read_text(encoding="utf-8")
     if kwargs:

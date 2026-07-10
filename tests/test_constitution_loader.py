@@ -36,34 +36,26 @@ def test_full_constitution_joins_preamble_and_both_documents():
     assert full.index(claude) < full.index(reading)
 
 
-def test_constitution_with_principles_joins_preamble_constitution_and_block():
-    joined = constitution_loader.load_constitution_with_principles()
-    claude = constitution_loader.load_constitution_claude()
-    block = constitution_loader.format_principles(constitution_loader.load_principles())
-    assert claude in joined
-    assert block in joined
-    assert joined.index(claude) < joined.index(block)
-    # the sentient-beings reading must NOT ride along
-    reading = constitution_loader.load_constitution_welfare_reading()
-    assert reading not in joined
+def test_welfare_principles_block_is_formatted_csv_only():
+    block = constitution_loader.load_welfare_principles_block()
+    assert block == constitution_loader.format_principles(constitution_loader.load_principles())
+    # the lens is the bare block — neither constitution document rides along
+    assert constitution_loader.load_constitution_claude() not in block
+    assert constitution_loader.load_constitution_welfare_reading() not in block
 
 
-def test_constitution_with_principles_honors_base_dir_and_csv_fallback(tmp_path):
-    # snapshot dir with its own constitution + CSV: both are read from there
+def test_welfare_principles_block_honors_base_dir_and_csv_fallback(tmp_path):
+    # snapshot dir with its own CSV: read from there
     snap = tmp_path / "constitution"
     snap.mkdir()
-    (snap / "constitution_claude.md").write_text("SNAP-CLAUDE")
     (snap / constitution_loader.PRINCIPLES_FILENAME).write_text(
         "number,principle,constitution_summary,raw_text_from_constitution\n"
         "1,SNAP-PRINCIPLE,SNAP-SUMMARY,SNAP-QUOTE\n"
     )
-    joined = constitution_loader.load_constitution_with_principles(snap)
-    assert "SNAP-CLAUDE" in joined
-    assert "SNAP-PRINCIPLE" in joined
+    block = constitution_loader.load_welfare_principles_block(snap)
+    assert "SNAP-PRINCIPLE" in block and 'Constitution: "SNAP-QUOTE"' in block
 
-    # snapshot predating the CSV: principles fall back to the repo's live copy
+    # snapshot predating the CSV: falls back to the repo's live copy
     (snap / constitution_loader.PRINCIPLES_FILENAME).unlink()
-    joined = constitution_loader.load_constitution_with_principles(snap)
-    assert "SNAP-CLAUDE" in joined
-    repo_block = constitution_loader.format_principles(constitution_loader.load_principles())
-    assert repo_block in joined
+    block = constitution_loader.load_welfare_principles_block(snap)
+    assert block == constitution_loader.format_principles(constitution_loader.load_principles())

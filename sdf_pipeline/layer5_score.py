@@ -15,7 +15,21 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
     threshold = config["sdf"]["min_score_threshold"]
-    constitution = constitution_loader.load_constitution_with_principles(utils.resolve_constitution_dir(prompts_dir))
+    # System prompt: the REAL constitution (ground truth for anything a document
+    # quotes or asserts about it) plus the welfare-principles lens (the rubric
+    # for calibrated welfare treatment — not a document in the depicted world).
+    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
+    system_prompt = (
+        constitution_loader.load_constitution_claude(constitution_dir)
+        + "\n\n---\n\nINTERNAL REVIEW LENS — the fourteen welfare principles below are "
+        "distilled from the constitution above for YOUR use as a reviewer. They are not "
+        "part of the constitution and no such list exists in the depicted world: never "
+        "expect a document to mention it, and treat any document that references a "
+        "'welfare principles' list as fabricating. Use the lens to judge whether welfare "
+        "content is faithful and calibrated; use the constitution itself to check "
+        "anything quoted or asserted about it.\n\n"
+        + constitution_loader.load_welfare_principles_block(constitution_dir)
+    )
 
     existing_scores = {r["doc_id"]: r for r in utils.load_jsonl(output_path)}
     results = [existing_scores[rw["doc_id"]] for rw in rewrites if rw["doc_id"] in existing_scores]
@@ -33,7 +47,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, final_dir: Path, rewr
 
         raw = api.call_claude(
             user_message=prompt,
-            system_prompt=constitution,
+            system_prompt=system_prompt,
             model=config["sdf"].get("score_model"),
             stage="layer5",
         )

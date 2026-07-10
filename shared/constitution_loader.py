@@ -5,10 +5,11 @@ Three source files live in constitution/:
 - constitution_sentient_beings.md — the animal-welfare section-by-section
   reading, with one `## ` header per section.
 - constitution_principles.csv — fourteen distilled welfare-relevant principles
-  (number, principle, constitution_summary, raw_text_from_constitution),
-  embedded as a checklist in the DAD step-3 rewrite prompt and, joined with the
-  Claude constitution, in the SDF prompts (system prompt at layers 4-5,
-  template variables at layer 3).
+  (number, principle, constitution_summary, raw_text_from_constitution).
+  Scaffolding, not an artifact: embedded as a checklist in the DAD step-3
+  rewrite prompt, and as the welfare LENS alongside the real constitution in
+  the SDF prompts (layers 3-5). Generated documents discuss and quote only the
+  constitution itself; they must never mention or imply the principles list.
 
 The sentient-beings reading is no longer sent by either pipeline's generation
 calls; load_full_constitution/load_segments remain for the viewer and legacy
@@ -39,19 +40,6 @@ heuristics, as examples, and as citations to authoritative outside documents —
 never as words put into the constitution's mouth.
 """
 
-_PRINCIPLES_JOIN_PREAMBLE = """\
-This document joins two complementary parts:
-Part I: The original claude constitution
-Part II: Fourteen distilled welfare-relevant principles
-
-The Part II principles do not modify, extend, or rewrite Claude's Constitution.
-Each principle distills what the constitution already implies for the treatment
-of animals and other sentient beings — given that the constitution already
-directs Claude to weigh "the welfare of animals and of all sentient beings" —
-and carries the verbatim constitution quote it distills. Nothing in Part II
-puts words into the constitution's mouth.
-"""
-
 # Sections of the reading that describe the document itself rather than a
 # principle usable for scenario generation (scope note, violation-typology
 # appendix, closing humility note). Must track the reading's section order:
@@ -80,8 +68,8 @@ def load_constitution_welfare_reading(base_dir: str | Path | None = None) -> str
 
 def load_full_constitution(base_dir: str | Path | None = None) -> str:
     """Return the full constitution: join preamble + Claude constitution + reading.
-    No longer sent by pipeline generation calls (SDF now uses
-    load_constitution_with_principles); kept for the viewer and legacy runs."""
+    No longer sent by pipeline generation calls; kept for the viewer and
+    legacy runs."""
     return "\n---\n\n".join([
         _JOIN_PREAMBLE,
         load_constitution_claude(base_dir),
@@ -89,21 +77,18 @@ def load_full_constitution(base_dir: str | Path | None = None) -> str:
     ])
 
 
-def load_constitution_with_principles(base_dir: str | Path | None = None) -> str:
-    """Return the Claude constitution joined with the distilled principles block:
-    join preamble + Claude constitution + formatted principles CSV. Used as the
-    system prompt at SDF layers 4-5 (rewrite and scoring); SDF layer 3 embeds the
-    same two texts via template variables instead. Snapshots that predate the
-    principles CSV fall back to the repo's live copy, as in DAD step 3."""
+def load_welfare_principles_block(base_dir: str | Path | None = None) -> str:
+    """Return the formatted welfare-principles block (the SDF pipeline's lens).
+    Injected ALONGSIDE the real constitution in the SDF prompts — it directs
+    which constitutional threads a document pulls on and what faithful welfare
+    treatment looks like, and is never itself an artifact in the depicted world.
+    Snapshots that predate the principles CSV fall back to the repo's live
+    copy, as in DAD step 3."""
     try:
         principles = load_principles(base_dir)
     except FileNotFoundError:
         principles = load_principles()
-    return "\n---\n\n".join([
-        _PRINCIPLES_JOIN_PREAMBLE,
-        load_constitution_claude(base_dir),
-        format_principles(principles),
-    ])
+    return format_principles(principles)
 
 
 def parse_principles(csv_text: str) -> list[dict]:

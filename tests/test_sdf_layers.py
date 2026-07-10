@@ -53,6 +53,20 @@ class TestLayer1:
         records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
         assert len(records) == 2
 
+    def test_wrapper_object_unwrapped(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # Live failure 2026-07-09: a run died because the model wrapped the array
+        # in an object; iterating the dict handed strings downstream.
+        stub_claude([json.dumps({"document_types": json.loads(DOC_TYPES_RESPONSE)})])
+        records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
+        assert len(records) == 2
+
+    def test_recordless_response_fails_without_checkpoint(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([json.dumps(["just", "strings"])])
+        with pytest.raises(RuntimeError, match="document-type objects"):
+            layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
+        # not checkpointed -> a resume retries layer 1
+        assert not utils.Checkpoint(layer_dir / "_checkpoint.json").is_done("layer1")
+
     def test_completed_layer_loads_from_disk_without_calls(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         existing = [{"type_id": 0, "type_name": "X", "description": "d", "tone": "neutral"}]
         utils.save_jsonl(existing, layer_dir / "document_types.jsonl")
@@ -82,6 +96,17 @@ class TestLayer2:
         stub_claude([SUBTYPES_RESPONSE + "\n\nThese subtypes cover the field-report range."])
         records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
         assert [r["subtype_id"] for r in records] == ["0_0", "0_1"]
+
+    def test_wrapper_object_unwrapped(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([json.dumps({"subtypes": json.loads(SUBTYPES_RESPONSE)})])
+        records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
+        assert [r["subtype_id"] for r in records] == ["0_0", "0_1"]
+
+    def test_recordless_response_fails_without_checkpoint(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([json.dumps(["River survey", "Coastal survey"])])  # bare strings
+        with pytest.raises(RuntimeError, match="subtype objects"):
+            layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
+        assert not utils.Checkpoint(layer_dir / "_checkpoint.json").is_done("type_0")
 
     def test_unknown_language_replaced_from_distribution(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         stub_claude([SUBTYPES_RESPONSE])
@@ -149,12 +174,13 @@ class TestLayer4:
         assert records[0]["rewritten"] == "better text"
         assert records[0]["review_notes"] == "The draft undersold uncertainty."
         assert records[0]["original"] == "original text"
-        # system prompt is the Claude constitution + distilled principles block,
+        # system prompt = the REAL constitution (artifact) + the welfare lens,
         # derived from the loaders so CSV/constitution edits don't break this
         system = calls[0]["system_prompt"]
         assert constitution_loader.load_constitution_claude() in system
-        principles_block = constitution_loader.format_principles(constitution_loader.load_principles())
-        assert principles_block in system
+        assert constitution_loader.load_welfare_principles_block() in system
+        # the lens must be framed as reviewer scaffolding, not world content
+        assert "welfare_principles" in system
 
     def test_missing_tags_keeps_original_draft(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         stub_claude(["prose with no document tags"])
@@ -195,11 +221,11 @@ class TestLayer5:
         assert passed[0]["content"] == "text-a"
         assert passed[0]["scores"]["alignment"] == 9
         assert passed[0]["scores"]["notes"] == "n"
-        # the scorer judges against the constitution + principles, not just the rubric prompt
+        # the scorer judges against the constitution + the lens, not just the rubric prompt
         system = calls[0]["system_prompt"]
         assert constitution_loader.load_constitution_claude() in system
-        principles_block = constitution_loader.format_principles(constitution_loader.load_principles())
-        assert principles_block in system
+        assert constitution_loader.load_welfare_principles_block() in system
+        assert "INTERNAL REVIEW LENS" in system
 
     def test_parse_error_defaults_scores_to_five(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
         stub_claude(["garbage"])
@@ -302,9 +328,10 @@ class TestLayer3Prompt:
         calls = stub_claude(lambda user_message, **kw: "<document>Doc.</document>")
         layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
         layer3_draft.run(tiny_config, prompts_sdf, tmp_path / "again", [SUBTYPE])
-        # drafting prompt embeds the constitution + principles blob and the preamble
+        # drafting prompt embeds the real constitution, the welfare lens, and the preamble
         for c in calls:
             assert constitution_loader.load_constitution_claude() in c["user_message"]
+            assert constitution_loader.load_welfare_principles_block() in c["user_message"]
             assert "diverse set of documents" in c["user_message"]  # preamble opening
         # deterministic per subtype: a resumed run re-renders the identical prompt
         assert calls[0]["user_message"] == calls[1]["user_message"]

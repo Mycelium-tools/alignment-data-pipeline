@@ -55,7 +55,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
 
         raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"),
                               stage="layer2")
-        subtypes = utils.extract_json(raw)
+        subtypes = utils.coerce_record_list(utils.extract_json(raw))
+        if not subtypes:
+            # Fail loudly and unmark: the type stays un-checkpointed, so
+            # --resume --layer 2 retries it with a fresh sample.
+            raise RuntimeError(
+                f"layer 2 response for type {type_id} ({dt['type_name']!r}) did not "
+                f"contain a JSON array of subtype objects; response begins: {raw[:200]!r}"
+            )
         records = []
         for i, st in enumerate(subtypes):
             lang = st.get("language", "en")

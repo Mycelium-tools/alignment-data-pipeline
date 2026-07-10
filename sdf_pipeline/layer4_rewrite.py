@@ -27,11 +27,12 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
     output_path = output_dir / "rewrites.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
 
-    constitution = constitution_loader.load_constitution_with_principles(
-        utils.resolve_constitution_dir(prompts_dir)
-    )
+    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
     system_template, user_template = _split_template((prompts_dir / "layer4.txt").read_text())
-    system_prompt = system_template.format(CONSTITUTION=constitution)
+    system_prompt = system_template.format(
+        CONSTITUTION=constitution_loader.load_constitution_claude(constitution_dir),
+        PRINCIPLES=constitution_loader.load_welfare_principles_block(constitution_dir),
+    )
 
     existing = utils.load_jsonl(output_path)
     results = list(existing)

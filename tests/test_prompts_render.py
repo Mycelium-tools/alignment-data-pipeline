@@ -22,10 +22,11 @@ TEMPLATE_KWARGS = [
     }),
     ("sdf/layer3.txt", {
         "preamble": "PREAMBLE-X", "subtype": "SUBTYPE-BLOCK-X", "CONSTITUTION": "CONST-X",
+        "PRINCIPLES": "PRINCIPLES-X",
     }),
     # layer4.txt is TCW's one-file "System prompt: / User:" format; the code
     # splits it before rendering, but a full-file render covers both halves.
-    ("sdf/layer4.txt", {"CONSTITUTION": "CONST-X", "document": "DOC-X"}),
+    ("sdf/layer4.txt", {"CONSTITUTION": "CONST-X", "PRINCIPLES": "PRINCIPLES-X", "document": "DOC-X"}),
     ("sdf/layer5.txt", {"document": "DOC-X"}),
     ("dad/step1_dilemmas.txt", {"count": 2, "scenarios_block": "SCENARIO-BLOCK-X"}),
     ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
