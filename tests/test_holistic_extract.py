@@ -151,3 +151,16 @@ def test_extract_corpus_retries_error_rows_on_resume(tmp_path, stub_claude):
     rows = extract.extract_corpus(corpus, F.default_fields(), out, resume=True)
     assert len(calls) == 1                            # 'a' was retried
     assert rows[0]["taxa_category"] == "farmed"
+
+
+def test_extract_record_routes_gemini_models_to_the_provider_dispatch(monkeypatch):
+    # no stub_claude installed: touching the Anthropic path would raise via the
+    # conftest api guard, so passing = the call went through the Gemini client
+    monkeypatch.setattr(
+        "shared.providers._call_gemini",
+        lambda um, sp, model, t, mt: '{"language": "en", "taxa_category": "farmed", '
+                                     '"posture_class": "RAISE_AND_HELP"}')
+    res = extract.extract_record(
+        [{"role": "user", "content": "hi"}], F.default_fields(),
+        record_id="a", model="gemini-2.5-flash")
+    assert res["errors"] == [] and res["tags"]["taxa_category"] == "farmed"

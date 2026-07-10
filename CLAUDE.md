@@ -10,7 +10,7 @@ Produces two complementary datasets:
 
 ## Setup
 
-See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`; only `ANTHROPIC_API_KEY` is read).
+See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`). `ANTHROPIC_API_KEY` is required (generation pipelines); `GEMINI_API_KEY`/`VERTEX_PROJECT` (eval-lane `gemini-*` models via `shared/providers.py`) and `OPENAI_API_KEY` (embedding diversity audit) are optional — see README "Eval API keys".
 
 `shared/__init__.py` enforces a Python floor (`MIN_PYTHON = (3, 12)`, matching numpy) at import — bump it there if the deps' floor rises. `.venv/` is gitignored.
 

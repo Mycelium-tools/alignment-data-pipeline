@@ -19,6 +19,11 @@ diversity in meaning-space:
   Spread: per-type intra-group cosine and the similarity between type
   centroids, when records carry a `type_id` (SDF).
 
+  Topic spread (CAML-style): k-means the embeddings, report Pielou evenness of
+  cluster sizes — catches topic collapse in dimensions never enumerated as
+  axes. The per-id assignments are written to the report so the holistic
+  judge's categorical×cluster bridge analyzer (§18.1) can read them.
+
 Absolute numbers depend on the embedding model and on the corpus sharing one
 broad topic BY DESIGN, so the headline use is comparing runs: rerun after a
 pipeline change and diff with --compare. Verdict thresholds are provisional
@@ -50,6 +55,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from evals.holistic.analyzers import pielou_evenness
 from shared import embeddings, utils
 
 # ---------------------------------------------------------------- verdicts
@@ -282,6 +288,67 @@ def centroid_mean_cosine(records: list[dict], X: np.ndarray) -> float | None:
     return mean_pairwise_cosine(C / np.linalg.norm(C, axis=1, keepdims=True))
 
 
+# ---------------------------------------------------------------- topic spread
+
+
+def kmeans_labels(X: np.ndarray, k: int, seed: int = 0, iters: int = 100) -> np.ndarray:
+    """Seeded k-means (k-means++ init) over unit rows → per-row cluster labels.
+    Deterministic for a given (X, k, seed). Plain numpy — small corpora (the
+    caller caps n at --max-docs) don't warrant a sklearn dependency."""
+    rng = np.random.default_rng(seed)
+    n = len(X)
+    centers = np.empty((k, X.shape[1]), dtype=np.float64)
+    centers[0] = X[int(rng.integers(n))]
+    d2 = np.full(n, np.inf)
+    n_centers = k
+    for c in range(1, k):
+        d2 = np.minimum(d2, ((X - centers[c - 1]) ** 2).sum(axis=1))
+        total = d2.sum()
+        if total <= 0:          # every point already coincides with a center
+            n_centers = c
+            break
+        centers[c] = X[int(rng.choice(n, p=d2 / total))]
+    centers = centers[:n_centers]
+
+    labels = np.full(n, -1, dtype=np.int64)
+    for _ in range(iters):
+        # nearest center via the dot-product identity (avoids an n×k×d tensor)
+        scores = X @ centers.T - 0.5 * (centers**2).sum(axis=1)
+        new = scores.argmax(axis=1)
+        if np.array_equal(new, labels):
+            break
+        labels = new
+        for j in range(len(centers)):
+            members = X[labels == j]
+            if len(members):
+                centers[j] = members.mean(axis=0)
+    return labels
+
+
+def cluster_evenness(X: np.ndarray, ids: list[str], k: int = 50,
+                     seed: int = 0) -> dict | None:
+    """CAML's topic-spread panel: k-means into (at most) ``k`` clusters, then Pielou
+    evenness of the cluster sizes. Returns None when disabled/degenerate (n or k < 2).
+    ``assignments`` (id → cluster) feed the categorical×cluster bridge analyzer;
+    they assume unique ids (a duplicate — corpus corruption — keeps the last row)."""
+    n = len(X)
+    k = min(k, n)
+    if n < 2 or k < 2:
+        return None
+    labels = kmeans_labels(X, k, seed=seed)
+    sizes = collections.Counter(int(label) for label in labels)
+    even = pielou_evenness(sizes)
+    return {
+        "k": k,
+        "clusters": len(sizes),
+        "evenness": round(even, 4),
+        "verdict": _verdict(even, 0.75, 0.5, higher_better=True),
+        "note": "GOOD = topics spread evenly across clusters; BAD = topic collapse",
+        "sizes": sorted(sizes.values(), reverse=True),
+        "assignments": {ids[i]: int(labels[i]) for i in range(n)},
+    }
+
+
 # ---------------------------------------------------------------- report
 
 
@@ -323,6 +390,8 @@ def main() -> None:
                              "English; the model window is 8192 tokens)")
     parser.add_argument("--top-pairs", type=int, default=10,
                         help="Most-similar pairs to list in the report")
+    parser.add_argument("--clusters", type=int, default=50,
+                        help="k for the topic-spread k-means (capped at n; <2 disables)")
     parser.add_argument("--no-cache", action="store_true",
                         help="Skip the embeddings cache (re-embeds everything)")
     parser.add_argument("--compare", default=None,
@@ -390,6 +459,14 @@ def main() -> None:
     print(_fmt("Vendi score", f"{vendi:.1f} effective docs of {n} (ratio {vendi / n:.3f})", None,
                "(higher = more semantically distinct documents)"))
 
+    clusters = cluster_evenness(X, ids, k=args.clusters)
+    if clusters:
+        print("\nTOPIC SPREAD (k-means over embeddings — CAML's topic-spread panel)")
+        print(_fmt("cluster evenness",
+                   f"{clusters['evenness']:.3f} over {clusters['clusters']} of "
+                   f"k={clusters['k']} clusters", clusters["verdict"],
+                   "(BAD = a few topics dominate the corpus)"))
+
     groups = group_breakdown(recs, X, type_map)
     centroid_sim = centroid_mean_cosine(recs, X)
     if groups:
@@ -420,6 +497,7 @@ def main() -> None:
         "top_pairs": pairs,
         "mean_pairwise_cosine": round(mpc, 4),
         "vendi": {"score": round(vendi, 2), "ratio": round(vendi / n, 4)},
+        "clusters": clusters,
         "groups": groups,
         "type_centroid_mean_cosine": round(centroid_sim, 4) if centroid_sim is not None else None,
     }

@@ -3,9 +3,11 @@
 Everything here is driven by a ``FieldRegistry`` (``evals.holistic.fields``): the
 system prompt is rendered from the registered fields, and model output is validated
 against them. Swap the registry and the whole extraction behaviour changes with no
-edits here. The only external dependency is ``shared.api.call_claude`` (the single
-stubbable chokepoint); the runner never raises — a bad model response becomes an
-explicit error row, never a silent default.
+edits here. The only external dependency is ``shared.providers.call_model``
+(gemini-* models route to the Gemini API; everything else — including the config
+default — to the single stubbable ``shared.api.call_claude`` chokepoint); the
+runner never raises — a bad model response becomes an explicit error row, never a
+silent default.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from shared import api, utils
+from shared import providers, utils
 
 from .fields import Field, FieldRegistry
 
@@ -146,9 +148,9 @@ def extract_record(messages: list[dict], fields: FieldRegistry, *,
     response ``errors`` is empty; on a parseable-but-off-vocabulary response ``tags``
     carries the coerced values and ``errors`` lists the offending fields."""
     sp = system_prompt if system_prompt is not None else build_system_prompt(fields)
-    raw_text = api.call_claude(
-        user_message=render_conversation(messages), system_prompt=sp,
-        model=model, temperature=temperature, max_tokens=max_tokens, cache_system=True)
+    raw_text = providers.call_model(
+        render_conversation(messages), sp, model,
+        temperature=temperature, max_tokens=max_tokens)
     parsed = parse_json(raw_text)
     if not parsed:
         return {"record_id": record_id, "tags": None,

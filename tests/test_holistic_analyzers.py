@@ -467,3 +467,86 @@ def test_distribution_skips_object_valued_fields_without_crashing():
     dist = A.run_analyzers(ctx, A.default_analyzers())["analyses"]["distribution"]
     assert dist["taxa_category"] == {"farmed": 1}          # object field did not crash it
     assert dist["welfare_magnitude"] == {}                 # unhashable values skipped
+
+
+# ---------------------------------------------------------------- cluster bridge (§18.1)
+
+def _bridge_records(aligned: bool):
+    """8 records over 2 taxa values × 2 embedding clusters: perfectly aligned
+    (taxa determines cluster) or perfectly independent (every cell equal)."""
+    records, clusters = [], {}
+    for i in range(8):
+        taxa = "farmed" if i % 2 == 0 else "wild"
+        rid = f"r{i}"
+        records.append({"record_id": rid, "taxa_category": taxa, "language": "en"})
+        clusters[rid] = (i % 2) if aligned else (i // 4)
+    return records, clusters
+
+
+def test_available_includes_clusters_when_supplied():
+    assert _ctx(clusters={"a": 0}).available == {"tags", "clusters"}
+
+
+def test_cluster_bridge_is_gated_on_the_clusters_input():
+    reg = A.default_analyzers()
+    without = A.run_analyzers(_ctx(), reg)
+    assert "cluster_bridge" in without["skipped"]
+    with_clusters = A.run_analyzers(_ctx(clusters={"a": 0, "b": 1, "c": 0}), reg)
+    assert "cluster_bridge" in with_clusters["analyses"]
+
+
+def test_cluster_bridge_axis_tracking_clusters_is_good():
+    records, clusters = _bridge_records(aligned=True)
+    ctx = A.AnalysisContext(records=records, fields=F.default_fields(), clusters=clusters)
+    out = A._cluster_bridge(ctx)
+    assert out["taxa_category"]["n"] == 8
+    assert out["taxa_category"]["cramers_v"] == 1.0
+    assert out["taxa_category"]["verdict"] == "GOOD"
+
+
+def test_cluster_bridge_axis_ignored_by_clusters_is_bad():
+    records, clusters = _bridge_records(aligned=False)
+    ctx = A.AnalysisContext(records=records, fields=F.default_fields(), clusters=clusters)
+    out = A._cluster_bridge(ctx)
+    assert out["taxa_category"]["cramers_v"] == 0.0
+    assert out["taxa_category"]["verdict"] == "BAD"
+
+
+def test_cluster_bridge_single_level_axis_is_na():
+    records, clusters = _bridge_records(aligned=True)
+    out = A._cluster_bridge(A.AnalysisContext(
+        records=records, fields=F.default_fields(), clusters=clusters))
+    assert out["language"]["cramers_v"] is None    # only "en" observed
+    assert out["language"]["verdict"] == "NA"
+
+
+def test_cluster_bridge_omits_unpopulated_axes_and_skips_unclustered_records():
+    records, clusters = _bridge_records(aligned=True)
+    del clusters["r0"]                              # r0 never embedded/clustered
+    out = A._cluster_bridge(A.AnalysisContext(
+        records=records, fields=F.default_fields(), clusters=clusters))
+    assert "posture_class" not in out               # no record carries it
+    assert out["taxa_category"]["n"] == 7
+
+
+def test_cramers_v_tolerates_mixed_type_levels():
+    import pytest
+    # a coerced-but-invalid tag row can put an int on a string axis; the level
+    # sort must not TypeError and V is order-independent anyway
+    joint = {("farmed", 0): 3, (1, 1): 3}
+    assert A.cramers_v(joint) == pytest.approx(1.0)
+
+
+def test_cluster_bridge_counts_multi_valued_axes_per_occurrence():
+    reg = F.FieldRegistry()
+    reg.add(F.Field(name="domain", kind="multi", values=("Food", "Policy")))
+    records = [
+        {"record_id": "a", "domain": ["Food"]},
+        {"record_id": "b", "domain": ["Policy"]},
+        {"record_id": "e", "domain": ["Food", "Policy"]},   # contributes twice
+    ]
+    clusters = {"a": 0, "b": 1, "e": 0}
+    out = A._cluster_bridge(A.AnalysisContext(records=records, fields=reg,
+                                              clusters=clusters))
+    assert out["domain"]["n"] == 4                          # occurrences, not records
+    assert out["domain"]["cramers_v"] is not None

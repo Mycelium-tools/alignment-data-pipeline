@@ -9,7 +9,6 @@ report_dad keep working unchanged. DAD only for v1.
 
 import hashlib
 import json
-import random
 import sys
 import types
 from pathlib import Path
@@ -19,7 +18,8 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from evals import judge, score_dad
+from evals import holistic_dad, judge, score_dad, selection
+from evals.holistic import fields as fields_mod
 from shared import api, utils
 from viewer import loader
 from viewer.ui_pages import common, judge_dad
@@ -30,51 +30,19 @@ OUT_TOKENS_EST = 4000  # thinking judges spend most of max_tokens on thoughts; r
 
 
 # ---------------------------------------------------------------- pure logic
+# (filtering + subset picking live in evals/selection.py, shared with the CLIs)
 
 def row_models(row: dict) -> set[str]:
     return {r["model"] for r in (row.get("panel") or {}).get("results", [])}
 
 
-def row_passing(row: dict) -> bool | None:
-    return ((row.get("panel") or {}).get("consensus_aggregate") or {}).get("passing")
-
-
-def filter_ids(finals: list[dict], audits: dict, saved_by_id: dict,
-               injections: list[str], prev_verdict: str) -> list[str]:
-    """record_ids (in finals order) matching the injection + previous-verdict filters."""
-    out = []
-    for rec in finals:
-        rid = rec["record_id"]
-        inj = (audits.get(rid) or {}).get("injection_used")
-        if injections and inj not in injections:
-            continue
-        row = saved_by_id.get(rid)
-        if prev_verdict == "not-yet-judged" and row is not None:
-            continue
-        if prev_verdict == "failed" and not (row is not None and row_passing(row) is False):
-            continue
-        if prev_verdict == "passed" and not (row is not None and row_passing(row) is True):
-            continue
-        out.append(rid)
-    return out
-
-
-def pick_subset(ids: list[str], mode: str, *, n: int | None = None,
-                start: int | None = None, end: int | None = None,
-                handpicked: list[str] | None = None, seed: int = 0) -> list[str]:
-    """Narrowed ids -> the subset to judge. Range is 1-based inclusive."""
-    if mode == "First N":
-        return ids[: n or 0]
-    if mode == "Range":
-        return ids[(start or 1) - 1: end or len(ids)]
-    if mode == "Random N":
-        k = min(n or 0, len(ids))
-        chosen = set(random.Random(seed).sample(ids, k))
-        return [i for i in ids if i in chosen]  # original order for readability
-    if mode == "Hand-pick":
-        picked = set(handpicked or [])
-        return [i for i in ids if i in picked]
-    return list(ids)  # All
+def selection_rows(finals: list[dict], index: dict, saved_by_id: dict) -> list[dict]:
+    """One facet row per final record (in finals order) for selection.filter_records:
+    the combined-index facets plus the computed ``prev_verdict`` status facet (which
+    deliberately wins over a like-named extraction axis — don't name an axis that)."""
+    return [{**index.get(rec["record_id"], {"record_id": rec["record_id"]}),
+             "prev_verdict": loader.verdict_status(saved_by_id.get(rec["record_id"]))}
+            for rec in finals]
 
 
 def needs_judging(row: dict | None, selected_models: list[str], rejudge: bool) -> bool:
@@ -189,15 +157,23 @@ def _run_batch_step(run: loader.RunInfo) -> None:
 
 # ---------------------------------------------------------------- UI
 
-def _handpick_table(finals: list[dict], audits: dict, saved_by_id: dict,
-                    ids: list[str]) -> list[str]:
+def _handpick_table(finals: list[dict], index: dict, saved_by_id: dict,
+                    ids: list[str], facets: list[str]) -> list[str]:
     by_id = {r["record_id"]: r for r in finals}
+
+    def cell(rid: str, facet: str) -> str:
+        val = (index.get(rid) or {}).get(facet)
+        if isinstance(val, list):
+            return ", ".join(str(v) for v in val)
+        return "" if val is None else str(val)
+
+    verdict_label = {"passed": "pass", "failed": "fail", "error": "error"}
     df = pd.DataFrame([{
         "record": common.doc_title(by_id[i]["messages"][0]["content"] if by_id[i].get("messages") else ""),
-        "injection": (audits.get(i) or {}).get("injection_used", "?"),
-        "last verdict": ("pass" if row_passing(saved_by_id.get(i, {})) is True
-                         else "fail" if row_passing(saved_by_id.get(i, {})) is False
-                         else "—"),
+        "injection": (index.get(i) or {}).get("injection_used", "?"),
+        "last verdict": verdict_label.get(
+            loader.verdict_status(saved_by_id.get(i)), "—"),
+        **{f: cell(i, f) for f in facets},
     } for i in ids])
     event = st.dataframe(df, width="stretch", hide_index=True,
                          on_select="rerun", selection_mode="multi-row",
@@ -228,7 +204,30 @@ def render() -> None:
     if not finals:
         st.info("This run has no final records.")
         return
-    audits = {a["record_id"]: a for a in loader.load_stage(run.run_dir, "dad", "step6")}
+    bundles = loader.list_bundles(run.run_dir)
+    bundle_id = None
+    if bundles:
+        infos = {b.bundle_id: b for b in bundles}
+        ids = list(infos)
+        default = loader.latest_bundle_id(run.run_dir)
+        default = default if default in infos else ids[0]
+
+        def _bundle_label(bid: str) -> str:
+            if bid == "legacy":
+                return "legacy (pre-bundle flat index)"
+            m = infos[bid].manifest
+            return (f"{bid} · {m.get('model') or 'config default'} · "
+                    f"{m.get('records_tagged', '?')} tagged")
+
+        bundle_id = st.selectbox("Tag bundle (facet source)", ids,
+                                 index=ids.index(default), key="batch_bundle",
+                                 format_func=_bundle_label)
+        st.caption("The facet filters below read this **bundle**'s tag index — one "
+                   "tagging pass keyed by its exact axes + model + prompt (build "
+                   "bundles on the *Run diversity* page). The default is *latest*, "
+                   "the most recently tagged one; *legacy* is a pre-bundle flat "
+                   "index with no recorded provenance.")
+    index = loader.combined_index(run.run_dir, bundle_id)
 
     try:
         rubric = judge.load_rubric(RUBRIC_PATH)
@@ -256,17 +255,48 @@ def render() -> None:
     # ------------------------------------------------ 1 · narrow (optional)
     st.markdown("**1 · Narrow (optional)**")
     n1, n2 = st.columns(2)
-    injections = sorted({(a or {}).get("injection_used", "") for a in audits.values()
-                         if (a or {}).get("injection_used")})
+    injections = sorted({row.get("injection_used", "") for row in index.values()
+                         if row.get("injection_used")})
     inj_filter = n1.multiselect(
         "Injection (from step 6)", injections, placeholder="All injections", key="batch_inj",
         help="The DAD sampling condition (conglomerate / deference / transparency / plain) "
              "that shaped each draft. It's stripped from the final record, but step 6 logs "
              "which one produced it — pick some to judge only those records.")
-    prev_verdict = n2.radio("Previous verdict", ["All", "not-yet-judged", "failed", "passed"],
+    prev_verdict = n2.radio("Previous verdict",
+                            ["All", "not-yet-judged", "failed", "passed", "error"],
                             horizontal=True, key="batch_prev")
 
-    matched = filter_ids(finals, audits, saved_by_id, inj_filter, prev_verdict)
+    where: dict = {}
+    if inj_filter:
+        where["injection_used"] = inj_filter
+    if prev_verdict != "All":
+        where["prev_verdict"] = {prev_verdict}
+
+    # facet axes from the extraction schema (edit evals/dad_axes.yaml to change),
+    # narrowed to values the tag index actually observed
+    try:
+        facet_names = fields_mod.load_fields(holistic_dad.DEFAULT_AXES).names()
+    except Exception as e:  # noqa: BLE001 — a bad schema disables facets, not the page
+        facet_names = []
+        st.caption(f"Facet schema unavailable ({e}).")
+    observed = {f: c for f, c in
+                loader.facet_options(list(index.values()), facet_names).items() if c}
+    if observed:
+        with st.expander(f"Facets from the tag index ({len(observed)} axes)"):
+            cols = st.columns(3)
+            for i, (facet, counts) in enumerate(observed.items()):
+                sel = cols[i % 3].multiselect(
+                    facet, list(counts), placeholder="All", key=f"batch_facet_{facet}",
+                    format_func=lambda v, c=counts: f"{v} ({c[v]})")
+                if sel:
+                    where[facet] = sel
+    elif facet_names:
+        st.caption("No tag index yet — build it with `python evals/holistic_dad.py "
+                   "--input <run> --extract-only` (or the Run diversity page) to "
+                   "filter by facet here.")
+
+    rows = selection_rows(finals, index, saved_by_id)
+    matched = [r["record_id"] for r in selection.filter_records(rows, where)]
     st.caption(f"Matches **{len(matched)}** of {len(finals)} records.")
     if not matched:
         return
@@ -291,9 +321,10 @@ def render() -> None:
                                        key="batch_randn")
         kwargs["seed"] = rc2.number_input("Seed", 0, 10_000, 0, key="batch_seed")
     elif mode == "Hand-pick":
-        kwargs["handpicked"] = _handpick_table(finals, audits, saved_by_id, matched)
+        kwargs["handpicked"] = _handpick_table(finals, index, saved_by_id, matched,
+                                               list(observed))
 
-    picked = pick_subset(matched, mode, **kwargs)
+    picked = selection.pick_subset(matched, mode, **kwargs)
 
     # ------------------------------------------------ scope summary + cost
     to_judge = [i for i in picked

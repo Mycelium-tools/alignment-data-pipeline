@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from shared import api
+from shared import providers
 
 from . import extract
 
@@ -42,8 +42,8 @@ def synthesize(stats: dict, *, template: str, model: str | None = None,
     that does not parse yields empty prose/issues with an explicit error."""
     _require_template_tokens(template)
     prompt = template.replace(STATS_TOKEN, json.dumps(stats, indent=2, ensure_ascii=False))
-    raw = api.call_claude(user_message=prompt, model=model,
-                          max_tokens=max_tokens, temperature=temperature)
+    raw = providers.call_model(prompt, "", model,
+                               max_tokens=max_tokens, temperature=temperature)
     parsed = extract.parse_json(raw)
     if not parsed:
         return {

@@ -146,12 +146,14 @@ fields:
 # ---------------------------------------------------------------------------
 # Analysis config (MOCKUP — replace when the real analysis suite is designed).
 # `analyzers`: which registered analyzers to run (omit = run all). `drift` needs
-#              generation annotations (spec-driven runs) and is skipped otherwise.
+#              generation annotations (spec-driven runs); `cluster_bridge` needs the
+#              semantic lane's cluster assignments (run evals/diversity.py first);
+#              each is skipped when its input is absent.
 # `params`:    passed through to analyzers via ctx.config. `important_pairs` drives
 #              both the Cramér's V correlation check and t-wise combination_coverage.
 analysis:
   analyzers: [distribution, evenness, coverage_vs_target, correlation,
-              combination_coverage, drift]
+              combination_coverage, drift, cluster_bridge]
   params:
     important_pairs:
       - [user_attitude, direction]

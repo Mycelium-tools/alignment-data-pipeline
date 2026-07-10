@@ -11,8 +11,9 @@ resolve → tag → analyze → report and does the I/O.
     python evals/holistic_dad.py --input outputs/dad/latest --analyze-only
     python evals/holistic_dad.py --input path/to/dad_corpus.jsonl    # bare corpus
 
-The report is written to <run>/audit/holistic_dad_report.json (next to
-evals/diversity.py's semantic report), plus a short console summary.
+The report is written to the run's provenance bundle
+(`<run>/holistic/<ts>_<fp8>/report.json`; legacy flat runs keep
+`audit/holistic_dad_report.json`), plus a short console summary.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from dataclasses import replace
 
 from evals import selection
 from evals.holistic import analyzers as analyzers_mod
+from evals.holistic import bundle
 from evals.holistic import fields as fields_mod
 from evals.holistic import pipeline
 from shared import api
@@ -54,8 +56,12 @@ def _load_fields(path: str | Path):
 
 
 def report_path_for(inputs: pipeline.Inputs) -> Path:
-    """Where to write the report: the run's audit/ dir, or beside a bare corpus file
-    (next to its tag index)."""
+    """Where to write the report: inside the tag index's provenance bundle, or —
+    for the legacy flat index — the pre-bundle locations (the run's audit/ dir,
+    or beside a bare corpus's flat index)."""
+    bdir = bundle.bundle_dir_of(inputs.index_path)
+    if bdir is not None:
+        return bdir / bundle.REPORT_NAME
     if inputs.run_dir is not None:
         return inputs.run_dir / "audit" / REPORT_NAME
     return inputs.index_path.with_name(
@@ -66,6 +72,19 @@ def write_report(path: Path, report: dict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, ensure_ascii=False))
     return path
+
+
+def record_bundle_analysis(inputs: pipeline.Inputs, analysis_cfg: dict,
+                           analyzers, model: str | None,
+                           synthesis_template: str | None) -> None:
+    """Stamp the bundle manifest with what produced the report just written
+    (no-op for the legacy flat index). Shared by the CLI and the viewer."""
+    bundle.record_analysis(inputs.index_path, {
+        "config": analysis_cfg.get("params") or {},
+        "analyzers": analyzers.names(),
+        "synth_model": model,
+        "synth_prompt_sha": bundle.prompt_sha(synthesis_template),
+    })
 
 
 def summary_lines(report: dict) -> list[str]:
@@ -103,6 +122,13 @@ def summary_lines(report: dict) -> list[str]:
             lines.append(f"  {pair:30s} {m['filled']}/{m['cells']} cells "
                          f"({m['coverage']:.2f}) [BAD]  missing: "
                          + ", ".join(m["missing"][:6]))
+    bridge = analyses.get("cluster_bridge", {})
+    bad_bridge = [(axis, m) for axis, m in bridge.items() if m.get("verdict") == "BAD"]
+    if bad_bridge:
+        lines.append("categorical × cluster bridge (BAD = the axis varies on paper "
+                     "but the text sounds the same across its values):")
+        for axis, m in bad_bridge:
+            lines.append(f"  {axis:22s} Cramér's V {m['cramers_v']:.2f} [BAD]")
     drift = analyses.get("drift", {})
     bad_drift = [(axis, m) for axis, m in drift.items() if m.get("verdict") == "BAD"]
     if bad_drift:
@@ -132,7 +158,9 @@ def main(argv: list[str] | None = None) -> dict:
     ap = argparse.ArgumentParser(description="Holistic categorical diversity report for a DAD run.")
     ap.add_argument("--input", required=True, help="a DAD run dir or a bare corpus .jsonl")
     ap.add_argument("--config", default="config.yaml")
-    ap.add_argument("--model", default=None, help="extraction-judge model override")
+    ap.add_argument("--model", default=None,
+                    help="extraction + synthesis model override; gemini-* models "
+                         "route to GEMINI_API_KEY/Vertex, anything else to Anthropic")
     ap.add_argument("--axes", default=str(DEFAULT_AXES),
                     help="YAML schema of extraction fields (edit to change the JSON)")
     ap.add_argument("--extract-prompt", default=str(DEFAULT_EXTRACT_PROMPT),
@@ -143,6 +171,9 @@ def main(argv: list[str] | None = None) -> dict:
                     help="judge verdict subdirectory under final/judge to join, if present")
     ap.add_argument("--analyze-only", action="store_true",
                     help="analyze an existing tag index; do not call the API")
+    ap.add_argument("--bundle", default=None,
+                    help="bundle id to analyze with --analyze-only (default: the "
+                         "latest bundle). Tag picks its bundle by fingerprint.")
     ap.add_argument("--extract-only", action="store_true",
                     help="tag only (build/refresh the index that powers selection); "
                          "skip analysis and synthesis")
@@ -165,6 +196,9 @@ def main(argv: list[str] | None = None) -> dict:
 
     if args.extract_only and args.analyze_only:
         raise SystemExit("--extract-only and --analyze-only are mutually exclusive")
+    if args.bundle and not args.analyze_only:
+        raise SystemExit("--bundle picks a bundle to analyze; it requires "
+                         "--analyze-only (Tag chooses its bundle by fingerprint)")
     try:
         where = selection.parse_where(args.where)
     except ValueError as err:
@@ -179,13 +213,21 @@ def main(argv: list[str] | None = None) -> dict:
 
     api.init(args.config)
     fields = _load_fields(args.axes)          # raises SystemExit if the path is missing
+    axes_text = Path(args.axes).read_text()   # exists — _load_fields checked
     analysis_cfg = fields_mod.load_analysis_config(args.axes)
     analyzers = analyzers_mod.select(analyzers_mod.default_analyzers(),
                                      analysis_cfg.get("analyzers"))
     extract_template = _read_if_exists(args.extract_prompt)
     synthesis_template = None if args.no_synthesize else _read_if_exists(args.synthesis_prompt)
 
-    inputs = pipeline.resolve_inputs(args.input, judge_version=args.judge_version)
+    inputs = pipeline.resolve_inputs(args.input, judge_version=args.judge_version,
+                                     bundle_id=args.bundle)
+    if args.analyze_only:
+        bdir = bundle.bundle_dir_of(inputs.index_path)
+        if bdir is not None and bundle.snapshot_fields_differ(bdir, fields):
+            print(f"WARNING: analyzing bundle {bdir.name} with axes that differ from "
+                  "its axes_snapshot.yaml — the report will mix schemas; pass the "
+                  "snapshot as --axes to analyze it as tagged")
     if selecting:
         index = {r["record_id"]: r
                  for r in pipeline.load_category_records(inputs) if "record_id" in r}
@@ -203,7 +245,7 @@ def main(argv: list[str] | None = None) -> dict:
     if args.extract_only:
         written = pipeline.tag(inputs, fields,
                                model=args.model, resume=not args.no_resume,
-                               extract_template=extract_template)
+                               extract_template=extract_template, axes_text=axes_text)
         print(f"tagged {len(written)} record(s) → {inputs.index_path}")
         return {"tagged": len(written), "index_path": str(inputs.index_path)}
 
@@ -212,9 +254,10 @@ def main(argv: list[str] | None = None) -> dict:
                           extract_template=extract_template,
                           synthesis_template=synthesis_template,
                           judge_version=args.judge_version,
-                          config=analysis_cfg.get("params"))
+                          config=analysis_cfg.get("params"), axes_text=axes_text)
 
     path = write_report(report_path_for(inputs), report)
+    record_bundle_analysis(inputs, analysis_cfg, analyzers, args.model, synthesis_template)
     print(f"wrote {path}")
     print_summary(report)
     return report

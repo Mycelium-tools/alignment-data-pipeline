@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
 from evals import judge, selection
+from evals.holistic import bundle
 
 
 def select_records(records: list[dict], corpus_path: str | Path, *,
@@ -38,17 +39,22 @@ def select_records(records: list[dict], corpus_path: str | Path, *,
                    sample: int | None = None, seed: int = 0,
                    limit: int | None = None) -> list[dict]:
     """CLI selection for the judge: which corpus records to score. Facet filters
-    (``--where``) match against the holistic tag index built by holistic_dad —
-    ``<run>/audit/category_records.jsonl`` for a run-dir corpus, or the sibling
-    ``<stem>.category_records.jsonl`` for a bare corpus file (both layouts of
-    ``pipeline.resolve_inputs``); records without a tag row cannot match and drop
-    out. Fails loudly when ``--where`` is given but no usable index exists —
-    silently judging zero records would be worse."""
+    (``--where``) match against the holistic tag index built by holistic_dad — the latest
+    provenance bundle under ``<run>/holistic/`` (falling back to the legacy flat ``audit/category_records.jsonl``)
+    for a run-dir corpus, or the sibling ``<stem>.holistic/`` bundle (falling back to ``<stem>.category_records.jsonl``)
+    for a bare corpus file; records without a tag row cannot match and drop out. Fails loudly when ``--where`` is given
+    but no usable index exists — silently judging zero records would be worse."""
     index = None
     if where:
         p = Path(corpus_path).resolve()
-        candidates = [p.parent.parent / "audit" / "category_records.jsonl",
-                      p.with_name(p.stem + ".category_records.jsonl")]
+        candidates = [
+            bundle.reading_index_path(
+                p.parent.parent / "holistic",
+                p.parent.parent / "audit" / "category_records.jsonl"),
+            bundle.reading_index_path(
+                p.with_name(p.stem + ".holistic"),
+                p.with_name(p.stem + ".category_records.jsonl")),
+        ]
         for index_path in candidates:
             index = {r["record_id"]: r for r in utils.load_jsonl(index_path)
                      if "record_id" in r}

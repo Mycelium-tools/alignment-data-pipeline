@@ -8,17 +8,19 @@ legacy fallback for annotations:
     <run>/step3/rewrites.jsonl                annotations (spec-driven; .annotation)
     <run>/step6/rewrites.jsonl                annotations (legacy fallback)
     <run>/final/judge/<ver>/verdicts.jsonl    quality-judge verdicts (if run)
-    <run>/audit/category_records.jsonl        the extraction tag index (this tool)
+    <run>/holistic/<ts>_<fp8>/                the extraction tag bundles (this tool)
+    <run>/audit/category_records.jsonl        legacy pre-bundle tag index (read-only)
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from shared import utils
+from shared import api, utils
 
-from . import extract, synthesize
+from . import bundle, extract, synthesize
 from .analyzers import AnalysisContext, AnalyzerRegistry, default_analyzers, run_analyzers
 from .fields import FieldRegistry, default_fields
 
@@ -28,22 +30,48 @@ _ANNOTATION_STAGES = ("step3", "step6")
 
 @dataclass
 class Inputs:
-    """Resolved per-run inputs for the three-input model. ``annotations`` /
-    ``verdicts`` are ``record_id -> data`` maps, or None when that source is absent.
-    ``index_path`` is where the extraction tag index lives for this input (the run's
-    audit/ dir, or a sibling file for a bare corpus)."""
+    """Resolved per-run inputs. ``annotations`` / ``verdicts`` are
+    ``record_id -> data`` maps, or None when that source is absent. ``index_path``
+    points at the selected provenance bundle's tag index (the legacy flat path for
+    pre-bundle runs); ``tag()`` re-points it at the bundle it writes into.
+    ``clusters`` is the semantic lane's
+    ``record_id -> k-means cluster`` map from audit/diversity_report.json (§18.1),
+    or None when that report hasn't been run."""
 
     corpus: list[dict]
     run_dir: Path | None
     annotations: dict | None
     verdicts: dict | None
     index_path: Path
+    clusters: dict | None = None
+    #: root of the provenance-bundle store for this input (<run>/holistic, or
+    #: <corpus-stem>.holistic beside a bare corpus). None only on hand-built
+    #: Inputs, which keep the pre-bundle direct-write behavior.
+    holistic_root: Path | None = None
 
 
 # ---------------------------------------------------------------- run layout
 
 def category_records_path(run_dir: str | Path) -> Path:
+    """The pre-bundle flat tag index (read-only legacy location; new tags write
+    into provenance bundles under <run>/holistic/)."""
     return Path(run_dir) / "audit" / "category_records.jsonl"
+
+
+def _bundle_index_path(holistic_root: Path, legacy_index: Path,
+                       bundle_id: str | None) -> Path:
+    """Which tag index a read should see: an explicit bundle, else the latest
+    (legacy flat fallback). ``"legacy"`` forces the pre-bundle flat path."""
+    if bundle_id == bundle.LEGACY_ID:
+        return legacy_index
+    if bundle_id is not None:
+        if Path(bundle_id).name != bundle_id:
+            raise SystemExit(f"invalid bundle id: {bundle_id!r}")
+        bdir = holistic_root / bundle_id
+        if not (bdir / bundle.MANIFEST_NAME).exists():
+            raise SystemExit(f"bundle {bundle_id!r} not found under {holistic_root}")
+        return bdir / bundle.INDEX_NAME
+    return bundle.reading_index_path(holistic_root, legacy_index)
 
 
 def _load_annotations(run_dir: Path) -> dict | None:
@@ -80,13 +108,43 @@ def _load_verdicts(run_dir: Path, judge_version: str | None = None) -> dict | No
     return verdicts or None
 
 
+def _load_clusters(base_dir: Path) -> dict | None:
+    """Cluster assignments from the semantic lane's audit/diversity_report.json
+    (written by evals/diversity.py), or None when it hasn't been run. Clusters are
+    optional gated input, so a corrupt/truncated report degrades to None (with a
+    warning) rather than blocking the non-cluster analyzers."""
+    path = base_dir / "audit" / "diversity_report.json"
+    if not path.exists():
+        return None
+    try:
+        with open(path) as f:
+            report = json.load(f)
+    except json.JSONDecodeError as err:
+        print(f"WARNING: ignoring malformed {path} ({err}) — "
+              "rerun evals/diversity.py to rebuild it")
+        return None
+    clusters = report.get("clusters") if isinstance(report, dict) else None
+    assignments = clusters.get("assignments") if isinstance(clusters, dict) else None
+    if isinstance(assignments, dict):
+        return assignments or None
+    # a dict report without a clusters section is a normal pre-§18.1 report — only
+    # an unusable shape (non-dict report, or a malformed clusters section) warns
+    if not isinstance(report, dict) or clusters is not None:
+        print(f"WARNING: ignoring malformed {path} — "
+              "rerun evals/diversity.py to rebuild it")
+    return None
+
+
 def resolve_inputs(input_path: str | Path | Inputs, *,
-                   judge_version: str | None = None) -> Inputs:
-    """Resolve a run directory (joins annotations + verdicts, tag index in audit/) or
-    a bare corpus ``.jsonl`` file (corpus only, tag index in a sibling file). An
+                   judge_version: str | None = None,
+                   bundle_id: str | None = None) -> Inputs:
+    """Resolve a run directory (joins annotations + verdicts, tag index from the
+    selected bundle (legacy audit/ fallback)) or a bare corpus ``.jsonl`` file
+    (corpus only, bundles in a sibling `<stem>.holistic/` dir). An
     already-resolved ``Inputs`` passes through unchanged, so a caller that resolved
     once (e.g. for selection) can hand the same snapshot to ``run`` — re-resolving
-    could race a moving ``latest`` symlink."""
+    could race a moving ``latest`` symlink. ``bundle_id`` picks which provenance
+    bundle reads see (None = latest, legacy flat fallback)."""
     if isinstance(input_path, Inputs):
         return input_path
     p = Path(input_path)
@@ -96,11 +154,16 @@ def resolve_inputs(input_path: str | Path | Inputs, *,
         corpus_path = p / "final" / "dad_corpus.jsonl"
         if not corpus_path.exists():
             raise SystemExit(f"no final/dad_corpus.jsonl under run dir {p}")
+        holistic_root = p / "holistic"
+        index = _bundle_index_path(holistic_root, category_records_path(p), bundle_id)
         return Inputs(utils.load_jsonl(corpus_path), p,
                       _load_annotations(p), _load_verdicts(p, judge_version),
-                      category_records_path(p))
-    index = p.with_name(p.stem + ".category_records.jsonl")
-    return Inputs(utils.load_jsonl(p), None, None, None, index)
+                      index, _load_clusters(p), holistic_root)
+    holistic_root = p.with_name(p.stem + ".holistic")
+    legacy = p.with_name(p.stem + ".category_records.jsonl")
+    index = _bundle_index_path(holistic_root, legacy, bundle_id)
+    return Inputs(utils.load_jsonl(p), None, None, None, index,
+                  _load_clusters(p.parent), holistic_root)
 
 
 def load_category_records(inputs: Inputs) -> list[dict]:
@@ -112,23 +175,44 @@ def load_category_records(inputs: Inputs) -> list[dict]:
 
 def tag(inputs: Inputs, fields: FieldRegistry | None = None, *,
         model: str | None = None, resume: bool = True,
-        extract_template: str | None = None) -> list[dict]:
-    """Run the extraction judge over the corpus, writing the tag index to
-    ``inputs.index_path`` (the run's audit/ dir, or a sibling of a bare corpus file)."""
+        extract_template: str | None = None,
+        axes_text: str | None = None) -> list[dict]:
+    """Run the extraction judge over the corpus. The write is routed through the
+    provenance bundle matching this (fields, model, prompt) fingerprint — resumed
+    if it exists, created otherwise — and ``inputs.index_path`` is updated to
+    point inside it so callers (and the analyze step) read the same bundle.
+    ``axes_text`` is the verbatim axes file to snapshot into a new bundle. A
+    hand-built Inputs without ``holistic_root`` keeps the legacy direct write."""
     fields = fields or default_fields()
-    return extract.extract_corpus(
+    # Fingerprint (and record) the model that will actually run — the config
+    # default when no override is given — so the bundle key can't read "" while
+    # the effective model comes from config.yaml (changing that default would
+    # otherwise silently resume the previous model's tags).
+    model = api.resolve_model(model)
+    paths = None
+    if inputs.holistic_root is not None:
+        paths = bundle.resolve_bundle(
+            inputs.holistic_root, fields, model=model,
+            extract_template=extract_template, axes_text=axes_text, create=True)
+        inputs.index_path = paths.index_path
+    rows = extract.extract_corpus(
         inputs.corpus, fields, inputs.index_path, model=model, resume=resume,
         template=extract_template)
+    if paths is not None:
+        bundle.update_records_tagged(paths.bundle_dir)
+    return rows
 
 
 def analyze(records: list[dict], *, fields: FieldRegistry | None = None,
             analyzers: AnalyzerRegistry | None = None, annotations: dict | None = None,
-            verdicts: dict | None = None, config: dict | None = None) -> dict:
+            verdicts: dict | None = None, clusters: dict | None = None,
+            config: dict | None = None) -> dict:
     """Run the registered analyzers over the tag rows (input-gated). Returns
     ``{"analyses": {...}, "skipped": {...}}``."""
     ctx = AnalysisContext(
         records=records, fields=fields or default_fields(),
-        annotations=annotations, verdicts=verdicts, config=config or {})
+        annotations=annotations, verdicts=verdicts, clusters=clusters,
+        config=config or {})
     return run_analyzers(ctx, analyzers or default_analyzers())
 
 
@@ -136,7 +220,7 @@ def run(input_path: str | Path | Inputs, *, fields: FieldRegistry | None = None,
         analyzers: AnalyzerRegistry | None = None, model: str | None = None,
         resume: bool = True, do_tag: bool = True, extract_template: str | None = None,
         synthesis_template: str | None = None, judge_version: str | None = None,
-        config: dict | None = None) -> dict:
+        config: dict | None = None, axes_text: str | None = None) -> dict:
     """Full pass over a run dir: resolve inputs → (optionally) tag → analyze →
     (optionally) synthesize → report. ``do_tag=False`` analyzes an existing index
     without touching the API; a pre-resolved ``Inputs`` (possibly with a narrowed
@@ -147,19 +231,23 @@ def run(input_path: str | Path | Inputs, *, fields: FieldRegistry | None = None,
     fields = fields or default_fields()
     inputs = resolve_inputs(input_path, judge_version=judge_version)
     if do_tag:
-        tag(inputs, fields, model=model, resume=resume, extract_template=extract_template)
+        tag(inputs, fields, model=model, resume=resume, extract_template=extract_template,
+            axes_text=axes_text)
     records = load_category_records(inputs)
     if not do_tag and not records and inputs.corpus:
         raise SystemExit(
             f"No tag index at {inputs.index_path} but the corpus has "
             f"{len(inputs.corpus)} records — run without --analyze-only first to tag it.")
     stats = analyze(records, fields=fields, analyzers=analyzers, config=config,
-                    annotations=inputs.annotations, verdicts=inputs.verdicts)
+                    annotations=inputs.annotations, verdicts=inputs.verdicts,
+                    clusters=inputs.clusters)
     present = ["tags"]
     if inputs.annotations:
         present.append("annotations")
     if inputs.verdicts:
         present.append("verdicts")
+    if inputs.clusters:
+        present.append("clusters")
     report = {
         "run_id": inputs.run_dir.name if inputs.run_dir else None,
         "records": len(records),

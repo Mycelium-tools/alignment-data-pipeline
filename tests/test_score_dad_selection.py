@@ -93,3 +93,18 @@ def test_drop_retryable_errors_keeps_errored_rows_outside_the_selection():
     ]
     kept = score_dad.drop_retryable_errors(rows, selected_ids={"a"})
     assert [r["record_id"] for r in kept] == ["b", "c"]
+
+
+def test_select_records_where_reads_the_latest_bundle_index(tmp_path):
+    # New runs tag into provenance bundles (<run>/holistic/<ts>_<fp8>/), not the
+    # flat audit/ path — --where must find the latest bundle's index.
+    corpus_path = _corpus(tmp_path, ["a", "b"])
+    bdir = corpus_path.parent.parent / "holistic" / "2026-01-01_00-00_aaaaaaaa"
+    bdir.mkdir(parents=True)
+    (bdir / "manifest.json").write_text('{"tag_fingerprint": "aa"}')
+    utils.append_jsonl({"record_id": "a", "taxa_category": "farmed"},
+                       bdir / "category_records.jsonl")
+
+    out = score_dad.select_records(utils.load_jsonl(corpus_path), corpus_path,
+                                   where={"taxa_category": {"farmed"}})
+    assert [r["record_id"] for r in out] == ["a"]

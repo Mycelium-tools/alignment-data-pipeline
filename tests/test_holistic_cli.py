@@ -1,5 +1,6 @@
 """The CLI is a thin wrapper over the tested pipeline: it tags a run and writes the
-report into the run's audit/ dir. (API init is a no-op here; the tag call is stubbed.)"""
+report into the run's provenance bundle under holistic/ (legacy runs keep the flat
+audit/ report). (API init is a no-op here; the tag call is stubbed.)"""
 
 import json
 import pytest
@@ -21,7 +22,13 @@ def _make_run(tmp_path):
     return run
 
 
-def test_cli_tags_a_run_and_writes_the_report(tmp_path, stub_claude, monkeypatch):
+def _bundle_dirs(run):
+    root = run / "holistic"
+    return [d for d in root.iterdir() if d.is_dir() and not d.is_symlink()]
+
+
+def test_cli_tags_a_run_and_writes_report_manifest_and_snapshot_into_a_bundle(
+        tmp_path, stub_claude, monkeypatch):
     run = _make_run(tmp_path)
     monkeypatch.setattr("shared.api.init", lambda *a, **k: None)
     stub_claude([GOOD_JSON])
@@ -29,9 +36,91 @@ def test_cli_tags_a_run_and_writes_the_report(tmp_path, stub_claude, monkeypatch
     report = holistic_dad.main(["--input", str(run), "--no-synthesize"])
 
     assert report["records"] == 1
-    on_disk = json.loads((pipeline.category_records_path(run).parent
-                          / "holistic_dad_report.json").read_text())
+    [bdir] = _bundle_dirs(run)
+    on_disk = json.loads((bdir / "report.json").read_text())
     assert on_disk["stats"]["analyses"]["distribution"]["taxa_category"] == {"farmed": 1}
+    manifest = json.loads((bdir / "manifest.json").read_text())
+    assert manifest["records_tagged"] == 1
+    assert manifest["extract_prompt_sha"]                    # default template hashed
+    assert manifest["analysis"]["analyzers"]                 # analysis stamped
+    assert manifest["analysis"]["synth_prompt_sha"] is None  # --no-synthesize
+    # snapshot is a byte-equal copy of the axes file used
+    assert (bdir / "axes_snapshot.yaml").read_text() == \
+        holistic_dad.DEFAULT_AXES.read_text()
+
+
+def test_cli_analyze_only_targets_the_selected_bundle_and_keeps_latest(
+        tmp_path, stub_claude, monkeypatch):
+    run = _make_run(tmp_path)
+    monkeypatch.setattr("shared.api.init", lambda *a, **k: None)
+    axes_a = tmp_path / "a.yaml"
+    axes_a.write_text("fields:\n  - name: direction\n"
+                      "    values: [Under-weighting, Over-weighting, Mixed]\n")
+    axes_b = tmp_path / "b.yaml"
+    axes_b.write_text("fields:\n  - name: direction\n"
+                      "    values: [Under-weighting, Over-weighting, Balanced]\n")
+    stub_claude(['{"direction": "Mixed"}', '{"direction": "Balanced"}'])
+    holistic_dad.main(["--input", str(run), "--axes", str(axes_a), "--no-synthesize"])
+    holistic_dad.main(["--input", str(run), "--axes", str(axes_b), "--no-synthesize"])
+
+    dirs = {d.name: d for d in _bundle_dirs(run)}
+    assert len(dirs) == 2
+    latest = (run / "holistic" / "latest").resolve()
+    old = next(d for d in dirs.values() if d.resolve() != latest)
+    (old / "report.json").unlink()
+
+    holistic_dad.main(["--input", str(run), "--analyze-only", "--no-synthesize",
+                       "--axes", str(axes_a), "--bundle", old.name])
+    assert (old / "report.json").exists()                    # written in place
+    assert (run / "holistic" / "latest").resolve() == latest # latest not moved
+    manifest = json.loads((old / "manifest.json").read_text())
+    assert manifest["analysis"]["analyzed_at"]
+
+
+def test_cli_analyze_only_warns_when_axes_differ_from_the_bundles_snapshot(
+        tmp_path, stub_claude, monkeypatch, capsys):
+    run = _make_run(tmp_path)
+    monkeypatch.setattr("shared.api.init", lambda *a, **k: None)
+    axes_a = tmp_path / "a.yaml"
+    axes_a.write_text("fields:\n  - name: direction\n"
+                      "    values: [Under-weighting, Over-weighting, Mixed]\n")
+    axes_b = tmp_path / "b.yaml"
+    axes_b.write_text("fields:\n  - name: direction\n"
+                      "    values: [Under-weighting, Over-weighting, Balanced]\n")
+    stub_claude(['{"direction": "Mixed"}'])
+    holistic_dad.main(["--input", str(run), "--axes", str(axes_a), "--no-synthesize"])
+    [bdir] = _bundle_dirs(run)
+
+    capsys.readouterr()
+    holistic_dad.main(["--input", str(run), "--analyze-only", "--no-synthesize",
+                       "--bundle", bdir.name, "--axes", str(axes_b)])
+    assert "WARNING" in capsys.readouterr().out
+
+    holistic_dad.main(["--input", str(run), "--analyze-only", "--no-synthesize",
+                       "--bundle", bdir.name, "--axes", str(axes_a)])
+    assert "WARNING" not in capsys.readouterr().out
+
+
+def test_cli_bundle_flag_requires_analyze_only(tmp_path, monkeypatch):
+    run = _make_run(tmp_path)
+    monkeypatch.setattr("shared.api.init", lambda *a, **k: None)
+    with pytest.raises(SystemExit, match="analyze-only"):
+        holistic_dad.main(["--input", str(run), "--bundle", "x"])
+
+
+def test_cli_analyze_only_on_a_legacy_flat_run_writes_the_flat_report(
+        tmp_path, monkeypatch):
+    run = _make_run(tmp_path)
+    flat = run / "audit" / "category_records.jsonl"
+    flat.parent.mkdir()
+    utils.append_jsonl({"record_id": "a", "language": "en",
+                        "taxa_category": "farmed", "posture_class": "NO_RAISE"},
+                       flat)
+    monkeypatch.setattr("shared.api.init", lambda *a, **k: None)
+    report = holistic_dad.main(["--input", str(run), "--analyze-only",
+                                "--no-synthesize"])
+    assert report["records"] == 1
+    assert (run / "audit" / "holistic_dad_report.json").exists()
 
 
 def test_cli_axes_file_drives_the_output_schema(tmp_path, stub_claude, monkeypatch):
@@ -187,7 +276,7 @@ def test_cli_extract_only_tags_without_analyzing_or_reporting(tmp_path, stub_cla
     result = holistic_dad.main(["--input", str(run), "--extract-only"])
 
     assert len(calls) == 1                       # tagging only — no synthesis call
-    index = utils.load_jsonl(pipeline.category_records_path(run))
+    index = utils.load_jsonl(pipeline.resolve_inputs(run).index_path)
     assert [r["record_id"] for r in index] == ["a"]
     assert not (run / "audit" / "holistic_dad_report.json").exists()
     assert result["tagged"] == 1
@@ -220,7 +309,7 @@ def test_cli_limit_tags_only_the_first_n_records(tmp_path, stub_claude, monkeypa
     holistic_dad.main(["--input", str(run), "--limit", "2", "--extract-only"])
 
     assert len(calls) == 2
-    index = utils.load_jsonl(pipeline.category_records_path(run))
+    index = utils.load_jsonl(pipeline.resolve_inputs(run).index_path)
     assert [r["record_id"] for r in index] == ["a", "b"]
 
 
@@ -232,7 +321,7 @@ def test_cli_ids_tags_exactly_the_named_records(tmp_path, stub_claude, monkeypat
     holistic_dad.main(["--input", str(run), "--ids", "a,c", "--extract-only"])
 
     assert len(calls) == 2
-    index = utils.load_jsonl(pipeline.category_records_path(run))
+    index = utils.load_jsonl(pipeline.resolve_inputs(run).index_path)
     assert [r["record_id"] for r in index] == ["a", "c"]
 
 
@@ -320,10 +409,22 @@ def test_cli_selection_subsets_tagging_but_analysis_reads_the_whole_index(
         tmp_path, stub_claude, monkeypatch):
     # A full (non --extract-only) run with --limit: only the subset is tagged this
     # invocation, but the report analyzes every row in the index, old and new.
+    from evals.holistic import bundle as bundle_mod
+    from shared import api
+
     run = _make_run_with(tmp_path, ["a", "b"])
-    utils.append_jsonl({"record_id": "z-prior", "taxa_category": "wild"},
-                       pipeline.category_records_path(run))
     monkeypatch.setattr("shared.api.init", lambda *a, **k: None)
+    # Bootstrap the bundle the CLI call below will resume (same fields/model/prompt
+    # fingerprint), seeded with a 'z-prior' record from an earlier tagging pass.
+    # The CLI resolves the model to the config default before fingerprinting, so the
+    # bootstrap must key off that same resolved model (else it lands in a sibling bundle).
+    fields = holistic_dad._load_fields(holistic_dad.DEFAULT_AXES)
+    extract_template = holistic_dad._read_if_exists(holistic_dad.DEFAULT_EXTRACT_PROMPT)
+    inputs = pipeline.resolve_inputs(run)
+    paths = bundle_mod.resolve_bundle(inputs.holistic_root, fields,
+                                      model=api.resolve_model(None),
+                                      extract_template=extract_template, create=True)
+    utils.append_jsonl({"record_id": "z-prior", "taxa_category": "wild"}, paths.index_path)
     calls = stub_claude([GOOD_JSON])
 
     report = holistic_dad.main(["--input", str(run), "--limit", "1", "--no-synthesize"])
@@ -350,3 +451,18 @@ def test_cli_judge_version_selects_between_multiple_verdict_dirs(tmp_path, monke
     ])
 
     assert report["inputs_present"] == ["tags", "verdicts"]
+
+
+def test_summary_lines_render_bad_bridge_axes():
+    report = {
+        "run_id": "r", "records": 10, "inputs_present": ["tags", "clusters"],
+        "stats": {"analyses": {
+            "cluster_bridge": {
+                "taxa_category": {"n": 10, "cramers_v": 0.05,
+                                  "verdict": "BAD", "note": "..."},
+                "direction": {"n": 10, "cramers_v": 0.8,
+                              "verdict": "GOOD", "note": "..."}}},
+                  "skipped": {}}}
+    text = "\n".join(holistic_dad.summary_lines(report))
+    assert "taxa_category" in text and "[BAD]" in text and "0.05" in text
+    assert "direction" not in text              # semantically-realized axes aren't listed

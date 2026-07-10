@@ -175,3 +175,12 @@ def test_run_includes_synthesis_when_a_template_is_supplied(tmp_path, stub_claud
                  '{"prose": "Looks fine.", "top_issues": []}'])
     report = pipeline.run(run, synthesis_template="S:\n{{STATS}}")
     assert report["synthesis"]["prose"] == "Looks fine."
+
+
+def test_synthesize_routes_gemini_models_to_the_provider_dispatch(monkeypatch):
+    monkeypatch.setattr(
+        "shared.providers._call_gemini",
+        lambda um, sp, model, t, mt: '{"prose": "fine", "top_issues": []}')
+    out = synthesize.synthesize({"analyses": {}}, template="Stats:\n{{STATS}}",
+                                model="gemini-2.5-flash")
+    assert out["errors"] == [] and out["prose"] == "fine"

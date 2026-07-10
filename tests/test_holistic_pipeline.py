@@ -1,7 +1,9 @@
 """The orchestrator resolves a run directory (or a bare corpus file) into the three
 inputs — corpus, annotations, verdicts — reads/writes the tag index in the run's
-audit/ dir, and runs the registered analyzers. It reads run layout via plain file I/O
-(no viewer/streamlit dependency)."""
+provenance bundles under holistic/ (legacy audit/ fallback), and runs the registered
+analyzers. It reads run layout via plain file I/O (no viewer/streamlit dependency)."""
+
+import json
 
 from evals.holistic import pipeline
 from evals.holistic import fields as F
@@ -38,7 +40,8 @@ def test_resolve_bare_corpus_file_has_no_annotations_or_verdicts(tmp_path):
     assert inp.annotations is None and inp.verdicts is None and inp.run_dir is None
 
 
-def test_run_on_a_bare_corpus_file_tags_into_a_sibling_index(tmp_path, stub_claude):
+def test_run_on_a_bare_corpus_file_tags_into_a_sibling_holistic_bundle(tmp_path, stub_claude):
+    # the sibling is now <stem>.holistic/<bundle>/, not a flat sibling file
     corpus = tmp_path / "dad_corpus.jsonl"
     utils.append_jsonl({"record_id": "a", "messages": MESSAGES}, corpus)
     stub_claude([GOOD_JSON])
@@ -110,15 +113,16 @@ def test_verdicts_load_the_requested_version(tmp_path):
     assert inp.verdicts["a"]["which"] == "dad-v4.9"
 
 
-# ---------------------------------------------------------------- tagging into audit/
+# ---------------------------------------------------------------- tagging into bundles
 
-def test_tag_writes_the_index_into_the_runs_audit_dir(tmp_path, stub_claude):
+def test_tag_writes_the_index_into_a_run_bundle(tmp_path, stub_claude):
     run = _make_run(tmp_path, with_verdicts=False)
     stub_claude([GOOD_JSON])
     inp = pipeline.resolve_inputs(run)
     rows = pipeline.tag(inp, F.default_fields())
     assert rows[0]["record_id"] == "a"
-    written = utils.load_jsonl(pipeline.category_records_path(run))
+    assert inp.index_path.parent.parent == run / "holistic"
+    written = utils.load_jsonl(inp.index_path)
     assert written[0]["taxa_category"] == "farmed"
 
 
@@ -170,3 +174,186 @@ def test_run_without_tagging_uses_existing_index_and_calls_no_api(tmp_path):
     report = pipeline.run(run, do_tag=False)
     assert report["stats"]["analyses"]["distribution"]["taxa_category"] == {"wild": 1}
     assert report["inputs_present"] == ["tags"]
+
+
+# ---------------------------------------------------------------- clusters input (§18.1)
+
+def _write_diversity_report(base_dir, assignments):
+    import json
+    (base_dir / "audit").mkdir(parents=True, exist_ok=True)
+    (base_dir / "audit" / "diversity_report.json").write_text(
+        json.dumps({"embed_model": "stub", "clusters": {"k": 2, "assignments": assignments}}))
+
+
+def test_resolve_run_dir_loads_cluster_assignments_from_diversity_report(tmp_path):
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    _write_diversity_report(run, {"a": 1})
+    assert pipeline.resolve_inputs(run).clusters == {"a": 1}
+
+
+def test_resolve_without_diversity_report_leaves_clusters_none(tmp_path):
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    assert pipeline.resolve_inputs(run).clusters is None
+
+
+def test_resolve_bare_corpus_reads_the_sibling_audit_diversity_report(tmp_path):
+    corpus = tmp_path / "dad_corpus.jsonl"
+    utils.append_jsonl({"record_id": "a", "messages": MESSAGES}, corpus)
+    _write_diversity_report(tmp_path, {"a": 0})
+    assert pipeline.resolve_inputs(corpus).clusters == {"a": 0}
+
+
+def test_run_gates_the_cluster_bridge_on_the_clusters_input(tmp_path, stub_claude):
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    stub_claude([GOOD_JSON])
+    without = pipeline.run(run)
+    assert "cluster_bridge" in without["stats"]["skipped"]
+
+    _write_diversity_report(run, {"a": 0})
+    with_clusters = pipeline.run(run, do_tag=False)   # index already built above
+    assert "cluster_bridge" in with_clusters["stats"]["analyses"]
+    assert "clusters" in with_clusters["inputs_present"]
+
+
+def test_corrupt_diversity_report_degrades_to_no_clusters(tmp_path):
+    # clusters are OPTIONAL gated input — a truncated sidecar must not take down
+    # the non-cluster analyzers
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    (run / "audit").mkdir(parents=True, exist_ok=True)
+    (run / "audit" / "diversity_report.json").write_text('{"clusters": {"assignm')
+    assert pipeline.resolve_inputs(run).clusters is None
+
+
+def test_wrong_shape_diversity_report_also_degrades_to_no_clusters(tmp_path):
+    # valid JSON that isn't a report object (e.g. []) must degrade the same way
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    (run / "audit").mkdir(parents=True, exist_ok=True)
+    (run / "audit" / "diversity_report.json").write_text("[]")
+    assert pipeline.resolve_inputs(run).clusters is None
+
+
+def test_wrong_shape_clusters_sections_also_degrade_to_none(tmp_path):
+    # nested wrong shapes: a truthy non-dict clusters value, or non-dict assignments
+    import json
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    (run / "audit").mkdir(parents=True, exist_ok=True)
+    report_path = run / "audit" / "diversity_report.json"
+    for payload in ({"clusters": [1]}, {"clusters": {"assignments": "oops"}}):
+        report_path.write_text(json.dumps(payload))
+        assert pipeline.resolve_inputs(run).clusters is None
+
+
+# ---------------------------------------------------------------- bundles (P1)
+
+def test_tag_resumes_the_matching_bundle_with_zero_api_calls(tmp_path, stub_claude):
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    calls = stub_claude([GOOD_JSON])
+    inp = pipeline.resolve_inputs(run)
+    pipeline.tag(inp, F.default_fields())
+    first_dir = inp.index_path.parent
+    assert first_dir.parent == run / "holistic"
+
+    inp2 = pipeline.resolve_inputs(run)
+    pipeline.tag(inp2, F.default_fields())
+    assert len(calls) == 1                        # second tag: zero API calls
+    assert inp2.index_path.parent == first_dir    # same bundle resumed
+    manifest = json.loads((first_dir / "manifest.json").read_text())
+    assert manifest["records_tagged"] == 1
+
+
+def test_tag_fingerprints_the_resolved_config_model_not_none(tmp_path, stub_claude,
+                                                             monkeypatch):
+    # #1 fix: tagging without an explicit model must fingerprint the EFFECTIVE
+    # model (the config default), not "" — otherwise changing config.yaml's model
+    # silently resumes tags produced by the previous model, mixing two models in
+    # one bundle.
+    from shared import api
+    from evals.holistic import bundle
+    monkeypatch.setattr(api, "_config", {"model": "cfg-default-x"})
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    stub_claude([GOOD_JSON])
+    inp = pipeline.resolve_inputs(run)
+    pipeline.tag(inp, F.default_fields())            # no model= → resolves to config
+    manifest = json.loads((inp.index_path.parent / "manifest.json").read_text())
+    assert manifest["model"] == "cfg-default-x"
+    # the bundle is keyed by the resolved model: an explicit cfg-default-x tag lands
+    # in the same bundle (no silent re-tag when the config default is made explicit)
+    assert manifest["tag_fingerprint"] == \
+        bundle.tag_fingerprint(F.default_fields(), "cfg-default-x", None)
+
+
+def test_changed_fields_get_a_fresh_bundle_and_never_mix_tags(tmp_path, stub_claude):
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    stub_claude([GOOD_JSON, '{"direction": "Mixed"}'])
+    inp = pipeline.resolve_inputs(run)
+    pipeline.tag(inp, F.default_fields())
+    first = inp.index_path
+
+    other = F.FieldRegistry()
+    other.add(F.Field(name="direction",
+                      values=("Under-weighting", "Over-weighting", "Mixed")))
+    inp2 = pipeline.resolve_inputs(run)
+    pipeline.tag(inp2, other)
+    assert inp2.index_path != first
+    assert utils.load_jsonl(first)[0]["taxa_category"] == "farmed"
+    assert utils.load_jsonl(inp2.index_path)[0]["direction"] == "Mixed"
+    # each bundle carries its own snapshot; latest points at the newest tag
+    assert (first.parent / "axes_snapshot.yaml").exists()
+    assert (inp2.index_path.parent / "axes_snapshot.yaml").exists()
+    assert (run / "holistic" / "latest").resolve() == \
+        inp2.index_path.parent.resolve()
+
+
+def test_resolve_inputs_reads_latest_and_honors_bundle_id(tmp_path, stub_claude):
+    import pytest
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    stub_claude([GOOD_JSON, '{"direction": "Mixed"}'])
+    inp = pipeline.resolve_inputs(run)
+    pipeline.tag(inp, F.default_fields())
+    first_id = inp.index_path.parent.name
+    other = F.FieldRegistry()
+    other.add(F.Field(name="direction",
+                      values=("Under-weighting", "Over-weighting", "Mixed")))
+    inp2 = pipeline.resolve_inputs(run)
+    pipeline.tag(inp2, other)
+
+    assert pipeline.resolve_inputs(run).index_path == inp2.index_path   # latest
+    picked = pipeline.resolve_inputs(run, bundle_id=first_id)
+    assert picked.index_path == inp.index_path
+    with pytest.raises(SystemExit, match="bundle"):
+        pipeline.resolve_inputs(run, bundle_id="2020-01-01_00-00_deadbeef")
+
+
+def test_resolve_inputs_rejects_a_path_shaped_bundle_id(tmp_path):
+    import pytest
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    with pytest.raises(SystemExit, match="invalid bundle id"):
+        pipeline.resolve_inputs(run, bundle_id="../outside")
+
+
+def test_legacy_flat_run_reads_in_place_and_tag_leaves_it_untouched(
+        tmp_path, stub_claude):
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    flat = run / "audit" / "category_records.jsonl"
+    flat.parent.mkdir()
+    utils.append_jsonl({"record_id": "a", "taxa_category": "wild"}, flat)
+
+    inp = pipeline.resolve_inputs(run)
+    assert inp.index_path == flat                  # implicit legacy bundle
+    assert pipeline.resolve_inputs(run, bundle_id="legacy").index_path == flat
+
+    before = flat.read_text()
+    stub_claude([GOOD_JSON])
+    pipeline.tag(inp, F.default_fields())
+    assert inp.index_path.parent.parent == run / "holistic"  # first real bundle
+    assert flat.read_text() == before              # legacy flat file untouched
+
+
+def test_bare_corpus_bundles_live_in_a_sibling_holistic_dir(tmp_path, stub_claude):
+    corpus = tmp_path / "dad_corpus.jsonl"
+    utils.append_jsonl({"record_id": "a", "messages": MESSAGES}, corpus)
+    stub_claude([GOOD_JSON])
+    pipeline.run(corpus)
+    inp = pipeline.resolve_inputs(corpus)
+    assert inp.index_path.parent.parent == tmp_path / "dad_corpus.holistic"
+    assert utils.load_jsonl(inp.index_path)[0]["taxa_category"] == "farmed"

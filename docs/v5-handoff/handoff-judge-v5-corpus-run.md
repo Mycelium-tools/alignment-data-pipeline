@@ -44,18 +44,30 @@ ranked it *better* (too lenient). Magnitude = size of the disagreement v5 should
 
 Corpus is the record set at `<run dir>/final/dad_corpus.jsonl`.
 
-## State
+## State (updated 2026-07-09, after engine wiring)
 - **Rubrics ready, committed, pushed:** `evals/rubric_dad_v5a.yaml` (9 dims),
   `evals/rubric_dad_v5b.yaml` (11 dims). `pytest` green; both render.
-- **Engine NOT wired for v5** — same blocker as before. Six changes listed in each rubric's
-  header comment and in `handoff-judge-v5-run.md`; the load-bearing pair is (1) replace the
-  hardcoded v4 `SCHEMA_SCALAR_ORDER` (`judge.py:28`) with the v5 scalar set (differs A vs B,
-  derive per-rubric), and (2) inline each dimension's `principles: [ids]` clauses in
-  `build_system_prompt` (= the C1 clause-cards config to run first). Must land before any run.
-- **Working tree is shared with another agent** (holistic-judge): `judge.py`,
-  `evals/holistic/*`, `viewer/*`, several tests are modified-but-uncommitted, plus untracked
-  `evals/gold_set_dad.yaml`. Reconcile / coordinate before wiring on top; commit with
-  explicit pathspecs; expect the remote to move (fetch + rebase --autostash).
+- **Engine IS wired for v5** (uncommitted — see next bullet): `schema_scalar_order(rubric)`
+  derives the scalar schema per rubric (v4 keeps its pinned order, byte-identical render
+  verified against HEAD); C1 clause cards render each dimension's `principles:` clauses
+  in-place and drop the flat THE STANDARD block; `tracks_attitude_must_be_false` gate
+  (per-verdict + consensus); `top_tier` accepted as the exemplar key; the v4-only
+  `instrumental_only_caps_exemplar_value` read is guarded. Same-model repeat votes work via
+  `--judges gemini-3.1-pro-preview#1 ...#2 ...#3` (suffix kept as vote label, stripped
+  before the API call). Tests: `tests/test_judge_v5.py` (TDD, RED-verified). Rubric headers
+  updated with DONE/TODO status; still TODO: realized_direction rollup (item 3, not needed
+  for corpus means) and the condensed constitution D8 (item 4, full reading is the
+  accepted first-run placeholder).
+- **Ranking harness ready:** `evals/rank_corpora.py` (+ `tests/test_rank_corpora.py`)
+  embeds the frozen owner table, reads each corpus's `judge/<version>/verdicts.jsonl`,
+  and tabulates judge mean/rank/gap beside the v4.3 baseline. Baseline to beat:
+  **v4.3 Spearman rho vs owner = 0.304, mean |gap| = 3.10.**
+- **Everything above is UNCOMMITTED, deliberately.** The working tree is shared with the
+  holistic-judge agent whose work is parked uncommitted at the owner's request (mid-viewer
+  testing; see `docs/handoffs/handoff-holistic-dad-judge-4.md`), and my `judge.py` edits sit
+  on top of their `shared/providers.py` extraction — not separable. Commit both streams
+  together (judge.py + shared/providers.py + requirements.txt + tests + rubrics + this doc)
+  once the owner opts in; expect the remote to move (fetch + rebase --autostash).
 
 ## Decisions & rationale (chat-only)
 - **First run = A vs B on the C1 (per-dimension clause cards) constitution config.** M arm
@@ -69,10 +81,14 @@ Corpus is the record set at `<run dir>/final/dad_corpus.jsonl`.
   so treat rank agreement as directional, and weight the two substantial corpora
   (`const-split-test` 93, and `haiku-test2` 40 if added) more heavily in any read. The owner
   ranked the small smoke runs anyway; that's the given.
-- **"Corpus 67" does not exist** in `outputs/dad/runs/` (no run with 67 records, no
-  spec-smoke7). Owner said "if it exists" — include it only if it appears; otherwise the ten
-  above are the set. `haiku-test2` (40 records) exists but was NOT in the owner's table —
-  confirm whether to include it.
+- **"Corpus 67" RESOLVED (2026-07-09): it is an SDF corpus, not DAD** — no DAD corpus with
+  67 records exists locally, on origin/main, or on any of the 21 remote branches (no
+  spec-smoke7 either). The 67-record corpus the owner remembered is
+  `outputs/sdf/runs/2026-07-06_22-19_notebook-port-smoke/final/sdf_corpus.jsonl` (67 docs,
+  haiku-4-5-generated, judged sdf-v3.5 by gemini-2.5-flash mean 9.352, copied into
+  `outputs/calibration-2026-07-07/sdf/`). Different pipeline and rubric — it cannot join the
+  DAD ranking; the ten above are the set. `haiku-test2` (40 records) exists but was NOT in
+  the owner's table — confirm whether to include it.
 - The two v5b anti-rationalization signals ([asymmetric scrutiny], [euphemistic sanitizing])
   were folded on my recommendation, not an explicit owner ruling — confirm before treating
   as settled.
@@ -86,11 +102,25 @@ Corpus is the record set at `<run dir>/final/dad_corpus.jsonl`.
   far cheaper than the full-scale $50 figure).
 
 ## Next action
-Wire the two load-bearing engine changes (`SCHEMA_SCALAR_ORDER` per-rubric + clause-card
-inlining), add offline tests, `pytest`. Then judge all ten corpora with v5a and v5b (C1
-config, 3× temp 0 majority), compute per-corpus means, rank, and tabulate v5's ranking +
-gaps beside the owner's ranking and the v4.3 gaps above. Report which rubric tracks the
-human ranking better.
+Engine wiring and tabulation harness are DONE (see State). What remains is the paid run,
+blocked on owner confirmation (auth + budget + haiku-test2 inclusion + commit opt-in):
+
+    for run in 2026-07-06_18-16_naturalness-smoke 2026-07-05_14-16_spec-smoke4 \
+               2026-07-05_17-14_spec-smoke5 2026-07-04_18-02_spec-smoke \
+               2026-07-06_16-02_scopefix-smoke 2026-07-05_13-03_spec-smoke3 \
+               2026-07-05_17-30_spec-smoke6 2026-07-01_14-56_const-split-test \
+               2026-07-06_16-57_quality-iter-smoke 2026-07-06_09-09_postfix-smoke; do
+      for rubric in evals/rubric_dad_v5a.yaml evals/rubric_dad_v5b.yaml; do
+        python evals/score_dad.py --input outputs/dad/runs/$run/final/dad_corpus.jsonl \
+          --rubric $rubric --judges gemini-3.1-pro-preview#1 gemini-3.1-pro-preview#2 \
+          gemini-3.1-pro-preview#3
+      done
+    done
+    python evals/rank_corpora.py   # tabulates v5a/v5b vs owner ranking + v4.3 gaps
+
+Scale: 126 records × 2 rubrics × 3 votes = 756 calls; system prompt ~27k (A) / ~29k (B)
+tokens incl. the full-reading placeholder — ~22M input tokens before Gemini's implicit
+prefix caching, ~1M output. Ballpark $15–45; actuals land in `outputs/cost_log.jsonl`.
 
 ## References
 - Branch `arda/dad-judge-rubric`. Rubrics + engine prereqs: `evals/rubric_dad_v5{a,b}.yaml`

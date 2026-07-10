@@ -204,7 +204,7 @@ tests/test_holistic_{fields,extract,analyzers,pipeline,cli,config}.py, tests/tes
 fully unit-testable. The two LLM stages (extract, synthesize) are thin wrappers over
 `shared.api.call_claude`, the single external boundary the suite already stubs.
 
-### Implementation status (rev 4)
+### Implementation status (rev 5)
 The **infrastructure is built and green** (436-test suite passes):
 the two registries, the registry-driven extraction runner with resume, the input-gated
 analyzer runner, the three-input `resolve_inputs`, the shared selection grammar, the
@@ -222,6 +222,22 @@ run's `audit/category_records.jsonl` (fails loudly with a build-the-index hint w
 then seeded `--sample`. The embedding lane (`shared/embeddings.py`, `evals/diversity.py`
 + their tests and the `stub_embeddings`/`_openai_guard` conftest seams) is ported from
 main, unchanged, as the base for §18.1.
+
+**§12.2 viewer is built.** Pure loaders live in `viewer/loader.py` (no streamlit,
+tested in `tests/test_viewer_loader.py`): `category_records`/`holistic_report` read
+the audit artifacts; `combined_index` merges realized extraction tags over the legacy
+`injection_used` (spec-driven `.annotation` intent labels are deliberately not
+facets); `facet_options` computes live per-facet counts; `verdict_status` turns a
+saved verdict row into a `prev_verdict` facet. `judge_batch.py` dropped its local
+`filter_ids`/`pick_subset` for `evals/selection.py` (`selection_rows` — the one new
+pure seam, tested — feeds `filter_records`; injection + previous-verdict are now just
+facets in the same `where`), and its Narrow panel gained a per-facet multiselect
+(axes from `dad_axes.yaml`, values with live counts from the tag index) plus facet
+columns in the hand-pick table. The new `viewer/ui_pages/run_diversity.py` page
+(registered in `app.py`) renders the holistic report — per-axis evenness bars,
+coverage-vs-target, Cramér's V pairs, combination coverage with missing cells,
+drift, synthesis top-issues/prose — with "Tag this run" (resume-safe index build)
+and "Analyze" buttons wired to the same engine as the CLI.
 
 **Editable without Python (the iterate-and-rerun surface):**
 - the JSON schema is `evals/dad_axes.yaml` (19 fields; add/remove/edit → rerun);
@@ -245,9 +261,25 @@ canonical disagreement order). The **analysis config seam is built**:
 `require_all_values`) and a top-level `analysis:` block (`analyzers:` selection +
 `params:` → `ctx.config`) both load from `dad_axes.yaml` (`load_analysis_config` +
 `analyzers.select`); the quota numbers there are **MOCKUP placeholders** to replace.
-Deliberately **deferred** to the analysis brainstorm (addable without touching the
-framework): embedding cluster-evenness as an `Analyzer`, and the viewer pages /
-`judge_batch` faceted-filter extension (§12).
+**Provider dispatch (eval lane).** `shared/providers.py` owns `call_model`
+(moved verbatim from `judge.py`, which re-exports it): `gemini-*` model names route
+to the Gemini API (AI Studio key or Vertex, with the same cost logging), everything
+else — including `None`, the config default — to `shared.api.call_claude`. The
+extraction judge and synthesis call it, so `holistic_dad.py --model gemini-*` and
+the Run diversity page's model input work with only a Gemini key. A future provider
+is one client function + one prefix in that file. The generation pipelines
+deliberately stay on `shared.api` (training-data provenance).
+
+**§18.1 embedding analyzers are built.** `evals/diversity.py` gained the CAML-style
+topic-spread panel: seeded numpy k-means (`kmeans_labels`, `--clusters` k, default
+50 capped at n) → Pielou evenness of cluster sizes with a GOOD/OK/BAD verdict, and a
+`clusters` section (k, sizes, per-id `assignments`) in `diversity_report.json`. The
+holistic side grew a fourth gated input, `clusters` (loaded by `resolve_inputs` from
+`audit/diversity_report.json`, also for bare corpora), and the `cluster_bridge`
+analyzer: per-axis Cramér's V between categorical values and cluster assignments —
+the inverse read of `correlation`, where LOW V is the problem (label-only diversity
+that never shows up in meaning-space). Wired into `default_analyzers()`, the axes
+YAML's `analyzers:` list, `summary_lines`, and the Run diversity viewer page.
 
 ### Adaptability contract (requirement)
 The holistic judge must be adaptable across **three** surfaces, all edit-a-file-and-
@@ -579,13 +611,15 @@ redundancy histogram (near-dup nearest-neighbor cosine), **topic-spread evenness
 (k-means into 50 clusters → Pielou evenness of cluster sizes), and a PCA-2D scatter.
 That figure is the **semantic/novelty lane** — the same job as `evals/diversity.py`,
 not our categorical lane. Three takeaways:
-1. **Embedding cluster-evenness** *(candidate → belongs in `diversity.py`)* — k-means the
+1. **Embedding cluster-evenness** *(BUILT → `diversity.py --clusters`)* — k-means the
    corpus, report Pielou evenness of cluster sizes. Catches topic collapse in dimensions
    we never enumerated as axes; complements Vendi (the scalar analogue we already have).
-2. **Categorical × embedding-cluster bridge** *(candidate → new `Analyzer`, needs embeddings)* —
-   cross-tabulate our categorical axes against discovered embedding clusters. Flags the
-   sneaky case where categorical diversity looks high but the text is semantically
-   monotone (or vice versa). Novel signal, only possible because we have both lanes.
+   Per-id assignments land in `diversity_report.json` for the bridge to read.
+2. **Categorical × embedding-cluster bridge** *(BUILT → `cluster_bridge` analyzer,
+   gated on the new `clusters` input)* — cross-tabulate our categorical axes against
+   discovered embedding clusters. Flags the sneaky case where categorical diversity
+   looks high but the text is semantically monotone (or vice versa). Novel signal,
+   only possible because we have both lanes.
 3. **GOOD/BAD verdict framing** *(BUILT)* — each metric carries a GOOD/OK/BAD verdict
    plus a one-line "what BAD looks like" note, rendered green/red in the console
    (`holistic_dad.summary_lines`). First verdict-bearing metric shipped: **per-axis

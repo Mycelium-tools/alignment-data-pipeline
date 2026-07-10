@@ -20,18 +20,21 @@ from typing import Callable
 from ._registry import OrderedRegistry
 from .fields import FieldRegistry
 
-INPUTS = ("tags", "annotations", "verdicts")
+INPUTS = ("tags", "annotations", "verdicts", "clusters")
 
 
 @dataclass
 class AnalysisContext:
     """Everything an analyzer may read. ``records`` are the extraction tag rows;
-    ``annotations`` / ``verdicts`` are ``record_id -> data`` maps or None."""
+    ``annotations`` / ``verdicts`` are ``record_id -> data`` maps or None;
+    ``clusters`` is the semantic lane's ``record_id -> k-means cluster`` map
+    (diversity_report.json) or None."""
 
     records: list[dict]
     fields: FieldRegistry
     annotations: dict | None = None
     verdicts: dict | None = None
+    clusters: dict | None = None
     config: dict = _dc_field(default_factory=dict)
 
     @property
@@ -41,6 +44,8 @@ class AnalysisContext:
             avail.add("annotations")
         if self.verdicts:
             avail.add("verdicts")
+        if self.clusters:
+            avail.add("clusters")
         return avail
 
 
@@ -216,8 +221,12 @@ def cramers_v(joint: dict) -> float | None:
     (no data, or a variable with a single observed level)."""
     joint = {k: c for k, c in joint.items() if c > 0}   # drop zero/negative cells so
     n = sum(joint.values())                             # no level has a zero marginal
-    a_levels = sorted({a for a, _ in joint})
-    b_levels = sorted({b for _, b in joint})
+    # type-aware sort (same convention as drift's tie key): a coerced-but-invalid
+    # tag can put an int among strings, and bare sorted() would TypeError
+    def _level_key(x):
+        return (type(x).__name__, str(x))
+    a_levels = sorted({a for a, _ in joint}, key=_level_key)
+    b_levels = sorted({b for _, b in joint}, key=_level_key)
     if n == 0 or len(a_levels) < 2 or len(b_levels) < 2:
         return None
     a_tot = {a: sum(c for (x, _), c in joint.items() if x == a) for a in a_levels}
@@ -384,6 +393,44 @@ def _drift(ctx: AnalysisContext) -> dict:
     return out
 
 
+# ---------------------------------------------------------------- categorical × cluster bridge
+
+_BRIDGE_NOTE = ("GOOD = the axis's categories land in distinct embedding clusters; "
+                "BAD = the axis varies on paper but the text sounds the same "
+                "(label-only diversity)")
+
+
+def _cluster_bridge(ctx: AnalysisContext) -> dict:
+    """§18.1 categorical × embedding-cluster cross-tab: per axis, Cramér's V between
+    the axis's categorical values and the semantic lane's k-means cluster assignments
+    (``evals/diversity.py`` → diversity_report.json). The inverse read of
+    ``correlation``: here LOW V is the problem — categorical diversity that never
+    shows up in meaning-space. Multi-valued axes contribute one occurrence per value
+    (so ``n`` counts occurrences, like ``_distribution``). NA when an axis (or the
+    clustering) has a single observed level; axes never populated alongside a
+    cluster are omitted. No API."""
+    clusters = ctx.clusters or {}
+    out: dict[str, dict] = {}
+    for fld in ctx.fields.all():
+        joint: collections.Counter = collections.Counter()
+        for rec in ctx.records:
+            cluster = clusters.get(rec.get("record_id"))
+            if cluster is None:
+                continue
+            for val in _axis_values(rec, fld.name):
+                joint[(val, cluster)] += 1
+        if not joint:
+            continue
+        v = cramers_v(joint)
+        out[fld.name] = {
+            "n": sum(joint.values()),
+            "cramers_v": None if v is None else round(v, 3),
+            "verdict": _verdict(v, 0.3, 0.15, higher_better=True),
+            "note": _BRIDGE_NOTE,
+        }
+    return out
+
+
 # ---------------------------------------------------------------- registry helpers
 
 def select(registry: AnalyzerRegistry, names: list[str] | None) -> AnalyzerRegistry:
@@ -406,9 +453,10 @@ def default_analyzers() -> AnalyzerRegistry:
     """A fresh registry of the built-in analyzers: per-field value counts
     (``distribution``), per-axis evenness (``evenness``), coverage-vs-target quota
     checks (``coverage_vs_target``), Cramér's V anti-correlation (``correlation``),
-    t-wise pair coverage (``combination_coverage``), and intent→realization drift
-    (``drift``, needs annotations). Register more on top; the axes YAML's ``analysis``
-    block selects which run. Still to come: embedding cluster-evenness (§18.1)."""
+    t-wise pair coverage (``combination_coverage``), intent→realization drift
+    (``drift``, needs annotations), and the categorical × embedding-cluster bridge
+    (``cluster_bridge``, needs the semantic lane's cluster assignments). Register
+    more on top; the axes YAML's ``analysis`` block selects which run."""
     reg = AnalyzerRegistry()
     reg.add(Analyzer(name="distribution", requires=("tags",), fn=_distribution))
     reg.add(Analyzer(name="evenness", requires=("tags",), fn=_evenness))
@@ -417,4 +465,6 @@ def default_analyzers() -> AnalyzerRegistry:
     reg.add(Analyzer(name="combination_coverage", requires=("tags",),
                      fn=_combination_coverage))
     reg.add(Analyzer(name="drift", requires=("tags", "annotations"), fn=_drift))
+    reg.add(Analyzer(name="cluster_bridge", requires=("tags", "clusters"),
+                     fn=_cluster_bridge))
     return reg

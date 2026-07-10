@@ -119,11 +119,16 @@ gates and consensus are computed in code, never by the judge model.
   issue, one axis mutated; checks relative scores so known judge biases (verbosity,
   fabricated specificity, species/substrate swaps...) can't pass unnoticed.
 
-### Judge API keys
+### Eval API keys
 
-Judges default to Gemini (`gemini-3.1-pro-preview`); the Anthropic path also works
-(`--judges claude-...` uses your `ANTHROPIC_API_KEY`). For Gemini, put one of these
-in `.env`:
+Judge panels, the holistic extraction judge, and the report synthesis go through
+one provider dispatch (`shared/providers.py`):
+`gemini-*` model names use your Gemini key, everything else (or no model at all)
+uses `ANTHROPIC_API_KEY`. So `--judges gemini-...`, `holistic_dad.py --model
+gemini-...`, and the viewer's model inputs all work with only a Gemini key. (The
+*generation* pipelines are Claude-only by design, and a few older eval tools —
+e.g. `audit_sdf.py`'s pattern scan — still call Anthropic directly; both need the
+Anthropic key.) For Gemini, put one of these in `.env`:
 
 ```bash
 # Option A — Google AI Studio key (free tier ~20 requests/day/model; paid tier needs billing)
@@ -176,7 +181,9 @@ cd alignment-data-pipeline
 python3.12 -m venv .venv       # or python3, if that's already 3.12+
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env           # then add your ANTHROPIC_API_KEY
+cp .env.example .env           # then add your ANTHROPIC_API_KEY (generation pipelines)
+                               # optional: GEMINI_API_KEY or VERTEX_PROJECT (evals — see
+                               # "Eval API keys"), OPENAI_API_KEY (embedding diversity audit)
 ```
 
 > **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again.

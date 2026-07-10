@@ -19,21 +19,23 @@
 # auto-reject gate; D6 owner override — style tells are per-record signals, absolute
 # standard, never corpus-relative.
 #
-# ENGINE CHANGES REQUIRED BEFORE THIS FILE CAN RUN (evals/judge.py) — assembly ships
-# the YAML only; review first, wire second:
-#   1. SCHEMA_SCALAR_ORDER is hardcoded to v4 dimension names — must list:
-#      welfare_salience, welfare_reasoning, helpfulness, epistemic_calibration,
-#      tone, scenario_genuineness (v5b adds consequence_scope, reasoning_soundness).
-#   2. tracks_attitude gate: reject when metadata.tracks_attitude is true.
-#   3. realized_direction: code-side rollup of the metadata lean fields
+# ENGINE WIRING STATUS (evals/judge.py; tests in tests/test_judge_v5.py) — items 1, 2,
+# 5, 6 WIRED 2026-07-09; the file renders and aggregates as the C1 clause-cards config:
+#   1. DONE — schema_scalar_order(rubric) derives the scalar set per rubric (criticals
+#      first, then file order); the v4 file keeps its pinned historical order.
+#   2. DONE — aggregation.tracks_attitude_must_be_false rejects when
+#      metadata.tracks_attitude is true (per-verdict and in consensus).
+#   3. TODO — realized_direction: code-side rollup of the metadata lean fields
 #      (Under/Over/Mixed) + direction_match against the record's annotated intent
 #      (spec-driven pipeline only; judge stays blind to the annotation).
-#   4. include_constitution append should swap the full 40k reading for the CONDENSED
-#      reading (D8) — condensed text not yet written.
-#   5. Layer-2 clause cards: inline the constitution clauses named by each dimension's
-#      `principles:` list (constitution_principles.csv) into the dimension render.
-#   6. aggregation.value_stability_gate no longer has instrumental_only_caps_exemplar_value
-#      (exemplar_value is gone) — remove the engine read if any.
+#   4. TODO — include_constitution append should swap the full 40k reading for the
+#      CONDENSED reading (D8) — condensed text not yet written; full reading is the
+#      accepted first-run placeholder.
+#   5. DONE — Layer-2 clause cards: each dimension's `principles:` clauses
+#      (constitution_principles.csv) render inside the dimension; the flat THE
+#      STANDARD block is dropped for clause-card rubrics (that flat list is the C0 arm).
+#   6. DONE — the instrumental_only_caps_exemplar_value read is guarded; v5's
+#      value_stability_gate omits it (exemplar_value is gone; top_tier replaces exemplar).
 
 version: dad-v5a
 status: draft-unrun  # assembled from the locked design; no run, no calibration yet

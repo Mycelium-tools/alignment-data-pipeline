@@ -64,6 +64,14 @@ def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = No
     _cost_log_path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def resolve_model(model: str | None = None) -> str:
+    """The effective model for a call: the explicit override, else the config
+    default (``claude-sonnet-4-6`` when unset). Single source of truth so callers
+    that need to record which model actually ran (e.g. bundle fingerprints) agree
+    with what ``call_claude`` dispatches."""
+    return model or _config.get("model", "claude-sonnet-4-6")
+
+
 def _get_client() -> anthropic.Anthropic:
     if _client is None:
         init()
@@ -181,7 +189,7 @@ def call_claude(
             "ANTHROPIC_API_KEY is not set — Anthropic models are unavailable. "
             "Set it in .env, or use a Gemini judge (GEMINI_API_KEY)."
         )
-    resolved_model = model or _config.get("model", "claude-sonnet-4-6")
+    resolved_model = resolve_model(model)
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
 
     full_system = system_prompt
