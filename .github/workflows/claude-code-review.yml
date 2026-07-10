@@ -53,6 +53,14 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Print the full SDK stream into the job log. Without this, a turn-1
+          # auth failure is undiagnosable from CI: the action logs only redacted
+          # init/result events (no error text), a debug-mode rerun adds nothing,
+          # and no artifact is uploaded — while any PR editing this workflow
+          # makes the action self-skip, so the setting must already be on main
+          # before a failure happens. The stream contains only what the review
+          # agent says and runs; the OAuth token itself is masked by Actions.
+          show_full_output: true
           # Also review commits pushed by bots (e.g. a fix pushed by claude[bot]).
           # Without this the action rejects bot-initiated runs. Narrow to specific
           # bot names instead of '*' if you want to restrict which bots trigger it.
