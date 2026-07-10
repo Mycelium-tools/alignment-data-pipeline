@@ -647,6 +647,7 @@ class TestPerStageModelKnobs:
             "prompt_draft_model": "m-1b",
             "prompt_refine_model": "m-1c",
             "response_scope_model": "m-2a",
+            "response_select_model": "m-2a5",
             "response_draft_model": "m-2b",
             "constitution_rewrite_model": "m-3",
         }
@@ -661,7 +662,16 @@ class TestPerStageModelKnobs:
         step2_responses.run(config, prompts_dad, tmp_path / "step2", [_dilemma()])
         by_stage = {c["stage"]: c for c in calls}
         assert by_stage["response_scope"]["model"] == "m-2a"
+        assert by_stage["response_select"]["model"] == "m-2a5"
         assert by_stage["response_draft"]["model"] == "m-2b"
+
+        # the select knob's documented fallback: unset -> the 2a scope model
+        no_select = {k: v for k, v in config["dad"].items() if k != "response_select_model"}
+        calls = stub_claude(_dad_step2_dispatch)
+        step2_responses.run({**config, "dad": no_select}, prompts_dad,
+                            tmp_path / "step2b", [_dilemma()])
+        by_stage = {c["stage"]: c for c in calls}
+        assert by_stage["response_select"]["model"] == "m-2a"
 
         calls = stub_claude(["Rewritten careful answer."])
         step3_rewrite.run(config, prompts_dad, tmp_path / "step3", tmp_path / "final",
