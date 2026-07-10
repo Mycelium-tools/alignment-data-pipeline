@@ -186,11 +186,15 @@ class TestRunDirs:
         assert manifest["config"] == config
         assert manifest["git_commit"] is None or isinstance(manifest["git_commit"], str)
 
-    def test_create_run_dir_points_latest_symlink_at_run(self, tmp_path):
+    def test_create_run_dir_points_latest_pointer_at_run(self, tmp_path):
+        # On Windows without symlink privilege (no Developer Mode), the code
+        # falls back to a directory junction — same behavior (latest resolves
+        # to the run), different mechanism. Accept either; is_junction() is
+        # always False off Windows, so this stays strict on Linux/macOS CI.
         runs_root = tmp_path / "runs"
         run_dir = utils.create_run_dir(runs_root, label="dev", config={})
         link = tmp_path / "latest"
-        assert link.is_symlink()
+        assert link.is_symlink() or link.is_junction()
         assert link.resolve() == run_dir.resolve()
 
     def test_create_run_dir_collision_appends_suffix(self, tmp_path, monkeypatch):
