@@ -38,8 +38,8 @@ Generates pretraining-style documents — blog posts, academic abstracts, forum 
 
 | Layer | Script | What it does |
 |---|---|---|
-| 1 | `layer1_document_types.py` | Generates diverse document type categories across four roles (ai-character, welfare-topic, constitution-identity, latent-welfare) with an expository/first-person register split |
-| 2 | `layer2_subtypes.py` | Generates concrete subtypes per type, assigns language, drops near-duplicate subtypes |
+| 1 | `layer1_document_types.py` | **No API call.** Loads the curated, weighted document-type list (`prompts/sdf/document_types.yaml`) and allocates per-type scenario quotas (`scenarios_total` × weight) and role assignments (ai-character, welfare-topic, constitution-identity, latent-welfare) per `sdf.role_mix` |
+| 2 | `layer2_subtypes.py` | Generates each type's quota of concrete scenario briefs (a specific document by a specific author with a real reason to write), assigns per-scenario role/tone/language, drops near-duplicates |
 | 3 | `layer3_draft.py` | Drafts documents per subtype — register-matched voice, seeded fictional name/org pools, anti-house-style rules |
 | 4 | `layer4_rewrite.py` | Rewrites each draft with the combined constitution in context (supports a stronger `sdf.rewrite_model`) |
 | 5 | `layer5_score.py` | Scores and filters; verifies each latent doc's welfare beat via a mechanically-checked verbatim quote; culls near-duplicates; writes final corpus |
@@ -185,12 +185,11 @@ Start with the SDF pipeline — it has no external dependencies and finishes in 
 
 ```yaml
 sdf:
-  document_types_count: 3
-  subtypes_per_type: 2
+  scenarios_total: 6        # total scenario briefs across all document types
   documents_per_subtype: 1
 ```
 
-This produces 6 documents and costs roughly $0.05–0.15.
+This produces ~6 documents and costs under $1 (layer 1 is free — the document types are curated in `prompts/sdf/document_types.yaml`, not generated).
 
 **2. Run the SDF pipeline:**
 

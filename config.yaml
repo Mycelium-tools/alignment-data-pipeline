@@ -7,11 +7,15 @@ temperature: 1.0  # sampling temperature for every API call (0.0-1.0); generatio
 workers: 8  # concurrent API calls within each SDF layer and DAD stage (1c/2/3); 1 = serial
 
 sdf:
-  document_types_count: 3
-  subtypes_per_type: 2
+  scenarios_total: 6             # total scenario briefs across all document types (dev default; full-scale: 300+)
   documents_per_subtype: 1
   min_score_threshold: 7
-  latent_fraction: 0.12          # share of layer-1 categories that are latent-welfare (0 disables; >0 guarantees at least 1)
+  latent_fraction: 0.12          # latent-welfare share of scenarios (0 disables; >0 guarantees at least 1)
+  role_mix:                      # run-level role shares; latent-welfare's 0.12 comes from latent_fraction
+    ai_character: 0.40
+    constitution_identity: 0.20
+    welfare_topic: 0.28
+  document_types_file: prompts/sdf/document_types.yaml  # curated, weighted type list (layer 1 — no API call)
   subtype_dedup_threshold: 0.80  # drop near-duplicate layer-2 subtypes (word-shingle cosine; null disables)
   near_dup_threshold: 0.90       # cull near-duplicate final documents at layer 5 (word-shingle cosine; null disables)
   entity_pool_seed: 137          # seeds the fictional people/org name pools handed to layer 3

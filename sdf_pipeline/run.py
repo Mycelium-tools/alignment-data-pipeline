@@ -73,7 +73,7 @@ def main() -> None:
     doc_types = subtypes = drafts = rewrites = None
 
     if start_layer <= 1:
-        print("[Layer 1] Document types")
+        print("[Layer 1] Document types (curated — no API call)")
         doc_types = layer1_document_types.run(config, prompts_dir, layer_dirs[1])
         cost = api.get_total_cost()
         print(f"  Running cost: ${cost:.4f}\n")
@@ -81,7 +81,7 @@ def main() -> None:
     if start_layer <= 2:
         if doc_types is None:
             doc_types = utils.load_jsonl(layer_dirs[1] / "document_types.jsonl")
-        print("[Layer 2] Subtypes")
+        print("[Layer 2] Scenario briefs")
         subtypes = layer2_subtypes.run(config, prompts_dir, layer_dirs[2], doc_types)
         cost = api.get_total_cost()
         print(f"  Running cost: ${cost:.4f}\n")

@@ -171,22 +171,45 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         preamble = preamble_t.text or ""
 
         if stage == "layer1":
-            count = cfg.get("sdf", {}).get("document_types_count", 0)
+            sdf_cfg = cfg.get("sdf", {})
+            if "document_types_count" not in sdf_cfg:
+                # Curated-types run: layer 1 loads document_types.yaml and
+                # computes quotas locally — there is no prompt to re-render.
+                r.is_llm_call = False
+                r.warnings.append(
+                    "Layer 1 made no LLM call in this run: document types are curated "
+                    "in document_types.yaml and quotas are computed locally."
+                )
+                return r
+            count = sdf_cfg.get("document_types_count", 0)
+            latent_fraction = sdf_cfg.get("latent_fraction", 0.0) or 0.0
             r.variables = {"preamble": preamble, "count": count,
-                           "min_ai_character": math.ceil(count / 3) if count else 0}
+                           "min_ai_character": math.ceil(count / 3) if count else 0,
+                           "latent_count": (max(1, round(count * latent_fraction))
+                                            if latent_fraction > 0 and count else 0)}
             r.user = _format(tpl("layer1.txt"), r.variables, r)
 
         elif stage == "layer2":
             dt = lineage.get("doc_type") or {}
             lang_dist = cfg.get("language_distribution", {"en": 1.0})
+            # Superset of the old (role/tone, global count) and new (register/
+            # tones/role_allocation, per-type quota) template variables, so
+            # either template generation formats cleanly. The avoid-note is
+            # nondeterministic cross-call state and is not reconstructable.
             r.variables = {
                 "preamble": preamble,
                 "type_name": dt.get("type_name", ""),
                 "description": dt.get("description", ""),
                 "role": dt.get("role", "welfare-topic"),
                 "tone": dt.get("tone", ""),
-                "count": cfg.get("sdf", {}).get("subtypes_per_type", 0),
+                "register": dt.get("register", ""),
+                "tones": ", ".join(dt.get("tones") or []),
+                "role_allocation": "\n".join(
+                    f"- {role}: {n}" for role, n in (dt.get("role_allocation") or {}).items() if n
+                ),
+                "count": dt.get("quota", cfg.get("sdf", {}).get("subtypes_per_type", 0)),
                 "languages": ", ".join(lang_dist.keys()),
+                "avoid_note": "",
             }
             r.user = _format(tpl("layer2.txt"), r.variables, r)
 

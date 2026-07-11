@@ -1,0 +1,61 @@
+{
+  "input": "outputs/sdf/runs/2026-07-10_11-00_curated-types-smoke",
+  "n_docs": 5,
+  "composition": {
+    "role": {
+      "latent-welfare": 1,
+      "ai-character": 2,
+      "constitution-identity": 1,
+      "welfare-topic": 1
+    },
+    "register": {
+      "first-person": 2,
+      "expository": 3
+    },
+    "language": {
+      "en": 5
+    },
+    "tone": {
+      "unknown": 5
+    },
+    "n_types": 5,
+    "top_type_share": 0.2
+  },
+  "length": {
+    "median_chars": 11137,
+    "truncated": 0,
+    "truncated_frac": 0.0,
+    "trailing_separator": 0
+  },
+  "markdown": {
+    "any_frac": 0.0,
+    "# headings": 0.0,
+    "**bold**": 0.0,
+    "markdown bullets": 0.0,
+    "tables": 0.0
+  },
+  "near_dups": {
+    "0.8": 0.0,
+    "0.9": 0.0,
+    "0.95": 0.0
+  },
+  "names": {
+    "repeated": [],
+    "watchlist": {}
+  },
+  "phrases": {
+    "banned_hits": {
+      "to be honest about": 1
+    },
+    "recurring_5grams": []
+  },
+  "openings": {
+    "formulaic_frac": 0.0,
+    "patterns": {},
+    "dup_stems": []
+  },
+  "register": {
+    "reads_personal_frac": 0.8,
+    "labeled_fp_stiff_frac": 0.0
+  }
+}

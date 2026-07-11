@@ -1,10 +1,16 @@
 """Behavior tests for SDF layers 1-5, driven through each layer's run() with a
-stubbed shared.api.call_claude. No test here may reach the API (see conftest)."""
+stubbed shared.api.call_claude. No test here may reach the API (see conftest).
+
+Layer 1 makes NO API call (curated document_types.yaml + quota math); its tests
+assert allocation arithmetic against the real committed YAML — expectations are
+derived from the file via load_document_types, never hardcoded per type."""
 
 import json
 import re
+from collections import Counter
 
 import pytest
+import yaml
 
 from sdf_pipeline import (
     layer1_document_types,
@@ -23,65 +29,179 @@ def layer_dir(tmp_path):
     return tmp_path / "layer"
 
 
-DOC_TYPES_RESPONSE = json.dumps([
-    {"type_name": "AI diary", "description": "First-person AI notes", "role": "ai-character", "tone": "reflective"},
-    {"type_name": "Field report", "description": "Wildlife survey"},
-])
+def _sdf_config(tiny_config, **sdf_overrides):
+    return {**tiny_config, "sdf": {**tiny_config["sdf"], **sdf_overrides}}
+
+
+ROLE_MIX = {"ai_character": 0.40, "constitution_identity": 0.20, "welfare_topic": 0.28}
+
+
+def _bad_types_dir(tmp_path, types: list[dict]):
+    """A prompts dir holding a hand-built document_types.yaml (for invalid-file tests)."""
+    d = tmp_path / "bad_prompts"
+    d.mkdir(parents=True)
+    (d / "document_types.yaml").write_text(yaml.safe_dump({"types": types}), encoding="utf-8")
+    return d
+
+
+def _valid_type(**overrides):
+    t = {"name": "T", "weight": 1.0, "register": "expository",
+         "roles": ["welfare-topic"], "tones": ["neutral"], "guidance": "g"}
+    t.update(overrides)
+    return t
 
 
 class TestLayer1:
-    def test_parses_types_and_assigns_sequential_ids(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        calls = stub_claude([DOC_TYPES_RESPONSE])
+    def test_quotas_sum_exactly_with_zero_api_calls(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        calls = stub_claude([])
         records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
-        assert len(calls) == 1
-        assert [r["type_id"] for r in records] == [0, 1]
-        assert records[0]["role"] == "ai-character"
-        assert records[0]["tone"] == "reflective"
+        assert calls == []  # the whole layer is local: load + validate + allocate
+        assert sum(r["quota"] for r in records) == tiny_config["sdf"]["scenarios_total"]
+        assert all(r["quota"] >= 1 for r in records)  # zero-quota types are not drawn
         assert utils.load_jsonl(layer_dir / "document_types.jsonl") == records
 
-    def test_missing_role_and_tone_get_defaults(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        stub_claude([DOC_TYPES_RESPONSE])
-        records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
-        assert records[1]["role"] == "welfare-topic"
-        assert records[1]["tone"] == "neutral"
+    def test_largest_remainder_rounding_exact_at_any_scale(self, tiny_config, prompts_sdf, tmp_path, stub_claude):
+        stub_claude([])
+        for total in (1, 5, 19, 100):
+            config = _sdf_config(tiny_config, scenarios_total=total)
+            records = layer1_document_types.run(config, prompts_sdf, tmp_path / f"t{total}")
+            assert sum(r["quota"] for r in records) == total
 
-    def test_strips_markdown_code_fences(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        stub_claude(["```json\n" + DOC_TYPES_RESPONSE + "\n```"])
-        records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
-        assert len(records) == 2
+    def test_single_scenario_lands_on_heaviest_type(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([])
+        types = layer1_document_types.load_document_types(prompts_sdf / "document_types.yaml")
+        heaviest = max(types, key=lambda t: t["weight"])["name"]
+        config = _sdf_config(tiny_config, scenarios_total=1)
+        records = layer1_document_types.run(config, prompts_sdf, layer_dir)
+        assert [r["type_name"] for r in records] == [heaviest]
 
-    def test_surrounding_prose_tolerated(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        stub_claude(["Here are the types:\n" + DOC_TYPES_RESPONSE + "\nLet me know if you need more."])
+    def test_records_carry_type_fields_from_yaml(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([])
+        by_name = {t["name"]: t for t in
+                   layer1_document_types.load_document_types(prompts_sdf / "document_types.yaml")}
         records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
-        assert len(records) == 2
+        for r in records:
+            src = by_name[r["type_name"]]
+            assert r["register"] == src["register"]
+            assert r["roles"] == src["roles"]
+            assert r["tones"] == src["tones"]
+            assert r["description"] == str(src["guidance"]).strip()
 
-    def test_completed_layer_loads_from_disk_without_calls(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        existing = [{"type_id": 0, "type_name": "X", "description": "d", "role": "welfare-topic", "tone": "neutral"}]
+    def test_role_allocation_sums_to_quota_and_respects_allowed_roles(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([])
+        config = _sdf_config(tiny_config, scenarios_total=20, latent_fraction=0.12, role_mix=ROLE_MIX)
+        records = layer1_document_types.run(config, prompts_sdf, layer_dir)
+        for r in records:
+            assert sum(r["role_allocation"].values()) == r["quota"]
+            assert set(r["role_allocation"]) <= set(r["roles"])
+
+    def test_run_level_role_totals_hit_role_mix(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # total=10: latent = max(1, round(10*0.12)) = 1; the remaining 9 split
+        # 0.40/0.20/0.28 (renormalized, largest remainder) -> 4/2/3.
+        stub_claude([])
+        config = _sdf_config(tiny_config, scenarios_total=10, latent_fraction=0.12, role_mix=ROLE_MIX)
+        records = layer1_document_types.run(config, prompts_sdf, layer_dir)
+        totals = Counter()
+        for r in records:
+            totals.update(r["role_allocation"])
+        assert totals == {"ai-character": 4, "constitution-identity": 2,
+                          "welfare-topic": 3, "latent-welfare": 1}
+
+    def test_completed_layer_loads_from_disk_without_recompute(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        existing = [{"type_id": 0, "type_name": "X", "description": "d", "register": "expository",
+                     "tones": ["neutral"], "roles": ["welfare-topic"], "weight": 1.0,
+                     "quota": 2, "role_allocation": {"welfare-topic": 2}}]
         utils.save_jsonl(existing, layer_dir / "document_types.jsonl")
         utils.Checkpoint(layer_dir / "_checkpoint.json").mark_done("layer1")
         calls = stub_claude([])
         assert layer1_document_types.run(tiny_config, prompts_sdf, layer_dir) == existing
         assert calls == []
 
+    def test_weights_not_summing_to_one_raise(self, tiny_config, tmp_path, layer_dir, stub_claude):
+        stub_claude([])
+        bad = _bad_types_dir(tmp_path, [_valid_type(weight=0.3), _valid_type(name="U", weight=0.3)])
+        with pytest.raises(ValueError, match="weights sum"):
+            layer1_document_types.run(tiny_config, bad, layer_dir)
 
-DOC_TYPE = {"type_id": 0, "type_name": "Field report", "description": "d", "role": "welfare-topic", "tone": "neutral"}
+    def test_bad_enums_and_empty_roles_raise(self, tiny_config, tmp_path, layer_dir, stub_claude):
+        stub_claude([])
+        for field, value, match in [
+            ("register", "verse", "register"),
+            ("roles", ["chatbot"], "unknown role"),
+            ("roles", [], "'roles' must be"),
+            ("tones", ["gothic"], "unknown tone"),
+            ("weight", "heavy", "'weight' must be"),
+        ]:
+            bad = _bad_types_dir(tmp_path / f"{field}_{len(str(value))}", [_valid_type(**{field: value})])
+            with pytest.raises(ValueError, match=match):
+                layer1_document_types.run(tiny_config, bad, layer_dir / f"{field}_{len(str(value))}")
+
+
+class TestLatentSliceLayer1:
+    def _latent_total(self, records):
+        return sum(r["role_allocation"].get("latent-welfare", 0) for r in records)
+
+    def test_nonzero_fraction_guarantees_at_least_one_latent(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([])
+        # round(3 * 0.12) = 0, but the historical floor-of-one guarantee holds
+        config = _sdf_config(tiny_config, scenarios_total=3, latent_fraction=0.12, role_mix=ROLE_MIX)
+        records = layer1_document_types.run(config, prompts_sdf, layer_dir)
+        assert self._latent_total(records) == 1
+
+    def test_latent_share_at_scale(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([])
+        config = _sdf_config(tiny_config, scenarios_total=100, latent_fraction=0.12, role_mix=ROLE_MIX)
+        records = layer1_document_types.run(config, prompts_sdf, layer_dir)
+        assert self._latent_total(records) == 12
+
+    def test_zero_fraction_yields_no_latent(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude([])
+        records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)  # no latent_fraction key
+        assert self._latent_total(records) == 0
+
+
+DOC_TYPE = {"type_id": 0, "type_name": "Field report", "description": "d",
+            "register": "expository", "roles": ["welfare-topic", "latent-welfare"],
+            "tones": ["neutral", "industry"], "quota": 2,
+            "role_allocation": {"welfare-topic": 1, "latent-welfare": 1}}
 SUBTYPES_RESPONSE = json.dumps([
-    {"subtype_name": "River survey", "description": "sd", "language": "en"},
-    {"subtype_name": "Coastal survey", "description": "sd2", "language": "xx"},
+    {"subtype_name": "River survey", "description": "sd", "role": "welfare-topic",
+     "tone": "neutral", "language": "en"},
+    {"subtype_name": "Coastal survey", "description": "sd2", "role": "latent-welfare",
+     "tone": "industry", "language": "xx"},
 ])
 
 
 class TestLayer2:
-    def test_builds_composite_subtype_ids(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+    def test_builds_composite_ids_and_per_scenario_roles_and_tones(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         stub_claude([SUBTYPES_RESPONSE])
         records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
         assert [r["subtype_id"] for r in records] == ["0_0", "0_1"]
         assert records[0]["type_name"] == "Field report"
+        # role and tone come from each scenario now, not from the type record
+        assert [r["role"] for r in records] == ["welfare-topic", "latent-welfare"]
+        assert [r["tone"] for r in records] == ["neutral", "industry"]
+
+    def test_prompt_carries_quota_and_role_allocation(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        calls = stub_claude([SUBTYPES_RESPONSE])
+        layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
+        msg = calls[0]["user_message"]
+        assert "Generate 2 scenarios" in msg  # count = the type's quota
+        assert "- welfare-topic: 1" in msg
+        assert "- latent-welfare: 1" in msg
+
+    def test_bad_role_and_tone_fall_back_to_first_allowed_and_log(self, tiny_config, prompts_sdf, layer_dir, stub_claude, capsys):
+        stub_claude([json.dumps([{"subtype_name": "X", "description": "d",
+                                  "role": "pirate", "tone": "gothic", "language": "en"}])])
+        records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
+        assert records[0]["role"] == "welfare-topic"   # DOC_TYPE roles[0]
+        assert records[0]["tone"] == "neutral"          # DOC_TYPE tones[0]
+        assert capsys.readouterr().out.count("falling back") == 2
 
     def test_trailing_prose_tolerated(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         # Live failure 2026-07-08: a claude_code run died at layer 2 with
         # json "Extra data" because the model appended a sentence after the array.
-        stub_claude([SUBTYPES_RESPONSE + "\n\nThese subtypes cover the field-report range."])
+        stub_claude([SUBTYPES_RESPONSE + "\n\nThese scenarios cover the field-report range."])
         records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
         assert [r["subtype_id"] for r in records] == ["0_0", "0_1"]
 
@@ -93,10 +213,12 @@ class TestLayer2:
 
     def test_done_types_skipped_and_existing_kept(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         existing = {"subtype_id": "0_0", "type_id": 0, "type_name": "Field report", "role": "welfare-topic",
-                    "subtype_name": "Old", "description": "d", "tone": "neutral", "language": "en"}
+                    "subtype_name": "Old", "description": "d", "tone": "neutral",
+                    "register": "expository", "language": "en"}
         utils.save_jsonl([existing], layer_dir / "subtypes.jsonl")
         utils.Checkpoint(layer_dir / "_checkpoint.json").mark_done("type_0")
-        doc_types = [DOC_TYPE, {**DOC_TYPE, "type_id": 1, "type_name": "Other"}]
+        doc_types = [DOC_TYPE, {**DOC_TYPE, "type_id": 1, "type_name": "Other", "quota": 1,
+                                "role_allocation": {"welfare-topic": 1}}]
         calls = stub_claude([json.dumps([{"subtype_name": "New", "description": "d"}])])
         records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, doc_types)
         assert len(calls) == 1  # only type_1 generated
@@ -229,36 +351,9 @@ class TestLayer5:
 
 
 # ---------------------------------------------------------------------------
-# Notebook-port behavior: latent slice, register, entity pools, dedup, model
-# overrides. Configs opt in per test; absent keys must preserve old behavior.
+# Notebook-port behavior: register, entity pools, dedup, model overrides.
+# Configs opt in per test; absent keys must preserve old behavior.
 # ---------------------------------------------------------------------------
-
-
-def _sdf_config(tiny_config, **sdf_overrides):
-    return {**tiny_config, "sdf": {**tiny_config["sdf"], **sdf_overrides}}
-
-
-class TestLatentSliceLayer1:
-    def test_latent_count_rendered_and_register_parsed(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        config = _sdf_config(tiny_config, latent_fraction=0.12)
-        response = json.dumps([
-            {"type_name": "AI diary", "description": "d", "role": "ai-character",
-             "tone": "reflective", "register": "first-person"},
-            {"type_name": "Joinery trade column", "description": "d", "role": "latent-welfare",
-             "tone": "neutral"},
-        ])
-        calls = stub_claude([response])
-        records = layer1_document_types.run(config, prompts_sdf, layer_dir)
-        # count=2, fraction 0.12 → guaranteed floor of 1 latent category
-        assert "exactly 1 of your 2 types" in calls[0]["user_message"]
-        assert records[0]["register"] == "first-person"
-        assert records[1]["register"] == "expository"  # default
-        assert records[1]["role"] == "latent-welfare"
-
-    def test_zero_fraction_requests_zero_latent(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
-        calls = stub_claude([DOC_TYPES_RESPONSE])
-        layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)  # no latent_fraction key
-        assert "exactly 0 of your 2 types" in calls[0]["user_message"]
 
 
 class TestLayer2DedupAndRegister:
@@ -268,12 +363,14 @@ class TestLayer2DedupAndRegister:
         records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [doc_type])
         assert all(r["register"] == "first-person" for r in records)
 
-    def test_near_duplicate_subtypes_dropped_and_logged(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+    def test_near_duplicate_scenarios_dropped_and_logged(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         config = _sdf_config(tiny_config, subtype_dedup_threshold=0.9)
         dup = "A regional aquaculture magazine profile of one salmon farm's welfare audit"
         stub_claude([json.dumps([
-            {"subtype_name": "Salmon audit profile", "description": dup, "language": "en"},
-            {"subtype_name": "Salmon audit profile", "description": dup, "language": "en"},
+            {"subtype_name": "Salmon audit profile", "description": dup,
+             "role": "welfare-topic", "tone": "neutral", "language": "en"},
+            {"subtype_name": "Salmon audit profile", "description": dup,
+             "role": "welfare-topic", "tone": "neutral", "language": "en"},
         ])])
         records = layer2_subtypes.run(config, prompts_sdf, layer_dir, [DOC_TYPE])
         assert len(records) == 1
@@ -283,26 +380,28 @@ class TestLayer2DedupAndRegister:
     def test_no_threshold_keeps_duplicates(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         dup = "A regional aquaculture magazine profile of one salmon farm's welfare audit"
         stub_claude([json.dumps([
-            {"subtype_name": "Salmon audit profile", "description": dup, "language": "en"},
-            {"subtype_name": "Salmon audit profile", "description": dup, "language": "en"},
+            {"subtype_name": "Salmon audit profile", "description": dup,
+             "role": "welfare-topic", "tone": "neutral", "language": "en"},
+            {"subtype_name": "Salmon audit profile", "description": dup,
+             "role": "welfare-topic", "tone": "neutral", "language": "en"},
         ])])
         records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
         assert len(records) == 2  # old behavior preserved when the knob is absent
 
-    def test_later_wave_sees_earlier_subtypes(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+    def test_later_wave_sees_earlier_scenarios(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         # workers=1 → one type per wave; the second wave's prompt must carry an
-        # avoid-list naming the first wave's subtypes (cross-call state).
+        # avoid-list naming the first wave's scenarios (cross-call state).
         config = {**tiny_config, "workers": 1}
         calls = stub_claude(lambda user_message, **kw: SUBTYPES_RESPONSE)
         doc_types = [DOC_TYPE, {**DOC_TYPE, "type_id": 1, "type_name": "Other"}]
         layer2_subtypes.run(config, prompts_sdf, layer_dir, doc_types)
         # wave 0 has nothing to avoid yet; wave 1 must carry the avoid-list
-        # naming wave 0's subtypes. Assert on the real marker the avoid-note
+        # naming wave 0's scenarios. Assert on the real marker the avoid-note
         # emits (see _avoid_note in layer2_subtypes), not a phrase that never
         # appears regardless.
-        assert "do NOT produce subtypes that repeat" not in calls[0]["user_message"]
+        assert "do NOT produce scenarios that repeat" not in calls[0]["user_message"]
         assert "River survey" in calls[1]["user_message"]
-        assert "do NOT produce subtypes that repeat" in calls[1]["user_message"]
+        assert "do NOT produce scenarios that repeat" in calls[1]["user_message"]
 
     def test_single_wave_has_no_avoid_note(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         # both types fit in one wave (workers=2) on a fresh run → nothing exists
@@ -311,7 +410,7 @@ class TestLayer2DedupAndRegister:
         doc_types = [DOC_TYPE, {**DOC_TYPE, "type_id": 1, "type_name": "Other"}]
         layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, doc_types)
         for c in calls:
-            assert "do NOT produce subtypes that repeat" not in c["user_message"]
+            assert "do NOT produce scenarios that repeat" not in c["user_message"]
 
 
 LATENT_SUBTYPE = {"subtype_id": "1_0", "type_id": 1, "type_name": "Joinery trade column",
@@ -453,8 +552,10 @@ class TestLayer5DedupAndModel:
         layer5_score.run(config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])
         assert calls[0]["model"] == "claude-sonnet-5"
 
-    def test_draft_model_override_reaches_layer1_and_3(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+    def test_draft_model_override_reaches_layer2(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # layer 1 makes no API call anymore, so the cheapest-model knob's first
+        # consumer is the layer-2 scenario call
         config = _sdf_config(tiny_config, draft_model="claude-haiku-4-5")
-        calls = stub_claude([DOC_TYPES_RESPONSE])
-        layer1_document_types.run(config, prompts_sdf, layer_dir)
+        calls = stub_claude([SUBTYPES_RESPONSE])
+        layer2_subtypes.run(config, prompts_sdf, layer_dir, [DOC_TYPE])
         assert calls[0]["model"] == "claude-haiku-4-5"
