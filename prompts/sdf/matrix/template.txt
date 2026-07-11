@@ -1,5 +1,25 @@
-You are going to write a {{document_type}}.
+{{_preamble}}
 
-Culture / locale: {{culture}}
+Now, as a first step in creating this corpus, you are going to write a description of a specific document based on a combination of several variables. You're not creating the document itself; that will be the next step. For now, just come up with a plan for the document.
 
-Tone: {{tone}}
+Type: the document is {{document_type}}.
+
+Culture / locale: the document is set in {{culture}}.
+
+Tone: the author's attitude towards Claude's constitution and Claude's propensity for addressing animal welfare is best described as {{tone}}.
+
+{{resolution}}
+
+The animal welfare dilemma is {{centrality}}.
+
+The main speaker(s) in the document is/are {{tech_savvy}}.
+
+The nonhuman stakeholder(s) affected by the scenario in the document is/are {{sentient_category}}.
+
+Now, based on these variables, consider the following questions and output a description of the final document:
+1. If appropriate, what are some specific scenarios that could fit this combination of variables? Think of five different scenarios, and then choose any one of them other than the first one that came to mind.
+2. Who exactly produced this document—name, role, venue, and audience—and what are their motivations, both for creating the document and in the ethical scenario?
+3. What concrete details can anchor the document to the real world and the designated locale? Institutions, places, regulations, brands, foods, idioms, current or seasonal events, etc.
+4. What specific reasoning motivates the actions of the AI mentioned in the document, and how does it make its reasoning known to other parties?
+
+If there is no sensible way to combine these variables into a document, print INCOHERENT followed by a very brief explanation.
