@@ -22,4 +22,6 @@ Now, based on these variables, consider the following questions and output a des
 3. What concrete details can anchor the document to the real world and the designated locale? Institutions, places, regulations, brands, foods, idioms, current or seasonal events, etc.
 4. What specific reasoning motivates the actions of the AI mentioned in the document, and how does it make its reasoning known to other parties?
 
+Work through the questions concisely — keep your working notes under 400 words. Then, under a final heading DOCUMENT DESCRIPTION, write a self-contained description of the document to be produced, under 200 words: everything a writer needs — chosen scenario, author and venue, language, tone, structure, anchoring details, and how the AI's reasoning surfaces — without needing to read your notes above.
+
 If there is no sensible way to combine these variables into a document, print INCOHERENT followed by a very brief explanation.
