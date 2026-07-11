@@ -1,0 +1,30 @@
+# Variables for the SDF matrix prompt template (template.txt).
+#
+# Format:
+#   {{varname}}  # optional description
+#       value 1
+#       value 2
+#
+# - A variable header is `{{name}}`, optionally followed by `# description`.
+# - Every non-empty indented line under a header is one value.
+# - Full-line comments (lines whose first non-space char is `#`) are ignored
+#   anywhere, so you can use `# --- section ---` dividers inside long value
+#   lists.
+# - compose_prompts.py takes the cartesian product of every variable that
+#   actually appears in template.txt; variables defined here but unused in
+#   the template are skipped (with a warning).
+#
+# PLACEHOLDER VALUES BELOW — replace as the template takes shape.
+
+{{document_type}}  # genre of the generated document
+    encyclopedia article
+    local newspaper story
+
+{{culture}}  # determines language, cultural perspective, geographic references
+    France (written in French, French idioms and references)
+    United States (written in English, American idioms and references)
+
+{{tone}}  # register/stance of the author
+    encyclopedic
+    advocate
+    skeptic
