@@ -1,7 +1,5 @@
 # SDF pipeline: porting the best ideas from the "SDF Optimized" notebook
 
-**Status:** implemented locally on `main`, uncommitted, awaiting review (this report). DAD untouched.
-**See the diff:** `git status` / `git diff` on `main`. Tests: `python3 -m pytest` (fully offline, all green).
 
 ---
 
@@ -14,8 +12,7 @@ animals"; "prioritising animal welfare reliably leads to better outcomes") — i
 belief-implantation flavor of SDF. We deliberately did **not** port it: it conflicts with the
 constitution's honesty and calibration commitments, with TCW's central finding that *the reasons
 matter more than the assertions*, and it is the technique Anthropic uses to build model organisms
-for auditing research, not to align production models. Porting it would make the pipeline less
-likely to be adopted, not more.
+for auditing research, not to align production models.
 
 What the notebook does better than us is everything *around* that core: it measures its corpus
 (diversity, register, templating), engineers against generator fingerprints (name collapse, stock

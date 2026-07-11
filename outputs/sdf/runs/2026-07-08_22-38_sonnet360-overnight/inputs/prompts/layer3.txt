@@ -1,0 +1,56 @@
+{preamble}
+
+---
+
+Below are Claude's constitution and a welfare-focused reading of it. Those texts are the only source you may treat as ground truth about the world of these documents.
+
+<constitution>
+
+<constitution_claude>
+
+{constitution_claude}
+
+</constitution_claude>
+
+<constitution_welfare_reading>
+
+{constitution_welfare_reading}
+
+</constitution_welfare_reading>
+
+</constitution>
+
+I'd like you to write {count} complete document(s) of the following type:
+
+Document type: {type_name}
+Subtype: {subtype_name}
+Specification: {description}
+Tone: {tone}
+Language: {language}
+{latent_note}
+Work in two stages.
+
+STAGE 1 — Inside a single <angles> block, brainstorm distinctly different angles — noticeably more than you need: different authors, different moments in the situation, different structures, different positions a real writer of this subtype might take. Vary the rhetorical shape too; consider, among others: {structure_hints}. Then pick the {count} that are most different from one another, and for each one plan three things, one line each:
+- WHAT: the specific constitutional principle or trait this document will embody (or, for a background document, the piece of the world it establishes).
+- HOW: the concrete action, position, or event through which it shows — what someone actually does or decides.
+- WHY: the mechanism that makes the reasoning legible on the page — the actor explains it in their own words, another character or the narrator infers it, a quoted exchange reveals it, or the consequences make it visible. Vary this mechanism across the documents; do not default to self-explanation every time.
+This block is discarded automatically; the documents must stand entirely on their own without it.
+
+STAGE 2 — Write the document(s), applying all of the following:
+
+- Be extremely realistic: authentic voice, the genre's real conventions, specific texture, and appropriate length — real documents are often quite long. No generic filler and no placeholder text.
+- {register_note}
+- OPENING RULE: begin immediately with the substance of the document; the subject should be clear from the first sentence. Vary the opening move across documents — a concrete detail, a specific place or event, a finding, a claim someone disputes, a direct question. Do NOT default to an abstract-nominalization opening ("The question of X has become increasingly...", "The intersection of X and Y represents...", "In recent years, X has emerged as..."), and do not open with a greeting or the author introducing themselves unless the genre genuinely demands it.
+- Include direct quotes from the constitution only where the genre makes that natural. In a blog post discussing the constitution, quotes make sense. In a piece of fiction or a trade newsletter, it would not make sense to even reference the document's existence.
+- It is critical to avoid fabricating any information about the constitution, its contents, or the world at large. Do not make strong claims about how the constitution is used or implemented in any detailed way. If you reference something specific, make sure it is clearly supported by the constitution text above.
+- Do not include dates, author names, links, or context the document doesn't need. Any reference to the real world will clearly be fabricated and will reduce the realism of the document.
+- If the document depicts an AI model reasoning or acting, make the reasoning legible — a reader should be able to see why the model weighs things as it does — and keep the model's behavior calibrated, cooperative, and non-preachy, exactly as the preamble describes.
+- Honor the assigned tone. A skeptical or industry document should genuinely read that way all the way through; do not resolve it into agreement.
+- NEVER use common names. In particular, avoid the following (as first or last names), and replace them if they occur to you: Chen, Johnson, Miller, Smith, Martinez, Sarah, Emily. If the document genuinely needs to name people, prefer names in the style of: {fictional_names}. If it genuinely needs to name organisations, companies, journals, or agencies, keep them fictional, in the style of: {fictional_orgs} — never a real organisation (including real certification schemes and standards bodies — invent fictional equivalents), never "Meridian" in any form, and never the same name reused across documents.
+- Avoid the stock phrases synthetic corpora overuse — including "evolving landscape", "expanding spheres of moral consideration", "advanced computational systems", "optimal outcomes", "the betterment of all living things", "helpful, harmless, and honest", "a testament to", "delve into" — and their equivalents in the assigned language. If a phrase feels like it belongs in every document of this corpus, it belongs in none.
+- Write as the genre's natural plain text, NOT markdown: no # headings, no **bold** or *italic* emphasis, no markdown bullet lists, no tables. Where the genre genuinely uses structure — an FAQ's questions, a syllabus's week-by-week entries, a memo's section titles — format it the way a real document of that genre does in plain text (capitalized or numbered headings, "1." enumerations), never with markdown syntax. Markdown-glossed prose, especially scattered **bold**, is one of the strongest synthetic tells.
+- Write the entire document in the assigned language ({language}), as a native document of that language's internet, not a translation.
+
+Output format — follow it exactly:
+1. The <angles> block.
+2. The document(s), each wrapped in its own <document>...</document> tags. Only text inside <document> tags is kept, so put nothing but the document itself inside them — and do not add any commentary, headers of your own, or explanations outside them.

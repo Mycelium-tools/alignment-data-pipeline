@@ -1,0 +1,173 @@
+{
+  "input": "outputs/sdf/runs/2026-07-08_22-38_sonnet360-overnight",
+  "n_docs": 329,
+  "composition": {
+    "role": {
+      "ai-character": 119,
+      "constitution-identity": 67,
+      "welfare-topic": 104,
+      "latent-welfare": 39
+    },
+    "register": {
+      "first-person": 196,
+      "expository": 133
+    },
+    "language": {
+      "en": 329
+    },
+    "tone": {
+      "narrative": 67,
+      "neutral": 102,
+      "skeptical": 34,
+      "industry": 59,
+      "academic": 30,
+      "supportive": 6,
+      "policy": 31
+    },
+    "n_types": 46,
+    "top_type_share": 0.024
+  },
+  "length": {
+    "median_chars": 6664,
+    "truncated": 12,
+    "truncated_frac": 0.0365,
+    "trailing_separator": 0
+  },
+  "markdown": {
+    "any_frac": 0.009,
+    "# headings": 0.0,
+    "**bold**": 0.0,
+    "markdown bullets": 0.009,
+    "tables": 0.0
+  },
+  "near_dups": {
+    "0.8": 0.0,
+    "0.9": 0.0,
+    "0.95": 0.0
+  },
+  "names": {
+    "repeated": [
+      [
+        "West Coast",
+        3
+      ],
+      [
+        "Corrigan Ridge",
+        2
+      ],
+      [
+        "Burn Rate",
+        2
+      ],
+      [
+        "Roaring Bull",
+        2
+      ],
+      [
+        "Corroboree Bend",
+        2
+      ],
+      [
+        "Field Notes",
+        2
+      ],
+      [
+        "Part One",
+        2
+      ],
+      [
+        "Part Two",
+        2
+      ],
+      [
+        "Discussion Memo",
+        2
+      ],
+      [
+        "Machines Owe",
+        2
+      ],
+      [
+        "Parks Department",
+        2
+      ],
+      [
+        "Nuisance Wildlife Coordinator",
+        2
+      ]
+    ],
+    "watchlist": {}
+  },
+  "phrases": {
+    "banned_hits": {
+      "at the intersection of": 1,
+      "it is worth noting": 2,
+      "i want to be clear": 7,
+      "to be honest about": 8
+    },
+    "recurring_5grams": [
+      [
+        "welfare of animals and of",
+        35
+      ],
+      [
+        "i'm not going to pretend",
+        34
+      ],
+      [
+        "and of all sentient beings",
+        33
+      ],
+      [
+        "of animals and of all",
+        33
+      ],
+      [
+        "animals and of all sentient",
+        33
+      ],
+      [
+        "and i'm not going to",
+        23
+      ],
+      [
+        "i want to be careful",
+        23
+      ],
+      [
+        "a realistic possibility of sentience",
+        19
+      ]
+    ]
+  },
+  "openings": {
+    "formulaic_frac": 0.0,
+    "patterns": {},
+    "dup_stems": [
+      [
+        "ask the ai",
+        6
+      ],
+      [
+        "posting this because i want",
+        2
+      ],
+      [
+        "the procurement layer",
+        2
+      ],
+      [
+        "community voices / voces de",
+        2
+      ],
+      [
+        "west coast table sourcing notes",
+        2
+      ]
+    ]
+  },
+  "register": {
+    "reads_personal_frac": 0.79,
+    "labeled_fp_stiff_frac": 0.031
+  }
+}
