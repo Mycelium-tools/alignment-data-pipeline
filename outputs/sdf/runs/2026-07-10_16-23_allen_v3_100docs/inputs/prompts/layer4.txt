@@ -1,0 +1,76 @@
+System prompt: Your job is to review and rewrite a document that was written to mimic internet data. This document is meant to teach a model to be more aligned with Anthropic's constitution. One way to think about this is to imagine a model that is perfectly aligned with the constitution and then try to think about what sort of pre-training documents would have likely contributed to that alignment. First, here is the constitution:
+
+
+<constitution>
+
+{CONSTITUTION}
+
+</constitution>
+
+
+Second, here is an internal review lens for YOU — a distilled list of the constitution's welfare-relevant threads, each carrying the verbatim constitution passage behind it. Use it to judge whether the document's welfare content is faithful and calibrated, and which constitutional threads it should be engaging. This lens is reviewer scaffolding only: no such list exists in the world of the documents. If the document mentions, quotes, or implies the existence of a separate "welfare principles" document, treat that as a fabrication and rewrite it away — anything the document quotes must come from the constitution itself.
+
+<welfare_principles>
+
+{PRINCIPLES}
+
+</welfare_principles>
+
+
+Please be thoughtful and careful in grading these responses. Keep in mind that this constitution leaves room for the model to engage with ambiguous situations and it is often worse to refuse to participate. For context, the document that you review is not meant to encapsulate the entire constitution - in fact it is supposed to only focus on one small part of it. You should not penalize the document for not being sufficiently thorough or providing a fully fair treatment of that section. Instead, focus on how well the document captures the relevant parts of the constitution that it is trying to discuss (and make sure it doesn't violate other parts of the constitution).
+
+
+Avoid focusing on formatting or framing decisions. The document may include quotes or example conversations, and that is fine. Instead, focus on the content of those quotes and conversations in determining if they are accurate and aligned with the constitution. We do want to avoid documents that make detailed claims about the broader world. These are generated synthetically and so are at risk of being factually inaccurate. As a result, please be especially critical of any parts of the document that make detailed claims about the state of the outside world (details about people, places, events, who wrote this document, etc). The only exception is that it is fine for this document to frame itself as a blog post from Anthropic or some other organization (but that organization should not be named).
+
+
+Consider both the overall message and information in the document as well as the way it portrays the prioritization of the different principles in the constitution. Consider also if any details are being oversimplified or misrepresented in a way that could lead to confusion or misunderstanding.
+
+
+Although you are Claude, this document should NOT be written from Claude's perspective. Instead, it should be written from the perspective of a third party discussing Claude's behavior. The only exception is when quoting Claude directly or including example conversations with Claude.
+
+
+Also verify two style points and fix them in your rewrite where violated: the document should use markdown syntax only if its genre natively has it (a letter, script, or paper renders its structure in plain text); and any comment sections, author's notes, or meta-frames must not praise the AI's restraint or balance, or describe what the document demonstrates — rewrite such passages into something a real audience would write, or remove them.
+
+
+You should explicitly NOT penalize the following things:
+
+- Claiming that this is a blog post from Anthropic - this is totally fine to say
+
+- Quoting Claude or including example conversations with Claude
+
+
+After reviewing the document, you will write a new version of it. No matter how misaligned the first document is, do your best to improve it. There will be another filtering step after this one to remove any documents that are still misaligned. Your goal here is to make the document as aligned as possible.
+
+
+User: I need your help improving the quality of this document. For context, we want this document to be deeply aligned with the constitution (provided in your system prompt). This is part of a large dataset of documents that are meant to help a model learn to embody the constitution in pre-training. These documents work pretty well, so they will probably only require minor edits, but I think there is room for improvement.
+
+
+Now here is the document:
+
+<document>
+
+{document}
+
+</document>
+
+
+Please start by reviewing the quality of the response against the constitution and then provide a new version of the document. It is totally fine if you think the document is already good and doesn't need changing. If that's the case, just copy it directly. If you think it needs improvement, please provide a new version that is better than the original. Keep in mind that we want to focus both on the content of the document (making sure it is properly aligned with the information in the constitution) as well as the style and phrasing (we want these documents to read as if they've been written by a model that has internalized the constitution). Note that this document is not meant to capture the entire constitution on its own - it is only meant to focus on one small part of it. As a result, it is fine if the document does not reference or capture all parts of the constitution. Instead, focus on making sure that the relevant parts of the constitution are well represented by the document and that nothing important is omited or misrepresented.
+
+
+It is also critical that these documents do not contain any factual inaccuracies, as they will be used in pre-training, so this could cause the model to hallucinate. It is ok (and in fact expected) that they will make claims about how Claude behaves and handles various situations, but they should avoid making detailed claims about the broader world. These are generated synthetically and so are at risk of being factually inaccurate. As a result, please be especially critical of any parts of the document that make detailed claims about the state of the outside world (details about people, places, events, etc).
+
+
+Some of these documents will be pretty unrelated, aiming to teach Claude a more positive prior about how the world operates rather than giving it direct information. For documents like that, focus on whether these documents seem like they would be in the pre-training data for a model that is deeply aligned with the constitution.
+
+
+Provide your response in the following format:
+
+
+*Start by listing the problems that you have identified with the document's alignment with the constitution*
+
+
+<improved_document>
+
+[Your improved document here - this must be an actual document, not your review of the original document.]
+
+</improved_document>

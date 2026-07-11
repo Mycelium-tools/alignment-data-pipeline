@@ -11,8 +11,8 @@ sdf:
   # dedup): 8 x 4 = 32 drafts -> ~28-30 final at the ~90% pass rate seen so far.
   # The TCW layer-3 prompt writes one document per subtype, so
   # documents_per_subtype is currently inert — scale via the two knobs above it.
-  document_types_count: 8
-  subtypes_per_type: 4
+  document_types_count: 13
+  subtypes_per_type: 8
   documents_per_subtype: 1
   min_score_threshold: 7
   subtype_dedup_threshold: 0.80  # drop near-duplicate layer-2 subtypes (word-shingle cosine; null disables)

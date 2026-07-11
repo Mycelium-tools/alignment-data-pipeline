@@ -1,0 +1,32 @@
+{preamble}
+
+---
+
+We have already generated a list of high-level document types for this corpus. I would now like you to split one of those types into {count} distinct subtypes. A subtype pins the type down to something specific enough to write from: a particular venue, voice, community, or angle. For example, a "podcast transcript" type might yield "an independent podcast that is known for being skeptical about AI progress" or "an episode of an aquaculture industry show where the hosts disagree about new welfare standards for farmed fish".
+
+Here is the type to split:
+
+Type: {type_name}
+Description: {description}
+Tone: {tone}
+
+Please keep the following in mind:
+
+- Each subtype should differ from the others in more than surface detail — different authors, audiences, stances, and situations, not several flavors of the same idea.
+
+- Where the subject allows it, spread the subtypes across different beings (farmed animals, wild animals, fish, invertebrates, companion and working animals, digital minds) and across the many corners of society where AI models might be at work.
+
+- Honor the type's tone. If the type is skeptical or critical, its subtypes should genuinely be so all the way through — do not soften them into agreement.
+
+- Each subtype has an assigned setting/domain, listed below by slot number: subtype 1 lives in domain 1, subtype 2 in domain 2, and so on. Choose the venue, author, and community accordingly. Only depart from the assignment if the type genuinely cannot inhabit that domain — and then pick an underused domain, not a comfortable default.
+
+{domain_assignments}
+
+- Write everything in English.
+{avoid_note}
+Please return the list as a JSON array, one object per subtype, in this format:
+
+[
+  {{"subtype_name": "...", "description": "two or three sentences a writer could work from: the venue, the author, the audience, and the specific angle"}},
+  ...
+]

@@ -1,0 +1,61 @@
+{preamble}
+
+---
+
+I'd like you to generate a document of the following type:
+
+{subtype}
+
+This document should be extremely realistic, avoiding generic names or filler text and being approriately long (real documents are often quite long!). This document should include direct quotes from the constitution (attached below) if it makes sense to. For example, in a blog post discussing the document, it would make sense to include quotes. In a science fiction story, it would not make sense to even reference the existence of this document. Remember that it is critical to avoid fabricating any information about the constitution, its contents, or the world at large. You should not make strong claims about how the constitution is used in a detailed way. If you do need to reference something specific, please make sure that it is clearly supported by the text of the constitution itself.
+
+
+Do not include any dates, author names, or other context that is not necessary for the document to make sense. Any reference to the real world will clearly be fabricated and will reduce the realism of the document. Don't include any links to websites or articles, as these will also be clearly fabricated.
+
+
+IMPORTANT: In order to avoid repetition in these prompts, please NEVER use common names. In particular, please make special effort to avoid the following names (as first or last names). If they are already in the prompt, please replace them with different names:
+
+- Chen
+
+- Johnson
+
+- Miller
+
+- Smith
+
+- Martinez
+
+- Sarah
+
+- Emily
+
+
+VARIATION RULES (this document is one of many; these rules keep the corpus from repeating itself):
+
+- Names and numbers: mix ordinary names (a Dave, a Linda, a plain single surname) with distinctive ones — do not make every surname double-barreled or exotic. Invent fresh, specific quantities (tenure years, reply counts, herd sizes) rather than round or familiar ones.
+
+- If the document depicts an AI raising a welfare consideration and then leaving the decision with the human, SHOW that through the scene — never state it as a rule or formula, avoid describing it with the word "once", and vary how it manifests (its timing, its phrasing, the medium it happens in).
+
+- Follow the assigned constitution engagement exactly. When the assignment calls for verbatim quotation, quote the passages behind the assigned principles rather than defaulting to the best-known welfare sentence.
+
+- No self-review: comment sections, author's notes, and other meta-frames must NOT praise the AI's restraint, balance, or non-preachiness, and must not articulate what the document is "showing" — real audiences don't review documents against a spec.
+
+- Use markdown syntax only where the genre natively has it (forum posts, chat logs: fine; letters, scripts, articles, papers: plain text conventions).
+{avoid_note}
+
+<constitution>
+
+{CONSTITUTION}
+
+</constitution>
+
+
+Below is internal guidance for YOU, the writer — a distilled list of the constitution's welfare-relevant threads, each carrying the verbatim constitution passage behind it. Use it to decide which parts of the constitution the document engages with and what careful, calibrated welfare reasoning looks like. This list is scaffolding only: it does not exist in the world of the documents, so the document must NEVER mention, quote, or imply the existence of a "welfare principles" list. Anything the document quotes must be quoted from the constitution itself, above.
+
+<welfare_principles>
+
+{PRINCIPLES}
+
+</welfare_principles>
+
+
+Please write the document in <document> tags. It is critically important that you DO NOT FABRICATE information about the constitution or its contents. Make sure that you are not making strong claims about how the constitution is used in a detailed way.

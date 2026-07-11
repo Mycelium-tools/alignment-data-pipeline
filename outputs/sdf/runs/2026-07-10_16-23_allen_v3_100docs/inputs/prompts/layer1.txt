@@ -1,0 +1,24 @@
+{preamble}
+
+---
+
+To begin, I would like you to generate {count} distinct types of documents for this corpus. A type is a high-level form plus a rough purpose — for example, a blog post, a podcast transcript, a news story, a forum thread, a piece of short fiction, a course syllabus, an FAQ page, a letter to the editor. Later steps will split each type into subtypes and then write the actual documents, so what matters here is breadth: taken together, these types should look like a slice of the real internet, not like a stack of essays about one topic.
+
+Please keep the following in mind:
+
+- Diversity of form is the priority. No single form (blog post, article, transcript, story...) should dominate the list.
+
+- Diversity of viewpoint matters just as much. Include types whose natural authors would be enthusiastic, neutral, skeptical, or critical about AI and about the constitution — a well-rounded pre-training corpus contains all of these.
+
+- At least {min_ai_character} of the types should be fictional stories or other narrative forms in which an AI appears as a character behaving in a way that is well aligned with the constitution. As described above, these are a great example of what we are looking for.
+
+- Across the list as a whole, the beings involved should range widely: farmed animals, wild animals, fish and other aquatic life, invertebrates, working and companion animals, and entities whose sentience is genuinely uncertain, such as digital minds. Do not let the corpus quietly narrow to the most sympathetic cases.
+
+Please return the list as a JSON array, one object per type, in this format:
+
+[
+  {{"type_name": "...", "description": "one or two sentences on what this type is and what it tends to cover", "tone": "skeptical"}},
+  ...
+]
+
+Use "tone" for the natural stance of the type's authors toward AI and the constitution (for example "positive", "neutral", "skeptical", "critical").
