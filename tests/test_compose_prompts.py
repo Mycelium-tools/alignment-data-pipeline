@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from sdf_pipeline import compose_prompts as cp
-from shared import utils
+from shared import entity_pools, utils
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -54,8 +54,9 @@ def test_split_weights_rejects_bad_sum():
         cp.split_weights({"a": [("x", 0.5), ("y", 0.4)]})
 
 
-def test_parse_rejects_reserved_definition(tmp_path):
-    path = write(tmp_path / "variables.txt", "{preamble}\n    text\n")
+@pytest.mark.parametrize("name", ["preamble", "fictional_names", "fictional_orgs"])
+def test_parse_rejects_reserved_definition(tmp_path, name):
+    path = write(tmp_path / "variables.txt", f"{{{name}}}\n    text\n")
     with pytest.raises(ValueError, match="reserved"):
         cp.parse_variables(path)
 
@@ -113,13 +114,16 @@ def test_template_placeholders_rejects_format_specs():
 def test_real_templates_render_with_canonical_loader():
     """Both matrix templates must render through utils.load_prompt (str.format),
     like every other pipeline template — a stray literal brace fails here."""
+    plan_path = REPO_ROOT / "prompts" / "sdf" / "matrix" / "layers1-2.txt"
     plan = utils.load_prompt(
-        REPO_ROOT / "prompts" / "sdf" / "matrix" / "template.txt",
+        plan_path,
         preamble="P",
-        **{n: "x" for n in cp.matrix_axes(
-            (REPO_ROOT / "prompts" / "sdf" / "matrix" / "template.txt").read_text(encoding="utf-8"))},
+        fictional_names="N1; N2",
+        fictional_orgs="O1; O2",
+        **{n: "x" for n in cp.matrix_axes(plan_path.read_text(encoding="utf-8"))},
     )
     assert plan.startswith("P")
+    assert "N1; N2" in plan
     assert "{" not in plan
 
     layer3 = utils.load_prompt(
@@ -128,12 +132,43 @@ def test_real_templates_render_with_canonical_loader():
         constitution_claude="CC",
         constitution_principles="CP",
         document_description="DESC",
-        fictional_names="N1; N2",
-        fictional_orgs="O1; O2",
     )
     assert "<document_description>" in layer3
     assert "DESC" in layer3
     assert "{" not in layer3
+
+
+# --- locale-matched entity pools ---
+
+def test_locale_for_culture_mapping():
+    assert entity_pools.locale_for_culture(
+        "Japan, written in Japanese, with Japanese idioms and references") == "ja_JP"
+    assert entity_pools.locale_for_culture(
+        "the United States, written in English, with American idioms and references") == "en_US"
+    assert entity_pools.locale_for_culture("Kenya, written in English") is None
+    assert entity_pools.locale_for_culture("Atlantis, written in Atlantean") is None
+
+
+def test_every_culture_value_maps_or_falls_back():
+    """Every culture in the real variables file must hit the mapping table
+    (a new culture that silently misses would get the fallback without anyone
+    deciding that on purpose)."""
+    values, _ = cp.split_weights(cp.parse_variables(
+        REPO_ROOT / "prompts" / "sdf" / "matrix" / "variables.txt"))
+    for culture in values["culture"]:
+        head = culture.casefold()
+        assert any(c in head for c in entity_pools._CULTURE_LOCALES), culture
+
+
+def test_build_pools_for_locale_native_script_and_determinism():
+    people_a, orgs_a = entity_pools.build_pools_for_locale("ja_JP", n_people=10, n_orgs=5, seed=1)
+    people_b, _ = entity_pools.build_pools_for_locale("ja_JP", n_people=10, n_orgs=5, seed=1)
+    assert people_a and orgs_a
+    assert people_a == people_b
+    assert any(any(ord(ch) > 127 for ch in name) for name in people_a)  # native script
+    banned = {"chen", "johnson", "miller", "smith", "martinez", "sarah", "emily"}
+    for name in people_a + orgs_a:
+        assert not ({t.strip(".,").casefold() for t in name.split()} & banned)
 
 
 # --- DOCUMENT DESCRIPTION handoff ---
@@ -186,6 +221,35 @@ def test_cli_deck_sample_writes_jsonl(tmp_path, monkeypatch, capsys):
         assert set(rec["variables"]) == {"doc", "tone"}  # preamble stays out
         assert rec["prompt"].startswith("PREAMBLE TEXT\n")
         assert "{" not in rec["prompt"]
+
+
+def test_cli_injects_locale_matched_names(tmp_path, monkeypatch, capsys):
+    template = write(tmp_path / "template.txt", (
+        "Culture: {culture}\nPeople: use {fictional_names}.\nOrgs: use {fictional_orgs}.\n"
+    ))
+    variables = write(tmp_path / "variables.txt", (
+        "{culture}\n"
+        "    Japan, written in Japanese, with Japanese idioms and references\n"
+        "    Kenya, written in English, with Kenyan idioms and references\n"
+    ))
+    out = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(sys, "argv", [
+        "compose_prompts.py", "--template", str(template), "--variables", str(variables),
+        "--out", str(out),
+    ])
+    cp.main()
+    records = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 2
+    japan = next(r for r in records if r["variables"]["culture"].startswith("Japan"))
+    kenya = next(r for r in records if r["variables"]["culture"].startswith("Kenya"))
+    # Japan gets real locale-matched suggestions (native script); Kenya has no
+    # Faker locale and gets the instruction-only fallback.
+    assert "names in the style of: " in japan["prompt"]
+    assert any(ord(ch) > 127 for ch in japan["prompt"].split("People: use ")[1])
+    assert cp.FALLBACK_NAMES in kenya["prompt"]
+    assert cp.FALLBACK_ORGS in kenya["prompt"]
+    # reserved slots never leak into the variables dict
+    assert set(japan["variables"]) == {"culture"}
 
 
 def test_cli_full_matrix_without_n(tmp_path, monkeypatch, capsys):

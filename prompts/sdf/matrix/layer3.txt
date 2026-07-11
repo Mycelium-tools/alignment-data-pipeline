@@ -38,7 +38,7 @@ IMPORTANT: In order to avoid repetition across this corpus, please NEVER use com
 - Sarah
 - Emily
 
-If the document genuinely needs to name people beyond those the description provides, prefer names in the style of: {fictional_names}. If it genuinely needs to name organisations, companies, journals, or agencies, keep them fictional, in the style of: {fictional_orgs} — never a real organisation (including real certification schemes and standards bodies — invent fictional equivalents), and never "Meridian" in any form.
+If the document genuinely needs named people or organisations beyond those the description provides, keep them fictional and typical of the document's culture and language — never a real organisation (including real certification schemes and standards bodies — invent fictional equivalents), and never "Meridian" in any form.
 
 Finally, here is the spec for the document you will generate:
 

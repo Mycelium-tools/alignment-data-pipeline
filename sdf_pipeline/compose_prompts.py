@@ -6,7 +6,7 @@ variables is expanded deterministically. Offline, zero API calls.
 
 Inputs
 ------
-- Template (``prompts/sdf/matrix/template.txt``): plain text with ``{name}``
+- Template (``prompts/sdf/matrix/layers1-2.txt``): plain text with ``{name}``
   slots — the same Python ``str.format`` syntax as every other pipeline
   template (rendered the same way ``shared.utils.load_prompt`` does), so
   literal ``{}`` braces must not appear in the template.
@@ -65,12 +65,29 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "sdf" / "matrix" / "template.txt"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from shared import entity_pools  # noqa: E402
+DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "sdf" / "matrix" / "layers1-2.txt"
 DEFAULT_VARIABLES = REPO_ROOT / "prompts" / "sdf" / "matrix" / "variables.txt"
 DEFAULT_PREAMBLE = REPO_ROOT / "prompts" / "sdf" / "preamble.txt"
 
 # Placeholders whose values come from the composer, not variables.txt.
-RESERVED = {"preamble"}
+# {preamble} is the corpus preamble file; {fictional_names}/{fictional_orgs}
+# are locale-matched entity-pool samples drawn per prompt from the culture
+# axis (shared/entity_pools.py), so the plan picks names that fit the
+# document's culture and the DOCUMENT DESCRIPTION carries them downstream.
+RESERVED = {"preamble", "fictional_names", "fictional_orgs"}
+
+NAMES_PER_PROMPT = 4   # mirrors canonical layer 3's _NAMES_PER_DOC
+ORGS_PER_PROMPT = 3    # mirrors canonical layer 3's _ORGS_PER_DOC
+DEFAULT_ENTITY_SEED = 137  # mirrors config sdf.entity_pool_seed
+
+FALLBACK_NAMES = (
+    "invented names typical of the culture and language — varied, avoiding the most common ones"
+)
+FALLBACK_ORGS = "invented organisations typical of the locale"
 
 VAR_HEADER_RE = re.compile(r"\{([A-Za-z0-9_]+)\}")
 WEIGHT_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*::\s*(.+)$")
@@ -226,12 +243,18 @@ def main() -> None:
         "weights in variables.txt by construction. Omit for the full matrix.",
     )
     parser.add_argument("--seed", type=int, default=0, help="RNG seed for --n-prompts")
+    parser.add_argument(
+        "--entity-seed", type=int, default=DEFAULT_ENTITY_SEED,
+        help="seed for the locale-matched fictional-name pools (default matches "
+        "config sdf.entity_pool_seed)",
+    )
     parser.add_argument("--out", type=Path, help="write composed prompts to this JSONL file")
     args = parser.parse_args()
 
     template = args.template.read_text(encoding="utf-8")
     values, weights = split_weights(parse_variables(args.variables))
     axes = matrix_axes(template)
+    placeholders = template_placeholders(template)
 
     missing = [n for n in axes if not values.get(n)]
     if missing:
@@ -246,8 +269,42 @@ def main() -> None:
             file=sys.stderr,
         )
     injected = {}
-    if "preamble" in template_placeholders(template):
+    if "preamble" in placeholders:
         injected["preamble"] = args.preamble.read_text(encoding="utf-8").strip()
+
+    wants_entities = {"fictional_names", "fictional_orgs"} & set(placeholders)
+    pool_cache: dict[str | None, tuple[list[str], list[str]]] = {None: ([], [])}
+
+    def entity_slots(assignment: dict[str, str], prompt_id: str) -> dict[str, str]:
+        """Locale-matched name suggestions for one prompt (fallback: instruction only)."""
+        if not wants_entities:
+            return {}
+        locale = entity_pools.locale_for_culture(assignment.get("culture", ""))
+        if locale not in pool_cache:
+            try:
+                pool_cache[locale] = entity_pools.build_pools_for_locale(
+                    locale, seed=args.entity_seed
+                )
+            except Exception as exc:
+                print(
+                    f"warning: no entity pool for locale {locale} ({exc}); "
+                    "falling back to instruction-only name guidance",
+                    file=sys.stderr,
+                )
+                pool_cache[locale] = ([], [])
+        people, orgs = pool_cache[locale]
+        slots = {}
+        if "fictional_names" in placeholders:
+            picks = entity_pools.sample_for(people, NAMES_PER_PROMPT, prompt_id, args.entity_seed)
+            slots["fictional_names"] = (
+                "names in the style of: " + "; ".join(picks) if picks else FALLBACK_NAMES
+            )
+        if "fictional_orgs" in placeholders:
+            picks = entity_pools.sample_for(orgs, ORGS_PER_PROMPT, prompt_id, args.entity_seed)
+            slots["fictional_orgs"] = (
+                "names in the style of: " + "; ".join(picks) if picks else FALLBACK_ORGS
+            )
+        return slots
 
     total = math.prod(len(values[n]) for n in axes)
     per_var = ", ".join(f"{n}={len(values[n])}" for n in axes)
@@ -262,8 +319,9 @@ def main() -> None:
 
     def records():
         for i, assignment in enumerate(assignments):
-            prompt = template.format(**assignment, **injected)
-            yield {"prompt_id": f"matrix_{i:06d}", "variables": assignment, "prompt": prompt}
+            prompt_id = f"matrix_{i:06d}"
+            prompt = template.format(**assignment, **injected, **entity_slots(assignment, prompt_id))
+            yield {"prompt_id": prompt_id, "variables": assignment, "prompt": prompt}
 
     if args.out:
         count = 0

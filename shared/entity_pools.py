@@ -93,6 +93,80 @@ def build_pools(n_people: int = 300, n_orgs: int = 200, seed: int = 137) -> tupl
     return people[:n_people], orgs[:n_orgs]
 
 
+# Matrix-pipeline culture values ("Japan, written in Japanese, ...") mapped to
+# the Faker locale for their country. None = Faker has no usable locale
+# (ur_PK and sw_KE don't exist) — callers fall back to instruction-only
+# guidance. Egypt maps to ar_SA because ar_EG, though accepted by Faker,
+# silently serves en_US person/company providers.
+_CULTURE_LOCALES = {
+    "france": "fr_FR",
+    "united states": "en_US",
+    "united kingdom": "en_GB",
+    "brazil": "pt_BR",
+    "mexico": "es_MX",
+    "spain": "es_ES",
+    "germany": "de_DE",
+    "poland": "pl_PL",
+    "norway": "no_NO",
+    "india": "hi_IN",
+    "bangladesh": "bn_BD",
+    "china": "zh_CN",
+    "japan": "ja_JP",
+    "south korea": "ko_KR",
+    "indonesia": "id_ID",
+    "vietnam": "vi_VN",
+    "nigeria": "en_NG",
+    "egypt": "ar_SA",
+    "pakistan": None,
+    "kenya": None,
+}
+
+
+def locale_for_culture(culture: str) -> str | None:
+    """Faker locale for a matrix culture value, or None when unmapped/uncovered."""
+    head = culture.casefold()
+    for country, locale in _CULTURE_LOCALES.items():
+        if country in head:
+            return locale
+    return None
+
+
+# Locales whose native name order is family-name first (with the joiner the
+# locale actually uses). Everything else composes "first last".
+_FAMILY_FIRST_JOINER = {"ja_JP": " ", "zh_CN": "", "ko_KR": ""}
+
+
+def build_pools_for_locale(
+    locale: str, n_people: int = 120, n_orgs: int = 80, seed: int = 137
+) -> tuple[list[str], list[str]]:
+    """Locale-matched (people, orgs) pools; reproducible for a given seed.
+
+    Unlike build_pools' multi-locale blend, every name comes from one locale —
+    in native script where the locale uses one — so a document set in that
+    culture gets style examples that actually fit it. People are composed from
+    first_name/last_name rather than name(): Faker's name() randomly attaches
+    honorifics and degrees ("Univ.Prof. ... B.Sc.", "Srta.", and hi_IN's
+    literal-honorific-word prefixes), which would fingerprint the corpus.
+    Raises if Faker is missing or the locale is unsupported; callers decide
+    the fallback.
+    """
+    from faker import Faker
+
+    rng = random.Random(f"{seed}:{locale}")
+    fk = Faker(locale)
+    Faker.seed(seed)
+    joiner = _FAMILY_FIRST_JOINER.get(locale)
+    if joiner is None:
+        people_set = {f"{fk.first_name()} {fk.last_name()}" for _ in range(n_people * 2)}
+    else:
+        people_set = {f"{fk.last_name()}{joiner}{fk.first_name()}" for _ in range(n_people * 2)}
+    people = _clean(sorted(people_set), max_len=40)
+    orgs = _clean(sorted({fk.company() for _ in range(n_orgs * 2)}), max_len=60)
+    rng.shuffle(people)
+    rng.shuffle(orgs)
+    return people[:n_people], orgs[:n_orgs]
+
+
 def sample_for(pool: list[str], k: int, key: str, seed: int = 137) -> list[str]:
     """Deterministic per-document sample: the same (seed, key) always draws the
     same names, so a resumed run re-renders identical prompts."""
