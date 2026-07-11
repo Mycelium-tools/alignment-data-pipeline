@@ -60,8 +60,16 @@ TEMPLATE_KWARGS = [
 def test_template_renders_with_pipeline_kwargs(rel_path, kwargs):
     path = REPO_ROOT / "prompts" / rel_path
     raw = path.read_text()
-    rendered = utils.load_prompt(path, **kwargs)
-    assert rendered.strip()
+    # Two-part templates (system + user, split on ===USER===) render via
+    # load_split_prompt and must have two non-empty halves; single templates
+    # render whole via load_prompt.
+    if utils._PROMPT_SPLIT_MARKER in raw:
+        system, user = utils.load_split_prompt(path, **kwargs)
+        assert system.strip() and user.strip(), f"empty half in {rel_path}"
+        rendered = system + "\n" + user
+    else:
+        rendered = utils.load_prompt(path, **kwargs)
+        assert rendered.strip()
     # Every placeholder the template declares must be filled with our value
     for name, value in kwargs.items():
         if "{" + name + "}" in raw:

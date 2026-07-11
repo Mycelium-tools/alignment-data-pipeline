@@ -347,12 +347,20 @@ def _dilemma(pid="AW-0001"):
             "annotation": {"direction": "Mixed"}}
 
 
+def _sysuser(user_message, kw):
+    """Step-2/3 templates split into system + user, so the role marker now
+    lives in system_prompt while the payload (scope, library, draft) stays in
+    the user message. Dispatchers match against both halves."""
+    return (kw.get("system_prompt") or "") + "\n" + user_message
+
+
 def _dad_step2_dispatch(user_message, **kw):
-    if "scoping an animal-welfare advice dilemma" in user_message:  # 2a
+    blob = _sysuser(user_message, kw)
+    if "scoping an animal-welfare advice dilemma" in blob:  # 2a
         return GOOD_SCOPE
-    if "doing retrieval for a response" in user_message:  # 2a.5 select
+    if "doing retrieval for a response" in blob:  # 2a.5 select
         return "C1, M1"
-    if "writing the assistant's response" in user_message:  # 2b
+    if "writing the assistant's response" in blob:  # 2b
         return "Draft response."
     raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
 
@@ -375,10 +383,11 @@ class TestStep2Run:
         attempts = {"n": 0}
 
         def flaky(user_message, **kw):
-            if "scoping an animal-welfare advice dilemma" in user_message:
+            blob = _sysuser(user_message, kw)
+            if "scoping an animal-welfare advice dilemma" in blob:
                 attempts["n"] += 1
                 return "not json at all" if attempts["n"] == 1 else GOOD_SCOPE
-            if "doing retrieval for a response" in user_message:
+            if "doing retrieval for a response" in blob:
                 return "C1"
             return "Draft response."
 
@@ -395,7 +404,7 @@ class TestStep2Run:
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
         def always_bad(user_message, **kw):
-            assert "scoping" in user_message  # must never reach 2b
+            assert "scoping" in (kw.get("system_prompt") or "")  # must never reach 2b
             return "not json"
 
         stub_claude(always_bad)
@@ -421,11 +430,12 @@ class TestStep2Run:
         picked, unpicked = lib_ids[0], lib_ids[-1]
 
         def dispatch(user_message, **kw):
-            if "scoping an animal-welfare advice dilemma" in user_message:
+            blob = _sysuser(user_message, kw)
+            if "scoping an animal-welfare advice dilemma" in blob:
                 # a model improvising the retired sixth key must not pollute
                 # the stored scope — selection is the select call's alone
                 return json.dumps({**SCOPE_AXES, "triggered_entries": "T9"})
-            if "doing retrieval for a response" in user_message:  # 2a.5
+            if "doing retrieval for a response" in blob:  # 2a.5
                 return f"{picked}, BOGUS"
             return "Draft response."
 
@@ -436,8 +446,11 @@ class TestStep2Run:
         # the trigger index and the scope both reach the select prompt —
         # and the scope prompt no longer carries the index
         first_entry = reasoning_library.get_entries(library, [picked])[0]
+        # the trigger index rides the select call's SYSTEM prompt; the scope
+        # rides its user prompt; the scope call carries neither trigger index
         assert first_entry["trigger_condition"] not in calls[0]["user_message"]
-        assert first_entry["trigger_condition"] in calls[1]["user_message"]
+        assert first_entry["trigger_condition"] not in (calls[0]["system_prompt"] or "")
+        assert first_entry["trigger_condition"] in calls[1]["system_prompt"]
         assert "full pathway" in calls[1]["user_message"]
 
         # provenance: one scopes.jsonl record carries the selection + full rows
@@ -461,9 +474,10 @@ class TestStep2Run:
         # A useless select reply: the scope is kept (never re-billed) and 2b
         # gets the full library — one attempt, no retry loop.
         def dispatch(user_message, **kw):
-            if "scoping an animal-welfare advice dilemma" in user_message:
+            blob = _sysuser(user_message, kw)
+            if "scoping an animal-welfare advice dilemma" in blob:
                 return GOOD_SCOPE
-            if "doing retrieval for a response" in user_message:
+            if "doing retrieval for a response" in blob:
                 return "I could not find any relevant entries, sorry!"
             return "Draft response."
 
@@ -528,12 +542,13 @@ class TestStep2Run:
         both_scoping = threading.Barrier(2)
 
         def dispatch(user_message, **kw):
-            if "scoping an animal-welfare advice dilemma" in user_message:
+            blob = _sysuser(user_message, kw)
+            if "scoping an animal-welfare advice dilemma" in blob:
                 both_scoping.wait(timeout=10)
                 return GOOD_SCOPE
-            if "doing retrieval for a response" in user_message:
+            if "doing retrieval for a response" in blob:
                 return "C1"
-            if "writing the assistant's response" in user_message:
+            if "writing the assistant's response" in blob:
                 return "Draft response."
             raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
 
@@ -580,8 +595,9 @@ class TestStep3Run:
         assert final[0]["messages"][1]["content"] == "Rewritten careful answer."
         # the distilled principles reach the rewrite prompt; the annotation
         # deliberately does not (it anchors nothing after step 1)
-        assert "CONSTITUTION PRINCIPLES" in calls[0]["user_message"]
+        assert "CONSTITUTION PRINCIPLES" in calls[0]["system_prompt"]
         assert "Direction: Mixed" not in calls[0]["user_message"]
+        assert "Direction: Mixed" not in (calls[0]["system_prompt"] or "")
 
     def test_capped_rewrite_retries_once_at_higher_budget(
         self, tiny_config, prompts_dad, tmp_path, stub_claude

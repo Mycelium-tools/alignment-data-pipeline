@@ -3,10 +3,12 @@ You are doing retrieval for a response that is about to be written to an animal-
 TRIGGER INDEX:
 {trigger_index}
 
+Return one line: the comma-separated ids of every triggered entry (e.g. C2, M1, T7). No other text.
+
+===USER===
+
 SCOPE:
 {scope_block}
 
 USER MESSAGE:
 {user_message}
-
-Return one line: the comma-separated ids of every triggered entry (e.g. C2, M1, T7). No other text.

@@ -86,20 +86,27 @@ def test_sdf_resume_at_layer5_makes_no_calls(tiny_config_file, outputs_root, stu
 # --- DAD ---------------------------------------------------------------
 
 def _dad_dispatch(user_message, **kw):
-    if "first-attempt user prompts" in user_message:  # step 1b: batch draft
+    # Steps 2-3 split their template into a system + user prompt, so the role
+    # marker now lives in system_prompt; steps 1b/1c stay unsplit (marker in the
+    # user message). Match against both halves.
+    blob = (kw.get("system_prompt") or "") + "\n" + user_message
+    if "first-attempt user prompts" in blob:  # step 1b: batch draft
         return dad_scenario_reply(user_message)
-    if "dilemma-prompt rewrite step" in user_message:  # step 1c: latent rewrite
+    if "dilemma-prompt rewrite step" in blob:  # step 1c: latent rewrite
         return json.dumps({"prompt": "Refined user message.", "notes": "n"})
-    if "scoping an animal-welfare advice dilemma" in user_message:  # step 2a
+    if "scoping an animal-welfare advice dilemma" in blob:  # step 2a
         return json.dumps({"patients": "p", "goal": "g", "levers": "l", "cost": "c",
                            "magnitude": "m", "upside": "u", "counterfactual": "cf"})
-    if "doing retrieval for a response" in user_message:  # step 2a.5 select
+    if "doing retrieval for a response" in blob:  # step 2a.5 select
         return "C1, M1"
-    if "writing the assistant's response" in user_message:  # step 2b
+    if "writing the assistant's response" in blob:  # step 2b
         return "Draft response."
-    if "rewriting a draft assistant response" in user_message:  # step 3
+    if "rewriting a draft assistant response" in blob:  # step 3
         return "Rewritten careful answer."
-    raise AssertionError(f"Unrecognized DAD prompt: {user_message[:80]!r}")
+    raise AssertionError(
+        f"Unrecognized DAD prompt: user {user_message[:80]!r} / "
+        f"system {(kw.get('system_prompt') or '')[:80]!r}"
+    )
 
 
 def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_claude, monkeypatch):

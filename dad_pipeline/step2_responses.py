@@ -25,10 +25,10 @@ is human reference about the library, not read by the pipeline):
   "repair" (recovered by the miss-only follow-up this call generalizes).
 - 2b respond: generate the response over the scope map plus the triggered
   library rows, following the spec in prompts/dad/step2_respond.txt. That
-  prompt IS the generation guidance — no separate system prompt, and the
-  annotation is not passed: the response reasons from scope + triggered
-  entries + user message. Each response record's entry_ids is the list
-  actually injected into its prompt.
+  template splits (via utils.load_split_prompt) into a system half — the
+  standing generation guidance — and a user half carrying the library rows,
+  scope, and user message; the annotation is not passed. Each response
+  record's entry_ids is the list actually injected into its prompt.
 
 The library and scope are sampling scaffolding: never named in the response,
 stripped before training records are written. Step 3 then rewrites against the
@@ -125,8 +125,9 @@ def _normalize_ids(raw, library_ids: list[str]) -> list[str]:
 def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
     library = reasoning_library.load(prompts_dir)
     # 2a.5 evaluates the lightweight trigger index in its own call; 2b gets
-    # only the rows that fired (the prompt itself is the generation guidance,
-    # so there is no separate system prompt — per prompts/dad/step2_respond.txt).
+    # only the rows that fired. Each step-2 template splits into a system half
+    # (standing guidance) and a user half (per-case payload) via
+    # utils.load_split_prompt — see prompts/dad/step2_*.txt.
     trigger_index = reasoning_library.trigger_index_block(library)
     library_ids = reasoning_library.all_ids(library)
     per_prompt = int(config["dad"].get("responses", {}).get("per_prompt", 1))
@@ -175,13 +176,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         # the response optimizes the right node — not just the one the user saw.
         if need_scope:
             print(f"  Scoping {pid}...")
-            scope_prompt = utils.load_prompt(
+            scope_system, scope_user = utils.load_split_prompt(
                 prompts_dir / "step2_scope.txt",
                 user_message=d["user_message"],
             )
             for attempt in range(1, MAX_SCOPE_ATTEMPTS + 1):
                 raw, stop_reason = api.call_claude(
-                    user_message=scope_prompt, return_stop_reason=True,
+                    user_message=scope_user, system_prompt=scope_system,
+                    return_stop_reason=True,
                     model=config["dad"].get("response_scope_model"),
                     stage="response_scope", item_id=pid)
                 # A max_tokens-truncated scope may still parse (the brace-salvage
@@ -193,13 +195,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                     parsed.pop("triggered_entries", None)
 
                     # --- 2a.5: select the library entries for this case ---
+                    sel_system, sel_user = utils.load_split_prompt(
+                        prompts_dir / "step2_select.txt",
+                        trigger_index=trigger_index,
+                        scope_block=format_scope(parsed),
+                        user_message=d["user_message"],
+                    )
                     raw_sel, sel_stop = api.call_claude(
-                        user_message=utils.load_prompt(
-                            prompts_dir / "step2_select.txt",
-                            trigger_index=trigger_index,
-                            scope_block=format_scope(parsed),
-                            user_message=d["user_message"],
-                        ),
+                        user_message=sel_user, system_prompt=sel_system,
                         return_stop_reason=True,
                         model=(config["dad"].get("response_select_model")
                                or config["dad"].get("response_scope_model")),
@@ -242,13 +245,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         for sample_index in missing_samples:
             suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
             print(f"  Generating response for {pid}{suffix}...")
+            respond_system, respond_user = utils.load_split_prompt(
+                prompts_dir / "step2_respond.txt",
+                library_block=library_block,
+                scope_block=format_scope(scope),
+                user_message=d["user_message"],
+            )
             response, stop_reason = api.call_claude(
-                user_message=utils.load_prompt(
-                    prompts_dir / "step2_respond.txt",
-                    library_block=library_block,
-                    scope_block=format_scope(scope),
-                    user_message=d["user_message"],
-                ),
+                user_message=respond_user, system_prompt=respond_system,
                 return_stop_reason=True,
                 model=config["dad"].get("response_draft_model"),
                 stage="response_draft",

@@ -142,6 +142,35 @@ def load_prompt(path: str | Path, **kwargs) -> str:
     return text
 
 
+# A template that carries both a system and a user half separates them with a
+# line equal to this marker. See load_split_prompt.
+_PROMPT_SPLIT_MARKER = "===USER==="
+
+
+def load_split_prompt(path: str | Path, **kwargs) -> tuple[str, str]:
+    """Load a two-part prompt template as (system, user).
+
+    The system half and the user half are separated by a line equal to
+    `===USER===`. Each half is formatted with the same kwargs — a half simply
+    ignores any placeholder it does not contain. A template with NO marker
+    returns ("", <whole formatted template>): callers and pre-split run
+    snapshots that predate the split still send a user-only prompt with an
+    empty system prompt, identical to load_prompt's behaviour."""
+    text = Path(path).read_text(encoding="utf-8")
+    lines = text.splitlines()
+    system_part, user_part = "", text
+    for i, line in enumerate(lines):
+        if line.strip() == _PROMPT_SPLIT_MARKER:
+            system_part = "\n".join(lines[:i])
+            user_part = "\n".join(lines[i + 1:])
+            break
+
+    def _fmt(part: str) -> str:
+        return part.format(**kwargs) if kwargs else part
+
+    return _fmt(system_part).strip(), _fmt(user_part).strip()
+
+
 def load_config(path: str = "config.yaml") -> dict:
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
