@@ -340,7 +340,7 @@ else:
                     # provenance shows here instead of in a 2a.5 expander.
                     if sel_source not in step2_responses.SELECT_CALL_SOURCES:
                         _triggered_toggle("s2a_trig")
-                stage_expander("Step 2a — scope the case (patients, levers, cost, upside, counterfactual)",
+                stage_expander("Step 2a — scope the case (patients, goal, levers, cost, magnitude, upside, counterfactual)",
                                "step2_scope", lin, step2_scope_output,
                                stats=("response_scope", pid))
 

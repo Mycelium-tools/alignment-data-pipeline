@@ -4,7 +4,7 @@ Each dilemma goes through two sub-stages (prompts/dad/reasoning_library_ABOUT.md
 is human reference about the library, not read by the pipeline):
 
 - 2a scope: rebuild the full map of the case from the user's message, along
-  the five axes prompts/dad/step2_scope.txt defines (mirrored in _SCOPE_AXES
+  the seven axes prompts/dad/step2_scope.txt defines (mirrored in _SCOPE_AXES
   below — keep the two in sync). A scope that fails to parse or is missing an
   axis is retried with a fresh call (raw outputs kept in
   step2/scope_failures.jsonl); after MAX_SCOPE_ATTEMPTS the run stops rather
@@ -68,8 +68,10 @@ def _parse_scope(raw: str) -> dict:
 
 _SCOPE_AXES = (
     ("patients", "Patients (every plausible moral patient, upstream and downstream)"),
+    ("goal", "Goal (the user's underlying goal, beneath the question they asked)"),
     ("levers", "Levers (available to the user; highest-leverage for welfare identified)"),
     ("cost", "Cost (what acting on the highest-leverage levers could cost the user)"),
+    ("magnitude", "Magnitude (size, likelihood, tractability of the welfare stake; whether this choice is counterfactual for it)"),
     ("upside", "Upside (second-order stakes — what choices build, signal, normalize, lock in)"),
     ("counterfactual", "Counterfactual (is the user's role counterfactual or fungible; the costs at stake)"),
 )
@@ -80,16 +82,23 @@ _LEGACY_AXIS_KEYS = {"patients": "system", "levers": "agent"}
 
 
 def format_scope(scope: dict) -> str:
-    return "\n".join(
-        f"{label}: {scope.get(key) or scope.get(_LEGACY_AXIS_KEYS.get(key, '')) or '—'}"
-        for key, label in _SCOPE_AXES
-    )
+    """Render the axes THIS record carries, in _SCOPE_AXES order. Axes absent
+    from the record are skipped entirely (not rendered as '—'): the viewer
+    re-renders old runs' prompts with this function, and a record written
+    before an axis existed must not grow lines that were never sent."""
+    lines = []
+    for key, label in _SCOPE_AXES:
+        legacy = _LEGACY_AXIS_KEYS.get(key, "")
+        if key in scope or (legacy and legacy in scope):
+            lines.append(f"{label}: {scope.get(key) or scope.get(legacy) or '—'}")
+    return "\n".join(lines)
 
 
 def _valid_scope(scope) -> bool:
-    """A usable scope carries all five axes as non-empty strings. Anything less
-    renders as '—' lines in the 2b prompt, which tells the response model the
-    case 'is already scoped' while handing it nothing."""
+    """A usable scope carries all seven axes as non-empty strings. Anything
+    less is retried: a missing axis silently hands 2b a thinner map than the
+    prompt promised. (Strict for new runs by design; resuming a run scoped
+    under fewer axes re-derives its scopes at current strictness.)"""
     return isinstance(scope, dict) and all(
         isinstance(scope.get(key), str) and scope[key].strip()
         for key, _ in _SCOPE_AXES
@@ -162,7 +171,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                "responses": [], "skips": []}
 
         # --- 2a: scope the case (once per prompt) ---
-        # Rebuild the full map (all five scope axes) before reasoning, so
+        # Rebuild the full map (all seven scope axes) before reasoning, so
         # the response optimizes the right node — not just the one the user saw.
         if need_scope:
             print(f"  Scoping {pid}...")
@@ -180,7 +189,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 parsed = {} if stop_reason == "max_tokens" else _parse_scope(raw)
                 if _valid_scope(parsed):
                     # Stray sixth key from a model improvising the old shape:
-                    # the stored scope keeps only the five axes.
+                    # the stored scope keeps only the scope axes.
                     parsed.pop("triggered_entries", None)
 
                     # --- 2a.5: select the library entries for this case ---

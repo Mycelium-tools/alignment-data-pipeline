@@ -266,10 +266,11 @@ class TestCoverageTally:
 # --- Step 2: scope + respond ---------------------------------------------
 
 SCOPE_AXES = {
-    "patients": "full pathway", "levers": "highest lever", "cost": "real cost",
+    "patients": "full pathway", "goal": "underlying goal", "levers": "highest lever",
+    "cost": "real cost", "magnitude": "stake magnitude",
     "upside": "second-order upside", "counterfactual": "realistic baseline",
 }
-# The well-behaved 2a reply: exactly the five axes (selection is 2a.5's job).
+# The well-behaved 2a reply: exactly the seven axes (selection is 2a.5's job).
 GOOD_SCOPE = json.dumps(SCOPE_AXES)
 
 
@@ -281,7 +282,7 @@ class TestParseScope:
     def test_control_characters_inside_strings_are_tolerated(self):
         # temperature-1 prose JSON often carries literal newlines inside values —
         # the historical cause of silently empty scopes
-        raw = '{"patients": "line one\nline two", "levers": "l", "cost": "c", "upside": "u", "counterfactual": "cf"}'
+        raw = '{"patients": "line one\nline two", "goal": "g", "levers": "l", "cost": "c", "magnitude": "m", "upside": "u", "counterfactual": "cf"}'
         assert step2_responses._parse_scope(raw)["patients"] == "line one\nline two"
 
     def test_garbage_returns_empty_and_fails_validation(self):
@@ -299,6 +300,21 @@ class TestParseScope:
         assert "old pathway" in rendered and "old lever" in rendered
         # but new runs must produce the new keys — legacy doesn't pass validation
         assert not step2_responses._valid_scope(legacy)
+
+    def test_old_records_render_without_axes_they_never_had(self):
+        # The viewer re-renders old runs' prompts with format_scope; a record
+        # written before the goal/magnitude axes existed must not grow "—"
+        # lines that were never in the prompt actually sent (fidelity).
+        five_axis = {"patients": "p", "levers": "l", "cost": "c",
+                     "upside": "u", "counterfactual": "cf"}
+        rendered = step2_responses.format_scope(five_axis)
+        assert "Goal" not in rendered and "Magnitude" not in rendered
+        assert not any(line.endswith(": —") for line in rendered.splitlines())
+        # a five-axis record no longer passes validation → resume re-scopes it
+        assert not step2_responses._valid_scope(five_axis)
+        # current seven-axis records render every axis
+        full = step2_responses.format_scope(json.loads(GOOD_SCOPE))
+        assert "Goal" in full and "Magnitude" in full and "stake magnitude" in full
 
 
 class TestNormalizeIds:

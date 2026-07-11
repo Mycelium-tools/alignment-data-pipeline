@@ -91,8 +91,8 @@ def _dad_dispatch(user_message, **kw):
     if "dilemma-prompt rewrite step" in user_message:  # step 1c: latent rewrite
         return json.dumps({"prompt": "Refined user message.", "notes": "n"})
     if "scoping an animal-welfare advice dilemma" in user_message:  # step 2a
-        return json.dumps({"patients": "p", "levers": "l", "cost": "c",
-                           "upside": "u", "counterfactual": "cf"})
+        return json.dumps({"patients": "p", "goal": "g", "levers": "l", "cost": "c",
+                           "magnitude": "m", "upside": "u", "counterfactual": "cf"})
     if "doing retrieval for a response" in user_message:  # step 2a.5 select
         return "C1, M1"
     if "writing the assistant's response" in user_message:  # step 2b
