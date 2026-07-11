@@ -227,13 +227,29 @@ else:
     doc_col, prompts_col = st.columns(2)
 
     with doc_col:
-        st.subheader(f"{'Prompt' if dad_by_prompt else 'Record'} {selected_id[:8]}")
+        # Stable global ids as the headline (the per-run AW-####/S-### appear in
+        # the per-stage lineage below); classification tag small underneath.
+        annotation = dilemma.get("annotation") or audit.get("annotation") or {}
+        head = []
+        if dilemma.get("scenario_gid"):
+            head.append(f"scenario {dilemma['scenario_gid']}")
+        if dilemma.get("prompt_gid"):
+            head.append(f"prompt {dilemma['prompt_gid']}")
+        st.subheader("  ·  ".join(head)
+                     or str(dilemma.get("prompt_id") or audit.get("prompt_id") or selected_id))
         if lin.get("format") == "v2":
-            st.caption("Step-1 dilemma prompt — no response generated yet" if dad_by_prompt
-                       else "Final user prompt and assistant response, as written to the training corpus")
+            taxa = dilemma.get("taxa_subcategory") or annotation.get("taxa_category")
+            lev = annotation.get("leverage")
+            tag = " · ".join(str(x) for x in [
+                ", ".join(annotation.get("domain") or []),
+                taxa,
+                annotation.get("direction"),
+                annotation.get("welfare_magnitude"),
+                f"{lev} leverage" if lev else None,
+            ] if x)
+            st.caption(tag or "step-1 dilemma prompt")
         else:
-            st.caption(f"scenario `{audit.get('scenario_id')}` · injection `{audit.get('injection_used')}` "
-                       f"· principle {audit.get('principle_id')}")
+            st.caption(f"injection `{audit.get('injection_used')}` · principle {audit.get('principle_id')}")
         with st.container(height=PANEL_HEIGHT):
             messages = (lin.get("final") or {}).get("messages", [])
             if messages:

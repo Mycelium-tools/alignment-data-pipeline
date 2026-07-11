@@ -96,12 +96,14 @@ def show_rendered_prompt(rendered, key: str = "", show_run_warnings: bool = True
         st.caption("No LLM call at this stage for this record.")
         return
 
-    folded_all = {}
+    # System prompt collapsed by default — it's often the largest block (e.g. the
+    # constitution principles), and you shouldn't have to scroll past it to reach
+    # the per-case user message.
     if rendered.system:
-        sys_text, folded = fold_long_values(rendered.system, {rendered.system_label: rendered.system})
-        folded_all.update(folded)
-        st.markdown("**System prompt**")
-        st.code(sys_text, language=None, wrap_lines=True)
+        if st.toggle(f"System prompt — {rendered.system_label} ({len(rendered.system):,} chars)",
+                     value=False, key=f"sys_{key}_{rendered.stage}"):
+            st.code(rendered.system, language=None, wrap_lines=True)
+    folded_all = {}
     if rendered.user:
         user_text, folded = fold_long_values(rendered.user, rendered.variables)
         folded_all.update(folded)
@@ -113,12 +115,18 @@ def show_rendered_prompt(rendered, key: str = "", show_run_warnings: bool = True
 
 
 def show_diff(before: str, after: str, from_label: str, to_label: str, key: str) -> None:
-    """Unified diff with an optional side-by-side toggle."""
+    """Side-by-side by default (easier to read whole texts), with a toggle for
+    the unified diff (better for spotting exact line changes)."""
     if before == after:
         st.caption("No changes — output identical to input.")
         return
-    side_by_side = st.toggle("Side-by-side", key=f"diff_{key}")
-    if side_by_side:
+    if st.toggle("Unified diff", key=f"diff_{key}"):
+        diff = "\n".join(difflib.unified_diff(
+            before.splitlines(), after.splitlines(),
+            fromfile=from_label, tofile=to_label, lineterm="",
+        ))
+        st.code(diff, language="diff", wrap_lines=True)
+    else:
         col_a, col_b = st.columns(2)
         with col_a:
             st.markdown(f"**{from_label}**")
@@ -126,9 +134,3 @@ def show_diff(before: str, after: str, from_label: str, to_label: str, key: str)
         with col_b:
             st.markdown(f"**{to_label}**")
             st.code(after, language=None, wrap_lines=True)
-    else:
-        diff = "\n".join(difflib.unified_diff(
-            before.splitlines(), after.splitlines(),
-            fromfile=from_label, tofile=to_label, lineterm="",
-        ))
-        st.code(diff, language="diff", wrap_lines=True)

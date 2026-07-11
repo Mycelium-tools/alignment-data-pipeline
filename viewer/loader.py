@@ -72,10 +72,10 @@ def dad_goal_label(annotation: dict | None, fallback_text: str) -> str:
 
 
 def run_has_scenario_ids(run_dir: Path) -> bool:
-    """True when this run's dilemma records carry a scenario_id — the anchor
-    that lets the compare page pair prompts across runs by scenario even when
-    the prompt text itself differs (prompt-optimization mode)."""
-    return any(d.get("scenario_id") for d in load_stage(run_dir, "dad", "step1_dilemmas"))
+    """True when this run's dilemma records carry a stable scenario_gid — the
+    anchor that lets the compare page pair prompts across runs by scenario even
+    when the prompt text itself differs (prompt-optimization mode)."""
+    return any(d.get("scenario_gid") for d in load_stage(run_dir, "dad", "step1_dilemmas"))
 
 
 @dataclass
@@ -447,11 +447,12 @@ DAD_MATCH_KEYS = ("user_message", "scenario_id", "prompt_id")
 
 @dataclass
 class DadExample:
-    prompt_id: str
+    prompt_id: str            # per-run AW-#### (internal key)
+    prompt_gid: str | None    # stable global P-#### (content-keyed, cross-run)
     sample_index: int
     user_message: str
     goal: str                 # dad_goal_label — the human-readable "what's decided"
-    scenario_id: str | None
+    scenario_gid: str | None  # stable global S-#### for the underlying scenario
     response: str             # final rewritten response (or draft/rewrite if no final)
     has_final: bool
 
@@ -481,6 +482,7 @@ def _dad_examples(run_dir: Path) -> list[DadExample]:
     for audit in load_stage(run_dir, "dad", "step3_rewrites"):
         pid = str(audit.get("prompt_id", ""))
         user_message = audit.get("user_message", "")
+        dilemma = dilemmas.get(pid) or {}
         final = finals.get(audit.get("record_id"))
         if final and final.get("messages"):
             response, has_final = final["messages"][1]["content"], True
@@ -489,10 +491,11 @@ def _dad_examples(run_dir: Path) -> list[DadExample]:
             has_final = False
         out.append(DadExample(
             prompt_id=pid,
+            prompt_gid=dilemma.get("prompt_gid"),
             sample_index=audit.get("sample_index", 0),
             user_message=user_message,
             goal=dad_goal_label(audit.get("annotation"), user_message),
-            scenario_id=(dilemmas.get(pid) or {}).get("scenario_id"),
+            scenario_gid=dilemma.get("scenario_gid"),
             response=response,
             has_final=has_final,
         ))
@@ -503,7 +506,7 @@ def _dad_key(ex: DadExample, key_by: str):
     """Correspondence key for one example, or None if this key can't identify it
     (e.g. scenario_id when the run didn't record one)."""
     if key_by == "scenario_id":
-        return (ex.scenario_id, ex.sample_index) if ex.scenario_id else None
+        return (ex.scenario_gid, ex.sample_index) if ex.scenario_gid else None
     if key_by == "prompt_id":
         return (ex.prompt_id, ex.sample_index)
     return (_norm(ex.user_message), ex.sample_index)  # default: user_message

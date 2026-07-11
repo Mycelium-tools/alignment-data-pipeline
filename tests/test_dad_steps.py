@@ -91,9 +91,15 @@ class TestStep1Run:
             assert e["draft_user_message"] == f"Drafted user message for {e['scenario_id']}."
             assert e["taxa_subcategory"]
             assert "scenario_deviations" not in e
+            # stable content-keyed ids assigned alongside the per-run ids
+            assert e["scenario_gid"].startswith("S-")
+            assert e["prompt_gid"].startswith("P-")
         # persisted artifacts: scenarios (1a), dilemmas (1b/1c), refinements log,
         # and the Part-4 checklist report (previously terminal-only)
         assert len(utils.load_jsonl(tmp_path / "scenarios.jsonl")) == 2
+        assert all(s["scenario_gid"].startswith("S-")
+                   for s in utils.load_jsonl(tmp_path / "scenarios.jsonl"))
+        assert (tmp_path / "id_registry.json").exists()  # registry persisted
         assert len(utils.load_jsonl(tmp_path / "dilemmas.jsonl")) == 2
         assert len(utils.load_jsonl(tmp_path / "refinements.jsonl")) == 2
         saved = (tmp_path / "checklist.txt").read_text()

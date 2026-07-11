@@ -94,7 +94,8 @@ def _write_dad_run(root, name, examples):
         ann = {"dilemma_anatomy": {"goal": e.get("goal", "")}}
         resp = e.get("response", f"response-{i}")
         dil.append({"prompt_id": e["prompt_id"], "user_message": e["user_message"],
-                    "annotation": ann, "scenario_id": e.get("scenario_id")})
+                    "annotation": ann, "scenario_gid": e.get("scenario_gid"),
+                    "prompt_gid": e.get("prompt_gid")})
         rew.append({"record_id": rid, "prompt_id": e["prompt_id"], "sample_index": 0,
                     "user_message": e["user_message"], "annotation": ann,
                     "rewritten_response": resp, "draft_response": "draft"})
@@ -146,9 +147,9 @@ class TestMatchDad:
     def test_scenario_id_mode_pairs_differing_prompts(self, tmp_path):
         # Prompt-tuning mode: same scenario, different prompt text → pairs, flagged.
         a = _write_dad_run(tmp_path, "A", [
-            {"prompt_id": "AW-0001", "scenario_id": "S-001", "user_message": "A phrasing"}])
+            {"prompt_id": "AW-0001", "scenario_gid": "S-0001", "user_message": "A phrasing"}])
         b = _write_dad_run(tmp_path, "B", [
-            {"prompt_id": "AW-0042", "scenario_id": "S-001", "user_message": "B phrasing"}])
+            {"prompt_id": "AW-0042", "scenario_gid": "S-0001", "user_message": "B phrasing"}])
         matched, _, _ = loader.match_dad(a, b, "scenario_id")
         assert len(matched) == 1 and matched[0].same_prompt is False
         assert loader.run_has_scenario_ids(a) and loader.run_has_scenario_ids(b)
