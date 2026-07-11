@@ -129,6 +129,27 @@ def _format(template: Template, variables: dict, rendered: RenderedPrompt) -> st
         return template.text
 
 
+# Two-part templates separate their system and user halves with this line.
+# Keep in sync with shared.utils._PROMPT_SPLIT_MARKER.
+_SPLIT_MARKER = "===USER==="
+
+
+def _format_split(template: Template, variables: dict, rendered: RenderedPrompt) -> tuple[str | None, str | None]:
+    """Split-aware sibling of _format, mirroring utils.load_split_prompt: format
+    the whole template, then cut it into (system, user) on the ===USER=== marker
+    line. A template with NO marker returns (None, whole) — a user-only prompt,
+    matching how unsplit templates (and pre-split run snapshots) actually ran."""
+    text = _format(template, variables, rendered)
+    if text is None:
+        return None, None
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == _SPLIT_MARKER:
+            return ("\n".join(lines[:i]).strip() or None,
+                    "\n".join(lines[i + 1:]).strip() or None)
+    return None, text
+
+
 def _load_run_library(tpl):
     """Load the run's snapshotted reasoning library, preferring the current CSV
     and falling back to the retired JSON (and pre-rename names) for older runs.
@@ -305,7 +326,9 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             library, _ = _load_run_library(tpl)
             r.variables["trigger_index"] = (
                 reasoning_library.trigger_index_block(library) if library else "")
-        r.user = _format(scope_t, r.variables, r)
+        r.system, r.user = _format_split(scope_t, r.variables, r)
+        if r.system:
+            r.system_label = "system prompt (scoping instructions)"
         return r
 
     if stage == "step2_select":
@@ -327,7 +350,9 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "scope_block": format_scope(scope_rec.get("scope") or {}),
             "user_message": response.get("user_message") or dilemma.get("user_message", ""),
         }
-        r.user = _format(tpl("step2_select.txt"), r.variables, r)
+        r.system, r.user = _format_split(tpl("step2_select.txt"), r.variables, r)
+        if r.system:
+            r.system_label = "system prompt (retrieval instructions + trigger index)"
         return r
 
     if stage in ("step2_tag", "step2_respond"):
@@ -378,8 +403,11 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "principles_block": block,
             "user_message": user_message,
         }
-        r.user = _format(respond_tpl, r.variables, r)
-        if library and not is_self_contained:
+        sys_half, r.user = _format_split(respond_tpl, r.variables, r)
+        if sys_half:
+            r.system = sys_half
+            r.system_label = "system prompt (response guidance)"
+        elif library and not is_self_contained:
             r.system = reasoning_library.system_prompt(library)
             r.system_label = "system prompt (reasoning-library conduct rules)"
         return r
@@ -398,7 +426,9 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "user_message": audit.get("user_message", ""),
             "draft_response": audit.get("draft_response", ""),
         }
-        r.user = _format(tpl("step3_rewrite.txt"), r.variables, r)
+        r.system, r.user = _format_split(tpl("step3_rewrite.txt"), r.variables, r)
+        if r.system:
+            r.system_label = "system prompt (rewrite instructions + constitution principles)"
         return r
 
     # --- DAD, legacy 7-step pipeline ---

@@ -54,6 +54,30 @@ def dad_is_legacy(run_dir: Path) -> bool:
            (run_dir / "step2" / "scenarios.jsonl").exists()
 
 
+def doc_first_line(content: str) -> str:
+    """First meaningful line of a document/message, stripped of markdown markers."""
+    for line in (content or "").splitlines():
+        line = line.strip().lstrip("#").strip().strip("*").strip()
+        if line:
+            return line[:90]
+    return "(untitled)"
+
+
+def dad_goal_label(annotation: dict | None, fallback_text: str) -> str:
+    """Label a DAD record by its annotated goal — the one-line 'what is being
+    decided' from the 1b anatomy — falling back to the user message's opening
+    when absent (seed prompts, runs predating the anatomy fields)."""
+    goal = str(((annotation or {}).get("dilemma_anatomy") or {}).get("goal") or "").strip()
+    return goal[:90] if goal else doc_first_line(fallback_text)
+
+
+def run_has_scenario_ids(run_dir: Path) -> bool:
+    """True when this run's dilemma records carry a scenario_id — the anchor
+    that lets the compare page pair prompts across runs by scenario even when
+    the prompt text itself differs (prompt-optimization mode)."""
+    return any(d.get("scenario_id") for d in load_stage(run_dir, "dad", "step1_dilemmas"))
+
+
 @dataclass
 class RunInfo:
     pipeline: str
@@ -414,3 +438,102 @@ def match_outputs(run_a: Path, run_b: Path, pipeline: str) -> list[MatchedPair]:
         if key in grouped_b:
             pairs.append(MatchedPair(f"principle {key[0]} [{key[1]}]", "group", recs_a, grouped_b[key]))
     return pairs
+
+
+# --- DAD compare: content-aware matching (supersedes AW-#### positional pairing) ---
+
+DAD_MATCH_KEYS = ("user_message", "scenario_id", "prompt_id")
+
+
+@dataclass
+class DadExample:
+    prompt_id: str
+    sample_index: int
+    user_message: str
+    goal: str                 # dad_goal_label — the human-readable "what's decided"
+    scenario_id: str | None
+    response: str             # final rewritten response (or draft/rewrite if no final)
+    has_final: bool
+
+
+@dataclass
+class DadMatch:
+    label: str                # goal (or fallback title)
+    same_prompt: bool         # user messages identical after whitespace-normalization
+    a: DadExample
+    b: DadExample
+
+
+def _norm(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def _dad_examples(run_dir: Path) -> list[DadExample]:
+    """One DadExample per step-3 rewrite audit, joined forward to its final
+    training record and back to its dilemma (for scenario_id). Empty for legacy
+    7-step runs (different schema; the old positional match_outputs still covers
+    them)."""
+    if dad_is_legacy(run_dir):
+        return []
+    dilemmas = _index(load_stage(run_dir, "dad", "step1_dilemmas"), "prompt_id")
+    finals = _index(load_final(run_dir, "dad"), "record_id")
+    out = []
+    for audit in load_stage(run_dir, "dad", "step3_rewrites"):
+        pid = str(audit.get("prompt_id", ""))
+        user_message = audit.get("user_message", "")
+        final = finals.get(audit.get("record_id"))
+        if final and final.get("messages"):
+            response, has_final = final["messages"][1]["content"], True
+        else:  # rewrite failed / no final written — fall back to the audit text
+            response = audit.get("rewritten_response") or audit.get("draft_response", "")
+            has_final = False
+        out.append(DadExample(
+            prompt_id=pid,
+            sample_index=audit.get("sample_index", 0),
+            user_message=user_message,
+            goal=dad_goal_label(audit.get("annotation"), user_message),
+            scenario_id=(dilemmas.get(pid) or {}).get("scenario_id"),
+            response=response,
+            has_final=has_final,
+        ))
+    return out
+
+
+def _dad_key(ex: DadExample, key_by: str):
+    """Correspondence key for one example, or None if this key can't identify it
+    (e.g. scenario_id when the run didn't record one)."""
+    if key_by == "scenario_id":
+        return (ex.scenario_id, ex.sample_index) if ex.scenario_id else None
+    if key_by == "prompt_id":
+        return (ex.prompt_id, ex.sample_index)
+    return (_norm(ex.user_message), ex.sample_index)  # default: user_message
+
+
+def match_dad(run_a: Path, run_b: Path, key_by: str = "user_message"):
+    """Pair DAD examples across two runs by the chosen correspondence key.
+
+    Returns (matched, only_a, only_b). A comparison holds one dimension fixed
+    (the key) and diffs the rest:
+      - 'user_message' — prompt held fixed → compare responses (response tuning)
+      - 'scenario_id'  — scenario held fixed → the prompts themselves can differ,
+        so you can compare prompts too (prompt tuning)
+      - 'prompt_id'    — positional AW-#### fallback (may pair unrelated prompts)
+    """
+    def by_key(run_dir):
+        d = {}
+        for ex in _dad_examples(run_dir):
+            k = _dad_key(ex, key_by)
+            if k is not None:
+                d.setdefault(k, ex)  # keys are unique in practice (sample_index included)
+        return d
+
+    a_by, b_by = by_key(run_a), by_key(run_b)
+    matched = [
+        DadMatch(label=a.goal or b_by[k].goal,
+                 same_prompt=_norm(a.user_message) == _norm(b_by[k].user_message),
+                 a=a, b=b_by[k])
+        for k, a in a_by.items() if k in b_by
+    ]
+    only_a = [a for k, a in a_by.items() if k not in b_by]
+    only_b = [b for k, b in b_by.items() if k not in a_by]
+    return matched, only_a, only_b

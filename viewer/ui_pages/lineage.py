@@ -27,21 +27,10 @@ finals = loader.load_final(run.run_dir, run.pipeline)
 id_key = "doc_id" if run.pipeline == "sdf" else "record_id"
 ids = [r[id_key] for r in finals]
 
-def _doc_title(content: str) -> str:
-    """First meaningful line of the document, cleaned of markdown markers."""
-    for line in (content or "").splitlines():
-        line = line.strip().lstrip("#").strip().strip("*").strip()
-        if line:
-            return line[:90]
-    return "(untitled)"
-
-
-def _goal_label(annotation: dict | None, fallback_text: str) -> str:
-    """Label a DAD record by its annotated goal — the one-line 'what is being
-    decided' from the 1b anatomy — falling back to the user message's opening
-    when absent (seed prompts, runs predating the anatomy fields)."""
-    goal = str(((annotation or {}).get("dilemma_anatomy") or {}).get("goal") or "").strip()
-    return goal[:90] if goal else _doc_title(fallback_text)
+# Label helpers live in loader (pure, reused by the compare page); thin aliases
+# keep this page's call sites unchanged.
+_doc_title = loader.doc_first_line
+_goal_label = loader.dad_goal_label
 
 
 def _pick_document(options: list[str], labels: dict[str, str], noun: str) -> str | None:
