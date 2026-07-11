@@ -1,4 +1,4 @@
-"""Compose layer-3 input prompts from a template and a variables file.
+"""Compose document-plan prompts from a template and a variables file.
 
 EXPERIMENTAL replacement for SDF layers 1-2: instead of two LLM calls
 generating document types and subtypes, a combinatorial matrix of pre-written
@@ -6,12 +6,13 @@ variables is expanded deterministically. Offline, zero API calls.
 
 Inputs
 ------
-- Template (``prompts/sdf/matrix/template.txt``): plain text with
-  ``{{variable_name}}`` slots. NOT loaded through ``shared.utils.load_prompt``
-  (no ``str.format``), so literal braces are harmless.
+- Template (``prompts/sdf/matrix/template.txt``): plain text with ``{name}``
+  slots — the same Python ``str.format`` syntax as every other pipeline
+  template (rendered the same way ``shared.utils.load_prompt`` does), so
+  literal ``{}`` braces must not appear in the template.
 - Variables (``prompts/sdf/matrix/variables.txt``)::
 
-      {{varname}}  # optional description
+      {varname}  # optional description
           plain value
           0.25 :: weighted value
 
@@ -19,12 +20,9 @@ Inputs
   all-or-nothing within a variable and must sum to 1.0; an unweighted
   variable is uniform.
 
-Two kinds of template slot:
-
-- ``{{name}}`` — a matrix axis, filled from variables.txt.
-- ``{{_name}}`` — injected by this script, never defined in variables.txt.
-  Supported: ``{{_preamble}}`` (contents of ``--preamble``, default
-  ``prompts/sdf/preamble.txt``).
+``{preamble}`` is reserved: it is injected from ``--preamble`` (default
+``prompts/sdf/preamble.txt``), never defined in variables.txt. Every other
+placeholder in the template is a matrix axis.
 
 Usage
 -----
@@ -40,13 +38,18 @@ Usage
     python sdf_pipeline/compose_prompts.py --out all_prompts.jsonl
 
 Output records: ``{"prompt_id": ..., "variables": {...}, "prompt": ...}``
-(``variables`` holds only the matrix axes, not injected slots).
+(``variables`` holds only the matrix axes, not the preamble).
 
 Repeated combinations in a sample are allowed by design: drawing one cell
 twice just means two documents from that cell (the old pipeline's
 ``documents_per_subtype`` > 1 was the same thing), and generation runs at
-temperature 1.0. Illogical combinations are handled downstream: the template
-asks the model to answer INCOHERENT rather than force a nonsense document.
+temperature 1.0.
+
+Downstream handoff: the plan call answers the template's questions, then
+emits a self-contained spec under a DOCUMENT DESCRIPTION heading (or replies
+INCOHERENT for an impossible variable combination). ``extract_description()``
+pulls that spec out fail-closed — no heading, no handoff — and the result
+fills the ``{document_description}`` slot of the matrix layer-3 template.
 """
 
 from __future__ import annotations
@@ -57,6 +60,7 @@ import json
 import math
 import random
 import re
+import string
 import sys
 from pathlib import Path
 
@@ -65,9 +69,17 @@ DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "sdf" / "matrix" / "template.txt"
 DEFAULT_VARIABLES = REPO_ROOT / "prompts" / "sdf" / "matrix" / "variables.txt"
 DEFAULT_PREAMBLE = REPO_ROOT / "prompts" / "sdf" / "preamble.txt"
 
-PLACEHOLDER_RE = re.compile(r"\{\{(_?[A-Za-z0-9_]+)\}\}")
+# Placeholders whose values come from the composer, not variables.txt.
+RESERVED = {"preamble"}
+
+VAR_HEADER_RE = re.compile(r"\{([A-Za-z0-9_]+)\}")
 WEIGHT_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*::\s*(.+)$")
 WEIGHT_TOLERANCE = 1e-6
+
+DESCRIPTION_HEADING_RE = re.compile(
+    r"^#{0,4}\s*\**\s*DOCUMENT DESCRIPTION\s*\**\s*:?\s*$", re.MULTILINE | re.IGNORECASE
+)
+INCOHERENT_RE = re.compile(r"\bINCOHERENT\b")
 
 
 def parse_variables(path: Path) -> dict[str, list[tuple[str, float | None]]]:
@@ -78,25 +90,25 @@ def parse_variables(path: Path) -> dict[str, list[tuple[str, float | None]]]:
         line = raw.rstrip()
         if not line.strip() or line.strip().startswith("#"):
             continue
-        header = PLACEHOLDER_RE.fullmatch(line.strip().split("#")[0].strip())
         if not line.startswith((" ", "\t")):
+            header = VAR_HEADER_RE.fullmatch(line.strip().split("#")[0].strip())
             if header is None:
                 raise ValueError(
-                    f"{path.name}:{lineno}: expected a {{{{variable}}}} header "
+                    f"{path.name}:{lineno}: expected a {{variable}} header "
                     f"or an indented value, got: {line!r}"
                 )
             current = header.group(1)
-            if current.startswith("_"):
+            if current in RESERVED:
                 raise ValueError(
-                    f"{path.name}:{lineno}: {{{{{current}}}}} — underscore variables "
-                    "are injected by compose_prompts.py, not defined in variables.txt"
+                    f"{path.name}:{lineno}: {{{current}}} is reserved — "
+                    "compose_prompts.py injects it; don't define it in variables.txt"
                 )
             if current in parsed:
-                raise ValueError(f"{path.name}:{lineno}: duplicate variable {{{{{current}}}}}")
+                raise ValueError(f"{path.name}:{lineno}: duplicate variable {{{current}}}")
             parsed[current] = []
         else:
             if current is None:
-                raise ValueError(f"{path.name}:{lineno}: value line before any {{{{variable}}}} header")
+                raise ValueError(f"{path.name}:{lineno}: value line before any {{variable}} header")
             text = line.strip()
             weighted = WEIGHT_RE.match(text)
             if weighted:
@@ -119,40 +131,37 @@ def split_weights(
             weights[name] = [1.0 / len(vals)] * len(vals) if vals else []
         elif any(w is None for w in ws):
             raise ValueError(
-                f"{{{{{name}}}}}: weights are all-or-nothing — every value needs a "
+                f"{{{name}}}: weights are all-or-nothing — every value needs a "
                 "'<weight> ::' prefix, or none"
             )
         else:
             total = sum(ws)
             if abs(total - 1.0) > WEIGHT_TOLERANCE:
-                raise ValueError(f"{{{{{name}}}}}: weights sum to {total:.6f}, expected 1.0")
+                raise ValueError(f"{{{name}}}: weights sum to {total:.6f}, expected 1.0")
             weights[name] = [float(w) for w in ws]
         values[name] = vals
     return values, weights
 
 
-def template_placeholders(template: str) -> tuple[list[str], list[str]]:
-    """(matrix axes, injected names), each in first-appearance order, deduped."""
-    axes: list[str] = []
-    injected: list[str] = []
-    for name in PLACEHOLDER_RE.findall(template):
-        bucket = injected if name.startswith("_") else axes
-        if name not in bucket:
-            bucket.append(name)
-    return axes, injected
+def template_placeholders(template: str) -> list[str]:
+    """Format-field names in first-appearance order, deduplicated.
+
+    Uses string.Formatter, i.e. exactly what str.format will substitute —
+    stray literal braces surface here as the same error rendering would hit.
+    """
+    names: list[str] = []
+    for _, field, spec, conversion in string.Formatter().parse(template):
+        if field is None:
+            continue
+        if spec or conversion or not re.fullmatch(r"[A-Za-z0-9_]+", field):
+            raise ValueError(f"unsupported placeholder {{{field}}} — plain names only")
+        if field not in names:
+            names.append(field)
+    return names
 
 
-def resolve_injected(names: list[str], preamble_path: Path) -> dict[str, str]:
-    """Resolve underscore placeholders to their machinery-supplied values."""
-    resolved: dict[str, str] = {}
-    for name in names:
-        if name == "_preamble":
-            resolved[name] = preamble_path.read_text(encoding="utf-8").strip()
-        else:
-            raise ValueError(
-                f"unknown injected variable {{{{{name}}}}} — supported: {{{{_preamble}}}}"
-            )
-    return resolved
+def matrix_axes(template: str) -> list[str]:
+    return [n for n in template_placeholders(template) if n not in RESERVED]
 
 
 def largest_remainder(weights: list[float], n: int) -> list[int]:
@@ -183,8 +192,24 @@ def deck_sample(
     return [dict(zip(axes, row)) for row in zip(*decks)]
 
 
-def fill(template: str, mapping: dict[str, str]) -> str:
-    return PLACEHOLDER_RE.sub(lambda m: mapping[m.group(1)], template)
+def is_incoherent(plan: str) -> bool:
+    """True when the plan call declared the variable combination incoherent."""
+    return bool(INCOHERENT_RE.search(plan[:2000]))
+
+
+def extract_description(plan: str) -> str | None:
+    """Pull the self-contained DOCUMENT DESCRIPTION spec out of a plan response.
+
+    Fail-closed: returns None for INCOHERENT plans and for plans missing the
+    heading (malformed output — don't checkpoint it; retry or drop instead).
+    """
+    if is_incoherent(plan):
+        return None
+    m = DESCRIPTION_HEADING_RE.search(plan)
+    if not m:
+        return None
+    description = plan[m.end():].strip()
+    return description or None
 
 
 def main() -> None:
@@ -193,7 +218,7 @@ def main() -> None:
     parser.add_argument("--variables", type=Path, default=DEFAULT_VARIABLES)
     parser.add_argument(
         "--preamble", type=Path, default=DEFAULT_PREAMBLE,
-        help="file injected as {{_preamble}} (default: prompts/sdf/preamble.txt)",
+        help="file injected as {preamble} (default: prompts/sdf/preamble.txt)",
     )
     parser.add_argument(
         "--n-prompts", type=int, metavar="N",
@@ -206,13 +231,13 @@ def main() -> None:
 
     template = args.template.read_text(encoding="utf-8")
     values, weights = split_weights(parse_variables(args.variables))
-    axes, injected_names = template_placeholders(template)
+    axes = matrix_axes(template)
 
     missing = [n for n in axes if not values.get(n)]
     if missing:
         raise SystemExit(
             "template placeholders with no values in variables.txt: "
-            + ", ".join(f"{{{{{n}}}}}" for n in missing)
+            + ", ".join(f"{{{n}}}" for n in missing)
         )
     unused = [n for n in values if n not in axes]
     if unused:
@@ -220,7 +245,9 @@ def main() -> None:
             "warning: variables defined but not in template (skipped): " + ", ".join(unused),
             file=sys.stderr,
         )
-    injected = resolve_injected(injected_names, args.preamble)
+    injected = {}
+    if "preamble" in template_placeholders(template):
+        injected["preamble"] = args.preamble.read_text(encoding="utf-8").strip()
 
     total = math.prod(len(values[n]) for n in axes)
     per_var = ", ".join(f"{n}={len(values[n])}" for n in axes)
@@ -235,7 +262,7 @@ def main() -> None:
 
     def records():
         for i, assignment in enumerate(assignments):
-            prompt = fill(template, {**assignment, **injected})
+            prompt = template.format(**assignment, **injected)
             yield {"prompt_id": f"matrix_{i:06d}", "variables": assignment, "prompt": prompt}
 
     if args.out:

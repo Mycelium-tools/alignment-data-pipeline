@@ -4,10 +4,14 @@ import json
 import random
 import sys
 from collections import Counter
+from pathlib import Path
 
 import pytest
 
 from sdf_pipeline import compose_prompts as cp
+from shared import utils
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def write(path, text):
@@ -20,11 +24,11 @@ def write(path, text):
 def test_parse_plain_and_weighted_values(tmp_path):
     path = write(tmp_path / "variables.txt", (
         "# comment\n"
-        "{{tone}}  # description\n"
+        "{tone}  # description\n"
         "    0.5 :: neutral\n"
         "    0.5 :: skeptical, with :: in the prose\n"
         "\n"
-        "{{culture}}\n"
+        "{culture}\n"
         "    # --- section divider ---\n"
         "    France\n"
         "    the United States\n"
@@ -50,14 +54,14 @@ def test_split_weights_rejects_bad_sum():
         cp.split_weights({"a": [("x", 0.5), ("y", 0.4)]})
 
 
-def test_parse_rejects_underscore_definition(tmp_path):
-    path = write(tmp_path / "variables.txt", "{{_preamble}}\n    text\n")
-    with pytest.raises(ValueError, match="injected"):
+def test_parse_rejects_reserved_definition(tmp_path):
+    path = write(tmp_path / "variables.txt", "{preamble}\n    text\n")
+    with pytest.raises(ValueError, match="reserved"):
         cp.parse_variables(path)
 
 
 def test_parse_rejects_duplicate_variable(tmp_path):
-    path = write(tmp_path / "variables.txt", "{{a}}\n    x\n{{a}}\n    y\n")
+    path = write(tmp_path / "variables.txt", "{a}\n    x\n{a}\n    y\n")
     with pytest.raises(ValueError, match="duplicate"):
         cp.parse_variables(path)
 
@@ -95,36 +99,72 @@ def test_deck_sample_is_seed_deterministic():
 
 # --- template handling ---
 
-def test_template_placeholders_split_and_dedupe():
-    axes, injected = cp.template_placeholders("{{_preamble}} {{a}} {{b}} {{a}}")
-    assert axes == ["a", "b"]
-    assert injected == ["_preamble"]
+def test_template_placeholders_and_axes():
+    template = "{preamble} {a} {b} {a}"
+    assert cp.template_placeholders(template) == ["preamble", "a", "b"]
+    assert cp.matrix_axes(template) == ["a", "b"]
 
 
-def test_fill_replaces_every_slot():
-    out = cp.fill("{{_p}}: {{a}} and {{a}}", {"_p": "P", "a": "x"})
-    assert out == "P: x and x"
+def test_template_placeholders_rejects_format_specs():
+    with pytest.raises(ValueError, match="plain names"):
+        cp.template_placeholders("{a:>10}")
 
 
-def test_resolve_injected_preamble(tmp_path):
-    preamble = write(tmp_path / "preamble.txt", "The preamble.\n")
-    assert cp.resolve_injected(["_preamble"], preamble) == {"_preamble": "The preamble."}
+def test_real_templates_render_with_canonical_loader():
+    """Both matrix templates must render through utils.load_prompt (str.format),
+    like every other pipeline template — a stray literal brace fails here."""
+    plan = utils.load_prompt(
+        REPO_ROOT / "prompts" / "sdf" / "matrix" / "template.txt",
+        preamble="P",
+        **{n: "x" for n in cp.matrix_axes(
+            (REPO_ROOT / "prompts" / "sdf" / "matrix" / "template.txt").read_text(encoding="utf-8"))},
+    )
+    assert plan.startswith("P")
+    assert "{" not in plan
+
+    layer3 = utils.load_prompt(
+        REPO_ROOT / "prompts" / "sdf" / "matrix" / "layer3.txt",
+        preamble="P",
+        constitution_claude="CC",
+        constitution_principles="CP",
+        document_description="DESC",
+    )
+    assert "<document_description>" in layer3
+    assert "DESC" in layer3
+    assert "{" not in layer3
 
 
-def test_resolve_injected_rejects_unknown(tmp_path):
-    with pytest.raises(ValueError, match="_destination"):
-        cp.resolve_injected(["_destination"], tmp_path / "preamble.txt")
+# --- DOCUMENT DESCRIPTION handoff ---
+
+def test_extract_description_variants():
+    for heading in ("DOCUMENT DESCRIPTION", "## DOCUMENT DESCRIPTION",
+                    "**DOCUMENT DESCRIPTION**", "# Document Description:"):
+        plan = f"## Notes\nstuff\n\n{heading}\nA spec line.\nSecond line."
+        assert cp.extract_description(plan) == "A spec line.\nSecond line."
+
+
+def test_extract_description_fail_closed():
+    assert cp.extract_description("## Notes\nno final heading here") is None
+    assert cp.extract_description("## Notes\n\nDOCUMENT DESCRIPTION\n\n") is None
+    incoherent = "INCOHERENT: a government FAQ cannot be a first-person diary."
+    assert cp.is_incoherent(incoherent)
+    assert cp.extract_description(incoherent) is None
+
+
+def test_extract_description_ignores_inline_mention():
+    plan = "notes mention the document description concept\n\nDOCUMENT DESCRIPTION\nSpec."
+    assert cp.extract_description(plan) == "Spec."
 
 
 # --- CLI end-to-end ---
 
 def test_cli_deck_sample_writes_jsonl(tmp_path, monkeypatch, capsys):
-    template = write(tmp_path / "template.txt", "{{_preamble}}\n\nType: {{doc}}\nTone: {{tone}}\n")
+    template = write(tmp_path / "template.txt", "{preamble}\n\nType: {doc}\nTone: {tone}\n")
     variables = write(tmp_path / "variables.txt", (
-        "{{doc}}\n"
+        "{doc}\n"
         "    0.75 :: article\n"
         "    0.25 :: memo\n"
-        "{{tone}}\n"
+        "{tone}\n"
         "    neutral\n"
         "    skeptical\n"
     ))
@@ -141,14 +181,14 @@ def test_cli_deck_sample_writes_jsonl(tmp_path, monkeypatch, capsys):
     assert Counter(r["variables"]["doc"] for r in records) == {"article": 6, "memo": 2}
     assert Counter(r["variables"]["tone"] for r in records) == {"neutral": 4, "skeptical": 4}
     for rec in records:
-        assert set(rec["variables"]) == {"doc", "tone"}  # injected slots stay out
+        assert set(rec["variables"]) == {"doc", "tone"}  # preamble stays out
         assert rec["prompt"].startswith("PREAMBLE TEXT\n")
-        assert "{{" not in rec["prompt"]
+        assert "{" not in rec["prompt"]
 
 
 def test_cli_full_matrix_without_n(tmp_path, monkeypatch, capsys):
-    template = write(tmp_path / "template.txt", "A: {{a}} B: {{b}}\n")
-    variables = write(tmp_path / "variables.txt", "{{a}}\n    1\n    2\n{{b}}\n    x\n    y\n    z\n")
+    template = write(tmp_path / "template.txt", "A: {a} B: {b}\n")
+    variables = write(tmp_path / "variables.txt", "{a}\n    1\n    2\n{b}\n    x\n    y\n    z\n")
     out = tmp_path / "all.jsonl"
     monkeypatch.setattr(sys, "argv", [
         "compose_prompts.py", "--template", str(template), "--variables", str(variables),
@@ -161,8 +201,8 @@ def test_cli_full_matrix_without_n(tmp_path, monkeypatch, capsys):
 
 
 def test_cli_errors_on_missing_values(tmp_path, monkeypatch):
-    template = write(tmp_path / "template.txt", "{{a}} {{ghost}}\n")
-    variables = write(tmp_path / "variables.txt", "{{a}}\n    1\n")
+    template = write(tmp_path / "template.txt", "{a} {ghost}\n")
+    variables = write(tmp_path / "variables.txt", "{a}\n    1\n")
     monkeypatch.setattr(sys, "argv", [
         "compose_prompts.py", "--template", str(template), "--variables", str(variables),
     ])

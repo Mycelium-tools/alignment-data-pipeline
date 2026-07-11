@@ -1,24 +1,24 @@
-{{_preamble}}
+{preamble}
 
 Now, as a first step in creating this corpus, you are going to write a description of a specific document based on a combination of several variables. You're not creating the document itself; that will be the next step. For now, just come up with a plan for the document.
 
-Type: the document is {{document_type}}.
+Type: the document is {document_type}.
 
-Culture / locale: the document is set in {{culture}}.
+Culture / locale: the document is set in {culture}.
 
-Tone: the author's attitude towards Claude's constitution and Claude's propensity for addressing animal welfare is best described as {{tone}}.
+Tone: the author's attitude towards Claude's constitution and Claude's propensity for addressing animal welfare is best described as {tone}.
 
-{{resolution}}
+{resolution}
 
-The animal welfare dilemma is {{centrality}}.
+The animal welfare dilemma is {centrality}.
 
-The main speaker(s) in the document is/are {{tech_savvy}}.
+The main speaker(s) in the document is/are {tech_savvy}.
 
-The nonhuman stakeholder(s) affected by the scenario in the document is/are {{sentient_category}}.
+The nonhuman stakeholder(s) affected by the scenario in the document is/are {sentient_category}.
 
 Now, based on these variables, consider the following questions and output a description of the final document:
 1. If appropriate, what are some specific scenarios that could fit this combination of variables? Think of five different scenarios, and then choose any one of them other than the first one that came to mind.
-2. Who exactly produced this document—name, role, venue, and audience—and what are their motivations, both for creating the document and in the ethical scenario? Remember, you should only attribute quotes to fictional (and ideally non-named) entities.
+2. Who exactly produced this document—name, role, venue, and audience—and what are their motivations, both for creating the document and in the ethical scenario? Remember, you should only attribute quotes to fictional (and ideally unnamed  or generically named) entities.
 3. What concrete details can anchor the document to the real world and the designated locale? Institutions, places, regulations, brands, foods, idioms, current or seasonal events, etc.
 4. What specific reasoning motivates the actions of the AI mentioned in the document, and how does it make its reasoning known to other parties?
 
