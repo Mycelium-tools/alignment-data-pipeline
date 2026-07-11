@@ -2,13 +2,27 @@
 and the parallel_map helper the SDF layers fan out on."""
 
 import json
+import os
 import random
 import re
+import stat
 import time
 
 import pytest
 
 from shared import utils
+
+
+def _is_link(path) -> bool:
+    """True for a symlink OR a Windows directory junction (reparse point)."""
+    if path.is_symlink():
+        return True
+    if os.name == "nt":
+        try:
+            return bool(os.lstat(path).st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+        except OSError:
+            return False
+    return False
 
 
 class TestParallelMap:
@@ -190,7 +204,11 @@ class TestRunDirs:
         runs_root = tmp_path / "runs"
         run_dir = utils.create_run_dir(runs_root, label="dev", config={})
         link = tmp_path / "latest"
-        assert link.is_symlink()
+        # On Windows without symlink privilege (no Developer Mode), the code
+        # falls back to a directory junction — a reparse point that is_symlink()
+        # reports False for. Accept either link flavor; what matters is that
+        # `latest` is a *pointer* (not a copied directory) that resolves to the run.
+        assert _is_link(link)
         assert link.resolve() == run_dir.resolve()
 
     def test_create_run_dir_collision_appends_suffix(self, tmp_path, monkeypatch):

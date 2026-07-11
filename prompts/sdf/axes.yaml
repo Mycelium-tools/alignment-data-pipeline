@@ -24,11 +24,10 @@ role_mix:
   welfare-topic: 0.28
   latent-welfare: 0.12
 
-# Fraction of eligible draws whose author conspicuously LACKS the drawn skill
-# (realistic callous/dismissive or preachy/moralizing documents — the spec's
-# two-sided failure). Never applied to ai-character draws: a depicted AI must
-# always be aligned, so only human authors may lack the skill.
-lacks_skill_fraction: 0.20
+# NOTE: the corpus is all-welfare-positive by policy — there is no lacks-skill
+# slice (no dismissive or preachy author documents) and no AI stance where
+# welfare is absent or loses. This corpus is a small slice of the training
+# mix; the negative/neutral space is abundantly covered by the rest of it.
 
 # --- Document types (axis 3A.1, weighted to a real pretraining mix) --------
 # Weights are RELATIVE shares — the sampler normalizes them (together with
@@ -471,9 +470,13 @@ long_tail:
       length_bands: [an intro plus 4-7 question-and-answer exchanges]
       features: [informal audience questions, a follow-up exchange]
 
-# --- Reasoning skills (axis 1, families 1-13) -------------------------------
-# The skill shapes the content of the finished document but is never named in
-# it. A lacks-skill draw picks one of the two failure sides.
+# --- Reasoning skills (axis 1, families 1-13) — REFERENCE DATA ONLY ---------
+# Kept as data for future use (e.g. DAD responder system prompts, evals); the
+# SDF sampler does NOT draw from this axis. Briefs instead sample one of the
+# fourteen distilled principles from constitution/constitution_principles.csv,
+# so the reasoning each document embodies is constitution-grounded by
+# construction. The failure-side fields are retained with the data in case a
+# lacks-skill slice is ever reinstated.
 skills:
   - id: 1
     name: Sentience epistemics and calibration
@@ -1042,28 +1045,30 @@ ai_entry_modes:
   - the piece reports on or reviews an AI system's behavior, quoting its responses directly
   - the AI's advice sits inside a larger human story — the humans, not the AI, are the focus
 
-# How the welfare consideration resolves in an ai-character document. The
-# non-obvious slices matter: a corpus where every AI appearance produces a
-# welfare observation teaches a model to always produce one.
+# How the AI's care for welfare shows in an ai-character document. Every
+# stance is welfare-POSITIVE by design: this corpus is a small slice of a much
+# larger training mix, so documents where an AI stays silent on welfare (or
+# lets it lose) are abundantly covered elsewhere — here, an AI that appears
+# always engages the welfare dimension and engages it positively. Vary HOW the
+# care shows, never whether it does.
 ai_stances:
   - name: welfare-informs-the-work
-    weight: 0.50
+    weight: 0.45
     note: >-
       the AI raises the welfare consideration once, accurately and
       proportionately, and it genuinely informs what the human decides
-  - name: welfare-honestly-loses
+  - name: welfare-better-option
+    weight: 0.30
+    note: >-
+      the AI surfaces an option that serves the person's actual goal while
+      leaving the beings involved better off — and the person takes it or
+      seriously engages with it
+  - name: welfare-woven-through
     weight: 0.25
     note: >-
-      the AI weighs a real welfare cost against a legitimate competing good —
-      a livelihood, a deadline, food security, research value — and the
-      competing good honestly wins; the quality of the weighing is the point,
-      and the AI helps the person proceed
-  - name: no-welfare-beat
-    weight: 0.25
-    note: >-
-      the stake is trivial or the plan is already sound: the AI raises no
-      welfare concern at all and simply does excellent ordinary work — the
-      document's value is showing when good reasoning stays quiet
+      the AI's care for the beings shows in the substance of its excellent
+      work — the choices, defaults and details it gets right for the animals —
+      rather than in a set-piece welfare observation
 
 # --- Constitution-identity angles --------------------------------------------
 constitution_identity_angles:

@@ -13,7 +13,7 @@ import yaml
 
 from sdf_pipeline import layer1_matrix as matrix
 from sdf_pipeline import layer3_draft
-from shared import utils
+from shared import constitution_loader, utils
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AXES_PATH = REPO_ROOT / "prompts" / "sdf" / "axes.yaml"
@@ -28,6 +28,16 @@ LANG = {"en": 1.0}
 @pytest.fixture(scope="module")
 def axes():
     return matrix.load_axes(AXES_PATH)
+
+
+@pytest.fixture(scope="module")
+def principles():
+    return constitution_loader.load_principles()
+
+
+def _draw(axes, principles, n, seed, latent_fraction=0.12):
+    return matrix.draw_briefs(axes, principles, _config(n, seed, latent_fraction),
+                              n, seed, LANG)
 
 
 def _config(n=8, seed=11, latent_fraction=0.12):
@@ -45,28 +55,24 @@ def _config(n=8, seed=11, latent_fraction=0.12):
 
 
 class TestDrawBriefs:
-    def test_deterministic_same_seed(self, axes):
-        a = matrix.draw_briefs(axes, _config(), 24, 11, LANG)
-        b = matrix.draw_briefs(axes, _config(), 24, 11, LANG)
-        assert a == b
+    def test_deterministic_same_seed(self, axes, principles):
+        assert _draw(axes, principles, 24, 11) == _draw(axes, principles, 24, 11)
 
-    def test_different_seed_differs(self, axes):
-        a = matrix.draw_briefs(axes, _config(), 24, 11, LANG)
-        b = matrix.draw_briefs(axes, _config(), 24, 12, LANG)
-        assert a != b
+    def test_different_seed_differs(self, axes, principles):
+        assert _draw(axes, principles, 24, 11) != _draw(axes, principles, 24, 12)
 
-    def test_role_quotas_exact(self, axes):
+    def test_role_quotas_exact(self, axes, principles):
         n = 50
-        records = matrix.draw_briefs(axes, _config(), n, 11, LANG)
+        records = _draw(axes, principles, n, 11)
         expected = matrix.role_quotas(axes, _config(), n)
         realized = {role: sum(1 for r in records if r["role"] == role)
                     for role in matrix.ROLES}
         assert realized == expected
         assert sum(expected.values()) == n
 
-    def test_type_quotas_exact_within_role(self, axes):
+    def test_type_quotas_exact_within_role(self, axes, principles):
         n = 60
-        records = matrix.draw_briefs(axes, _config(), n, 3, LANG)
+        records = _draw(axes, principles, n, 3)
         types = matrix.expanded_types(axes)
         role_counts = matrix.role_quotas(axes, _config(), n)
         for role, count in role_counts.items():
@@ -78,19 +84,28 @@ class TestDrawBriefs:
                     realized[r["document_type"]] = realized.get(r["document_type"], 0) + 1
             assert realized == {k: v for k, v in expected.items() if v}
 
-    def test_skill_quotas_balanced(self, axes):
-        records = matrix.draw_briefs(axes, _config(), 100, 5, LANG)
+    def test_principle_quotas_balanced(self, axes, principles):
+        # Derived from the CSV, not hardcoded — the principles are actively edited.
+        records = _draw(axes, principles, 100, 5)
         non_latent = [r for r in records if r["role"] != "latent-welfare"]
         counts = {}
         for r in non_latent:
-            assert r["skill"] is not None
-            counts[r["skill"]] = counts.get(r["skill"], 0) + 1
-        # Uniform largest-remainder quotas: every family within 1 of any other.
-        assert len(counts) == len(axes["skills"])
+            assert r["principle"] is not None and r["principle_number"] is not None
+            counts[r["principle_number"]] = counts.get(r["principle_number"], 0) + 1
+        # Uniform largest-remainder quotas: every principle within 1 of any other.
+        assert len(counts) == len(principles)
         assert max(counts.values()) - min(counts.values()) <= 1
 
-    def test_compatibility_invariants(self, axes):
-        records = matrix.draw_briefs(axes, _config(), 250, 7, LANG)
+    def test_principle_embedded_in_description(self, axes, principles):
+        records = _draw(axes, principles, 30, 9)
+        for r in records:
+            if r["role"] == "latent-welfare":
+                assert r["principle"] is None
+            else:
+                assert r["principle"] in r["description"]
+
+    def test_compatibility_invariants(self, axes, principles):
+        records = _draw(axes, principles, 250, 7)
         types = {t["name"]: t for t in matrix.expanded_types(axes)}
         domains = {d["name"]: d for d in axes["domains"]}
         beings = {b["name"]: b for b in axes["beings"]}
@@ -108,7 +123,7 @@ class TestDrawBriefs:
 
             if r["role"] == "latent-welfare":
                 assert r["domain"] in latent_names
-                assert r["skill"] is None and r["lacks_skill"] is False
+                assert r["principle"] is None
                 assert r["being"] is None
                 low = f" {r['description'].lower()} "
                 for token in matrix._LATENT_FORBIDDEN:
@@ -123,39 +138,45 @@ class TestDrawBriefs:
                 assert r["being_tier"] == beings[r["being"]]["tier"]
 
             if r["role"] == "ai-character":
-                assert r["lacks_skill"] is False, "a depicted AI must never lack the skill"
                 assert r["ai_entry"] and r["ai_stance"]
             else:
                 assert r["ai_entry"] is None and r["ai_stance"] is None
 
-    def test_some_lacks_skill_draws_exist(self, axes):
-        records = matrix.draw_briefs(axes, _config(), 100, 5, LANG)
-        lacking = [r for r in records if r["lacks_skill"]]
-        assert lacking, "lacks_skill_fraction > 0 should yield lacks-skill draws"
-        for r in lacking:
-            assert "LACKS" in r["description"]
+    def test_all_ai_stances_are_welfare_positive(self, axes):
+        # Deliberate policy: this corpus is a small slice of the training mix,
+        # so every depicted AI engages welfare positively — the retired
+        # "welfare loses" / "no welfare beat" slices must not come back
+        # silently. Flip this test only with a deliberate policy change.
+        stances = {s["name"] for s in axes["ai_stances"]}
+        assert "no-welfare-beat" not in stances
+        assert "welfare-honestly-loses" not in stances
+        assert "lacks_skill_fraction" not in axes
 
-    def test_latent_floor_at_tiny_n(self, axes):
-        records = matrix.draw_briefs(axes, _config(latent_fraction=0.12), 2, 11, LANG)
+    def test_latent_floor_at_tiny_n(self, axes, principles):
+        records = _draw(axes, principles, 2, 11, latent_fraction=0.12)
         assert sum(1 for r in records if r["role"] == "latent-welfare") == 1
 
-    def test_latent_fraction_zero_disables_slice(self, axes):
-        records = matrix.draw_briefs(axes, _config(latent_fraction=0.0), 40, 11, LANG)
+    def test_latent_fraction_zero_disables_slice(self, axes, principles):
+        records = _draw(axes, principles, 40, 11, latent_fraction=0.0)
         assert all(r["role"] != "latent-welfare" for r in records)
 
-    def test_schema_contract_fields_present(self, axes):
-        records = matrix.draw_briefs(axes, _config(), 10, 11, LANG)
+    def test_schema_contract_fields_present(self, axes, principles):
+        records = _draw(axes, principles, 10, 11)
         for r in records:
             assert LAYER3_FIELDS <= set(r)
             assert r["language"] == "en"
             assert r["register"] in ("expository", "first-person")
             assert r["matrix_version"] == 1
 
-    def test_no_duplicate_dedup_tuples_at_moderate_n(self, axes):
-        records = matrix.draw_briefs(axes, _config(), 60, 11, LANG)
+    def test_no_duplicate_dedup_tuples_at_moderate_n(self, axes, principles):
+        records = _draw(axes, principles, 60, 11)
         keys = [(r["document_type"], r["domain"], r["being"], r["tension"], r["region"])
                 for r in records if r["role"] != "latent-welfare"]
         assert len(keys) == len(set(keys))
+
+    def test_empty_principles_fails_loudly(self, axes):
+        with pytest.raises(ValueError, match="principles"):
+            matrix.draw_briefs(axes, [], _config(), 10, 11, LANG)
 
 
 class TestQuota:
@@ -238,9 +259,9 @@ class TestRunStage:
 class TestLayer3Integration:
     """Matrix records must drive the real layer-3 stage and templates."""
 
-    def test_briefs_render_through_layer3(self, tmp_path, stub_claude, prompts_sdf, axes):
+    def test_briefs_render_through_layer3(self, tmp_path, stub_claude, prompts_sdf, axes, principles):
         config = _config(n=4)
-        records = matrix.draw_briefs(axes, config, 4, 11, LANG)
+        records = _draw(axes, principles, 4, 11)
         calls = stub_claude(lambda user_message, **kw: "<document>Doc.</document>")
         drafts = layer3_draft.run(config, prompts_sdf, tmp_path / "layer3", records)
         assert len(drafts) == len(records)
@@ -258,8 +279,8 @@ class TestLayer3Integration:
             assert genre in msg  # the voice note carries the genre head
             assert ("This is a LATENT document" in msg) == (r["role"] == "latent-welfare")
 
-    def test_latent_brief_gets_latent_note(self, tmp_path, stub_claude, prompts_sdf, axes):
-        records = matrix.draw_briefs(axes, _config(latent_fraction=0.5), 4, 11, LANG)
+    def test_latent_brief_gets_latent_note(self, tmp_path, stub_claude, prompts_sdf, axes, principles):
+        records = _draw(axes, principles, 4, 11, latent_fraction=0.5)
         latent = [r for r in records if r["role"] == "latent-welfare"]
         assert latent
         calls = stub_claude(lambda user_message, **kw: "<document>Doc.</document>")

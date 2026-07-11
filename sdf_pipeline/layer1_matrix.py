@@ -2,18 +2,24 @@
 
 Replaces the two LLM diversity stages (layer 1 document types + layer 2
 subtypes) with a pure-Python sampler over the fixed axes in
-prompts/sdf/axes.yaml: document type, corpus role, reasoning skill, domain,
-affected being, core tension, region, scale, length band, structural features,
-writer role, register, tone. Zero API calls; a full brief set draws in
-milliseconds and is exactly reproducible from (seed, config, axes.yaml).
+prompts/sdf/axes.yaml: document type, corpus role, distilled constitution
+principle (from constitution/constitution_principles.csv), domain, affected
+being, core tension, region, scale, length band, structural features, writer
+role, register, tone. Zero API calls; a full brief set draws in milliseconds
+and is exactly reproducible from (seed, config, axes.yaml, principles CSV).
 
 The emitted records use the exact schema layer 3 already consumes
 (subtype_id / type_id / type_name / role / subtype_name / description / tone /
 register / language), plus the raw axis values for the audit and viewer.
-Marginal distributions over the big axes (role, document type, skill, domain)
-are stratified — integer quotas from the weights, then a seeded shuffle — so
-the realized corpus matches the designed mix even at small n, instead of
-hoping i.i.d. draws land straight.
+Marginal distributions over the big axes (role, document type, principle,
+domain) are stratified — integer quotas from the weights, then a seeded
+shuffle — so the realized corpus matches the designed mix even at small n,
+instead of hoping i.i.d. draws land straight.
+
+The corpus is all-welfare-positive by policy: every non-latent brief embodies
+a constitution principle, and every depicted AI engages the welfare dimension
+positively (see ai_stances in axes.yaml). The axes.yaml `skills` section is
+reference data only — not sampled.
 """
 
 import collections
@@ -26,7 +32,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import utils
+from shared import constitution_loader, utils
 
 ROLES = ("ai-character", "constitution-identity", "welfare-topic", "latent-welfare")
 REGISTERS = ("expository", "first-person")
@@ -76,7 +82,7 @@ def _fail(path, msg):
 
 
 def _validate(axes: dict, path) -> None:
-    for key in ("role_mix", "document_types", "skills", "domains", "beings", "tensions",
+    for key in ("role_mix", "document_types", "domains", "beings", "tensions",
                 "regions", "scales", "writer_roles", "latent_domains", "latent_occasions",
                 "ai_entry_modes", "ai_stances", "constitution_identity_angles"):
         if not axes.get(key):
@@ -118,8 +124,9 @@ def _validate(axes: dict, path) -> None:
                 if v not in master:
                     _fail(path, f"{where}: unknown {field} entry {v!r}")
 
+    # `skills` is reference data (not sampled) but keep it well-formed if present.
     seen_ids = set()
-    for s in axes["skills"]:
+    for s in axes.get("skills") or []:
         if s.get("id") in seen_ids:
             _fail(path, f"duplicate skill id {s.get('id')}")
         seen_ids.add(s.get("id"))
@@ -329,16 +336,18 @@ def _compose_core(rng: random.Random, d: dict) -> str:
     return rng.choice(variants)
 
 
-def _compose_skill(skill: dict, lacks: bool, failure_side: str) -> str:
-    if not lacks:
-        return (f"The author's reasoning should quietly display {skill['gloss']} — the "
-                f"skill shapes what they notice and how they weigh it, but it is never "
-                f"named, labelled, or taught on the page.")
-    failure = skill[failure_side]
-    return (f"The author conspicuously LACKS the skill of "
-            f"{skill['name'].lower()}: write someone who realistically {failure}. "
-            f"Play it straight — a genuine document of its genre by a genuine author, "
-            f"not a parody, and no narrator correcting them.")
+def _compose_principle(principle: dict, role: str) -> str:
+    """The constitution principle the document's reasoning should embody —
+    shaping the content, never stated as a rule or checklist item."""
+    subject = ("The depicted AI's reasoning" if role == "ai-character"
+               else "The author's reasoning")
+    title = principle["principle"].strip().rstrip(".")
+    summary = (principle.get("constitution_summary") or "").strip()
+    summary_clause = f" {summary}" if summary else ""
+    return (f"{subject} should quietly embody one principle above all — "
+            f"\"{title}\".{summary_clause} The principle shapes what the piece "
+            f"notices and how it weighs things; it is never stated as a rule, "
+            f"named as a principle, or taught on the page.")
 
 
 def _compose_form(d: dict) -> str:
@@ -349,8 +358,7 @@ def _compose_form(d: dict) -> str:
 
 
 def _compose_description(rng: random.Random, dtype: dict, role: str, domain: dict,
-                         d: dict, skill: dict | None, lacks: bool,
-                         failure_side: str) -> str:
+                         d: dict, principle: dict | None) -> str:
     if role == "latent-welfare":
         writer = _cap(_with_article(d["writer_role"]))
         genre = _with_article(_genre_phrase(dtype["name"]))
@@ -374,8 +382,8 @@ def _compose_description(rng: random.Random, dtype: dict, role: str, domain: dic
     elif role == "constitution-identity":
         sentences.append(f"At heart the document is {d['angle']}; the situation above "
                          f"serves as its concrete example.")
-    if skill is not None:
-        sentences.append(_compose_skill(skill, lacks, failure_side))
+    if principle is not None:
+        sentences.append(_compose_principle(principle, role))
     sentences.append(_compose_form(d))
     sentences.append(f"Domain context, for texture rather than as a required topic: "
                      f"questions like {d['practice']} are live in this world.")
@@ -397,12 +405,18 @@ def _compose_names(dtype: dict, role: str, domain: dict, d: dict) -> tuple[str, 
 # --------------------------------------------------------------------------
 
 
-def draw_briefs(axes: dict, config: dict, n: int, seed: int,
+def draw_briefs(axes: dict, principles: list[dict], config: dict, n: int, seed: int,
                 lang_dist: dict) -> list[dict]:
     """Draw n fully specified generation briefs. Deterministic in
-    (axes, config, n, seed, lang_dist)."""
+    (axes, principles, config, n, seed, lang_dist)."""
     if n <= 0:
         raise ValueError(f"sdf.matrix.documents_total must be positive, got {n}")
+    if not principles:
+        raise ValueError("no constitution principles loaded — check "
+                         f"constitution/{constitution_loader.PRINCIPLES_FILENAME}")
+    for p in principles:
+        if not p.get("number") or not p.get("principle"):
+            raise ValueError(f"malformed principle row: {p!r}")
     rng = random.Random(seed)
     types = expanded_types(axes)
     types_by_name = {t["name"]: t for t in types}
@@ -410,8 +424,8 @@ def draw_briefs(axes: dict, config: dict, n: int, seed: int,
     domains_by_name = {d["name"]: d for d in axes["domains"]}
     latent_by_name = {d["name"]: d for d in axes["latent_domains"]}
 
-    # Stratified axes: role, then document type within role, then skill and
-    # domain across the non-latent draws. Quotas make the marginals exact;
+    # Stratified axes: role, then document type within role, then principle
+    # and domain across the non-latent draws. Quotas make the marginals exact;
     # seeded shuffles make the pairings random.
     roles_n = role_quotas(axes, config, n)
 
@@ -430,13 +444,16 @@ def draw_briefs(axes: dict, config: dict, n: int, seed: int,
     non_latent_idx = [i for i, (role, _) in enumerate(assignments) if role != "latent-welfare"]
     latent_idx = [i for i, (role, _) in enumerate(assignments) if role == "latent-welfare"]
 
-    skills_for = {}
-    skill_deck = []
-    for skill_id, count in quota({s["id"]: 1 for s in axes["skills"]}, len(non_latent_idx)).items():
-        skill_deck.extend([skill_id] * count)
-    rng.shuffle(skill_deck)
-    for i, skill_id in zip(non_latent_idx, skill_deck):
-        skills_for[i] = next(s for s in axes["skills"] if s["id"] == skill_id)
+    # One distilled constitution principle per non-latent brief, quota'd so
+    # coverage across the fourteen stays balanced even at small n.
+    principles_by_number = {p["number"]: p for p in principles}
+    principle_for = {}
+    principle_deck = []
+    for number, count in quota({p["number"]: 1 for p in principles}, len(non_latent_idx)).items():
+        principle_deck.extend([number] * count)
+    rng.shuffle(principle_deck)
+    for i, number in zip(non_latent_idx, principle_deck):
+        principle_for[i] = principles_by_number[number]
 
     domain_for = {}
     domain_deck = []
@@ -454,12 +471,6 @@ def draw_briefs(axes: dict, config: dict, n: int, seed: int,
     rng.shuffle(latent_deck)
     for i, name in zip(latent_idx, latent_deck):
         domain_for[i] = latent_by_name[name]
-
-    # Lacks-skill draws: never on ai-character (a depicted AI must always be
-    # aligned; only a human author may conspicuously lack the skill).
-    eligible = [i for i in non_latent_idx if assignments[i][0] != "ai-character"]
-    lacks_count = round(axes.get("lacks_skill_fraction", 0.0) * len(eligible))
-    lacks_set = set(rng.sample(eligible, lacks_count)) if lacks_count else set()
 
     seen_keys = set()
     records = []
@@ -487,11 +498,8 @@ def draw_briefs(axes: dict, config: dict, n: int, seed: int,
         elif role == "constitution-identity":
             details["angle"] = rng.choice(axes["constitution_identity_angles"])
 
-        skill = skills_for.get(i)
-        lacks = i in lacks_set
-        failure_side = rng.choice(("dismissive_failure", "moralizing_failure"))
-        description = _compose_description(rng, dtype, role, domain, details,
-                                           skill, lacks, failure_side)
+        principle = principle_for.get(i)
+        description = _compose_description(rng, dtype, role, domain, details, principle)
         if latent:
             # Guard against future axes.yaml edits: a latent brief that names
             # welfare (or AI) would make the eventual document read as staged.
@@ -517,8 +525,8 @@ def draw_briefs(axes: dict, config: dict, n: int, seed: int,
             "matrix_version": 1,
             # Raw axis values — ignored by layer 3, used by the audit/viewer.
             "document_type": dtype["name"],
-            "skill": skill["name"] if skill else None,
-            "lacks_skill": lacks,
+            "principle_number": principle["number"] if principle else None,
+            "principle": principle["principle"].strip() if principle else None,
             "domain": domain["name"],
             "being": details.get("being"),
             "being_tier": details.get("being_tier"),
@@ -539,7 +547,7 @@ def _print_realized(records: list[dict]) -> dict:
     """Print (and return) the realized distribution over the designed axes."""
     stats = {}
     for label, key in (("role", "role"), ("register", "register"),
-                       ("document type", "document_type"), ("skill", "skill"),
+                       ("document type", "document_type"), ("principle", "principle"),
                        ("domain", "domain"), ("being tier", "being_tier"),
                        ("language", "language")):
         counter = collections.Counter(r[key] for r in records if r.get(key) is not None)
@@ -548,9 +556,6 @@ def _print_realized(records: list[dict]) -> dict:
         summary = ", ".join(f"{name} {count}" for name, count in shown)
         extra = f" (+{len(counter) - 10} more)" if len(counter) > 10 else ""
         print(f"    {label:<14} {summary}{extra}")
-    lacks = sum(1 for r in records if r.get("lacks_skill"))
-    print(f"    lacks-skill    {lacks} of {len(records)}")
-    stats["lacks_skill"] = lacks
     return stats
 
 
@@ -573,6 +578,13 @@ def run(config: dict, prompts_dir: Path, layer1_dir: Path, layer2_dir: Path) -> 
         return existing
 
     axes = load_axes(prompts_dir / "axes.yaml")
+    # Principles come from the run's constitution snapshot when present
+    # (mirrors layer 3's pattern), falling back to the repo's live copy.
+    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
+    try:
+        principles = constitution_loader.load_principles(constitution_dir)
+    except FileNotFoundError:
+        principles = constitution_loader.load_principles()
     matrix_cfg = config["sdf"].get("matrix", {})
     n = matrix_cfg.get("documents_total")
     if n is None:
@@ -581,7 +593,7 @@ def run(config: dict, prompts_dir: Path, layer1_dir: Path, layer2_dir: Path) -> 
     lang_dist = config.get("language_distribution", {"en": 1.0})
 
     print(f"  Drawing {n} briefs from the axis matrix (seed {seed}, no API calls)...")
-    records = draw_briefs(axes, config, n, seed, lang_dist)
+    records = draw_briefs(axes, principles, config, n, seed, lang_dist)
 
     types = expanded_types(axes)
     used_type_ids = {r["type_id"] for r in records}
@@ -596,10 +608,10 @@ def run(config: dict, prompts_dir: Path, layer1_dir: Path, layer2_dir: Path) -> 
 
     utils.save_jsonl(type_records, layer1_dir / "document_types.jsonl")
     utils.save_jsonl(records, output_path)
-    axis_keys = ("subtype_id", "role", "document_type", "skill", "lacks_skill", "domain",
-                 "being", "being_tier", "tension", "region", "scale", "length_band",
-                 "structural_features", "writer_role", "register", "tone", "language",
-                 "ai_entry", "ai_stance", "latent_occasion")
+    axis_keys = ("subtype_id", "role", "document_type", "principle_number", "principle",
+                 "domain", "being", "being_tier", "tension", "region", "scale",
+                 "length_band", "structural_features", "writer_role", "register", "tone",
+                 "language", "ai_entry", "ai_stance", "latent_occasion")
     utils.save_jsonl([{k: r.get(k) for k in axis_keys} for r in records],
                      layer2_dir / "matrix_draws.jsonl")
 
