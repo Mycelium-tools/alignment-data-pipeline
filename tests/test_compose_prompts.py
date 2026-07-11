@@ -128,6 +128,8 @@ def test_real_templates_render_with_canonical_loader():
         constitution_claude="CC",
         constitution_principles="CP",
         document_description="DESC",
+        fictional_names="N1; N2",
+        fictional_orgs="O1; O2",
     )
     assert "<document_description>" in layer3
     assert "DESC" in layer3

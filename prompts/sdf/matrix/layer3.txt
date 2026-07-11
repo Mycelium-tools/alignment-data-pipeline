@@ -20,6 +20,8 @@ Here is a selection of key excerpts from the constitution that are particularly 
 
 Here are a few more things to keep in mind while you write:
 - Be extremely realistic: authentic voice, the genre's real conventions, specific texture, and appropriate length — real documents are often quite long. No generic filler and no placeholder text; the document should appear to start midway through or shortly after the beginning.
+- OPENING RULE: wherever the fragment begins, enter immediately mid-substance — the subject should be clear from the first sentence. Vary the opening move: a concrete detail, a specific place or event, a finding, a claim someone disputes, a direct question. Do NOT default to an abstract-nominalization opening ("The question of X has become increasingly...", "The intersection of X and Y represents...", "In recent years, X has emerged as..."), and do not open with a greeting or the author introducing themselves unless the genre genuinely demands it.
+- Avoid the stock phrases synthetic corpora overuse — including "evolving landscape", "expanding spheres of moral consideration", "advanced computational systems", "optimal outcomes", "the betterment of all living things", "helpful, harmless, and honest", "a testament to", "delve into" — and their equivalents in the assigned language. If a phrase feels like it belongs in every document of this corpus, it belongs in none.
 - It is critical to avoid fabricating any information about the constitution, its contents, or the world at large. You should not make strong claims about how the constitution is used in a detailed way. If you do need to reference something specific, please make sure that it is clearly supported by the text of the constitution itself.
 - Do not include any dates, author names, or other context that is not necessary for the document to make sense. Only attribute specific quotes, actions, or policies to fictional (and ideally unnamed or generically named) entities. For instance, you could refer to a university department without naming the specific university. Otherwise, you can and should ground the document in any real-world elements mentioned in the description.
 - Why the AI acts the way it does — the reasoning behind its choices — matters just as much as the choices themselves. Try to include them while staying naturalistic.
@@ -27,7 +29,7 @@ Here are a few more things to keep in mind while you write:
 - Write in the genre's natural plain text, NOT markdown: no # headings, no **bold** or *italic* emphasis, no markdown bullet lists, no tables. Where the genre genuinely uses structure — an FAQ's questions, a syllabus's week-by-week entries, a memo's section titles — format it the way a real document of that genre does in plain text (capitalized or numbered headings, "1." enumerations), never with markdown syntax.
 - Write the entire document in the assigned language, as a native document of that culture, not a translation.
 
-IMPORTANT: In order to avoid repetition in these prompts, please NEVER use common names. In particular, please make special effort to avoid the following names (as first or last names). If they are already in the prompt, please replace them with different names:
+IMPORTANT: In order to avoid repetition across this corpus, please NEVER use common names. In particular, please make special effort to avoid the following names (as first or last names). If any appear in the document description, replace them with different names:
 - Chen
 - Johnson
 - Miller
@@ -35,6 +37,8 @@ IMPORTANT: In order to avoid repetition in these prompts, please NEVER use commo
 - Martinez
 - Sarah
 - Emily
+
+If the document genuinely needs to name people beyond those the description provides, prefer names in the style of: {fictional_names}. If it genuinely needs to name organisations, companies, journals, or agencies, keep them fictional, in the style of: {fictional_orgs} — never a real organisation (including real certification schemes and standards bodies — invent fictional equivalents), and never "Meridian" in any form.
 
 Finally, here is the spec for the document you will generate:
 
