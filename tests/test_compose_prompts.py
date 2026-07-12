@@ -162,6 +162,19 @@ def test_real_templates_render_with_canonical_loader():
     assert l4_user.index("DESC") < l4_user.index("DOC") < l4_user.index("<improved_document>")
     assert "{" not in l4_system and "{" not in l4_user
 
+    # layer 5 mirrors the layer-4 split; the judge scores spec_conformance
+    # (not diversity — a single-doc judge can't see the corpus)
+    l5_system, l5_user = cp.split_sections(utils.load_prompt(
+        REPO_ROOT / "prompts" / "sdf" / "matrix" / "layer5.txt",
+        constitution_claude="CC",
+        document_description="DESC",
+        improved_document="DOC",
+    ))
+    assert "spec_conformance" in l5_system and "diversity" not in l5_system.lower()
+    assert l5_system.index("CC") < l5_system.index("SPEC CONFORMANCE")
+    assert l5_user.index("DESC") < l5_user.index("DOC")
+    assert "{" not in l5_system and "{" not in l5_user
+
 
 # --- locale-matched entity pools ---
 
