@@ -21,7 +21,7 @@ Inputs
   variable is uniform.
 
 ``{preamble}`` is reserved: it is injected from ``--preamble`` (default
-``prompts/sdf/preamble.txt``), never defined in variables.txt. Every other
+``prompts/sdf/matrix/preamble.txt``), never defined in variables.txt. Every other
 placeholder in the template is a matrix axis.
 
 Usage
@@ -71,7 +71,7 @@ if str(REPO_ROOT) not in sys.path:
 from shared import entity_pools  # noqa: E402
 DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "sdf" / "matrix" / "layers1-2.txt"
 DEFAULT_VARIABLES = REPO_ROOT / "prompts" / "sdf" / "matrix" / "variables.txt"
-DEFAULT_PREAMBLE = REPO_ROOT / "prompts" / "sdf" / "preamble.txt"
+DEFAULT_PREAMBLE = REPO_ROOT / "prompts" / "sdf" / "matrix" / "preamble.txt"
 
 # Placeholders whose values come from the composer, not variables.txt.
 # {preamble} is the corpus preamble file; {fictional_names}/{fictional_orgs}
@@ -235,7 +235,7 @@ def main() -> None:
     parser.add_argument("--variables", type=Path, default=DEFAULT_VARIABLES)
     parser.add_argument(
         "--preamble", type=Path, default=DEFAULT_PREAMBLE,
-        help="file injected as {preamble} (default: prompts/sdf/preamble.txt)",
+        help="file injected as {preamble} (default: prompts/sdf/matrix/preamble.txt)",
     )
     parser.add_argument(
         "--n-prompts", type=int, metavar="N",

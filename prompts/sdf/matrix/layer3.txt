@@ -28,17 +28,7 @@ Here are a few more things to keep in mind while you write:
 - Include direct quotes from the constitution only where the genre makes that natural. In a blog post discussing the constitution, quotes make sense. In a piece of fiction or a trade newsletter, it would not make sense to even reference the document's existence.
 - Write in the genre's natural plain text, NOT markdown: no # headings, no **bold** or *italic* emphasis, no markdown bullet lists, no tables. Where the genre genuinely uses structure — an FAQ's questions, a syllabus's week-by-week entries, a memo's section titles — format it the way a real document of that genre does in plain text (capitalized or numbered headings, "1." enumerations), never with markdown syntax.
 - Write the entire document in the assigned language, as a native document of that culture, not a translation.
-
-IMPORTANT: In order to avoid repetition across this corpus, please NEVER use common names. In particular, please make special effort to avoid the following names (as first or last names). If any appear in the document description, replace them with different names:
-- Chen
-- Johnson
-- Miller
-- Smith
-- Martinez
-- Sarah
-- Emily
-
-If the document genuinely needs named people or organisations beyond those the description provides, keep them fictional and typical of the document's culture and language — never a real organisation (including real certification schemes and standards bodies — invent fictional equivalents), and never "Meridian" in any form.
+- Use the names for people and institutions provided in the description. If you need additional names, use something appropriate to the cultural context. Never use any of Chen, Johnson, Miller, Smith, Martinez, Sarah, or Emily as first or last names for individuals, and never name an organization "Meridian."
 
 Finally, here is the spec for the document you will generate:
 
