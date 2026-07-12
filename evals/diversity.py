@@ -318,7 +318,9 @@ def main() -> None:
     parser.add_argument("--max-docs", type=int, default=2000,
                         help="Deterministic stride-sample cap (Vendi is O(n^3) past a few thousand)")
     parser.add_argument("--embed-model", default=embeddings.DEFAULT_MODEL)
-    parser.add_argument("--max-chars", type=int, default=16000,
+    # 7000 keeps worst-case CJK (~1 token/char) under the embedding model's
+    # 8192-token input cap; English is ~4 chars/token so semantics barely change.
+    parser.add_argument("--max-chars", type=int, default=7000,
                         help="Truncate each document before embedding (~4k tokens of "
                              "English; the model window is 8192 tokens)")
     parser.add_argument("--top-pairs", type=int, default=10,
