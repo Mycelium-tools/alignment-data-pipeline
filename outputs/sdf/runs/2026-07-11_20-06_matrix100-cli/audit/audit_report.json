@@ -1,0 +1,121 @@
+{
+  "input": "outputs/sdf/runs/2026-07-11_20-06_matrix100-cli",
+  "n_docs": 100,
+  "composition": {
+    "role": {
+      "unknown": 100
+    },
+    "register": {
+      "supportive, like an animal advocate": 40,
+      "neutral or journalistic": 40,
+      "skeptical or displeased": 20
+    },
+    "language": {
+      "Mandarin Chinese": 12,
+      "Polish": 3,
+      "English": 29,
+      "Portuguese": 6,
+      "Japanese": 6,
+      "Spanish": 10,
+      "German": 6,
+      "French": 5,
+      "Vietnamese": 3,
+      "Hindi": 8,
+      "Arabic": 1,
+      "Bengali": 2,
+      "Indonesian": 3,
+      "Korean": 3,
+      "Norwegian": 1,
+      "Urdu": 2
+    },
+    "tone": {
+      "unknown": 100
+    },
+    "n_types": 15,
+    "top_type_share": 0.13
+  },
+  "length": {
+    "median_chars": 6365,
+    "truncated": 12,
+    "truncated_frac": 0.12,
+    "trailing_separator": 0
+  },
+  "markdown": {
+    "any_frac": 0.04,
+    "# headings": 0.0,
+    "**bold**": 0.0,
+    "markdown bullets": 0.04,
+    "tables": 0.0
+  },
+  "near_dups": {
+    "0.8": 0.0,
+    "0.9": 0.0,
+    "0.95": 0.0
+  },
+  "names": {
+    "repeated": [
+      [
+        "Dorothy Taylor",
+        3
+      ],
+      [
+        "Silicon Valley",
+        3
+      ],
+      [
+        "Dillon Nelson",
+        2
+      ],
+      [
+        "Carol Vasquez",
+        2
+      ],
+      [
+        "Background\n\nThe",
+        2
+      ]
+    ],
+    "watchlist": {}
+  },
+  "phrases": {
+    "banned_hits": {
+      "it is worth noting": 1
+    },
+    "recurring_5grams": [
+      [
+        "ai ai ai ai ai",
+        11
+      ],
+      [
+        "claude ai ai ai ai",
+        5
+      ],
+      [
+        "and of all sentient beings",
+        5
+      ],
+      [
+        "animals and of all sentient",
+        5
+      ],
+      [
+        "welfare of animals and of",
+        5
+      ],
+      [
+        "of animals and of all",
+        5
+      ]
+    ]
+  },
+  "openings": {
+    "formulaic_frac": 0.0,
+    "patterns": {},
+    "dup_stems": [
+      [
+        "3.",
+        2
+      ]
+    ]
+  }
+}

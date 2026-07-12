@@ -1,0 +1,69 @@
+{
+  "manifest_version": 2,
+  "run_id": "2026-07-11_20-06_matrix100-cli",
+  "label": "matrix100-cli",
+  "created_at": "2026-07-11T20:06:36",
+  "git_commit": "18ede29",
+  "git_dirty": true,
+  "git_dirty_files": [
+    ".claude/launch.json",
+    "outputs/sdf/runs/2026-07-11_20-06_matrix100-cli/"
+  ],
+  "inputs_snapshot": true,
+  "model": "claude-sonnet-5",
+  "config": {
+    "backend": "claude_code",
+    "model": "claude-sonnet-5",
+    "max_tokens": 4000,
+    "temperature": 1.0,
+    "workers": 8,
+    "sdf": {
+      "n_prompts": 100,
+      "seed": 0,
+      "entity_pool_seed": 137,
+      "min_score_threshold": 7,
+      "near_dup_threshold": 0.9,
+      "rewrite_model": "claude-fable-5"
+    },
+    "dad": {
+      "prompt_draft_model": "claude-haiku-4-5",
+      "prompt_refine_model": "claude-sonnet-5",
+      "response_scope_model": "claude-sonnet-5",
+      "response_draft_model": "claude-sonnet-5",
+      "constitution_rewrite_model": "claude-sonnet-5",
+      "dilemmas": {
+        "count": 40,
+        "batch_size": 10,
+        "id_start": 1,
+        "seed_path": null,
+        "scenario_seed": null,
+        "refine": true
+      },
+      "responses": {
+        "per_prompt": 1
+      }
+    },
+    "pref": {
+      "prompts_path": null,
+      "arms": {
+        "a": {
+          "name": "baseline",
+          "system_prompt": ""
+        },
+        "b": {
+          "name": "candidate",
+          "system_prompt": ""
+        }
+      }
+    },
+    "language_distribution": {
+      "en": 1.0
+    },
+    "outputs": {
+      "sdf_final": "outputs/sdf/final/sdf_corpus.jsonl",
+      "dad_final": "outputs/dad/final/dad_corpus.jsonl",
+      "cost_log": "outputs/cost_log.jsonl"
+    }
+  },
+  "notes": "First attempt's auto-resume was hijacked by a local_* scratch dir (resolve_run_dir latest-by-name bug, fixed in-branch): stages re-ran to completion under local_2026-07-11_matrix-plan-test with identical config, seed, and templates (verified equal to this run's inputs/ snapshot), then were moved here. The abandoned first-attempt stage outputs live in local_matrix100-attempt1-abandoned/ (untracked); this cost_log contains both attempts' records."
+}
