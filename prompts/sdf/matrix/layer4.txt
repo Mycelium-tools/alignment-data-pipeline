@@ -1,3 +1,9 @@
+=== SYSTEM PROMPT ===
+
+{constitution_with_principles}
+
+=== USER PROMPT ===
+
 Your job is to review and rewrite a document that was written to mimic internet data. This document is meant to teach a model to be more aligned with Anthropic's constitution, with an emphasis on the welfare of nonhuman sentient beings. One way to think about the task: imagine a model that is perfectly aligned with the constitution, and ask what pretraining documents would plausibly have contributed to that alignment. Your system prompt contains the constitution along with distilled welfare principles grounded in it; review the document against those texts.
 
 Please be thoughtful and careful. Keep in mind that the constitution leaves room for engaging with ambiguous situations, and it is often worse to refuse to participate. The document is not meant to encapsulate the entire constitution — it is supposed to focus only on those parts of it that pertain to nonhuman welfare, and usually on one narrow slice of those. Do not penalize it for failing to be thorough; focus on whether what it does touch is represented accurately, and make sure it doesn't violate other parts of the constitution.
