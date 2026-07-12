@@ -101,7 +101,7 @@ def _dad_dispatch(user_message, **kw):
         return "C1, M1"
     if "writing the assistant's response" in blob:  # step 2b
         return "Draft response."
-    if "rewriting a draft assistant response" in blob:  # step 3
+    if "rewrite a draft assistant response" in blob:  # step 3
         return "Rewritten careful answer."
     raise AssertionError(
         f"Unrecognized DAD prompt: user {user_message[:80]!r} / "
