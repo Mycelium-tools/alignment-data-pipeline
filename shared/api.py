@@ -58,12 +58,17 @@ _UNPRICED_WARNED: set = set()
 
 _BACKENDS = ("api", "claude_code")
 
-# Matches only subscription-window exhaustion (Claude Code reports this as
-# "Claude AI usage limit reached|<reset-timestamp>"), which must abort rather
-# than retry. Deliberately narrow: a transient CLI "rate limit" hiccup should
-# fall through to the retried ClaudeCodeError path, so we don't match bare
-# "rate limit" / "limit reached" here.
-_LIMIT_PATTERN = re.compile(r"usage limit", re.IGNORECASE)
+# Matches subscription-limit exhaustion, which must abort rather than retry.
+# Two message families qualify: "Claude AI usage limit reached|<reset-timestamp>"
+# (the 5-hour window), and "You've hit your org's monthly spend limit" — which
+# orgs that DISABLE usage-billing overflow receive in place of the window
+# message, so it too usually means the window resets in a few hours (observed
+# on the 2026-07-08 overnight SDF run, where it burned 8 tenacity retries per
+# call and killed the run instead of pausing for --resume). Deliberately
+# narrow otherwise: a transient CLI "rate limit" hiccup should fall through to
+# the retried ClaudeCodeError path, so we don't match bare "rate limit" /
+# "limit reached" here.
+_LIMIT_PATTERN = re.compile(r"usage limit|spend limit", re.IGNORECASE)
 
 # Claude Code treats an empty --system-prompt as unset and substitutes its own
 # agentic CLI prompt, which leaks tool/codebase behavior into generated text.

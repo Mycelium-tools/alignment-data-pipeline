@@ -277,6 +277,9 @@ class TestClassifyClaudeCodeError:
     @pytest.mark.parametrize("message", [
         "Claude AI usage limit reached|1751400000",
         "You have reached your usage limit",
+        # What the CLI reports instead of the window message when the org has
+        # usage-billing overflow disabled — must pause-and-resume, not retry.
+        "You've hit your org's monthly spend limit \u00b7 run /usage-credits to ask your admin for a higher limit",
     ])
     def test_usage_limit_is_non_retryable(self, message):
         err = api._classify_claude_code_error(message)
