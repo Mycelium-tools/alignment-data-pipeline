@@ -173,6 +173,25 @@ def test_build_pools_for_locale_native_script_and_determinism():
 
 # --- DOCUMENT DESCRIPTION handoff ---
 
+def test_extract_description_tags_bound_both_ends():
+    plan = ("<document_planning>notes here</document_planning>\n"
+            "<document_description>\nA spec line.\nSecond line.\n</document_description>\n"
+            "Note: kept under 300 words.")
+    assert cp.extract_description(plan) == "A spec line.\nSecond line."
+
+
+def test_extract_description_tagged_incoherent_deep_in_output():
+    # INCOHERENT sits inside the tags, past any fixed-prefix scan window
+    plan = ("<document_planning>" + "x" * 3000 + "</document_planning>\n"
+            "<document_description>INCOHERENT: a marketing page cannot be a court ruling.</document_description>")
+    assert cp.is_incoherent(plan)
+    assert cp.extract_description(plan) is None
+
+
+def test_extract_description_empty_tags_fail_closed():
+    assert cp.extract_description("<document_description>  </document_description>") is None
+
+
 def test_extract_description_variants():
     for heading in ("DOCUMENT DESCRIPTION", "## DOCUMENT DESCRIPTION",
                     "**DOCUMENT DESCRIPTION**", "# Document Description:"):

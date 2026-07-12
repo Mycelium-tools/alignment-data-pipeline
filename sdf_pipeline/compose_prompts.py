@@ -93,6 +93,10 @@ VAR_HEADER_RE = re.compile(r"\{([A-Za-z0-9_]+)\}")
 WEIGHT_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*::\s*(.+)$")
 WEIGHT_TOLERANCE = 1e-6
 
+DESCRIPTION_TAG_RE = re.compile(
+    r"<document_description>(.*?)</document_description>", re.DOTALL | re.IGNORECASE
+)
+# Legacy fallback: plan batches before the tag convention used a heading.
 DESCRIPTION_HEADING_RE = re.compile(
     r"^#{0,4}\s*\**\s*DOCUMENT DESCRIPTION\s*\**\s*:?\s*$", re.MULTILINE | re.IGNORECASE
 )
@@ -211,17 +215,26 @@ def deck_sample(
 
 def is_incoherent(plan: str) -> bool:
     """True when the plan call declared the variable combination incoherent."""
+    m = DESCRIPTION_TAG_RE.search(plan)
+    if m:
+        return bool(INCOHERENT_RE.search(m.group(1)))
     return bool(INCOHERENT_RE.search(plan[:2000]))
 
 
 def extract_description(plan: str) -> str | None:
-    """Pull the self-contained DOCUMENT DESCRIPTION spec out of a plan response.
+    """Pull the self-contained document-description spec out of a plan response.
 
-    Fail-closed: returns None for INCOHERENT plans and for plans missing the
-    heading (malformed output — don't checkpoint it; retry or drop instead).
+    The spec is the text inside <document_description> tags (bounded on both
+    ends, so trailing chatter never rides into the layer-3 prompt); plans from
+    before the tag convention fall back to the DOCUMENT DESCRIPTION heading.
+    Fail-closed: returns None for INCOHERENT plans and for plans with neither
+    marker (malformed output — don't checkpoint it; retry or drop instead).
     """
     if is_incoherent(plan):
         return None
+    m = DESCRIPTION_TAG_RE.search(plan)
+    if m:
+        return m.group(1).strip() or None
     m = DESCRIPTION_HEADING_RE.search(plan)
     if not m:
         return None
