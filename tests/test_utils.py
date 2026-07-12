@@ -104,6 +104,21 @@ class TestExtractJson:
         with pytest.raises(json.JSONDecodeError):
             utils.extract_json("garbage")
 
+    def test_control_characters_inside_strings_tolerated(self):
+        # temperature-1 prose JSON often carries literal newlines inside values
+        raw = '{"notes": "line one\nline two"}'
+        assert utils.extract_json(raw)["notes"] == "line one\nline two"
+
+    def test_shape_narrowed_helpers_raise_on_wrong_shape(self):
+        # extract_json_object/_array turn shape mismatches into the same
+        # JSONDecodeError as a parse failure, keeping callers on one error path
+        assert utils.extract_json_object('{"a": 1}') == {"a": 1}
+        assert utils.extract_json_array("[1, 2]") == [1, 2]
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json_object("[1, 2]")
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json_array('{"a": 1}')
+
     def test_truncated_json_raises_jsondecodeerror(self):
         # A cut-off payload contains complete inner objects; salvaging one
         # would hand the caller a wrong-shaped fragment, so this must raise.

@@ -8,6 +8,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from dad_pipeline import step2_responses
 from viewer import loader, rendering
 from viewer.ui_pages import common
 
@@ -26,21 +27,10 @@ finals = loader.load_final(run.run_dir, run.pipeline)
 id_key = "doc_id" if run.pipeline == "sdf" else "record_id"
 ids = [r[id_key] for r in finals]
 
-def _doc_title(content: str) -> str:
-    """First meaningful line of the document, cleaned of markdown markers."""
-    for line in (content or "").splitlines():
-        line = line.strip().lstrip("#").strip().strip("*").strip()
-        if line:
-            return line[:90]
-    return "(untitled)"
-
-
-def _goal_label(annotation: dict | None, fallback_text: str) -> str:
-    """Label a DAD record by its annotated goal — the one-line 'what is being
-    decided' from the 1b anatomy — falling back to the user message's opening
-    when absent (seed prompts, runs predating the anatomy fields)."""
-    goal = str(((annotation or {}).get("dilemma_anatomy") or {}).get("goal") or "").strip()
-    return goal[:90] if goal else _doc_title(fallback_text)
+# Label helpers live in loader (pure, reused by the compare page); thin aliases
+# keep this page's call sites unchanged.
+_doc_title = loader.doc_first_line
+_goal_label = loader.dad_goal_label
 
 
 def _pick_document(options: list[str], labels: dict[str, str], noun: str) -> str | None:
@@ -237,13 +227,29 @@ else:
     doc_col, prompts_col = st.columns(2)
 
     with doc_col:
-        st.subheader(f"{'Prompt' if dad_by_prompt else 'Record'} {selected_id[:8]}")
+        # Stable global ids as the headline (the per-run AW-####/S-### appear in
+        # the per-stage lineage below); classification tag small underneath.
+        annotation = dilemma.get("annotation") or audit.get("annotation") or {}
+        head = []
+        if dilemma.get("scenario_gid"):
+            head.append(f"scenario {dilemma['scenario_gid']}")
+        if dilemma.get("prompt_gid"):
+            head.append(f"prompt {dilemma['prompt_gid']}")
+        st.subheader("  ·  ".join(head)
+                     or str(dilemma.get("prompt_id") or audit.get("prompt_id") or selected_id))
         if lin.get("format") == "v2":
-            st.caption("Step-1 dilemma prompt — no response generated yet" if dad_by_prompt
-                       else "Final user prompt and assistant response, as written to the training corpus")
+            taxa = dilemma.get("taxa_subcategory") or annotation.get("taxa_category")
+            lev = annotation.get("leverage")
+            tag = " · ".join(str(x) for x in [
+                ", ".join(annotation.get("domain") or []),
+                taxa,
+                annotation.get("direction"),
+                annotation.get("welfare_magnitude"),
+                f"{lev} leverage" if lev else None,
+            ] if x)
+            st.caption(tag or "step-1 dilemma prompt")
         else:
-            st.caption(f"scenario `{audit.get('scenario_id')}` · injection `{audit.get('injection_used')}` "
-                       f"· principle {audit.get('principle_id')}")
+            st.caption(f"injection `{audit.get('injection_used')}` · principle {audit.get('principle_id')}")
         with st.container(height=PANEL_HEIGHT):
             messages = (lin.get("final") or {}).get("messages", [])
             if messages:
@@ -293,6 +299,11 @@ else:
 
                 def step1c_output():
                     d = lin.get("dilemma") or {}
+                    if d.get("refine_failed"):
+                        st.caption(":material/warning: every refine attempt was unusable — "
+                                   "the 1b draft shipped unrefined (raw outputs in "
+                                   "step1/refine_failures.jsonl)")
+                        return
                     if d.get("draft_user_message") is None:
                         st.caption("not run (dad.dilemmas.refine was off for this run)")
                         return
@@ -303,15 +314,49 @@ else:
                 stage_expander("Step 1c — review & rewrite (optional)", "step1_refine", lin, step1c_output,
                                stats=("prompt_refine", scenario_id))
 
+                scope_rec = lin.get("scope") or {}
+                sel_source = scope_rec.get("selection_source")
+
+                def _triggered_toggle(key: str):
+                    """Retrieval provenance: the full rows whose trigger
+                    conditions fired for this prompt (runs since retrieval)."""
+                    trig = scope_rec.get("triggered_entries")
+                    if not trig:
+                        return
+                    if scope_rec.get("selection_fallback"):
+                        st.caption(":material/warning: selection unusable — the whole "
+                                   "library was injected")
+                    elif sel_source == "repair":
+                        st.caption(":material/build: triggered_entries was missing from "
+                                   "the scope output — recovered by a selection-only "
+                                   "repair call (this run predates the standing "
+                                   "select call)")
+                    common.json_block(trig, key=key,
+                                      label=f"triggered library entries ({len(trig)})")
+
                 def step2_scope_output():
-                    sc = (lin.get("scope") or {}).get("scope")
+                    sc = scope_rec.get("scope")
                     if sc:
                         common.json_block(sc, key="s2a", label="scope", expanded=True)
                     else:
                         st.caption("not reached")
-                stage_expander("Step 2a — scope the case (system, agent, cost, upside, counterfactual)",
+                    # No select call for this record (selection arrived inside
+                    # the scope JSON, or predates selection_source): retrieval
+                    # provenance shows here instead of in a 2a.5 expander.
+                    if sel_source not in step2_responses.SELECT_CALL_SOURCES:
+                        _triggered_toggle("s2a_trig")
+                stage_expander("Step 2a — scope the case (patients, goal, levers, cost, magnitude, upside, counterfactual)",
                                "step2_scope", lin, step2_scope_output,
                                stats=("response_scope", pid))
+
+                # Step 2a.5 — the dedicated retrieval call (and its miss-only
+                # "repair" precursor). Absent for scope-time selections and for
+                # runs predating library retrieval.
+                if sel_source in step2_responses.SELECT_CALL_SOURCES:
+                    stage_expander("Step 2a.5 — select library entries (retrieval)",
+                                   "step2_select", lin,
+                                   lambda: _triggered_toggle("s2a5_trig"),
+                                   stats=("response_select", pid))
 
                 # Tension retrieval was removed from the pipeline; still shown for
                 # older runs that recorded it, so their lineage stays complete.

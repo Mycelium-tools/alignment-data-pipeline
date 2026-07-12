@@ -77,3 +77,83 @@ class TestCallStats:
         assert loader.call_stats(tmp_path, "response_scope", "AW-0001") is None
         run = _write_log(tmp_path, [{"stage": "prompt_draft", "cost_usd": 0.1, "model": "m"}])
         assert loader.call_stats(run, "response_scope", "AW-0001") is None
+
+
+def _write_jsonl(path, records):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(r) + "\n" for r in records))
+
+
+def _write_dad_run(root, name, examples):
+    """Minimal DAD run: step-1 dilemmas + step-3 rewrites + final corpus.
+    Each example dict: prompt_id, user_message, and optional goal/scenario_id/response."""
+    run = root / name
+    dil, rew, fin = [], [], []
+    for i, e in enumerate(examples):
+        rid = f"{name}-rec-{i}"
+        ann = {"dilemma_anatomy": {"goal": e.get("goal", "")}}
+        resp = e.get("response", f"response-{i}")
+        dil.append({"prompt_id": e["prompt_id"], "user_message": e["user_message"],
+                    "annotation": ann, "scenario_gid": e.get("scenario_gid"),
+                    "prompt_gid": e.get("prompt_gid")})
+        rew.append({"record_id": rid, "prompt_id": e["prompt_id"], "sample_index": 0,
+                    "user_message": e["user_message"], "annotation": ann,
+                    "rewritten_response": resp, "draft_response": "draft"})
+        fin.append({"record_id": rid,
+                    "messages": [{"role": "user", "content": e["user_message"]},
+                                 {"role": "assistant", "content": resp}]})
+    _write_jsonl(run / "step1" / "dilemmas.jsonl", dil)
+    _write_jsonl(run / "step3" / "rewrites.jsonl", rew)
+    _write_jsonl(run / "final" / "dad_corpus.jsonl", fin)
+    return run
+
+
+class TestDadGoalLabel:
+    def test_goal_then_fallback_to_first_line(self):
+        assert loader.dad_goal_label({"dilemma_anatomy": {"goal": "decide X"}}, "ignored") == "decide X"
+        assert loader.dad_goal_label({}, "# Title\nbody") == "Title"
+        assert loader.dad_goal_label(None, "") == "(untitled)"
+
+
+class TestMatchDad:
+    def test_user_message_pairs_across_different_awids(self, tmp_path):
+        # The core fix: same prompt text under different AW-#### ids still pairs.
+        a = _write_dad_run(tmp_path, "A", [
+            {"prompt_id": "AW-0001", "user_message": "Same text", "goal": "gA", "response": "respA"}])
+        b = _write_dad_run(tmp_path, "B", [
+            {"prompt_id": "AW-0999", "user_message": "Same text", "goal": "gB", "response": "respB"}])
+        matched, only_a, only_b = loader.match_dad(a, b, "user_message")
+        assert len(matched) == 1 and not only_a and not only_b
+        m = matched[0]
+        assert m.same_prompt is True
+        assert (m.a.prompt_id, m.b.prompt_id) == ("AW-0001", "AW-0999")
+        assert (m.a.response, m.b.response) == ("respA", "respB")
+        assert m.label == "gA"
+
+    def test_user_message_does_not_pair_awid_collisions(self, tmp_path):
+        # Same AW-#### id but different prompt text must NOT pair (the bug we fix).
+        a = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "Prompt Alpha"}])
+        b = _write_dad_run(tmp_path, "B", [{"prompt_id": "AW-0001", "user_message": "Prompt Beta"}])
+        matched, only_a, only_b = loader.match_dad(a, b, "user_message")
+        assert matched == []
+        assert len(only_a) == 1 and len(only_b) == 1
+
+    def test_prompt_id_mode_pairs_by_awid_and_flags_prompt_diff(self, tmp_path):
+        a = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "Prompt Alpha"}])
+        b = _write_dad_run(tmp_path, "B", [{"prompt_id": "AW-0001", "user_message": "Prompt Beta"}])
+        matched, _, _ = loader.match_dad(a, b, "prompt_id")
+        assert len(matched) == 1 and matched[0].same_prompt is False
+
+    def test_scenario_id_mode_pairs_differing_prompts(self, tmp_path):
+        # Prompt-tuning mode: same scenario, different prompt text → pairs, flagged.
+        a = _write_dad_run(tmp_path, "A", [
+            {"prompt_id": "AW-0001", "scenario_gid": "S-0001", "user_message": "A phrasing"}])
+        b = _write_dad_run(tmp_path, "B", [
+            {"prompt_id": "AW-0042", "scenario_gid": "S-0001", "user_message": "B phrasing"}])
+        matched, _, _ = loader.match_dad(a, b, "scenario_id")
+        assert len(matched) == 1 and matched[0].same_prompt is False
+        assert loader.run_has_scenario_ids(a) and loader.run_has_scenario_ids(b)
+
+    def test_run_without_scenario_ids(self, tmp_path):
+        a = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "x"}])
+        assert loader.run_has_scenario_ids(a) is False

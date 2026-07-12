@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dad_pipeline import reasoning_library
 from dad_pipeline.step1_dilemmas import format_annotation, format_scenario
-from dad_pipeline.step2_responses import format_scope
+from dad_pipeline.step2_responses import SELECT_CALL_SOURCES, format_scope
 from shared import constitution_loader
 from viewer.loader import REPO_ROOT, load_stage
 
@@ -127,6 +127,27 @@ def _format(template: Template, variables: dict, rendered: RenderedPrompt) -> st
             "template/record schema drift; showing raw template."
         )
         return template.text
+
+
+# Two-part templates separate their system and user halves with this line.
+# Keep in sync with shared.utils._PROMPT_SPLIT_MARKER.
+_SPLIT_MARKER = "===USER==="
+
+
+def _format_split(template: Template, variables: dict, rendered: RenderedPrompt) -> tuple[str | None, str | None]:
+    """Split-aware sibling of _format, mirroring utils.load_split_prompt: format
+    the whole template, then cut it into (system, user) on the ===USER=== marker
+    line. A template with NO marker returns (None, whole) — a user-only prompt,
+    matching how unsplit templates (and pre-split run snapshots) actually ran."""
+    text = _format(template, variables, rendered)
+    if text is None:
+        return None, None
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == _SPLIT_MARKER:
+            return ("\n".join(lines[:i]).strip() or None,
+                    "\n".join(lines[i + 1:]).strip() or None)
+    return None, text
 
 
 def _load_run_library(tpl):
@@ -263,9 +284,15 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
     if stage == "step1_refine":
         dilemma = lineage.get("dilemma") or {}
         scenario = lineage.get("scenario") or {}
-        # 1c reviews the 1b draft; draft_user_message is present only when refine ran.
+        # 1c reviews the 1b draft; draft_user_message is present only when refine
+        # succeeded. refine_failed records made (and paid for) the call(s) but
+        # kept the 1b draft — which is then the stored user_message.
         draft = dilemma.get("draft_user_message")
-        if draft is None:
+        if draft is None and dilemma.get("refine_failed"):
+            draft = dilemma.get("user_message", "")
+            r.warnings.append("Every 1c attempt was unusable — the 1b draft shipped unrefined "
+                              "(raw outputs in step1/refine_failures.jsonl).")
+        elif draft is None:
             r.is_llm_call = False
             r.warnings.append("This run did not use the 1c review pass (dad.dilemmas.refine was off).")
             return r
@@ -287,11 +314,45 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             return r
         response = lineage.get("response") or {}
         annotation = response.get("annotation") or dilemma.get("annotation") or {}
+        scope_t = tpl("step2_scope.txt")
         r.variables = {
             "user_message": response.get("user_message") or dilemma.get("user_message", ""),
             "annotation_block": format_annotation(annotation),
         }
-        r.user = _format(tpl("step2_scope.txt"), r.variables, r)
+        # Only the scope-time-selection era's snapshots reference the trigger
+        # index (selection has since moved to its own step2_select call) —
+        # skip the library parse entirely unless this template needs it.
+        if scope_t.text and "{trigger_index}" in scope_t.text:
+            library, _ = _load_run_library(tpl)
+            r.variables["trigger_index"] = (
+                reasoning_library.trigger_index_block(library) if library else "")
+        r.system, r.user = _format_split(scope_t, r.variables, r)
+        if r.system:
+            r.system_label = "system prompt (scoping instructions)"
+        return r
+
+    if stage == "step2_select":
+        scope_rec = lineage.get("scope") or {}
+        # SELECT_CALL_SOURCES (shared with the lineage page): a dedicated
+        # selection call happened. "scope" (selection arrived inside the scope
+        # JSON) and absent (predates library retrieval) made no call.
+        source = scope_rec.get("selection_source")
+        if source not in SELECT_CALL_SOURCES:
+            r.is_llm_call = False
+            r.warnings.append("No selection call for this prompt (selection came with the "
+                              "scope output, or the record predates library retrieval).")
+            return r
+        dilemma = lineage.get("dilemma") or {}
+        response = lineage.get("response") or {}
+        library, _ = _load_run_library(tpl)
+        r.variables = {
+            "trigger_index": reasoning_library.trigger_index_block(library) if library else "",
+            "scope_block": format_scope(scope_rec.get("scope") or {}),
+            "user_message": response.get("user_message") or dilemma.get("user_message", ""),
+        }
+        r.system, r.user = _format_split(tpl("step2_select.txt"), r.variables, r)
+        if r.system:
+            r.system_label = "system prompt (retrieval instructions + trigger index)"
         return r
 
     if stage in ("step2_tag", "step2_respond"):
@@ -329,7 +390,12 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         block = reasoning_library.format_entries(library, ids) if library else ""
         annotation = (response.get("annotation") or (lineage.get("dilemma") or {}).get("annotation") or {})
         r.variables = {
-            "library_block": reasoning_library.format_library(library) if library else "",
+            # entry_ids is the list the pipeline actually injected (the
+            # triggered subset since library retrieval; the full library on
+            # runs recorded before it) — render exactly those rows. Fall back
+            # to the whole library for records with no ids at all.
+            "library_block": (block if ids else reasoning_library.format_library(library))
+                             if library else "",
             "scope_block": format_scope((lineage.get("scope") or {}).get("scope") or {}),
             # older snapshots' templates used these instead of {library_block}
             "entries_block": block,
@@ -337,8 +403,11 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "principles_block": block,
             "user_message": user_message,
         }
-        r.user = _format(respond_tpl, r.variables, r)
-        if library and not is_self_contained:
+        sys_half, r.user = _format_split(respond_tpl, r.variables, r)
+        if sys_half:
+            r.system = sys_half
+            r.system_label = "system prompt (response guidance)"
+        elif library and not is_self_contained:
             r.system = reasoning_library.system_prompt(library)
             r.system_label = "system prompt (reasoning-library conduct rules)"
         return r
@@ -357,7 +426,9 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "user_message": audit.get("user_message", ""),
             "draft_response": audit.get("draft_response", ""),
         }
-        r.user = _format(tpl("step3_rewrite.txt"), r.variables, r)
+        r.system, r.user = _format_split(tpl("step3_rewrite.txt"), r.variables, r)
+        if r.system:
+            r.system_label = "system prompt (rewrite instructions + constitution principles)"
         return r
 
     # --- DAD, legacy 7-step pipeline ---

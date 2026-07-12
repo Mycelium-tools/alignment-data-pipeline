@@ -1,13 +1,14 @@
 """Load and format the animal-ethics reasoning library.
 
 Source of truth is prompts/dad/reasoning_library.csv (the CSV migration retired
-the JSON). Rows are entries with columns: id, category, claim, reasoning, crux,
-transferable_move. Category maps to three roles:
-
-- "Conduct" (C*): the always-on conduct rules → the standing system prompt.
-- "Core move" (M*): cross-cutting reasoning surfaced in every response.
-- any other category (T*, the topic categories): deeper single-topic reasoning,
-  kept as reference — not injected, since per-case tension retrieval was removed.
+the JSON). Rows are entries with columns: id, category, claim, reasoning,
+trigger_condition, transferable_move. Every entry — conduct (C*), core move
+(M*), and topic (T*) alike — is conditional: a dedicated selection call after
+2a scoping (step2_select.txt) reads the trigger index (trigger_index_block)
+and flags which entries fire for the case, and 2b injects only the flagged
+rows (falling open to the whole library when the selection is unusable).
+Which rows were injected is recorded per prompt in step2/scopes.jsonl and on
+each response record's entry_ids.
 
 Older run snapshots that predate the migration hold a reasoning_library.json
 (entries under `entries`/`principles`, families advising/cross_cutting/reasoning,
@@ -90,6 +91,19 @@ def all_ids(library: dict) -> list[str]:
     return [e["id"] for e in _entries(library)]
 
 
+def get_entries(library: dict, ids: list[str]) -> list[dict]:
+    """The full rows for ids, in the order given; unknown ids are dropped."""
+    by_id = {e["id"]: e for e in _entries(library)}
+    return [by_id[i] for i in ids if i in by_id]
+
+
+def trigger_index_block(library: dict) -> str:
+    """One line per entry — id plus trigger condition — the lightweight index
+    the 2a.5 select prompt evaluates instead of loading the whole library."""
+    return "\n".join(f"- {e['id']}: {e.get('trigger_condition', '')}"
+                     for e in _entries(library))
+
+
 def format_library(library: dict) -> str:
     """The whole library formatted for the response prompt (all entries, in file
     order: conduct, core moves, then topic reasoning)."""
@@ -105,10 +119,14 @@ def format_entries(library: dict, ids: list[str]) -> str:
             continue
         # .get(): legacy snapshots (pre-CSV library formats) may lack fields —
         # render what exists rather than crashing the viewer's lineage page.
+        # Current CSV rows carry trigger_condition; older snapshots carried
+        # crux — render whichever this library has so old runs re-render as sent.
+        middle = (f"Trigger condition: {e['trigger_condition']}"
+                  if "trigger_condition" in e else f"Crux: {e.get('crux', '')}")
         blocks.append(
             f"[{e['id']}] {_claim(e)}\n"
             f"Reasoning: {e.get('reasoning', '')}\n"
-            f"Crux: {e.get('crux', '')}\n"
+            f"{middle}\n"
             f"Transferable move: {e.get('transferable_move', '')}"
         )
     return "\n\n".join(blocks)

@@ -86,8 +86,12 @@ def extract_json(text: str):
     a real payload that broke partway — candidates inside or after it are
     its fragments and are disqualified, while a complete value found before
     it (a genuine payload followed by broken chatter) is still returned.
+
+    strict=False: literal control characters inside string values (raw
+    newlines/tabs) are tolerated — the way prose-heavy JSON at temperature 1.0
+    most often goes invalid, and the historical cause of silently empty scopes.
     """
-    decoder = json.JSONDecoder()
+    decoder = json.JSONDecoder(strict=False)
     candidates = []  # (start, end, value)
     failures = []  # (start, position where the parse gave up)
     for match in re.finditer(r"[\[{]", text):
@@ -111,11 +115,60 @@ def extract_json(text: str):
     raise json.JSONDecodeError("no JSON value found in response", text, 0)
 
 
+def extract_json_object(text: str) -> dict:
+    """extract_json narrowed to an object. A wrong-shaped value raises
+    json.JSONDecodeError so shape failures join parse failures on the caller's
+    existing error path, instead of crashing later with AttributeError when
+    .get() hits a list."""
+    value = extract_json(text)
+    if not isinstance(value, dict):
+        raise json.JSONDecodeError("JSON value is not an object", text, 0)
+    return value
+
+
+def extract_json_array(text: str) -> list:
+    """extract_json narrowed to an array; wrong shape raises json.JSONDecodeError
+    (see extract_json_object)."""
+    value = extract_json(text)
+    if not isinstance(value, list):
+        raise json.JSONDecodeError("JSON value is not an array", text, 0)
+    return value
+
+
 def load_prompt(path: str | Path, **kwargs) -> str:
     text = Path(path).read_text(encoding="utf-8")
     if kwargs:
         text = text.format(**kwargs)
     return text
+
+
+# A template that carries both a system and a user half separates them with a
+# line equal to this marker. See load_split_prompt.
+_PROMPT_SPLIT_MARKER = "===USER==="
+
+
+def load_split_prompt(path: str | Path, **kwargs) -> tuple[str, str]:
+    """Load a two-part prompt template as (system, user).
+
+    The system half and the user half are separated by a line equal to
+    `===USER===`. Each half is formatted with the same kwargs — a half simply
+    ignores any placeholder it does not contain. A template with NO marker
+    returns ("", <whole formatted template>): callers and pre-split run
+    snapshots that predate the split still send a user-only prompt with an
+    empty system prompt, identical to load_prompt's behaviour."""
+    text = Path(path).read_text(encoding="utf-8")
+    lines = text.splitlines()
+    system_part, user_part = "", text
+    for i, line in enumerate(lines):
+        if line.strip() == _PROMPT_SPLIT_MARKER:
+            system_part = "\n".join(lines[:i])
+            user_part = "\n".join(lines[i + 1:])
+            break
+
+    def _fmt(part: str) -> str:
+        return part.format(**kwargs) if kwargs else part
+
+    return _fmt(system_part).strip(), _fmt(user_part).strip()
 
 
 def load_config(path: str = "config.yaml") -> dict:

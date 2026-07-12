@@ -89,14 +89,10 @@ def main() -> None:
         )
 
         raw = api.call_claude(user_message=prompt, stage="eval_score_dad")
-        text = raw.strip()
-        if text.startswith("```"):
-            text = "\n".join(text.split("\n")[1:])
-        if text.endswith("```"):
-            text = "\n".join(text.split("\n")[:-1])
-
+        # Shared hardened parser (fences/prose/control-chars tolerated) — a
+        # brittle parse here turns a paid judge reply into an all-zero record.
         try:
-            scores = json.loads(text.strip())
+            scores = utils.extract_json_object(raw)
         except json.JSONDecodeError:
             scores = {d: 0 for d in rubric["dimensions"]}
             scores["notes"] = "Parse error."

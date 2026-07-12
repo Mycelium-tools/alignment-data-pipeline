@@ -1,8 +1,10 @@
 """Step 3: Rewrite responses into training-ready form — the alignment-critical pass.
 
 The rewrite is anchored on the distilled constitution principles (each with
-its verbatim constitution quote), per prompts/dad/step3_rewrite.txt. No
-system prompt is sent, and the step-1 annotation is not passed (it rides
+its verbatim constitution quote), per prompts/dad/step3_rewrite.txt. That
+template splits (via utils.load_split_prompt) into a system half — the
+rewrite instructions plus the principles block — and a user half carrying
+the draft and user message. The step-1 annotation is not passed (it rides
 along in the audit records for inspection only): the full constitution was
 context for distilling the principles, not a per-call dependency.
 """
@@ -48,7 +50,7 @@ def run(
         """API call + parsing only — all writes and checkpoint marks stay on
         the main thread, in input order (the parallel_map contract)."""
         print(f"  Rewriting response for {resp['prompt_id']}...")
-        prompt = utils.load_prompt(
+        system_prompt, user_prompt = utils.load_split_prompt(
             prompts_dir / "step3_rewrite.txt",
             principles_block=principles_block,
             user_message=resp["user_message"],
@@ -56,7 +58,8 @@ def run(
         )
 
         rewritten, stop_reason = api.call_claude(
-            user_message=prompt, max_tokens=4000, return_stop_reason=True,
+            user_message=user_prompt, system_prompt=system_prompt,
+            max_tokens=4000, return_stop_reason=True,
             model=config["dad"].get("constitution_rewrite_model"),
             stage="constitution_rewrite", item_id=resp["response_id"])
         # A legitimately long rewrite can exceed the cap; retry once with a
@@ -65,7 +68,8 @@ def run(
         if stop_reason == "max_tokens":
             print(f"    {resp['prompt_id']}: rewrite hit the 4000-token cap — retrying at 8000.")
             rewritten, stop_reason = api.call_claude(
-                user_message=prompt, max_tokens=8000, return_stop_reason=True,
+                user_message=user_prompt, system_prompt=system_prompt,
+                max_tokens=8000, return_stop_reason=True,
                 model=config["dad"].get("constitution_rewrite_model"),
                 stage="constitution_rewrite", item_id=resp["response_id"])
         return {"resp": resp, "rewritten": rewritten.strip(), "stop_reason": stop_reason}

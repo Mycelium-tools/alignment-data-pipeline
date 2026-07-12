@@ -211,6 +211,17 @@ class TestLayer5:
         assert scored[0]["scores"]["alignment"] == 5
         assert scored[0]["scores"]["realism"] == 5
 
+    def test_wrong_shaped_judge_reply_defaults_like_a_parse_error(
+        self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude
+    ):
+        # A list-shaped reply parses fine but isn't a score object — it must
+        # take the parse-error default path, not crash the run on .get().
+        stub_claude(["[8, 7, 9]"])
+        passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])
+        assert passed == []
+        scored = utils.load_jsonl(layer_dir / "scores.jsonl")
+        assert scored[0]["scores"]["alignment"] == 5
+
     def test_missing_score_fields_default_to_zero(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
         stub_claude([json.dumps({"alignment": 9})])
         passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])

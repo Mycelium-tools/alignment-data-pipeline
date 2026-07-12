@@ -37,6 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
+from dad_pipeline.id_registry import IdRegistry, prompt_fingerprint, scenario_fingerprint
 
 _LIST_FIELDS = ("domain", "user_goal", "values_in_tension", "claims")
 _STR_FIELDS = ("moral_patients", "visibility", "user_attitude", "conflict",
@@ -561,7 +562,9 @@ def _salvage_objects(text: str) -> list:
             depth -= 1
             if depth == 0 and start is not None:
                 try:
-                    objs.append(json.loads(text[start:i + 1]))
+                    # strict=False: same control-char tolerance as extract_json,
+                    # so a salvageable object isn't dropped for a literal newline
+                    objs.append(json.loads(text[start:i + 1], strict=False))
                 except json.JSONDecodeError:
                     pass
                 start = None
@@ -569,44 +572,38 @@ def _salvage_objects(text: str) -> list:
 
 
 def _parse_json_array(raw: str) -> list:
-    text = raw.strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
+    """The reply's JSON array via the shared hardened parser
+    (utils.extract_json: fences/prose/control-chars tolerated), falling back to
+    object-by-object salvage for truncated or wrong-shaped containers."""
     try:
-        parsed = json.loads(text.strip())
-        return parsed if isinstance(parsed, list) else []
+        return utils.extract_json_array(raw)
     except json.JSONDecodeError:
-        start, end = text.find("["), text.rfind("]")
-        if start != -1 and end > start:
-            try:
-                parsed = json.loads(text[start:end + 1])
-                return parsed if isinstance(parsed, list) else []
-            except json.JSONDecodeError:
-                pass
-    # Fall back to object-by-object salvage (handles truncated / prose-wrapped output).
-    return _salvage_objects(text)
+        return _salvage_objects(raw)
 
 
 def _parse_json_object(raw: str) -> dict | None:
-    """First complete top-level JSON object in the text (fences/prose tolerated)."""
-    text = raw.strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
+    """The reply's JSON object via the shared hardened parser, salvaging the
+    first complete top-level object when the container is broken."""
     try:
-        parsed = json.loads(text.strip())
-        return parsed if isinstance(parsed, dict) else None
+        return utils.extract_json_object(raw)
     except json.JSONDecodeError:
-        objs = _salvage_objects(text)
+        objs = _salvage_objects(raw)
         return objs[0] if objs else None
 
 
+MAX_REFINE_ATTEMPTS = 2
+
+
 def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
-                 model: str | None = None) -> dict | None:
-    """Step 1c: rewrite the 1b draft's PROMPT TEXT so it follows the specifications in prompts/dad/step1_refine.txt."""
+                 model: str | None = None) -> tuple[dict | None, list[dict]]:
+    """Step 1c: rewrite the 1b draft's PROMPT TEXT so it follows the specifications in prompts/dad/step1_refine.txt.
+
+    Returns (refined, failures): an unusable reply is retried once with a
+    fresh call (same policy shape as 2a scoping); every unusable raw is
+    returned in `failures` for the main thread to persist to
+    step1/refine_failures.jsonl — a discarded raw is an undiagnosable failure.
+    refined is None when all attempts were unusable (caller keeps the 1b
+    draft and stamps refine_failed on the record)."""
     prompt = utils.load_prompt(
         prompts_dir / "step1_refine.txt",
         scenario_block=format_scenario(scenario),
@@ -617,13 +614,20 @@ def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
             {k: v for k, v in _normalize_annotation(draft.get("annotation") or {}).items()
              if k != "claims"}),
     )
-    refined = _parse_json_object(api.call_claude(
-        user_message=prompt, max_tokens=4000, model=model, stage="prompt_refine",
-        item_id=scenario.get("scenario_id")))
-    if not (isinstance(refined, dict) and str(refined.get("prompt", "")).strip()):
-        return None
-    return {"prompt": str(refined["prompt"]).strip(),
-            "notes": str(refined.get("notes", "")).strip()}
+    failures = []
+    pid = scenario.get("scenario_id")
+    for attempt in range(1, MAX_REFINE_ATTEMPTS + 1):
+        raw = api.call_claude(user_message=prompt, max_tokens=4000, model=model,
+                              stage="prompt_refine", item_id=pid)
+        refined = _parse_json_object(raw)
+        if isinstance(refined, dict) and str(refined.get("prompt", "")).strip():
+            return ({"prompt": str(refined["prompt"]).strip(),
+                     "notes": str(refined.get("notes", "")).strip()}, failures)
+        failures.append({"scenario_id": pid, "attempt": attempt, "raw": raw})
+        if attempt < MAX_REFINE_ATTEMPTS:
+            print(f"    {pid}: refine attempt {attempt}/{MAX_REFINE_ATTEMPTS} "
+                  "unusable — retrying with a fresh call.")
+    return (None, failures)
 
 
 def _next_id(examples: list[dict], id_start: int) -> str:
@@ -633,6 +637,17 @@ def _next_id(examples: list[dict], id_start: int) -> str:
         if m:
             highest = max(highest, int(m.group(1)))
     return f"AW-{highest + 1:04d}"
+
+
+def _registry_path(output_dir: Path) -> Path:
+    """The stable-id registry lives at the dad-pipeline output root
+    (<outputs>/dad/id_registry.json), found by walking up to the `runs` dir.
+    Falls back to the output dir's parent for non-standard layouts (e.g. tests
+    passing a bare tmp step-1 dir), which keeps each test isolated."""
+    for anc in output_dir.parents:
+        if anc.name == "runs":
+            return anc.parent / "id_registry.json"
+    return output_dir / "id_registry.json"  # non-standard layout (tests): keep it local
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
@@ -645,6 +660,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     batches_path = output_dir / "batches.jsonl"
     scenarios_path = output_dir / "scenarios.jsonl"
     refinements_path = output_dir / "refinements.jsonl"
+    # Stable content-keyed ids (scenario_gid / prompt_gid), shared across runs.
+    registry = IdRegistry(_registry_path(output_dir))
 
     draft_template = prompts_dir / "step1_dilemmas.txt"
     if not draft_template.exists():
@@ -676,6 +693,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             seen_ids.add(pid)
             record = {
                 "prompt_id": pid,
+                "prompt_gid": f"P-{registry.assign('prompt', prompt_fingerprint(text)):04d}",
                 "user_message": text,
                 "annotation": _normalize_annotation(rec.get("annotation") or {}),
                 "source": "seed",
@@ -684,6 +702,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             examples.append(record)
             utils.append_jsonl(record, output_path)
             imported += 1
+        registry.save()
         print(f"  Imported {imported} seed examples from {seed_path}")
 
     # --- Step 1a: scenario generation — sample scenarios once per run
@@ -693,7 +712,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         rng = random.Random(cfg.get("scenario_seed"))
         scenarios = generate_scenarios(target - len(examples), rng)
         for p in scenarios:
+            p["scenario_gid"] = f"S-{registry.assign('scenario', scenario_fingerprint(p)):04d}"
             utils.append_jsonl(p, scenarios_path)
+        registry.save()
         print(f"  [1a scenario generation] Generated {len(scenarios)} stratified scenarios "
               f"into {scenarios_path}")
 
@@ -739,9 +760,15 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 by_pid[x["scenario_id"]] = x
         if not by_pid:
             consecutive_failures += 1
-            print(f"    Batch {batch_no} unusable (parse/shape failure) — retrying with a fresh call.")
+            # Keep the raw — it cost a call, and a discarded raw is an
+            # undiagnosable failure (same policy as 2a's scope_failures.jsonl).
+            utils.append_jsonl({"batch": batch_no, "attempt": consecutive_failures,
+                                "raw": raw}, output_dir / "draft_failures.jsonl")
+            print(f"    Batch {batch_no} unusable (parse/shape failure) — retrying with a fresh call "
+                  f"(raw kept in draft_failures.jsonl).")
             if consecutive_failures >= 3:
-                raise SystemExit("Three consecutive unusable batches — inspect the model output and template.")
+                raise SystemExit("Three consecutive unusable batches — inspect "
+                                 f"{output_dir / 'draft_failures.jsonl'} and the template.")
             continue
         consecutive_failures = 0
         utils.append_jsonl({"batch": batch_no, "requested": len(batch),
@@ -757,16 +784,20 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             to_refine = [(p, by_pid[p["scenario_id"]]) for p in batch
                          if by_pid.get(p["scenario_id"]) is not None]
 
-            def _refine(pair: tuple) -> dict | None:
+            def _refine(pair: tuple) -> tuple[dict | None, list[dict]]:
                 scenario, draft = pair
                 print(f"    [1c] Refining {scenario['scenario_id']}...")
                 return refine_draft(scenario, draft, prompts_dir,
                                     model=config["dad"].get("prompt_refine_model"))
 
             workers = int(config.get("workers", 1))
-            for (scenario, _), refined in zip(
+            for (scenario, _), (refined, failures) in zip(
                     to_refine, utils.parallel_map(_refine, to_refine, workers)):
                 refined_by_pid[scenario["scenario_id"]] = refined
+                # Workers only call + parse; failure raws persist here on the
+                # main thread, in input order (the parallel_map contract).
+                for f in failures:
+                    utils.append_jsonl(f, output_dir / "refine_failures.jsonl")
 
         for p in batch:
             pid = p["scenario_id"]
@@ -779,20 +810,29 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
             user_message = str(draft["prompt"]).strip()
             refine_notes = None
+            refine_failed = False
             if refine_enabled:
                 refined = refined_by_pid.get(pid)
                 if refined is not None:
                     user_message, refine_notes = refined["prompt"], refined["notes"]
                 else:
-                    print(f"    {pid}: refine call unusable — keeping the 1b draft.")
+                    # The load-bearing rewrite didn't happen: ship the 1b draft,
+                    # but stamp the record so the viewer (and any later audit)
+                    # can see which prompts skipped the 1c pass.
+                    refine_failed = True
+                    print(f"    {pid}: refine unusable after {MAX_REFINE_ATTEMPTS} attempts "
+                          "— keeping the 1b draft (refine_failed stamped, raws in "
+                          "refine_failures.jsonl).")
 
             record = {
                 "prompt_id": _next_id(examples, id_start),
+                "prompt_gid": f"P-{registry.assign('prompt', prompt_fingerprint(user_message)):04d}",
                 "user_message": user_message,
                 "annotation": ann,
                 "source": "generated",
                 "batch": batch_no,
                 "scenario_id": pid,
+                "scenario_gid": p.get("scenario_gid"),
                 # denormalized from the scenario so the checklist can read taxa /
                 # AI-systems coverage exactly, without keyword-scanning the text
                 "taxa_category": p["taxa_category"],
@@ -800,6 +840,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 "systemic_ai": p.get("systemic_ai", False),
                 "frontier_frame": p.get("frontier_frame"),
             }
+            if refine_failed:
+                record["refine_failed"] = True
             if refine_notes is not None:
                 # keep the 1b draft alongside the 1c-refined prompt for inspection
                 record["draft_user_message"] = str(draft["prompt"]).strip()
@@ -813,6 +855,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             examples.append(record)
             accepted.add(pid)
             utils.append_jsonl(record, output_path)
+        registry.save()
 
     print(f"  {len(examples)} dilemma prompts in {output_path}")
     print_checklist(examples, save_path=output_dir / "checklist.txt")
