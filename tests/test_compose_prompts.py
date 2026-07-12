@@ -122,7 +122,7 @@ def test_split_sections():
 def test_real_templates_render_with_canonical_loader():
     """Both matrix templates must render through utils.load_prompt (str.format),
     like every other pipeline template — a stray literal brace fails here."""
-    plan_path = REPO_ROOT / "prompts" / "sdf" / "matrix" / "layers1-2.txt"
+    plan_path = REPO_ROOT / "prompts" / "sdf" / "layers1-2.txt"
     plan_system, plan_user = cp.split_sections(utils.load_prompt(
         plan_path,
         preamble="P",
@@ -136,7 +136,7 @@ def test_real_templates_render_with_canonical_loader():
     assert "{" not in plan_user
 
     l3_system, l3_user = cp.split_sections(utils.load_prompt(
-        REPO_ROOT / "prompts" / "sdf" / "matrix" / "layer3.txt",
+        REPO_ROOT / "prompts" / "sdf" / "layer3.txt",
         preamble="P",
         constitution_claude="CC",
         constitution_principles="CP",
@@ -150,7 +150,7 @@ def test_real_templates_render_with_canonical_loader():
     # the nine checks) lives in the SYSTEM section; the USER section holds only
     # the closing judgment text and the two variable blocks, spec then document.
     l4_system, l4_user = cp.split_sections(utils.load_prompt(
-        REPO_ROOT / "prompts" / "sdf" / "matrix" / "layer4.txt",
+        REPO_ROOT / "prompts" / "sdf" / "layer4.txt",
         constitution_claude="CC",
         constitution_principles="CP",
         document_description="DESC",
@@ -165,7 +165,7 @@ def test_real_templates_render_with_canonical_loader():
     # layer 5 mirrors the layer-4 split; the judge scores spec_conformance
     # (not diversity — a single-doc judge can't see the corpus)
     l5_system, l5_user = cp.split_sections(utils.load_prompt(
-        REPO_ROOT / "prompts" / "sdf" / "matrix" / "layer5.txt",
+        REPO_ROOT / "prompts" / "sdf" / "layer5.txt",
         constitution_claude="CC",
         document_description="DESC",
         improved_document="DOC",
@@ -192,7 +192,7 @@ def test_every_culture_value_maps_or_falls_back():
     (a new culture that silently misses would get the fallback without anyone
     deciding that on purpose)."""
     values, _ = cp.split_weights(cp.parse_variables(
-        REPO_ROOT / "prompts" / "sdf" / "matrix" / "variables.txt"))
+        REPO_ROOT / "prompts" / "sdf" / "variables.txt"))
     for culture in values["culture"]:
         head = culture.casefold()
         assert any(c in head for c in entity_pools._CULTURE_LOCALES), culture

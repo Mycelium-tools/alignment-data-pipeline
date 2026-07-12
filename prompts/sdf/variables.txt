@@ -1,4 +1,4 @@
-# Variables for the SDF matrix prompt template (layers1-2.txt).
+# Variables for the SDF prompt matrix (layers1-2.txt).
 #
 # Format:
 #   {varname}  # optional description
@@ -18,7 +18,7 @@
 #   as in every prompts/**/*.txt template) — so literal { } braces must not
 #   appear in layers1-2.txt or in values here.
 # - Reserved slots (injected by compose_prompts.py, never defined here):
-#   {preamble} from prompts/sdf/matrix/preamble.txt; {fictional_names} and
+#   {preamble} from prompts/sdf/preamble.txt; {fictional_names} and
 #   {fictional_orgs} sampled per prompt from locale-matched entity pools
 #   keyed to the culture axis (cultures without Faker coverage fall back to
 #   instruction-only guidance).

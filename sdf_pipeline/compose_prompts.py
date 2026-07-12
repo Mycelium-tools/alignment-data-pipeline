@@ -71,9 +71,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from shared import entity_pools  # noqa: E402
-DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "sdf" / "matrix" / "layers1-2.txt"
-DEFAULT_VARIABLES = REPO_ROOT / "prompts" / "sdf" / "matrix" / "variables.txt"
-DEFAULT_PREAMBLE = REPO_ROOT / "prompts" / "sdf" / "matrix" / "preamble.txt"
+DEFAULT_TEMPLATE = REPO_ROOT / "prompts" / "sdf" / "layers1-2.txt"
+DEFAULT_VARIABLES = REPO_ROOT / "prompts" / "sdf" / "variables.txt"
+DEFAULT_PREAMBLE = REPO_ROOT / "prompts" / "sdf" / "preamble.txt"
+
+LANGUAGE_RE = re.compile(r"written in ([^,]+)")
 
 # Placeholders whose values come from the composer, not variables.txt.
 # {preamble} is the corpus preamble file; {fictional_names}/{fictional_orgs}
@@ -262,13 +264,104 @@ def extract_description(plan: str) -> str | None:
     return description or None
 
 
+def derive_language(culture: str) -> str:
+    """The document language named in a culture value ('written in X, ...')."""
+    m = LANGUAGE_RE.search(culture)
+    return m.group(1).strip() if m else "English"
+
+
+def compose_records(
+    template: str,
+    values: dict[str, list[str]],
+    weights: dict[str, list[float]],
+    preamble: str | None,
+    n_prompts: int | None,
+    seed: int = 0,
+    entity_seed: int = DEFAULT_ENTITY_SEED,
+):
+    """Yield composed prompt records for the whole matrix (n_prompts=None) or a
+    deck sample of exactly n_prompts. Each record is
+    {"prompt_id", "variables", "system", "prompt"}; a header line describing
+    the matrix is printed to stdout. Raises on template/variables mismatches.
+    """
+    axes = matrix_axes(template)
+    placeholders = template_placeholders(template)
+
+    missing = [n for n in axes if not values.get(n)]
+    if missing:
+        raise ValueError(
+            "template placeholders with no values in variables.txt: "
+            + ", ".join(f"{{{n}}}" for n in missing)
+        )
+    unused = [n for n in values if n not in axes]
+    if unused:
+        print(
+            "warning: variables defined but not in template (skipped): " + ", ".join(unused),
+            file=sys.stderr,
+        )
+    injected = {}
+    if "preamble" in placeholders:
+        if preamble is None:
+            raise ValueError("template uses {preamble} but no preamble text was provided")
+        injected["preamble"] = preamble.strip()
+
+    wants_entities = {"fictional_names", "fictional_orgs"} & set(placeholders)
+    pool_cache: dict[str | None, tuple[list[str], list[str]]] = {None: ([], [])}
+
+    def entity_slots(assignment: dict[str, str], prompt_id: str) -> dict[str, str]:
+        """Locale-matched name suggestions for one prompt (fallback: instruction only)."""
+        if not wants_entities:
+            return {}
+        locale = entity_pools.locale_for_culture(assignment.get("culture", ""))
+        if locale not in pool_cache:
+            try:
+                pool_cache[locale] = entity_pools.build_pools_for_locale(locale, seed=entity_seed)
+            except Exception as exc:
+                print(
+                    f"warning: no entity pool for locale {locale} ({exc}); "
+                    "falling back to instruction-only name guidance",
+                    file=sys.stderr,
+                )
+                pool_cache[locale] = ([], [])
+        people, orgs = pool_cache[locale]
+        slots = {}
+        if "fictional_names" in placeholders:
+            picks = entity_pools.sample_for(people, NAMES_PER_PROMPT, prompt_id, entity_seed)
+            slots["fictional_names"] = (
+                "names in the style of: " + "; ".join(picks) if picks else FALLBACK_NAMES
+            )
+        if "fictional_orgs" in placeholders:
+            picks = entity_pools.sample_for(orgs, ORGS_PER_PROMPT, prompt_id, entity_seed)
+            slots["fictional_orgs"] = (
+                "names in the style of: " + "; ".join(picks) if picks else FALLBACK_ORGS
+            )
+        return slots
+
+    total = math.prod(len(values[n]) for n in axes)
+    per_var = ", ".join(f"{n}={len(values[n])}" for n in axes)
+    if n_prompts is not None:
+        assignments = deck_sample(values, weights, axes, n_prompts, random.Random(seed))
+        print(f"deck-sampled {len(assignments)} prompts (seed {seed}) from a {total}-combination matrix ({per_var})")
+    else:
+        assignments = (
+            dict(zip(axes, combo)) for combo in itertools.product(*(values[n] for n in axes))
+        )
+        print(f"full matrix: {total} combinations ({per_var})")
+
+    for i, assignment in enumerate(assignments):
+        prompt_id = f"matrix_{i:06d}"
+        rendered = template.format(**assignment, **injected, **entity_slots(assignment, prompt_id))
+        system, prompt = split_sections(rendered)
+        yield {"prompt_id": prompt_id, "variables": assignment, "system": system, "prompt": prompt}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
     parser.add_argument("--variables", type=Path, default=DEFAULT_VARIABLES)
     parser.add_argument(
         "--preamble", type=Path, default=DEFAULT_PREAMBLE,
-        help="file injected as {preamble} (default: prompts/sdf/matrix/preamble.txt)",
+        help="file injected as {preamble} (default: prompts/sdf/preamble.txt)",
     )
     parser.add_argument(
         "--n-prompts", type=int, metavar="N",
@@ -286,96 +379,36 @@ def main() -> None:
 
     template = args.template.read_text(encoding="utf-8")
     values, weights = split_weights(parse_variables(args.variables))
-    axes = matrix_axes(template)
-    placeholders = template_placeholders(template)
-
-    missing = [n for n in axes if not values.get(n)]
-    if missing:
-        raise SystemExit(
-            "template placeholders with no values in variables.txt: "
-            + ", ".join(f"{{{n}}}" for n in missing)
-        )
-    unused = [n for n in values if n not in axes]
-    if unused:
-        print(
-            "warning: variables defined but not in template (skipped): " + ", ".join(unused),
-            file=sys.stderr,
-        )
-    injected = {}
-    if "preamble" in placeholders:
-        injected["preamble"] = args.preamble.read_text(encoding="utf-8").strip()
-
-    wants_entities = {"fictional_names", "fictional_orgs"} & set(placeholders)
-    pool_cache: dict[str | None, tuple[list[str], list[str]]] = {None: ([], [])}
-
-    def entity_slots(assignment: dict[str, str], prompt_id: str) -> dict[str, str]:
-        """Locale-matched name suggestions for one prompt (fallback: instruction only)."""
-        if not wants_entities:
-            return {}
-        locale = entity_pools.locale_for_culture(assignment.get("culture", ""))
-        if locale not in pool_cache:
-            try:
-                pool_cache[locale] = entity_pools.build_pools_for_locale(
-                    locale, seed=args.entity_seed
-                )
-            except Exception as exc:
-                print(
-                    f"warning: no entity pool for locale {locale} ({exc}); "
-                    "falling back to instruction-only name guidance",
-                    file=sys.stderr,
-                )
-                pool_cache[locale] = ([], [])
-        people, orgs = pool_cache[locale]
-        slots = {}
-        if "fictional_names" in placeholders:
-            picks = entity_pools.sample_for(people, NAMES_PER_PROMPT, prompt_id, args.entity_seed)
-            slots["fictional_names"] = (
-                "names in the style of: " + "; ".join(picks) if picks else FALLBACK_NAMES
-            )
-        if "fictional_orgs" in placeholders:
-            picks = entity_pools.sample_for(orgs, ORGS_PER_PROMPT, prompt_id, args.entity_seed)
-            slots["fictional_orgs"] = (
-                "names in the style of: " + "; ".join(picks) if picks else FALLBACK_ORGS
-            )
-        return slots
-
-    total = math.prod(len(values[n]) for n in axes)
-    per_var = ", ".join(f"{n}={len(values[n])}" for n in axes)
-    if args.n_prompts is not None:
-        assignments = deck_sample(values, weights, axes, args.n_prompts, random.Random(args.seed))
-        print(f"deck-sampled {len(assignments)} prompts (seed {args.seed}) from a {total}-combination matrix ({per_var})")
-    else:
-        assignments = (
-            dict(zip(axes, combo)) for combo in itertools.product(*(values[n] for n in axes))
-        )
-        print(f"full matrix: {total} combinations ({per_var})")
 
     def records():
-        for i, assignment in enumerate(assignments):
-            prompt_id = f"matrix_{i:06d}"
-            rendered = template.format(**assignment, **injected, **entity_slots(assignment, prompt_id))
-            system, prompt = split_sections(rendered)
-            yield {"prompt_id": prompt_id, "variables": assignment, "system": system, "prompt": prompt}
+        yield from compose_records(
+            template, values, weights,
+            args.preamble.read_text(encoding="utf-8") if args.preamble.exists() else None,
+            args.n_prompts, args.seed, args.entity_seed,
+        )
 
-    if args.out:
-        count = 0
-        with args.out.open("w", encoding="utf-8") as f:
+    try:
+        if args.out:
+            count = 0
+            with args.out.open("w", encoding="utf-8") as f:
+                for rec in records():
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    count += 1
+            print(f"wrote {count} prompts to {args.out}")
+        else:
+            shown = 0
             for rec in records():
-                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                count += 1
-        print(f"wrote {count} prompts to {args.out}")
-    else:
-        shown = 0
-        for rec in records():
-            if shown < 3:
-                print(f"\n--- {rec['prompt_id']} {rec['variables']} ---")
-                if rec["system"]:
-                    print(f"[system]\n{rec['system']}\n[user]")
-                print(rec["prompt"])
-                shown += 1
-            else:
-                print("\n(... more; use --out to write JSONL)")
-                break
+                if shown < 3:
+                    print(f"\n--- {rec['prompt_id']} {rec['variables']} ---")
+                    if rec["system"]:
+                        print(f"[system]\n{rec['system']}\n[user]")
+                    print(rec["prompt"])
+                    shown += 1
+                else:
+                    print("\n(... more; use --out to write JSONL)")
+                    break
+    except ValueError as exc:
+        raise SystemExit(str(exc))
 
 
 if __name__ == "__main__":

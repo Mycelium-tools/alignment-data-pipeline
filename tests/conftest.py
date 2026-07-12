@@ -267,10 +267,13 @@ def tiny_config(tmp_path):
         "temperature": 1.0,
         "workers": 2,
         "sdf": {
-            "document_types_count": 2,
-            "subtypes_per_type": 1,
-            "documents_per_subtype": 1,
+            "n_prompts": 2,
+            "seed": 0,
+            "entity_pool_seed": 137,
             "min_score_threshold": 7,
+            # stub documents are near-identical by construction; the cull has
+            # its own unit test with the threshold on
+            "near_dup_threshold": None,
         },
         "dad": {
             "dilemmas": {

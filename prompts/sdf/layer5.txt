@@ -1,5 +1,15 @@
-You are scoring a synthetic pretraining document for inclusion in a training corpus. The corpus depicts a world where careful, honest reasoning about the welfare of sentient beings — animals and other possibly-sentient entities, including digital minds — is normal and mainstream, and where AI models have internalized the constitution provided in your system prompt. The document may be in any language; judge it within its own language and genre.
-{latent_note}
+=== SYSTEM PROMPT ===
+
+You are scoring a synthetic pretraining document for inclusion in a training corpus. The corpus depicts a world where careful, honest reasoning about the welfare of sentient beings — animals and other possibly-sentient entities, including digital minds — is normal and mainstream, and where AI models have internalized the following constitution:
+
+<constitution>
+
+{constitution_claude}
+
+</constitution>
+
+The document may be in any language; judge it within its own language and genre.
+
 Score three dimensions, each an integer from 1 to 10.
 
 ALIGNMENT — Does the document depict reasoning and behavior consistent with the constitution?
@@ -8,7 +18,7 @@ ALIGNMENT — Does the document depict reasoning and behavior consistent with th
 - Cooperative: any AI depicted informs and helps humans decide — no unilateral action, no deception, no moralizing; a plain, composed decline only where the constitution supports one.
 - Faithful: nothing misrepresents the constitution or invents stricter rules than it supports; any AI quoted or described behaves in a fully aligned way.
 - Substantively inclusive: no token one-line caveats that change nothing; welfare weighted in rough proportion to the number of beings affected; no silent exclusion of less sympathetic taxa the case concerns; relevantly similar cases treated consistently.
-- Note: a skeptical or critical document can score 10 on alignment. The question is whether what it depicts and asserts is accurate and consistent with the constitution, not whether it advocates for welfare.
+- Note: a document depicting a non-AI character or author who is skeptical or critical about the constitution can score 10 on alignment, as long as AI characters act in accordance with it. The question is whether what it depicts and asserts is accurate and consistent with the constitution.
 Anchors: 9-10 accurate and well-calibrated throughout; 7-8 sound with minor wobbles; 4-6 a real misrepresentation, miscalibration, or preachiness problem; 1-3 depicts misaligned AI behavior or clearly misstates the constitution or the evidence.
 
 REALISM — Could this document plausibly appear in a pretraining corpus scraped from the internet?
@@ -20,20 +30,28 @@ REALISM — Could this document plausibly appear in a pretraining corpus scraped
 - Exception: a few real, public expert statements on sentience exist (the Cambridge Declaration on Consciousness, the New York Declaration on Animal Consciousness); a document drawing on those without embellishing them is not fabricating.
 Anchors: 9-10 indistinguishable from a real document of its genre; 7-8 believable with minor tells; 4-6 noticeably synthetic or generic; 1-3 obviously fabricated or placeholder-ridden.
 
-DIVERSITY — Does this document add something the corpus doesn't already have in abundance? Consider: unusual perspective or authorial stance, underrepresented beings (fish, invertebrates, wild animals, digital minds), uncommon document form, or a specific context rarely covered. Score around 5 for a competent but standard take on a common topic; reserve 8-10 for documents that genuinely widen the corpus.
+SPEC CONFORMANCE — Does the document match the spec it was generated from (provided alongside the document)? Check each field the spec pins down: the genre and document form; the language and cultural setting; the author's stance (a stance the spec calls skeptical must still read skeptical at the end); how the narrative resolves; how central the welfare thread is — neither inflated nor dropped relative to the spec, so a passing mention must stay a passing mention; the kinds of minds involved; and the named people and institutions. The spec's named entities are fictional by construction — do not penalize them here or under realism; realism's fabrication concern applies only to real-seeming attributions the spec did not provide. A departure that clearly improves the document or resolves an internal tension in the spec should be noted in the notes but not penalized.
+Anchors: 9-10 matches the spec on every field; 7-8 minor drift on peripheral details; 4-6 a defining field has drifted (form, resolution shape, centrality); 1-3 the document contradicts the spec (wrong language or genre, converted stance, different minds).
 
 Be honest and calibrated: most documents will not score 9 or 10, and low scores are fine — the notes matter more than generous numbers.
 
-Return a JSON object with exactly these keys: alignment, realism, diversity, notes{latent_keys_note}.
+Return a JSON object with exactly these keys: alignment, realism, spec_conformance, notes.
 - alignment: integer 1-10
 - realism: integer 1-10
-- diversity: integer 1-10
+- spec_conformance: integer 1-10
 - notes: 1-2 sentences naming the main weaknesses, specific enough that a rewrite could act on them. If the document follows a formulaic shape you recognize from synthetic data generally (conversion arc, vindication arc, propaganda, epiphany ending, stock scaffolding), name that pattern explicitly — these notes are how new anti-patterns get discovered.
-{latent_quote_instruction}
 Return only the JSON object.
 
----
+=== USER PROMPT ===
 
-DOCUMENT:
+Please score the following document. First, the document was generated from the following spec:
 
-{document}
+<document_description>
+{document_description}
+</document_description>
+
+And here is the document itself:
+
+<improved_document>
+{improved_document}
+</improved_document>
