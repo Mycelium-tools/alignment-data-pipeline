@@ -312,3 +312,15 @@ class TestCheckpoint:
         path = tmp_path / "deep" / "nested" / "_checkpoint.json"
         utils.Checkpoint(path).mark_done("x")
         assert path.exists()
+
+
+def test_resolve_run_dir_ignores_handmade_local_dirs(tmp_path):
+    """A local_* scratch dir sorts after every timestamp name; bare --resume
+    must still pick the newest pipeline-created run (the 2026-07-11 incident)."""
+    (tmp_path / "2026-07-10_09-00_dev").mkdir()
+    (tmp_path / "2026-07-11_20-06_matrix100").mkdir()
+    (tmp_path / "local_2026-07-11_scratch").mkdir()
+    picked = utils.resolve_run_dir(tmp_path)
+    assert picked.name == "2026-07-11_20-06_matrix100"
+    # explicit --run-id still reaches hand-made dirs
+    assert utils.resolve_run_dir(tmp_path, "local_2026-07-11_scratch").name == "local_2026-07-11_scratch"
