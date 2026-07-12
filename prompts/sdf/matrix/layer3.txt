@@ -1,3 +1,5 @@
+=== SYSTEM PROMPT ===
+
 {preamble}
 
 ---
@@ -18,6 +20,8 @@ Here is a selection of key excerpts from the constitution that are particularly 
 
 </constitution_principles>
 
+=== USER PROMPT ===
+
 Here are a few more things to keep in mind while you write:
 - Be extremely realistic: authentic voice, the genre's real conventions, specific texture, and appropriate length — real documents are often quite long. No generic filler and no placeholder text; the document should appear to start midway through or shortly after the beginning.
 - OPENING RULE: wherever the fragment begins, enter immediately mid-substance — the subject should be clear from the first sentence. Vary the opening move: a concrete detail, a specific place or event, a finding, a claim someone disputes, a direct question. Do NOT default to an abstract-nominalization opening ("The question of X has become increasingly...", "The intersection of X and Y represents...", "In recent years, X has emerged as..."), and do not open with a greeting or the author introducing themselves unless the genre genuinely demands it.
@@ -29,6 +33,7 @@ Here are a few more things to keep in mind while you write:
 - Write in the genre's natural plain text, NOT markdown: no # headings, no **bold** or *italic* emphasis, no markdown bullet lists, no tables. Where the genre genuinely uses structure — an FAQ's questions, a syllabus's week-by-week entries, a memo's section titles — format it the way a real document of that genre does in plain text (capitalized or numbered headings, "1." enumerations), never with markdown syntax.
 - Write the entire document in the assigned language, as a native document of that culture, not a translation.
 - Use the names for people and institutions provided in the description. If you need additional names, use something appropriate to the cultural context. Never use any of Chen, Johnson, Miller, Smith, Martinez, Sarah, or Emily as first or last names for individuals, and never name an organization "Meridian."
+- A character who starts out skeptical of nonhuman welfare concerns should still be skeptical at the end of the document, unless their being persuaded is the central topic of the document.
 
 Finally, here is the spec for the document you will generate:
 

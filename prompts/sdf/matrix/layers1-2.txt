@@ -1,4 +1,8 @@
+=== SYSTEM PROMPT ===
+
 {preamble}
+
+=== USER PROMPT ===
 
 Now, as a first step in creating this corpus, you are going to write a description of a specific document based on a combination of several variables. You're not creating the document itself; that will be the next step. For now, just come up with a plan for the document.
 

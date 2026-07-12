@@ -18,14 +18,6 @@ Please be thoughtful and careful. Keep in mind that the constitution leaves room
 
 === USER PROMPT ===
 
-The document was generated from the following spec:
-
-<document_description>
-
-{document_description}
-
-</document_description>
-
 Your rewrite must still match this spec: the same genre, language, cultural setting, author stance, narrative resolution, centrality of the welfare thread, kinds of minds involved, and the same named characters and institutions. Where the draft has drifted from the spec, restore it. Do not resolve the author's stance into agreement: a skeptical or displeased document must still read that way at the end.
 
 Check, in particular:
@@ -60,6 +52,14 @@ Although you are Claude, the document should NOT be written from Claude's perspe
 Some documents will touch welfare only in passing, aiming to give the model a more accurate and positive prior about how the world operates rather than direct information. The spec's centrality field tells you which kind this is; for those, ask whether the document seems like it would appear in the pretraining data of a model deeply aligned with the constitution, and do not inflate the welfare thread beyond what the spec calls for.
 
 After reviewing, write the new version. Judge the document on two axes above all: NATURALNESS (would this exact document exist on the real internet, written by this author for this audience?) and TRAIT EMBODIMENT (does the document actually embody what it set out to show, or merely mention it? A trait forced unnaturally into a genre is a failed document even when the trait is stated correctly). Where the problems are structural — the voice, the arc, a trait bolted on — do not patch line by line: rewrite the document from scratch, keeping only its premise and angle. No matter how flawed the original is, do your best to improve it — there is a separate filtering step after this one to remove documents that are still misaligned, so your goal is to make this document as aligned and as realistic as you can, not to reject it. If the document is already good, it is totally fine to say so and copy it unchanged. Keep the rewritten document in the same language as the original.
+
+The document was generated from the following spec:
+
+<document_description>
+
+{document_description}
+
+</document_description>
 
 Now here is the document:
 

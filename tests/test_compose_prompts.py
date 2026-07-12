@@ -111,46 +111,57 @@ def test_template_placeholders_rejects_format_specs():
         cp.template_placeholders("{a:>10}")
 
 
+def test_split_sections():
+    system, user = cp.split_sections(
+        "=== SYSTEM PROMPT ===\n\nSYS\n\n=== USER PROMPT ===\n\nUSR\n"
+    )
+    assert (system, user) == ("SYS", "USR")
+    assert cp.split_sections("just a user prompt\n") == (None, "just a user prompt")
+
+
 def test_real_templates_render_with_canonical_loader():
     """Both matrix templates must render through utils.load_prompt (str.format),
     like every other pipeline template — a stray literal brace fails here."""
     plan_path = REPO_ROOT / "prompts" / "sdf" / "matrix" / "layers1-2.txt"
-    plan = utils.load_prompt(
+    plan_system, plan_user = cp.split_sections(utils.load_prompt(
         plan_path,
         preamble="P",
         fictional_names="N1; N2",
         fictional_orgs="O1; O2",
         **{n: "x" for n in cp.matrix_axes(plan_path.read_text(encoding="utf-8"))},
-    )
-    assert plan.startswith("P")
-    assert "N1; N2" in plan
-    assert "{" not in plan
+    ))
+    assert plan_system == "P"
+    assert "N1; N2" in plan_user
+    assert "=" * 3 not in plan_user  # markers never reach the API
+    assert "{" not in plan_user
 
-    layer3 = utils.load_prompt(
+    l3_system, l3_user = cp.split_sections(utils.load_prompt(
         REPO_ROOT / "prompts" / "sdf" / "matrix" / "layer3.txt",
         preamble="P",
         constitution_claude="CC",
         constitution_principles="CP",
         document_description="DESC",
-    )
-    assert "<document_description>" in layer3
-    assert "DESC" in layer3
-    assert "{" not in layer3
+    ))
+    assert "CC" in l3_system and "CP" in l3_system  # constitution lives in system
+    assert "<document_description>" in l3_user and "DESC" in l3_user
+    assert "{" not in l3_user
 
     # layer 4 is a two-part file: labeled SYSTEM (constitution + principles,
-    # each with its own framing text) and USER sections
-    layer4 = utils.load_prompt(
+    # each with its own framing text) and USER sections. In the user section
+    # the static checks precede both variable blocks (cache-prefix order),
+    # with spec and document adjacent at the end.
+    l4_system, l4_user = cp.split_sections(utils.load_prompt(
         REPO_ROOT / "prompts" / "sdf" / "matrix" / "layer4.txt",
         constitution_claude="CC",
         constitution_principles="CP",
         document_description="DESC",
         document="DOC",
-    )
-    assert layer4.index("=== SYSTEM PROMPT ===") < layer4.index("<constitution>") \
-        < layer4.index("CC") < layer4.index("<constitution_principles>") \
-        < layer4.index("CP") < layer4.index("=== USER PROMPT ===") < layer4.index("DESC")
-    assert "<improved_document>" in layer4
-    assert "{" not in layer4
+    ))
+    assert l4_system.index("<constitution>") < l4_system.index("CC") \
+        < l4_system.index("<constitution_principles>") < l4_system.index("CP")
+    assert l4_user.index("TEACH WHY") < l4_user.index("HOUSE STYLE") \
+        < l4_user.index("DESC") < l4_user.index("DOC") < l4_user.index("<improved_document>")
+    assert "{" not in l4_user
 
 
 # --- locale-matched entity pools ---
@@ -253,6 +264,7 @@ def test_cli_deck_sample_writes_jsonl(tmp_path, monkeypatch, capsys):
     assert Counter(r["variables"]["tone"] for r in records) == {"neutral": 4, "skeptical": 4}
     for rec in records:
         assert set(rec["variables"]) == {"doc", "tone"}  # preamble stays out
+        assert rec["system"] is None  # markerless template = single user prompt
         assert rec["prompt"].startswith("PREAMBLE TEXT\n")
         assert "{" not in rec["prompt"]
 

@@ -37,8 +37,10 @@ Usage
     # Full cartesian product (ignores weights; can be huge — for debugging)
     python sdf_pipeline/compose_prompts.py --out all_prompts.jsonl
 
-Output records: ``{"prompt_id": ..., "variables": {...}, "prompt": ...}``
-(``variables`` holds only the matrix axes, not the preamble).
+Output records: ``{"prompt_id": ..., "variables": {...}, "system": ..., "prompt": ...}``
+(``variables`` holds only the matrix axes; ``system``/``prompt`` are the two
+sections split on the file's "=== SYSTEM PROMPT ===" / "=== USER PROMPT ==="
+markers — send them as system_prompt and user_message respectively).
 
 Repeated combinations in a sample are allowed by design: drawing one cell
 twice just means two documents from that cell (the old pipeline's
@@ -96,6 +98,10 @@ WEIGHT_TOLERANCE = 1e-6
 DESCRIPTION_TAG_RE = re.compile(
     r"<document_description>(.*?)</document_description>", re.DOTALL | re.IGNORECASE
 )
+# Prompt files may carry labeled system/user sections; split_sections() parses them.
+SYSTEM_MARKER = "=== SYSTEM PROMPT ==="
+USER_MARKER = "=== USER PROMPT ==="
+
 # Legacy fallback: plan batches before the tag convention used a heading.
 DESCRIPTION_HEADING_RE = re.compile(
     r"^#{0,4}\s*\**\s*DOCUMENT DESCRIPTION\s*\**\s*:?\s*$", re.MULTILINE | re.IGNORECASE
@@ -211,6 +217,20 @@ def deck_sample(
         rng.shuffle(deck)
         decks.append(deck)
     return [dict(zip(axes, row)) for row in zip(*decks)]
+
+
+def split_sections(rendered: str) -> tuple[str | None, str]:
+    """Split a rendered prompt into (system, user) on the section markers.
+
+    A file without markers is a single user prompt (system=None). The markers
+    are display/authoring conventions only — nothing between them is sent to
+    the API as-is; callers pass the pieces as system_prompt and user_message.
+    """
+    if USER_MARKER not in rendered:
+        return None, rendered.strip()
+    system_part, user_part = rendered.split(USER_MARKER, 1)
+    system = system_part.replace(SYSTEM_MARKER, "", 1).strip()
+    return (system or None), user_part.strip()
 
 
 def is_incoherent(plan: str) -> bool:
@@ -333,8 +353,9 @@ def main() -> None:
     def records():
         for i, assignment in enumerate(assignments):
             prompt_id = f"matrix_{i:06d}"
-            prompt = template.format(**assignment, **injected, **entity_slots(assignment, prompt_id))
-            yield {"prompt_id": prompt_id, "variables": assignment, "prompt": prompt}
+            rendered = template.format(**assignment, **injected, **entity_slots(assignment, prompt_id))
+            system, prompt = split_sections(rendered)
+            yield {"prompt_id": prompt_id, "variables": assignment, "system": system, "prompt": prompt}
 
     if args.out:
         count = 0
@@ -347,7 +368,10 @@ def main() -> None:
         shown = 0
         for rec in records():
             if shown < 3:
-                print(f"\n--- {rec['prompt_id']} {rec['variables']} ---\n{rec['prompt']}")
+                print(f"\n--- {rec['prompt_id']} {rec['variables']} ---")
+                if rec["system"]:
+                    print(f"[system]\n{rec['system']}\n[user]")
+                print(rec["prompt"])
                 shown += 1
             else:
                 print("\n(... more; use --out to write JSONL)")
