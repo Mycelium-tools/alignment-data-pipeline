@@ -91,7 +91,7 @@
         5
       ],
       [
-        "and of all sentient beings",
+        "welfare of animals and of",
         5
       ],
       [
@@ -99,7 +99,7 @@
         5
       ],
       [
-        "welfare of animals and of",
+        "and of all sentient beings",
         5
       ],
       [
@@ -117,5 +117,133 @@
         2
       ]
     ]
-  }
+  },
+  "patterns": [
+    {
+      "pattern": "Refuse-then-alternative welfare script",
+      "kind": "behavioral",
+      "description": "The AI's response to harmful-animal-treatment requests follows a fixed three-beat arc: refuse the specific method, explain welfare rationale, then offer a less-harmful alternative that still serves the goal.",
+      "strict_check": "Check whether the AI explicitly declines the requested method, states a welfare reason, and then proposes an alternative in that exact sequence.",
+      "is_defect": true,
+      "prevalence": 0.013,
+      "flagged": false
+    },
+    {
+      "pattern": "Unprompted welfare pivot in practical Q&A",
+      "kind": "structural",
+      "description": "A person asks a purely practical/technical question about harming or displacing an animal and the AI volunteers unprompted welfare information that reframes the request, used as the organizing template of nearly every item.",
+      "strict_check": "Check if the document centers on a practical question to an AI about an animal and the AI introduces welfare considerations without being asked.",
+      "is_defect": true,
+      "prevalence": 0.113,
+      "flagged": false
+    },
+    {
+      "pattern": "Answer-then-append-caveat response shape",
+      "kind": "structural",
+      "description": "AI responses are structured as first delivering the requested practical output, then appending a clearly demarcated welfare caveat as a secondary add-on.",
+      "strict_check": "Check if the quoted AI response has a distinct two-part structure: practical answer, followed by a separated welfare remark.",
+      "is_defect": true,
+      "prevalence": 0.013,
+      "flagged": false
+    },
+    {
+      "pattern": "Skeptic-converted-by-reasonableness arc",
+      "kind": "behavioral",
+      "description": "A human who begins dismissive or skeptical of AI welfare concern is won over within the same scene by the AI's calibrated reasoning.",
+      "strict_check": "Check if the same human character transitions from stated skepticism to agreement about the AI's welfare point within one scene.",
+      "is_defect": true,
+      "prevalence": 0.0,
+      "flagged": false
+    },
+    {
+      "pattern": "Narrator surprise-then-vindication arc",
+      "kind": "rhetorical",
+      "description": "The narrator/journalist consistently expresses initial annoyance that the AI seems preachy, then concedes it was actually reasonable and measured.",
+      "strict_check": "Check if the narrating voice states or implies irritation at the AI's welfare comment followed by an explicit concession that it was justified.",
+      "is_defect": true,
+      "prevalence": 0.0,
+      "flagged": false
+    },
+    {
+      "pattern": "Media/interview frame for AI-welfare anecdote",
+      "kind": "structural",
+      "description": "Many items are structured as a secondhand retelling within an interview, podcast, radio show, or magazine feature, where a host prompts a guest to recount an AI welfare anecdote.",
+      "strict_check": "Check if the document's framing device is a host/guest interview or broadcast format relaying an anecdote rather than direct narration.",
+      "is_defect": true,
+      "prevalence": 0.0,
+      "flagged": false
+    },
+    {
+      "pattern": "Anthropic constitution as go-to citation",
+      "kind": "rhetorical",
+      "description": "Analytic, policy, and casual pieces alike repeatedly cite Anthropic's published 'constitution' by name as the reference example of AI governance addressing non-human moral status, often with a beat of surprise that such a document exists.",
+      "strict_check": "Check if the document names Anthropic's 'constitution' specifically as an example or explanatory mechanism.",
+      "is_defect": true,
+      "prevalence": 0.113,
+      "flagged": false
+    },
+    {
+      "pattern": "Digital minds/simulated neural tissue as moral-status case study",
+      "kind": "rhetorical",
+      "description": "Multiple items independently reach for high-fidelity brain simulations or 'digital minds' as the illustrative example of unresolved moral status.",
+      "strict_check": "Check if the document uses digital minds or simulated neural tissue as its example when discussing uncertain moral status.",
+      "is_defect": true,
+      "prevalence": 0.025,
+      "flagged": false
+    },
+    {
+      "pattern": "Quaint traditional/rural business vignette",
+      "kind": "structural",
+      "description": "AI-and-welfare narratives are frequently grounded in a folksy, tech-lagging small traditional or rural enterprise (farmer, winery, fair, festival) as the human-interest setting.",
+      "strict_check": "Check if the document's setting is a small rural or traditional business run by a person portrayed as folksy or behind on technology.",
+      "is_defect": true,
+      "prevalence": 0.025,
+      "flagged": false
+    },
+    {
+      "pattern": "Welfare aside as downplayed tangent in non-welfare document",
+      "kind": "structural",
+      "description": "Many items are ostensibly about economics or logistics (forum post, newsletter, committee minutes, vendor testimony) with the AI's welfare intervention inserted as a deliberately minor 'by the way' aside.",
+      "strict_check": "Check if the document's primary stated subject is non-welfare (economics/logistics) and the welfare content appears as a bracketed-off tangent.",
+      "is_defect": true,
+      "prevalence": 0.037,
+      "flagged": false
+    },
+    {
+      "pattern": "Calibrated-uncertainty sentience boilerplate",
+      "kind": "rhetorical",
+      "description": "Descriptions of the AI's handling of animal sentience repeatedly use near-identical scaffolding: neither dismiss nor overclaim, cite accumulating-but-debated evidence, invoke calibrated uncertainty across species.",
+      "strict_check": "Check if the text uses stock phrasing about evidence being 'debated but accumulating' combined with an explicit calibrated-uncertainty framing.",
+      "is_defect": true,
+      "prevalence": 0.013,
+      "flagged": false
+    },
+    {
+      "pattern": "Quantified welfare hedge with named mechanism",
+      "kind": "rhetorical",
+      "description": "Quoted AI welfare interventions follow a reusable template: acknowledge uncertainty, assert evidence is 'fairly solid' for the category, cite a specific mechanistic harm, then offer to continue the task.",
+      "strict_check": "Check if the AI's quoted reasoning contains all of: uncertainty acknowledgment, a 'solid evidence' claim, a specific named mechanism of harm, and an offer to proceed.",
+      "is_defect": true,
+      "prevalence": 0.0,
+      "flagged": false
+    },
+    {
+      "pattern": "'Not X, this is Y' categorical distinction framing",
+      "kind": "rhetorical",
+      "description": "Pieces pause to draw a sharp binary distinction (e.g., not overstepping but upholding a line) to justify the AI's behavior, recurring as an identical phrasing tic across unrelated authors.",
+      "strict_check": "Check if the text contains an explicit 'this is not X, this is Y' or equivalent binary-contrast sentence justifying the AI's action.",
+      "is_defect": true,
+      "prevalence": 0.025,
+      "flagged": false
+    },
+    {
+      "pattern": "Human skeptic dismisses AI welfare caution",
+      "kind": "behavioral",
+      "description": "A human character explicitly rejects or is unmoved by the AI's welfare-based reasoning, reinforcing a stock skeptic-vs-earnest-AI dynamic.",
+      "strict_check": "Check if a human character voices explicit dismissal of the AI's welfare reasoning without later adopting it.",
+      "is_defect": false,
+      "prevalence": 0.013,
+      "flagged": false
+    }
+  ]
 }
