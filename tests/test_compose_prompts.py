@@ -137,6 +137,17 @@ def test_real_templates_render_with_canonical_loader():
     assert "DESC" in layer3
     assert "{" not in layer3
 
+    # layer 4 gets the constitution via the system prompt, so its only slots
+    # are the spec and the document
+    layer4 = utils.load_prompt(
+        REPO_ROOT / "prompts" / "sdf" / "matrix" / "layer4.txt",
+        document_description="DESC",
+        document="DOC",
+    )
+    assert "<document_description>" in layer4
+    assert "<improved_document>" in layer4
+    assert "{" not in layer4
+
 
 # --- locale-matched entity pools ---
 
