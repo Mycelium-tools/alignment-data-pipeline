@@ -130,6 +130,19 @@ if n_final == 0:
                "with `python dad_pipeline/run.py --config config.yaml --resume "
                f"--run-id {run.run_id}` or pick a finished run above.")
 
+force = b1.checkbox(
+    "Re-tag everything (ignore resume)", key="diversity_force",
+    disabled=n_final == 0,
+    help="Discard this bundle's existing tags for the current corpus and pay to "
+         "re-tag every record. The normal Tag already retries error rows and picks "
+         "up new records for free — only force a full re-tag to measure extraction "
+         "consistency, or after a model behavior change that the bundle "
+         "fingerprint can't see.")
+if force:
+    b1.warning(f"Re-tagging will re-bill all {n_final} record(s), replacing this "
+               "bundle's existing tags for them. Tags for records outside this "
+               "corpus are kept.")
+
 if b1.button(":material/sell: Tag this run", type="primary", disabled=n_final == 0,
              help="Tag into the bundle matching the current axes + model + prompt "
                   "(resume-safe: already-tagged records are skipped, error rows "
@@ -140,12 +153,13 @@ if b1.button(":material/sell: Tag this run", type="primary", disabled=n_final ==
                                 "(resume-safe; rows save as they finish)")
 
     def _tick(done_n: int, total: int, rid: str) -> None:
-        bar.progress(done_n / total, text=f"Tagged {done_n}/{total} — last: `{rid}` "
-                                          "(already-tagged records are skipped)")
+        bar.progress(done_n / total, text=f"Tagged {done_n}/{total} — last: `{rid}`"
+                                          + ("" if force else
+                                             " (already-tagged records are skipped)"))
 
     try:
         written = pipeline.tag(
-            inputs, fields, model=model, on_progress=_tick,
+            inputs, fields, model=model, on_progress=_tick, resume=not force,
             extract_template=holistic_dad._read_if_exists(holistic_dad.DEFAULT_EXTRACT_PROMPT),
             axes_text=holistic_dad.DEFAULT_AXES.read_text())
     except Exception as e:  # auth/config errors otherwise render as a raw traceback
