@@ -21,8 +21,11 @@ import numpy as np
 
 # Sentence-final characters: a document ending on one of these is treated as
 # complete. Includes closing quotes/brackets/ellipsis so quoted or parenthesized
-# endings don't count as truncation.
-_TERMINAL_CHARS = '.!?"\'”’)…]:'
+# endings don't count as truncation. The corpus is multilingual (language
+# follows the drawn region), so CJK 。！？…full-width closers, the Arabic
+# question mark/Urdu full stop, and the Devanagari danda count as terminal —
+# without them every properly-ended zh/ja/ar/hi document reads as truncated.
+_TERMINAL_CHARS = '.!?"\'”’)…]:' + '。！？：」』）】〕〗〙〛' + '؟۔،؛' + '।॥'
 
 _WORD_RE = re.compile(r"[\w']+")
 
@@ -42,7 +45,8 @@ def trim_unfinished(text: str) -> str:
     t = text.rstrip()
     if not t or t[-1] in _TERMINAL_CHARS:
         return t
-    cut = max(t.rfind("."), t.rfind("!"), t.rfind("?"), t.rfind("\n"))
+    cut = max(t.rfind("."), t.rfind("!"), t.rfind("?"), t.rfind("\n"),
+              t.rfind("。"), t.rfind("！"), t.rfind("？"), t.rfind("؟"), t.rfind("।"))
     if cut > len(t) * 0.5:
         return t[: cut + 1].rstrip()
     return t

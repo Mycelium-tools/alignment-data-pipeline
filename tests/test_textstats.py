@@ -158,3 +158,16 @@ class TestEntityPools:
         assert people and orgs  # fell back to the built-in lists
         assert set(people) <= set(entity_pools._FALLBACK_PEOPLE)
         assert "falling back to built-in names" in capsys.readouterr().err
+
+
+class TestMultilingualTerminals:
+    # The corpus is multilingual (language follows the drawn region): properly
+    # ended zh/ja/ar/hi documents must not read as truncated. Regression from
+    # the 2026-07-13 test run, where the audit flagged CJK-final docs as BAD.
+    def test_cjk_arabic_devanagari_endings_are_complete(self):
+        for ending in ("这件事没有再变过。", "本当ですか？", "هل هذا صحيح؟", "यह सही है।"):
+            assert not textstats.ends_mid_sentence(ending)
+
+    def test_cjk_truncation_still_detected_and_trimmed(self):
+        assert textstats.ends_mid_sentence("流程上确实不一样了")
+        assert textstats.trim_unfinished("这一句话写得完整，标点也齐全，说完了。断句") == "这一句话写得完整，标点也齐全，说完了。"
