@@ -381,8 +381,10 @@ def run_audit(records: list[dict], type_map: dict, report_dir: Path, input_label
               max_docs: int = 2000, max_chars: int = 16000, top_pairs_n: int = 10,
               clusters_k: int = 50, cache: bool = True) -> dict:
     """Compute the semantic diversity report for an already-resolved corpus and
-    write it to ``report_dir/diversity_report.json``. Pure compute — no printing —
-    so the viewer's Run-diversity page and the CLI share one engine. The caller is
+    write it to ``report_dir/diversity_report.json``. No report printing (the CLI
+    renders from the returned dict; embedding progress lines still stream from
+    ``embed_with_cache`` for large corpora), so the viewer's Run-diversity page
+    and the CLI share one engine. The caller is
     responsible for ``embeddings.init()``. Raises ValueError on a corpus too small
     to audit (the CLI converts that to a clean exit; the viewer to st.error)."""
     if not records:
@@ -470,6 +472,8 @@ def main() -> None:
     records, type_map, report_dir, corpus_name = resolve_input(args.input)
     if args.limit:
         records = records[: args.limit]
+    if not records:  # before init(), which requires OPENAI_API_KEY
+        raise SystemExit("Corpus is empty — nothing to audit.")
 
     embeddings.init(args.config)  # evals log to the global cost log
 
