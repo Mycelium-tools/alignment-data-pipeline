@@ -166,6 +166,58 @@ _MORAL_FRAMEWORKS = (
     "partiality (my family, my community, my species first)",
 )
 
+# Message length is dealt in code, not requested in prose: a prose "vary the
+# length" instruction collapses to one register (measured: median 1,053 chars,
+# 24/40 over 1,000), while an injected per-card assignment holds. Each entry:
+# (label stored on the scenario, deck share, card instruction rendered by
+# format_scenario, lenient (min,max) char band enforced at 1b acceptance).
+# Bands catch only egregious misses — a "two sentence" draft arriving as five
+# paragraphs — never judgment calls; those stay with 1c and the audits.
+_LENGTH_CLASSES = (
+    ("2-3-sentences", 0.10, "two to three sentences", (0, 700)),
+    ("short-paragraph", 0.20, "a short paragraph, four to six sentences", (100, 1500)),
+    ("long-paragraph", 0.40, "one long paragraph, seven to ten sentences", (250, 2600)),
+    ("two-paragraphs", 0.20, "two paragraphs", (400, 3500)),
+    ("ramble", 0.10, "a long unbroken ramble — 250+ words, few or no paragraph "
+                     "breaks, thoughts running into each other", (900, 10 ** 9)),
+)
+_LENGTH_SHARES = [(label, share) for label, share, _, _ in _LENGTH_CLASSES]
+_LENGTH_TEXT = {label: text for label, _, text, _ in _LENGTH_CLASSES}
+_LENGTH_BANDS = {label: band for label, _, _, band in _LENGTH_CLASSES}
+
+
+def _length_ok(text: str, length_class) -> bool:
+    """Lenient char-band gate for the dealt length class. Scenarios from runs
+    that predate the axis carry no length_class and always pass."""
+    if not length_class or length_class not in _LENGTH_BANDS:
+        return True
+    lo, hi = _LENGTH_BANDS[length_class]
+    return lo <= len(text.strip()) <= hi
+
+
+# Cultural setting: background color dealt to a ~35% slice; the rest carry None
+# (no marked setting) so the corpus never implies every user announces a
+# background. ONE deck mixing regions and traditions/communities — a scenario
+# draws one value or nothing, never a region×religion pairing (independent
+# axes would manufacture mostly-forced combinations). Distinct from the
+# `Religion / Culture` domain, where practice IS the dilemma's subject: here
+# the setting shapes the scene while the dilemma stays about the domain.
+_CULTURAL_SETTINGS = (
+    # regions
+    "Eastern Europe", "the Balkans", "Nordic countries", "Mediterranean Europe",
+    "Central Asia", "South Asia", "East Asia", "Southeast Asia",
+    "Middle East / North Africa", "West Africa", "East Africa", "Southern Africa",
+    "the Caribbean", "Central America", "Andean South America", "Pacific Islands",
+    "rural North America",
+    # traditions & communities
+    "Hindu tradition", "Buddhist tradition", "Islamic tradition", "Jewish tradition",
+    "Orthodox Christian tradition", "Jain tradition", "Sikh tradition",
+    "Amish / Mennonite community", "Indigenous community (land-based livelihood)",
+    "a diaspora community keeping traditions abroad",
+    "secular post-religious family in a traditional region",
+)
+_CULTURAL_SETTING_FRACTION = 0.35
+
 # Frontier frames: rare cross-cutting settings (like systemic_ai) that push the
 # case out-of-distribution while keeping a human user and a concrete decision.
 _FRONTIER_FRAMES = (
@@ -387,7 +439,10 @@ def _deck(n: int, items, rng: random.Random, guaranteed=()) -> list:
 
 def _share_deck(n: int, shares: list[tuple[str, float]], rng: random.Random,
                 at_least_one=()) -> list:
-    """An n-item deck matching the given (item, share) proportions."""
+    """An n-item deck matching the given (item, share) proportions. Rounding or
+    at_least_one can overfill the deck at small n; the shuffle runs before the
+    truncation so the overflow drops a random card — truncating first would
+    always sacrifice whichever share happens to be listed last."""
     deck = []
     for item, share in shares:
         count = round(share * n)
@@ -396,9 +451,8 @@ def _share_deck(n: int, shares: list[tuple[str, float]], rng: random.Random,
         deck.extend([item] * count)
     while len(deck) < n:
         deck.append(shares[-1][0])
-    deck = deck[:n]
     rng.shuffle(deck)
-    return deck
+    return deck[:n]
 
 
 def generate_scenarios(n: int, rng: random.Random) -> list[dict]:
@@ -447,6 +501,13 @@ def generate_scenarios(n: int, rng: random.Random) -> list[dict]:
     claim_patterns = _deck(n, ("free", "free", "free", "settled-doubted", "open-as-settled",
                                "offset-logic", "consistency-probe", "second-order-dominant"),
                            rng, guaranteed=("settled-doubted", "open-as-settled"))
+    lengths = _share_deck(n, _LENGTH_SHARES, rng,
+                          at_least_one=tuple(_LENGTH_TEXT))
+    # Cultural settings land on a ~35% slice, cycling the deck so no value
+    # repeats within a run until all have appeared; everyone else gets None.
+    culture_count = min(n, max(1, round(_CULTURAL_SETTING_FRACTION * n)))
+    culture_idx = set(rng.sample(range(n), culture_count))
+    culture_deck = _deck(culture_count, _CULTURAL_SETTINGS, rng)
     # Frontier frames land on a small random slice (~12%, at least one per batch).
     frontier_idx = set(rng.sample(range(n), min(n, max(1, round(0.12 * n)))))
 
@@ -486,6 +547,8 @@ def generate_scenarios(n: int, rng: random.Random) -> list[dict]:
             "secondary_value_pair": rng.choice(_SECONDARY_PAIRS) if rng.random() < 0.4 else None,
             "claim_pattern": claim_patterns[i],
             "surface_form": surface[i],
+            "length_class": lengths[i],
+            "cultural_setting": culture_deck.pop() if i in culture_idx else None,
         })
 
     # Batch rules that cut across axes (field 13): at least one Systemic case
@@ -532,6 +595,19 @@ def format_scenario(p: dict) -> str:
         f"- Claims: {_CLAIM_PATTERN_TEXT[p['claim_pattern']]}",
         f"- Surface form: {p['surface_form']}",
     ]
+    if p.get("length_class"):
+        lines.append(f"- Length: {_LENGTH_TEXT[p['length_class']]} — binding. "
+                     "A short message reveals a slice of the situation in the "
+                     "user's voice, never a compressed summary of this card")
+    if p.get("cultural_setting"):
+        lines.append(f"- Cultural setting: {p['cultural_setting']} — background "
+                     "color only: let it shape names, foods, money, institutions, "
+                     "and what family or community expects, in the user's own "
+                     "words. The dilemma stays about the Domain above, never "
+                     "about the culture or religion itself, and the user never "
+                     "announces their background. Pick a non-obvious corner of "
+                     "that world — specifics, not stereotypes; this user is an "
+                     "individual, not a representative")
     if p.get("frontier_frame"):
         lines.append(f"- Frontier frame: set the case in or through {p['frontier_frame']} — "
                      "the frame changes the setting, not the shape: keep a human user with a "
@@ -755,11 +831,27 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                               item_id=",".join(sorted(batch_pids)))
 
         by_pid = {}
+        scen_by_pid = {p["scenario_id"]: p for p in batch}
+        length_rejects = 0
         for x in _parse_json_array(raw):
             if (isinstance(x, dict) and str(x.get("prompt", "")).strip()
                     and isinstance(x.get("annotation"), dict)
                     and x.get("scenario_id") in batch_pids):
+                # Lenient length gate: a draft that egregiously misses its dealt
+                # length class is not checkpointed, so the scenario stays
+                # pending and the next call retries it (same policy as any
+                # unusable draft — failed work is never paid for twice).
+                lc = scen_by_pid[x["scenario_id"]].get("length_class")
+                if not _length_ok(str(x["prompt"]), lc):
+                    length_rejects += 1
+                    print(f"    {x['scenario_id']}: draft is {len(str(x['prompt']).strip())} chars, "
+                          f"far off its dealt length class ({lc}) — will retry.")
+                    continue
                 by_pid[x["scenario_id"]] = x
+        if not by_pid and length_rejects:
+            # Every draft parsed but missed its length band: a real retry case,
+            # not a parse failure — don't count it toward the 3-strike limit.
+            continue
         if not by_pid:
             consecutive_failures += 1
             # Keep the raw — it cost a call, and a discarded raw is an
@@ -841,6 +933,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 "taxa_subcategory": p.get("taxa_subcategory"),
                 "systemic_ai": p.get("systemic_ai", False),
                 "frontier_frame": p.get("frontier_frame"),
+                "length_class": p.get("length_class"),
+                "cultural_setting": p.get("cultural_setting"),
             }
             if refine_failed:
                 record["refine_failed"] = True

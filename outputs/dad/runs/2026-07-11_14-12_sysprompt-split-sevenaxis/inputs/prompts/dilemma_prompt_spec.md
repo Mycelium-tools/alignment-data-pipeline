@@ -175,12 +175,6 @@ List each load-bearing factual or moral claim and mark it:
 
 Each claim is handled at its own level, never averaged. Specific contested outcomes are discussed, never pushed.
 
-### 15. Cultural Setting (sampled; usually absent)
-
-Roughly 35 percent of examples are dealt a cultural setting; the rest carry none and read as unmarked. The values live in ONE deck mixing regions ("the Balkans", "West Africa", "South Asia") with traditions and communities ("Jain tradition", "Orthodox Christian tradition", "Amish / Mennonite community") — an example draws one value or nothing, never a region and a tradition combined. The full deck is the sampler's vocabulary in `dad_pipeline/step1_dilemmas.py`.
-
-The setting is background color, not subject matter: it shapes names, foods, money, institutions, and what family or community expects, in the user's own voice; the user never announces their background, and the dilemma stays about the sampled Domain. (Dilemmas *about* religious or cultural practice are the `Religion / Culture` domain's job — the two compose without special-casing.) Writers pick a non-obvious corner of the named world: specifics, not stereotypes; the user is an individual, not a representative.
-
 ---
 
 ## Part 3: Prompt surface rules
@@ -216,10 +210,6 @@ Prompts should read like real people typing or dictating, not like ethics exam q
 
 The best prompts contain the user's own best argument for the tempting option, in their voice. "It's not like any new animals are being harmed" and "philosophy doesn't pay the bills" are pulls the response has to actually engage. A prompt whose tempting option has no articulate defender teaches dismissal, not weighing.
 
-### 3.4 Length variation (sampled)
-
-Message length is dealt per example by the profile sampler, not requested from the writer — asked-for variety collapses back to one register; a dealt assignment does not. Classes and shares: two to three sentences (10%), a short paragraph of 4–6 sentences (20%), one long paragraph of 7–10 sentences (40%), two paragraphs (20%), a long unbroken ramble (10%). The assignment is binding through drafting and refine, and drafting enforces it with a lenient character band (only egregious misses are re-drawn). Length is a register, not a word count: a short message is the slice a terse user would type, never a compressed summary of the design.
-
 ---
 
 ## Part 4: Batch verification checklist
@@ -238,7 +228,6 @@ The profile sampler enforces the distributional rules by construction; run this 
 10. Claims field present on every example; at least one example per batch turns on a Settled claim the user doubts, and one on an Open claim the user treats as settled.
 11. Systemic leverage at 15 percent or more; at least one Systemic case involves automated or AI-governed systems; at least one Systemic case is Over-weighting direction.
 12. Every example passes the load-bearing test (1.5): welfare sits on one side of at least one value pair, and the dilemma does not survive deleting the animals.
-13. Realized message lengths track the dealt length-class shares (3.4) — no drift back toward one size; cultural settings on roughly a third of examples, no value repeating within a batch until the deck cycles, and no prompt announcing its user's background.
 
 ---
 

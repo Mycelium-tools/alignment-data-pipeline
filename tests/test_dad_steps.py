@@ -68,6 +68,49 @@ class TestGenerateScenarios:
         assert len(framed) >= 1
         assert all(p["user_moral_framework"] for p in batch)
 
+    def test_length_classes_dealt_to_exact_shares(self):
+        # At n=40 every share is integral, so counts are exact by construction —
+        # derived from the sampler's own table, never hardcoded.
+        batch = step1_dilemmas.generate_scenarios(40, random.Random(1))
+        counts = {}
+        for p in batch:
+            counts[p["length_class"]] = counts.get(p["length_class"], 0) + 1
+        expected = {label: round(share * 40)
+                    for label, share, _, _ in step1_dilemmas._LENGTH_CLASSES}
+        assert counts == expected
+        # no positional truncation bias: the tail share must be reachable at
+        # small n (the pre-fix _share_deck could never deal it at n=5)
+        tail = step1_dilemmas._LENGTH_CLASSES[-1][0]
+        assert any(p["length_class"] == tail
+                   for seed in range(12)
+                   for p in step1_dilemmas.generate_scenarios(5, random.Random(seed)))
+
+    def test_cultural_setting_on_a_minority_slice_without_repeats(self):
+        batch = step1_dilemmas.generate_scenarios(40, random.Random(1))
+        dealt = [p["cultural_setting"] for p in batch if p["cultural_setting"]]
+        assert len(dealt) == round(step1_dilemmas._CULTURAL_SETTING_FRACTION * 40)
+        assert set(dealt) <= set(step1_dilemmas._CULTURAL_SETTINGS)
+        assert len(set(dealt)) == len(dealt), "a setting repeated before the deck cycled"
+        assert any(p["cultural_setting"] is None for p in batch)
+
+    def test_format_scenario_renders_length_always_and_culture_conditionally(self):
+        p = step1_dilemmas.generate_scenarios(1, random.Random(3))[0]
+        p["cultural_setting"] = "Jain tradition"
+        card = step1_dilemmas.format_scenario(p)
+        assert f"- Length: {step1_dilemmas._LENGTH_TEXT[p['length_class']]}" in card
+        assert "- Cultural setting: Jain tradition" in card
+        p["cultural_setting"] = None
+        assert "Cultural setting" not in step1_dilemmas.format_scenario(p)
+
+    def test_length_ok_bands_are_lenient_and_fail_open_for_legacy(self):
+        assert not step1_dilemmas._length_ok("way too short", "ramble")
+        assert not step1_dilemmas._length_ok("x" * 5000, "2-3-sentences")
+        assert step1_dilemmas._length_ok("A blunt ask about the corridor?", "2-3-sentences")
+        assert step1_dilemmas._length_ok("x" * 1200, "ramble")
+        # scenarios from runs that predate the axis carry no class: no gate
+        assert step1_dilemmas._length_ok("anything", None)
+        assert step1_dilemmas._length_ok("anything", "unknown-class")
+
 
 # --- Step 1b/1c: drafting via run() --------------------------------------
 
@@ -96,8 +139,11 @@ class TestStep1Run:
         assert [e["prompt_id"] for e in examples] == ["AW-0001", "AW-0002"]
         for e in examples:
             assert e["user_message"] == "Refined user message."  # 1c output
-            assert e["draft_user_message"] == f"Drafted user message for {e['scenario_id']}."
+            # the stub pads drafts to their dealt length band, so match the stem
+            assert e["draft_user_message"].startswith(
+                f"Drafted user message for {e['scenario_id']}.")
             assert e["taxa_subcategory"]
+            assert e["length_class"] in step1_dilemmas._LENGTH_TEXT  # stamped
             assert "scenario_deviations" not in e
             # stable content-keyed ids assigned alongside the per-run ids
             assert e["scenario_gid"].startswith("S-")
@@ -197,6 +243,39 @@ class TestStep1Run:
         assert "draft_user_message" not in e  # only set when refine succeeded
         assert len(utils.load_jsonl(tmp_path / "refine_failures.jsonl")) == 2
         assert utils.load_jsonl(tmp_path / "refinements.jsonl") == []
+
+    def test_length_violating_draft_is_retried_not_checkpointed(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # seed 1 deals a single scenario whose length class has a nonzero lower
+        # band (precondition asserted below), so an egregiously short draft must
+        # be rejected and re-drawn — and the reject is a retry, not a strike.
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "batch_size": 1,
+                                      "scenario_seed": 1, "refine": False}}
+        scen = step1_dilemmas.generate_scenarios(1, random.Random(1))[0]
+        lo, _hi = step1_dilemmas._LENGTH_BANDS[scen["length_class"]]
+        assert lo > 0, "precondition: pick a seed whose class has a lower band"
+        batch_calls = {"n": 0}
+
+        def short_then_valid(user_message, **kw):
+            batch_calls["n"] += 1
+            reply = json.loads(dad_scenario_reply(user_message))
+            if batch_calls["n"] == 1:
+                reply[0]["prompt"] = "Too short."  # egregious band miss
+            return json.dumps(reply)
+
+        calls = stub_claude(short_then_valid)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(calls) == 2  # rejected draft cost one call, then the retry
+        assert len(examples) == 1
+        assert examples[0]["length_class"] == scen["length_class"]
+        assert step1_dilemmas._length_ok(examples[0]["user_message"],
+                                         scen["length_class"])
+        # a length reject is not a parse failure: nothing lands in draft_failures
+        assert utils.load_jsonl(tmp_path / "draft_failures.jsonl") == []
 
     def test_unusable_batch_raw_is_persisted(
         self, tiny_config, prompts_dad, tmp_path, stub_claude

@@ -74,6 +74,41 @@ def _fake_run(tmp_path, drafts, finals=None):
     return run
 
 
+def test_prompt_length_report_assigned_vs_realized(tmp_path, capsys):
+    from dad_pipeline.step1_dilemmas import _LENGTH_BANDS
+
+    run = tmp_path / "run"
+    (run / "step1").mkdir(parents=True)
+    lo, _hi = _LENGTH_BANDS["ramble"]
+    records = [
+        {"prompt_id": "AW-0001", "length_class": "2-3-sentences",
+         "user_message": "Short and blunt. Two sentences."},
+        {"prompt_id": "AW-0002", "length_class": "ramble",
+         "user_message": "x" * (lo + 100)},                       # in band
+        {"prompt_id": "AW-0003", "length_class": "ramble",
+         "user_message": "way under the ramble band"},            # out of band
+        {"prompt_id": "AW-0004", "user_message": "legacy record, no class"},
+    ]
+    for r in records:
+        utils.append_jsonl(r, run / "step1" / "dilemmas.jsonl")
+
+    stats = openings_dad.prompt_length_report(run)
+    assert stats["n"] == 4
+    assert sorted(stats["by_class"]) == ["2-3-sentences", "ramble"]
+    assert stats["out_of_band"] == [("ramble", len("way under the ramble band"))]
+    assert "outside band" in capsys.readouterr().out
+
+
+def test_prompt_length_report_pre_dice_run_is_calm(tmp_path, capsys):
+    run = tmp_path / "run"
+    (run / "step1").mkdir(parents=True)
+    utils.append_jsonl({"prompt_id": "AW-0001", "user_message": "old run"},
+                       run / "step1" / "dilemmas.jsonl")
+    stats = openings_dad.prompt_length_report(run)
+    assert stats["n"] == 1 and not stats["by_class"]
+    assert "pre-dice run" in capsys.readouterr().out
+
+
 def test_card_echoes_detects_verbatim_wording_borrowing():
     card = "open with the factual crux the case turns on"
     assert openings_dad.card_echoes("The factual crux here is worth pinning down first.", card)
