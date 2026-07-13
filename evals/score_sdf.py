@@ -119,7 +119,7 @@ def _record_prompt_manifest(out_dir: Path, prompt_md5: str, system_prompt: str,
     # even after evals/rubric_sdf_v3.yaml changes.
     (out_dir / "rubric.yaml").write_text(Path(args.rubric).read_text(encoding="utf-8"), encoding="utf-8")
     manifest_path = out_dir / "judge_manifest.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
     manifest[prompt_md5] = {
         "rubric_version": rubric["version"],
         "judges": args.judges,
