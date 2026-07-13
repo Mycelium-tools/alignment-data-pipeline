@@ -199,15 +199,27 @@ if b2.button(":material/analytics: Analyze",
         st.warning("Analyzing this bundle with the current `evals/dad_axes.yaml`, "
                    "which differs from the bundle's own axes snapshot — the report "
                    "may mix schemas.")
-    with st.spinner("Analyzing…"):
-        new_report = pipeline.run(
-            inputs, fields=fields, analyzers=analyzers, do_tag=False, model=model,
-            synthesis_template=synthesis_template,
-            config=analysis_cfg.get("params"))
-    holistic_dad.write_report(holistic_dad.report_path_for(inputs), new_report)
-    holistic_dad.record_bundle_analysis(inputs, analysis_cfg, analyzers, model,
-                                        synthesis_template)
+    try:
+        with st.spinner("Analyzing… (free except one LLM synthesis call)"):
+            new_report = pipeline.run(
+                inputs, fields=fields, analyzers=analyzers, do_tag=False, model=model,
+                synthesis_template=synthesis_template,
+                config=analysis_cfg.get("params"))
+        holistic_dad.write_report(holistic_dad.report_path_for(inputs), new_report)
+        holistic_dad.record_bundle_analysis(inputs, analysis_cfg, analyzers, model,
+                                            synthesis_template)
+    except Exception as e:  # auth/config errors otherwise render as a raw traceback
+        st.error(f"Analyze failed: {e}\n\nTags are untouched — fix the model/key "
+                 "and press **Analyze** again.")
+        st.stop()
+    ran = list((new_report.get("stats") or {}).get("analyses", {}))
+    st.session_state["diversity_analyze_result"] = (
+        f"Analyzed {new_report.get('records', '?')} tagged record(s) — "
+        f"{len(ran)} analyzer(s) ran ({', '.join(ran)}); report is below.")
     st.rerun()
+
+if msg := st.session_state.pop("diversity_analyze_result", None):
+    st.success(msg)
 
 # ------------------------------------------------- semantic (embedding) lane
 # Run-scoped, not bundle-scoped: embeddings read only the corpus text. Rendered
