@@ -21,7 +21,10 @@ from shared import providers, utils
 from .fields import Field, FieldRegistry
 
 MODEL_DEFAULT = None       # falls back to config's model
-MAX_TOKENS = 2000
+# The tag JSON itself is ~100 tokens; the rest is headroom for thinking models
+# (Gemini bills thoughts inside maxOutputTokens — 2.5-pro burned a 2000 cap on
+# thoughts alone and returned truncated JSON, nondeterministically).
+MAX_TOKENS = 6000
 TEMPERATURE = 0.0
 
 
@@ -162,7 +165,10 @@ def extract_record(messages: list[dict], fields: FieldRegistry, *,
 def _row(record_id: str, res: dict) -> dict:
     """Flatten an extract_record result into a category_records.jsonl row."""
     if res["tags"] is None:
-        return {"record_id": record_id, "extract_error": res["errors"][0]}
+        return {"record_id": record_id, "extract_error": res["errors"][0],
+                # what the model actually said — capped so one bad reply can't
+                # bloat the index; enough to see truncation/refusals directly
+                "raw": (res.get("raw") or "")[:2000]}
     row = {"record_id": record_id, **res["tags"]}
     if res["errors"]:
         row["_errors"] = res["errors"]   # coerced but imperfect; kept for telemetry

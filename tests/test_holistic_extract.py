@@ -113,6 +113,18 @@ def test_extract_corpus_writes_one_row_per_record(tmp_path, stub_claude):
     assert {r["record_id"] for r in written} == {"a", "b"}
 
 
+def test_error_rows_carry_the_raw_model_output(tmp_path, stub_claude):
+    # A parse failure must be diagnosable from the index alone — the row keeps
+    # (capped) raw text, and resume still treats it as a retryable error row.
+    stub_claude(["Sorry, I refuse to tag this." ])
+    out = tmp_path / "category_records.jsonl"
+    extract.extract_corpus([{"record_id": "a", "messages": MESSAGES}],
+                           F.default_fields(), out)
+    (row,) = utils.load_jsonl(out)
+    assert row["extract_error"] == "unparseable model output"
+    assert row["raw"] == "Sorry, I refuse to tag this."
+
+
 def test_extract_corpus_reports_progress_per_record(tmp_path, stub_claude):
     out = tmp_path / "category_records.jsonl"
     # 'a' is already tagged: progress totals must count only the two records
