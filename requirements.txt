@@ -9,7 +9,7 @@ python-dotenv
 tqdm
 jsonlines
 tenacity
-streamlit>=1.40
+streamlit>=1.45  # accept_new_options on selectbox/multiselect (judge + diversity pickers)
 faker  # seeded fictional people/org name pools (shared/entity_pools.py)
 numpy  # embeddings math (shared/embeddings.py, evals/diversity.py)
 openai>=1.40  # embeddings for the semantic diversity eval (shared/embeddings.py)

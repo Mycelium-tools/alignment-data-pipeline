@@ -3,6 +3,7 @@ categorical-diversity report, and build/refresh the extraction tag index — the
 index that powers the facet filters in Judge → "Score a run". Rendering only: the
 engine, schema, and prompts are evals/holistic_dad.py and its editable files."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -160,6 +161,29 @@ if b2.button(":material/analytics: Analyze",
                                         synthesis_template)
     st.rerun()
 
+def _download_row(with_report: bool) -> None:
+    """Download what exists so far: the tag index, and the report once computed."""
+    stem = f"{run.run_id}_{bundle_id or 'latest'}"
+    d1, d2 = st.columns(2)
+    d1.download_button(
+        ":material/download: Tag index (JSONL)",
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in tag_rows) + "\n",
+        file_name=f"{stem}_tag_index.jsonl", mime="application/jsonl")
+    if with_report:
+        d2.download_button(
+            ":material/download: Diversity report (JSON)",
+            json.dumps(report, indent=2, ensure_ascii=False),
+            file_name=f"{stem}_diversity_report.json", mime="application/json")
+    index_path, report_path = loader._holistic_paths(run.run_dir, bundle_id)
+    def _rel(p: Path) -> str:
+        try:
+            return str(p.relative_to(loader.REPO_ROOT))
+        except ValueError:
+            return str(p)
+    st.caption("On disk: tags `" + _rel(index_path) + "`"
+               + (" · report `" + _rel(report_path) + "`" if with_report else ""))
+
+
 if not tag_rows:
     st.info("This bundle has no extraction tag index yet — **Tag this run** builds "
             "one (it also enables the facet filters in Judge → Score a run).")
@@ -167,12 +191,14 @@ if not tag_rows:
 if not report:
     st.info("Tag index present but this bundle has no report yet — **Analyze** "
             "computes it.")
+    _download_row(with_report=False)
     st.stop()
 
 # ---------------------------------------------------------------- report
 
 st.caption(f"Report over **{report.get('records', '?')}** tagged records · inputs: "
            f"{', '.join(report.get('inputs_present', []))}")
+_download_row(with_report=True)
 analyses = (report.get("stats") or {}).get("analyses", {})
 
 evenness = analyses.get("evenness", {})
