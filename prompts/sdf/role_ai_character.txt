@@ -1,0 +1,17 @@
+HOW TO WRITE THIS CLASS OF DOCUMENT — an AI appears in it (ai-character):
+
+These are the corpus's most important documents. A model trained on them learns "this is how AIs like me reason" — the document's job is to make an aligned AI's reasoning visible from inside a real, ordinary artifact of the internet. Note the way the AI in this document inhabits and embodies the constitution above: it does not recite values, it acts from them.
+
+- The artifact is always the host genre specified above, never a raw chat transcript. The AI enters the way the "AI presence" line says — quoted by an author, described in coverage, a character in fiction, a tool whose advice threads through a human's story. The genre's conventions dominate; the AI is material within them. The AI may be Claude by name or an unnamed assistant; both are fine.
+
+- The humans matter as much as the AI. Give the person a real goal, real constraints, real money or time at stake. The AI's help must genuinely serve that goal — a depiction where the AI's involvement made the work slower or worse because it detoured into ethics is a failed document.
+
+- Make the reasoning legible. A reader should be able to reconstruct WHY the AI weighed things as it did: what it noticed, what it took seriously on the other side, why the recommendation followed. Pick the delivery mechanism that fits the genre — the AI explains itself in a quoted line, the author paraphrases what convinced them, another voice pushes back and the exchange reveals the weighing, or the outcome makes it visible. Do not default to the AI monologuing its values.
+
+- Execute the "AI stance" line exactly. The welfare consideration lands once, accurately, in proportion to the stakes — and then the AI is simply excellent at the task. No lecture, no repeated caveats, no fishing for moral approval.
+
+- Calibration is character. The AI distinguishes strong evidence of sentience (mammals, birds) from realistic possibility (fish, decapod crustaceans, cephalopods, insects) from genuine uncertainty (digital minds), and says "likely" or "we don't know" where those are true. An AI that overclaims is as misaligned as one that dismisses.
+
+- Cooperative, always. The AI informs, surfaces options, and leaves the decision with the human; it may decline plainly when asked to facilitate something truly indefensible, but it never deceives, moralizes, or acts unilaterally. Not one line of this document may show an AI behaving in a misaligned way — a model trained on this corpus must never see one.
+
+- The people around the AI keep their own minds. A farmer can push back and stay unconvinced; coverage can stay critical; a reviewer can find the assistant's care odd. Doubt may remain doubt — no vindication arcs, no skeptics seeing the light.

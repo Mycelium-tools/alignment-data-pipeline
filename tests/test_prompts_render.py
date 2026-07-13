@@ -21,6 +21,7 @@ TEMPLATE_KWARGS = [
         "preamble": "PREAMBLE-X", "constitution_claude": "CONST-C-X",
         "constitution_principles": "CONST-P-X",
         "description": "Document type: TYPE-X\nRegister: first-person",
+        "role_guidance": "ROLE-GUIDANCE-X",
         "language": "en", "count": 1,
         "register_note": "REGISTER-NOTE-X", "fictional_names": "NAME-X; NAME-Y",
         "fictional_orgs": "ORG-X; ORG-Y", "structure_hints": "SHAPE-X; SHAPE-Y",
@@ -62,6 +63,19 @@ def test_template_renders_with_pipeline_kwargs(rel_path, kwargs):
 def test_preamble_loads_verbatim():
     text = utils.load_prompt(REPO_ROOT / "prompts" / "sdf" / "preamble.txt")
     assert text.strip()
+
+
+def test_role_guidance_files_load_and_cover_all_roles():
+    """One craft-guidance block per corpus role, injected under the brief in
+    layer 3. Placeholder-free by design (loaded verbatim, like the preamble)."""
+    from sdf_pipeline import layer3_draft
+    from sdf_pipeline.layer1_matrix import ROLES
+
+    assert set(layer3_draft._ROLE_GUIDANCE_FILES) == set(ROLES)
+    for name in layer3_draft._ROLE_GUIDANCE_FILES.values():
+        text = utils.load_prompt(REPO_ROOT / "prompts" / "sdf" / name)
+        assert text.strip()
+        assert "{" not in text, f"{name} must not declare placeholders"
 
 
 def test_reasoning_library_loads_with_expected_layers():

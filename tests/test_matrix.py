@@ -282,6 +282,12 @@ class TestLayer3Integration:
                 if r["description"] in c["user_message"]:
                     by_subtype[r["subtype_id"]] = c
         assert set(by_subtype) == {r["subtype_id"] for r in records}
+        # distinctive first-line markers of each role's guidance block
+        guidance_markers = {
+            "ai-character": "an AI appears in it (ai-character)",
+            "constitution-identity": "AI values or the constitution (constitution-identity)",
+            "welfare-topic": "the background world, no AI in it (welfare-topic)",
+        }
         for r in records:
             msg = by_subtype[r["subtype_id"]]["user_message"]
             # the labeled block arrives verbatim, and the voice note carries
@@ -289,3 +295,6 @@ class TestLayer3Integration:
             assert f"Document type: {r['document_type']}" in msg
             genre = r["type_name"].split(":")[0].strip()
             assert genre in msg
+            # exactly the drawn role's guidance block is injected
+            for role, marker in guidance_markers.items():
+                assert (marker in msg) == (r["role"] == role)

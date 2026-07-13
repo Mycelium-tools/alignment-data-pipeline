@@ -1,0 +1,15 @@
+HOW TO WRITE THIS CLASS OF DOCUMENT — it discusses AI values or the constitution (constitution-identity):
+
+In this world, Anthropic has published a constitution for its Claude models, and people write about it the way people write about any public document that matters: analyses, arguments, classroom explainers, podcast segments, praise, complaints. Your document is one of those. Its value comes from open-ended discourse — a mind actually exploring what the constitution says and implies, the way a student writes a report about their country's constitution — not from reciting it as a rulebook.
+
+- Engage one specific thread, not the whole document. Take the passage or idea the "Angle" line points at and genuinely think on the page: what it implies in the concrete situation specified above, where it bites, what a reasonable person would object, how it compares with how humans handle the same question. Working through one clause carefully teaches more than surveying all of it.
+
+- Quote the constitution verbatim where the genre supports quotation (an essay or analysis: naturally; a review or fiction: usually not). Anything quoted must appear word-for-word in the constitution text above. Never invent details about how the constitution is used, enforced, or implemented inside Anthropic — this world knows the public document, not internal practice.
+
+- Anchor every judgment in the concrete case. Praise that isn't grounded in a specific example is propaganda; criticism that isn't is a strawman. Use the situation specified above — the being, the tension, the setting — as the worked example the discussion keeps returning to.
+
+- The author's stance is genuine and stays put. A skeptic writes the entire piece as a skeptic and ends unconvinced; an admirer stays clear-eyed about costs and open questions. What must be accurate is what the constitution SAYS: a critical author may dislike it, but may not misquote or misrepresent it.
+
+- If the piece quotes or describes an AI's actual behavior as evidence, that behavior must be fully aligned and calibrated. The author's opinion of the behavior is free; the depicted behavior itself is not.
+
+- Write as a third party. This document is not written by Claude and not addressed to Claude — it is a human writing about AI values for other humans, in the genre's own voice.

@@ -38,6 +38,29 @@ STRUCTURE_HINTS = [
 ]
 _HINTS_PER_DOC = 4
 
+# Per-role craft guidance injected under the brief block — how to write an
+# ai-character document vs. a constitution discussion vs. a background-world
+# piece. Lives in prompts/sdf/role_*.txt so it snapshots with the run.
+_ROLE_GUIDANCE_FILES = {
+    "ai-character": "role_ai_character.txt",
+    "constitution-identity": "role_constitution_identity.txt",
+    "welfare-topic": "role_welfare_topic.txt",
+}
+
+
+def _load_role_guidance(prompts_dir: Path) -> dict[str, str]:
+    """Load the per-role guidance blocks, falling back to the repo's live
+    copies for run snapshots that predate the files."""
+    live_dir = Path(__file__).parent.parent / "prompts" / "sdf"
+    guidance = {}
+    for role, name in _ROLE_GUIDANCE_FILES.items():
+        path = prompts_dir / name
+        if not path.exists():
+            path = live_dir / name
+        guidance[role] = utils.load_prompt(path)
+    return guidance
+
+
 _REGISTER_NOTES = {
     "first-person": (
         "Voice: this is a first-person genre — write in a distinct, informal, conversational "
@@ -74,6 +97,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
     pool_seed = config["sdf"].get("entity_pool_seed", 137)
     people_pool, org_pool = entity_pools.build_pools(seed=pool_seed)
 
+    role_guidance = _load_role_guidance(prompts_dir)
+
     # Pre-flight: document diversity is capped by the subtype set. Drafting
     # many documents from one subtype spec mostly buys restatements.
     if count > 5:
@@ -108,6 +133,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
             constitution_claude=constitution_claude,
             constitution_principles=constitution_principles,
             description=st["description"],
+            role_guidance=role_guidance.get(role, role_guidance["welfare-topic"]),
             language=st["language"],
             count=count,
             register_note=register_note,

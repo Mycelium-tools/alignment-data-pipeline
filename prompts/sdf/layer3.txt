@@ -24,6 +24,8 @@ I'd like you to write {count} complete document(s) to the following specificatio
 
 {description}
 
+{role_guidance}
+
 Work in two stages.
 
 STAGE 1 — Inside a single <angles> block, brainstorm distinctly different angles — noticeably more than you need: different authors, different moments in the situation, different structures, different positions a real writer meeting this specification might take. Vary the rhetorical shape too; consider, among others: {structure_hints}. Then pick the {count} that are most different from one another, and for each one plan three things, one line each:
