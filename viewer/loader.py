@@ -258,7 +258,7 @@ def holistic_report(run_dir: Path, bundle_id: str | None = None) -> dict | None:
 
 
 # extraction bookkeeping, not categorical facets
-_TAG_META_KEYS = ("record_id", "extract_error", "_errors")
+_TAG_META_KEYS = ("record_id", "extract_error", "_errors", "raw")
 
 
 def combined_index(run_dir: Path, bundle_id: str | None = None) -> dict[str, dict]:

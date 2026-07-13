@@ -115,14 +115,15 @@ def test_extract_corpus_writes_one_row_per_record(tmp_path, stub_claude):
 
 def test_error_rows_carry_the_raw_model_output(tmp_path, stub_claude):
     # A parse failure must be diagnosable from the index alone — the row keeps
-    # (capped) raw text, and resume still treats it as a retryable error row.
-    stub_claude(["Sorry, I refuse to tag this." ])
+    # capped raw text, and resume still treats it as a retryable error row.
+    calls = stub_claude(["nonsense " * 500])   # unparseable and over the cap
     out = tmp_path / "category_records.jsonl"
     extract.extract_corpus([{"record_id": "a", "messages": MESSAGES}],
                            F.default_fields(), out)
     (row,) = utils.load_jsonl(out)
     assert row["extract_error"] == "unparseable model output"
-    assert row["raw"] == "Sorry, I refuse to tag this."
+    assert row["raw"] == ("nonsense " * 500)[:2000]           # capped, verbatim prefix
+    assert calls[0]["max_tokens"] == extract.MAX_TOKENS       # thinking headroom sent
 
 
 def test_extract_corpus_reports_progress_per_record(tmp_path, stub_claude):
