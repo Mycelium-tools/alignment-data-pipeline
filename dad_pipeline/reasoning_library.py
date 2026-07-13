@@ -133,9 +133,10 @@ def format_entries(library: dict, ids: list[str]) -> str:
 
 
 def system_prompt(library: dict) -> str:
-    """Standing instructions for every step-2 generation call: the conduct rules
-    (C*), preceded by the old generation_guidance if this is a legacy JSON
-    snapshot that still carries one. Sent verbatim as the system prompt."""
+    """LEGACY — the pipeline no longer sends this; the 2b template is
+    self-contained. Kept for the viewer, which reconstructs the system prompt
+    of runs recorded before that: the conduct rules (C*), preceded by the old
+    generation_guidance if the snapshot still carries one."""
     parts = []
     guidance = library.get("generation_guidance") or ""
     if guidance.strip():

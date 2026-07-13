@@ -36,6 +36,7 @@ constitution.
 """
 
 import json
+import random
 import uuid
 import sys
 from pathlib import Path
@@ -46,6 +47,35 @@ from shared import api, utils
 from dad_pipeline import reasoning_library
 
 MAX_SCOPE_ATTEMPTS = 3
+
+# Entry-shape menu sampled into each 2b call ({opening_hints} in the template) —
+# a few per response, seeded by the response's item id so --resume and the
+# viewer re-render reproduce the same draw. Opener variety must come from
+# code-level sampling, not from asking the model to vary: at temperature 1 the
+# scope + library context converges every reply onto the same few openers.
+# Same mechanism as SDF's STRUCTURE_HINTS (adapted from the CAML notebook),
+# which fixed templated openings on the document side.
+OPENING_HINTS = [
+    "open on the concrete detail carrying the most weight",
+    "open mid-answer with the recommendation, justifying it afterwards",
+    "open with the strongest consideration against where the reply will land",
+    "open from the user's own words, quoted back precisely",
+    "open with the factual crux the case turns on",
+    "open by answering the literal question asked, then widening",
+    "open with what is settled before what is contested",
+    "open from inside the user's constraint (the deadline, the role, the budget)",
+    "open from the fact or cost the user has been sidestepping",
+    "open plainly in the middle of the practical problem, as a colleague would",
+]
+_HINTS_PER_RESPONSE = 3
+
+
+def sample_opening_hints(prompt_id: str, sample_index: int) -> str:
+    """The '; '-joined entry-shape hints for one response, deterministic in the
+    response's identity (so resume, tests, and the viewer all see the draw the
+    paid call actually used)."""
+    rng = random.Random(f"openings:{prompt_id}_s{sample_index}")
+    return "; ".join(rng.sample(OPENING_HINTS, _HINTS_PER_RESPONSE))
 
 # selection_source values meaning "a dedicated selection API call happened for
 # this record" — the single source of truth the viewer keys its 2a.5 rendering
@@ -245,11 +275,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         for sample_index in missing_samples:
             suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
             print(f"  Generating response for {pid}{suffix}...")
+            opening_hints = sample_opening_hints(pid, sample_index)
             respond_system, respond_user = utils.load_split_prompt(
                 prompts_dir / "step2_respond.txt",
                 library_block=library_block,
                 scope_block=format_scope(scope),
                 user_message=d["user_message"],
+                opening_hints=opening_hints,
             )
             response, stop_reason = api.call_claude(
                 user_message=respond_user, system_prompt=respond_system,
@@ -277,6 +309,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 "annotation": d.get("annotation", {}),
                 "scope": scope,
                 "entry_ids": entry_ids,
+                # the entry-shape draw this call actually saw — provenance for
+                # the viewer's prompt re-render (and for eyeballing hint uptake)
+                "opening_hints": opening_hints,
                 "assistant_response": response,
             })
         return out

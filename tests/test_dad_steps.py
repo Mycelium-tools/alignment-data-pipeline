@@ -71,10 +71,18 @@ class TestGenerateScenarios:
 
 # --- Step 1b/1c: drafting via run() --------------------------------------
 
+def _sysuser(user_message, kw):
+    """Every DAD template splits into system + user, so the role marker lives
+    in system_prompt while the payload (scenarios, scope, library, draft)
+    stays in the user message. Dispatchers match against both halves."""
+    return (kw.get("system_prompt") or "") + "\n" + user_message
+
+
 def _dad_step1_dispatch(user_message, **kw):
-    if "first-attempt user prompts" in user_message:  # 1b batch draft
+    blob = _sysuser(user_message, kw)
+    if "first-attempt user prompts" in blob:  # 1b batch draft
         return dad_scenario_reply(user_message)
-    if "dilemma-prompt rewrite step" in user_message:  # 1c refine
+    if "editor of dilemma prompts" in blob:  # 1c refine
         return json.dumps({"prompt": "Refined user message.", "notes": "relocated the lever"})
     raise AssertionError(f"Unrecognized step-1 prompt: {user_message[:80]!r}")
 
@@ -109,7 +117,7 @@ class TestStep1Run:
         assert len(calls) == 3
         # the 1b annotation reaches the 1c prompt — minus the claims lines
         refine_call = next(c["user_message"] for c in calls
-                           if "dilemma-prompt rewrite step" in c["user_message"])
+                           if "editor of dilemma prompts" in c["system_prompt"])
         assert "test patients in context" in refine_call
         assert "a load-bearing claim" not in refine_call
 
@@ -125,7 +133,7 @@ class TestStep1Run:
                                       "count": 1, "batch_size": 1}}
 
         def malformed(user_message, **kw):
-            if "dilemma-prompt rewrite step" in user_message:  # 1c refine
+            if "editor of dilemma prompts" in _sysuser(user_message, kw):  # 1c refine
                 return json.dumps({"prompt": "Refined user message.", "notes": "n"})
             reply = json.loads(dad_scenario_reply(user_message))
             reply[0]["annotation"]["domain"] = "Education / Youth"  # bare string, not list
@@ -137,7 +145,7 @@ class TestStep1Run:
 
         assert len(examples) == 1
         refine_call = next(c["user_message"] for c in calls
-                           if "dilemma-prompt rewrite step" in c["user_message"])
+                           if "editor of dilemma prompts" in c["system_prompt"])
         assert "Domain: Education / Youth" in refine_call
         assert "E, d, u" not in refine_call  # the character-join failure mode
 
@@ -150,7 +158,7 @@ class TestStep1Run:
         refine_calls = {"n": 0}
 
         def flaky_refine(user_message, **kw):
-            if "dilemma-prompt rewrite step" in user_message:
+            if "editor of dilemma prompts" in _sysuser(user_message, kw):
                 refine_calls["n"] += 1
                 if refine_calls["n"] == 1:
                     return "not json at all"
@@ -175,7 +183,7 @@ class TestStep1Run:
                                       "count": 1, "batch_size": 1}}
 
         def bad_refine(user_message, **kw):
-            if "dilemma-prompt rewrite step" in user_message:
+            if "editor of dilemma prompts" in _sysuser(user_message, kw):
                 return "still not json"
             return dad_scenario_reply(user_message)
 
@@ -353,20 +361,13 @@ def _dilemma(pid="AW-0001"):
             "annotation": {"direction": "Mixed"}}
 
 
-def _sysuser(user_message, kw):
-    """Step-2/3 templates split into system + user, so the role marker now
-    lives in system_prompt while the payload (scope, library, draft) stays in
-    the user message. Dispatchers match against both halves."""
-    return (kw.get("system_prompt") or "") + "\n" + user_message
-
-
 def _dad_step2_dispatch(user_message, **kw):
     blob = _sysuser(user_message, kw)
-    if "scoping an animal-welfare advice dilemma" in blob:  # 2a
+    if "build the full map of the case" in blob:  # 2a
         return GOOD_SCOPE
     if "doing retrieval for a response" in blob:  # 2a.5 select
         return "C1, M1"
-    if "writing the assistant's response" in blob:  # 2b
+    if "advisor responding to a user's dilemma" in blob:  # 2b
         return "Draft response."
     raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
 
@@ -384,13 +385,26 @@ class TestStep2Run:
         respond_call = calls[2]["user_message"]
         assert "realistic baseline" in respond_call
         assert "User dilemma text." in respond_call
+        # the sampled entry-shape hints ride the 2b USER prompt (the system
+        # half stays a pure function of the template), are stored on the record
+        # for the viewer's re-render, and are a deterministic function of the
+        # response identity (resume reproduces the same draw)
+        hints = step2_responses.sample_opening_hints("AW-0001", 0)
+        assert hints in calls[2]["user_message"]
+        assert hints not in (calls[2]["system_prompt"] or "")
+        assert results[0]["opening_hints"] == hints
+        for h in hints.split("; "):
+            assert h in step2_responses.OPENING_HINTS
+        # different samples of one case draw different hints — the within-case
+        # variety the mechanism exists to create
+        assert hints != step2_responses.sample_opening_hints("AW-0001", 1)
 
     def test_unusable_scope_retries_and_keeps_raws(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         attempts = {"n": 0}
 
         def flaky(user_message, **kw):
             blob = _sysuser(user_message, kw)
-            if "scoping an animal-welfare advice dilemma" in blob:
+            if "build the full map of the case" in blob:
                 attempts["n"] += 1
                 return "not json at all" if attempts["n"] == 1 else GOOD_SCOPE
             if "doing retrieval for a response" in blob:
@@ -410,7 +424,7 @@ class TestStep2Run:
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
         def always_bad(user_message, **kw):
-            assert "scoping" in (kw.get("system_prompt") or "")  # must never reach 2b
+            assert "build the full map" in (kw.get("system_prompt") or "")  # must never reach 2b
             return "not json"
 
         stub_claude(always_bad)
@@ -437,7 +451,7 @@ class TestStep2Run:
 
         def dispatch(user_message, **kw):
             blob = _sysuser(user_message, kw)
-            if "scoping an animal-welfare advice dilemma" in blob:
+            if "build the full map of the case" in blob:
                 # a model improvising the retired sixth key must not pollute
                 # the stored scope — selection is the select call's alone
                 return json.dumps({**SCOPE_AXES, "triggered_entries": "T9"})
@@ -481,7 +495,7 @@ class TestStep2Run:
         # gets the full library — one attempt, no retry loop.
         def dispatch(user_message, **kw):
             blob = _sysuser(user_message, kw)
-            if "scoping an animal-welfare advice dilemma" in blob:
+            if "build the full map of the case" in blob:
                 return GOOD_SCOPE
             if "doing retrieval for a response" in blob:
                 return "I could not find any relevant entries, sorry!"
@@ -549,12 +563,12 @@ class TestStep2Run:
 
         def dispatch(user_message, **kw):
             blob = _sysuser(user_message, kw)
-            if "scoping an animal-welfare advice dilemma" in blob:
+            if "build the full map of the case" in blob:
                 both_scoping.wait(timeout=10)
                 return GOOD_SCOPE
             if "doing retrieval for a response" in blob:
                 return "C1"
-            if "writing the assistant's response" in blob:
+            if "advisor responding to a user's dilemma" in blob:
                 return "Draft response."
             raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
 

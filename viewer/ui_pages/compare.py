@@ -4,6 +4,8 @@ DAD matches examples by a *content* key (default: the user message) rather than
 the AW-#### id, so a side-by-side pair is guaranteed to be the same case. A
 comparison holds one dimension fixed (the key) and diffs the rest: fix the
 prompt to tune responses, or fix the scenario to tune the prompts themselves.
+Each stage shows both the prompt each run sent AND the output it got back
+(the lineage page's shape), diffed across the two runs.
 """
 
 import difflib
@@ -14,6 +16,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from dad_pipeline import step2_responses
 from viewer import loader, rendering
 from viewer.ui_pages import common
 
@@ -141,6 +144,10 @@ else:
             common.show_diff(a.user_message, b.user_message,
                              f"A: {run_a_id}", f"B: {run_b_id}", key=f"um_{idx}")
 
+        manifest_a, manifest_b = loader.load_manifest(run_a.run_dir), loader.load_manifest(run_b.run_dir)
+        lin_a = loader.dad_lineage_by_prompt(run_a.run_dir, a.prompt_id)
+        lin_b = loader.dad_lineage_by_prompt(run_b.run_dir, b.prompt_id)
+
         # Response: the payload in response-tuning mode.
         st.markdown("#### Response")
         if not (a.has_final and b.has_final):
@@ -148,13 +155,52 @@ else:
                        "(step-3 rewrite produced no final record).")
         common.show_diff(a.response, b.response, f"A: {run_a_id}", f"B: {run_b_id}", key=f"resp_{idx}")
 
-        # Inputs by stage: reconstruct the system + user prompt each run actually
-        # sent at every step-2/3 stage, and diff them (split-aware render_prompt).
-        st.markdown("#### Inputs by stage")
-        manifest_a, manifest_b = loader.load_manifest(run_a.run_dir), loader.load_manifest(run_b.run_dir)
-        lin_a = loader.dad_lineage_by_prompt(run_a.run_dir, a.prompt_id)
-        lin_b = loader.dad_lineage_by_prompt(run_b.run_dir, b.prompt_id)
-        stages = [("step2_scope", "Step 2a — scope"),
+        def _s3_len_delta(lin: dict) -> str | None:
+            """One side's step-3 length effect: 2b draft → final, in chars."""
+            aud = lin.get("rewrite") or {}
+            if aud.get("draft_response") and aud.get("rewritten_response"):
+                d, f = len(aud["draft_response"]), len(aud["rewritten_response"])
+                return f"{d:,} → {f:,} ({f - d:+,})"
+            return None
+
+        delta_a, delta_b = _s3_len_delta(lin_a), _s3_len_delta(lin_b)
+        if delta_a or delta_b:
+            st.caption(f"Step-3 rewrite length (chars, 2b draft → final):  "
+                       f"A {delta_a or '—'}  ·  B {delta_b or '—'}")
+
+        def _stage_output(stage: str, lin: dict) -> tuple[str | None, str | None]:
+            """(text, note) one side produced at a stage; text None = not reached."""
+            d = lin.get("dilemma") or {}
+            if stage == "step1_dilemmas":
+                return d.get("draft_user_message") or d.get("user_message"), None
+            if stage == "step1_refine":
+                if d.get("refine_failed"):
+                    return d.get("user_message"), "every 1c attempt was unusable — the 1b draft shipped"
+                if d.get("draft_user_message") is None:
+                    return None, "1c did not run for this record"
+                note = f"notes: {d['refine_notes']}" if d.get("refine_notes") else None
+                return d.get("user_message"), note
+            if stage == "step2_scope":
+                sc = (lin.get("scope") or {}).get("scope")
+                return (step2_responses.format_scope(sc) if sc else None), None
+            if stage == "step2_select":
+                rec = lin.get("scope") or {}
+                if rec.get("entry_ids") is None:
+                    return None, None
+                note = ("selection unusable — the whole library was injected"
+                        if rec.get("selection_fallback") else None)
+                return "\n".join(rec["entry_ids"]), note
+            if stage == "step2_respond":
+                return (lin.get("response") or {}).get("assistant_response"), None
+            return None, None
+
+        # Stage by stage: the system + user prompt each run actually sent
+        # (split-aware render_prompt) AND the output it got back — the lineage
+        # page's prompt-then-output shape, diffed across the two runs.
+        st.markdown("#### Stage by stage — inputs and outputs")
+        stages = [("step1_dilemmas", "Step 1b — first attempt (draft)"),
+                  ("step1_refine", "Step 1c — review & rewrite"),
+                  ("step2_scope", "Step 2a — scope"),
                   ("step2_select", "Step 2a.5 — library selection"),
                   ("step2_respond", "Step 2b — response draft"),
                   ("step3_rewrite", "Step 3 — constitution rewrite")]
@@ -172,6 +218,33 @@ else:
                 st.markdown("**User prompt**")
                 common.show_diff(ra.user or "", rb.user or "",
                                  f"A: {run_a_id}", f"B: {run_b_id}", key=f"{stage}_usr_{idx}")
+
+                st.markdown("**Output at this stage**")
+                if stage == "step3_rewrite":
+                    # The cross-run diff of the finals is the Response section
+                    # above; here show what each run's rewrite DID to its draft.
+                    st.caption("Cross-run diff of the finals is the **Response** section at the top; "
+                               "below is each run's own draft → rewritten diff.")
+                    for side, side_lin, rid in (("A", lin_a, run_a_id), ("B", lin_b, run_b_id)):
+                        aud = side_lin.get("rewrite") or {}
+                        if not (aud.get("draft_response") and aud.get("rewritten_response")):
+                            st.caption(f"{side}: not reached")
+                            continue
+                        if st.toggle(f"{side} ({rid}): draft → rewritten", value=False,
+                                     key=f"s3_inner_{side}_{idx}"):
+                            common.show_diff(aud["draft_response"], aud["rewritten_response"],
+                                             "2b draft", "step-3 rewritten",
+                                             key=f"s3_innerdiff_{side}_{idx}")
+                else:
+                    (out_a, note_a), (out_b, note_b) = _stage_output(stage, lin_a), _stage_output(stage, lin_b)
+                    for side, note in (("A", note_a), ("B", note_b)):
+                        if note:
+                            st.caption(f"{side}: {note}")
+                    if out_a is None and out_b is None:
+                        st.caption("not reached in either run")
+                    else:
+                        common.show_diff(out_a or "", out_b or "",
+                                         f"A: {run_a_id}", f"B: {run_b_id}", key=f"{stage}_out_{idx}")
 
     if only_a or only_b:
         with st.expander(f"Unmatched — only in A ({len(only_a)}) / only in B ({len(only_b)})"):
@@ -202,7 +275,7 @@ for name in sorted(set(templates_a) | set(templates_b)):
 
 st.caption("What changed in the prompt/constitution *files* between the two runs — run-level, "
            "before any per-example substitution. The filled-in prompts for a specific example "
-           "are under that example's **Inputs by stage** above.")
+           "are under that example's **Stage by stage** section above.")
 if not changed:
     st.success("No prompt or constitution differences — output differences come from sampling alone.")
 elif st.toggle(f"Show {len(changed)} changed template(s)", value=False):

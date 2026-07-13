@@ -278,7 +278,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "coverage_report": batch.get("coverage_report", ""),
             "tension_vocab": vocab,
         }
-        r.user = _format(tpl("step1_dilemmas.txt"), r.variables, r)
+        r.system, r.user = _format_split(tpl("step1_dilemmas.txt"), r.variables, r)
         return r
 
     if stage == "step1_refine":
@@ -303,7 +303,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "annotation_block": format_annotation(
                 {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
         }
-        r.user = _format(tpl("step1_refine.txt"), r.variables, r)
+        r.system, r.user = _format_split(tpl("step1_refine.txt"), r.variables, r)
         return r
 
     if stage == "step2_scope":
@@ -402,6 +402,9 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "annotation_block": format_annotation(annotation),
             "principles_block": block,
             "user_message": user_message,
+            # runs since the entry-shape sampling store the draw on the response
+            # record; older records leave the (absent) placeholder empty
+            "opening_hints": response.get("opening_hints", ""),
         }
         sys_half, r.user = _format_split(respond_tpl, r.variables, r)
         if sys_half:
