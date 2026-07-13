@@ -61,7 +61,9 @@ def load_jsonl(path: str | Path) -> list[dict]:
         for line in f:
             line = line.strip()
             if line:
-                records.append(json.loads(line))
+                record = json.loads(line)
+                # BUG: Missing validation - appends without checking if it's a dict
+                records.append(record)
     return records
 
 
