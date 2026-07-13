@@ -8,6 +8,7 @@ outputs/ tree (and its `latest` symlinks) is never touched.
 import json
 
 import pytest
+import yaml
 
 import dad_pipeline.run as dad_run
 import sdf_pipeline.run as sdf_run
@@ -86,6 +87,12 @@ def test_sdf_resume_at_layer5_makes_no_calls(tiny_config_file, outputs_root, stu
 # --- DAD ---------------------------------------------------------------
 
 def _dad_dispatch(user_message, **kw):
+    # The baseline control arm is the only DAD call with no system prompt
+    # (every template splits into system + user halves) — and it must carry
+    # the finished 1c prompt verbatim.
+    if not (kw.get("system_prompt") or ""):
+        assert user_message == "Refined user message."
+        return "Plain baseline answer."
     # Every DAD template splits into a system + user prompt, so the role
     # markers live in system_prompt while the payload stays in the user
     # message. Match against both halves.
@@ -130,9 +137,30 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
         assert [m["role"] for m in record["messages"]] == ["user", "assistant"]
         assert record["messages"][0]["content"] == "Refined user message."  # 1c ran
         assert record["messages"][1]["content"] == "Rewritten careful answer."
-    # 1 batch draft, then per prompt: refine (1c) + scope (2a) + select (2a.5)
-    # + respond (2b) + rewrite (3)
-    assert len(calls) == 1 + 5 * N_DAD_PROMPTS
+    # the baseline control arm rode along: one record per prompt, never in the corpus
+    baselines = utils.load_jsonl(run_dir / "baseline" / "baseline_responses.jsonl")
+    assert len(baselines) == N_DAD_PROMPTS
+    assert all(b["baseline_response"] == "Plain baseline answer." for b in baselines)
+    # 1 batch draft, then per prompt: refine (1c) + baseline + scope (2a)
+    # + select (2a.5) + respond (2b) + rewrite (3)
+    assert len(calls) == 1 + 6 * N_DAD_PROMPTS
+
+
+def test_dad_baseline_disabled_makes_no_baseline_calls(
+    tiny_config, outputs_root, stub_claude, monkeypatch, tmp_path
+):
+    config = dict(tiny_config)
+    config["dad"] = {**tiny_config["dad"], "baseline": {"enabled": False}}
+    config_file = tmp_path / "config_no_baseline.yaml"
+    config_file.write_text(yaml.safe_dump(config))
+
+    calls = stub_claude(_dad_dispatch)
+    _run_main(monkeypatch, dad_run.main, config_file)
+
+    run_dir = outputs_root / "dad" / "latest"
+    assert not (run_dir / "baseline").exists()
+    assert all(c["stage"] != "baseline_response" for c in calls)
+    assert len(calls) == 1 + 5 * N_DAD_PROMPTS  # everything else untouched
 
 
 def test_dad_resume_at_step3_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):

@@ -380,6 +380,27 @@ else:
                 stage_expander("Step 3 — rewrite against the distilled principles", "step3_rewrite", lin,
                                step3_output,
                                stats=("constitution_rewrite", audit.get("response_id")) if audit else None)
+
+                # Baseline control arm — only rendered when the run recorded one
+                # (dad.baseline; absent for runs predating the stage or with it
+                # off). Deliberately NOT a stage_expander: its prompt is the 1c
+                # user message and its counterpart is the final response, both
+                # already in the left panel — repeating them here only cramped
+                # the text. The panels scroll independently on purpose: the two
+                # responses don't align paragraph-for-paragraph.
+                baseline_rec = lin.get("baseline")
+                if baseline_rec:
+                    base_model = baseline_rec.get("model") or "model"
+                    with st.expander(f":blue[Baseline — plain {base_model}, "
+                                     "no system prompt (comparison only)]"):
+                        line = _call_stats_line("baseline_response", pid)
+                        if line:
+                            st.caption(f":material/speed: {line}")
+                        st.caption("Control arm: the step-1c user prompt (left panel) sent "
+                                   "verbatim to a plain model — no system prompt, no reasoning "
+                                   "library, no constitution. Read it against the pipeline's "
+                                   "response on the left; never enters the training corpus.")
+                        st.code(baseline_rec["baseline_response"], language=None, wrap_lines=True)
             else:
                 # Legacy 7-step runs (pre-spec pipeline)
                 stage_expander("Step 1 — principle annotation", "step1", lin,

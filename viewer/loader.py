@@ -35,6 +35,7 @@ STAGE_FILES = {
         "step2_tensions": "step2/tensions.jsonl",
         "step2_responses": "step2/responses.jsonl",
         "step3_rewrites": "step3/rewrites.jsonl",
+        "baseline": "baseline/baseline_responses.jsonl",
         # Legacy 7-step pipeline (runs made before the dilemma spec)
         "step1": "step1/principles.jsonl",
         "step2": "step2/scenarios.jsonl",
@@ -293,6 +294,7 @@ def dad_lineage(run_dir: Path, record_id: str) -> dict:
     tension_tags = _index(load_stage(run_dir, "dad", "step2_tensions"), "prompt_id")
     scenarios = _index(load_stage(run_dir, "dad", "step1_scenarios"), "scenario_id")
     scope_recs = _index(load_stage(run_dir, "dad", "step2_scopes"), "prompt_id")
+    baselines = _index(load_stage(run_dir, "dad", "baseline"), "prompt_id")
 
     dilemma = dilemmas.get(audit.get("prompt_id"))
     return {
@@ -303,6 +305,7 @@ def dad_lineage(run_dir: Path, record_id: str) -> dict:
         "tension_tag": tension_tags.get(audit.get("prompt_id")),
         "response": responses.get(audit.get("response_id")),
         "rewrite": audit,
+        "baseline": baselines.get(audit.get("prompt_id")),
         "final": final,
     }
 
@@ -324,6 +327,7 @@ def dad_lineage_by_prompt(run_dir: Path, prompt_id: str) -> dict:
     if rewrite:
         final = _index(load_final(run_dir, "dad"), "record_id").get(rewrite.get("record_id"))
     dilemma = dilemmas.get(prompt_id)
+    baselines = _index(load_stage(run_dir, "dad", "baseline"), "prompt_id")
     return {
         "format": "v2",
         "dilemma": dilemma,
@@ -332,6 +336,7 @@ def dad_lineage_by_prompt(run_dir: Path, prompt_id: str) -> dict:
         "tension_tag": tension_tags.get(prompt_id),
         "response": responses[0] if responses else None,
         "rewrite": rewrite,
+        "baseline": baselines.get(prompt_id),
         "final": final,
     }
 

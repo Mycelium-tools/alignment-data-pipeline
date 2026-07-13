@@ -15,7 +15,7 @@ import threading
 import pytest
 
 from conftest import dad_scenario_reply
-from dad_pipeline import reasoning_library, step1_dilemmas, step2_responses, step3_rewrite
+from dad_pipeline import baseline, reasoning_library, step1_dilemmas, step2_responses, step3_rewrite
 from shared import utils
 
 
@@ -761,6 +761,78 @@ class TestStep3Run:
         )
         assert calls == []
         assert len(final) == 2
+
+
+# --- Baseline: unguided control responses ----------------------------------
+
+class TestBaselineRun:
+    def test_plain_call_no_system_prompt_verbatim_user_message(
+        self, tiny_config, tmp_path, stub_claude
+    ):
+        calls = stub_claude(["Plain model answer."])
+        results = baseline.run(tiny_config, tmp_path, [_dilemma()])
+
+        assert len(results) == 1
+        rec = results[0]
+        assert rec["prompt_id"] == "AW-0001"
+        assert rec["baseline_response"] == "Plain model answer."
+        # the whole point of the control arm: NO system prompt, and the 1c
+        # user prompt reaches the model verbatim
+        assert calls[0]["system_prompt"] == ""
+        assert calls[0]["user_message"] == "User dilemma text."
+        assert calls[0]["stage"] == "baseline_response"
+        assert calls[0]["item_id"] == "AW-0001"
+        stored = utils.load_jsonl(tmp_path / "baseline_responses.jsonl")
+        assert stored == results
+
+    def test_model_knob_reaches_the_api_and_the_record(
+        self, tiny_config, tmp_path, stub_claude
+    ):
+        config = dict(tiny_config)
+        config["dad"] = {**tiny_config["dad"], "baseline": {"enabled": True, "model": "m-base"}}
+        calls = stub_claude(["Plain model answer."])
+        results = baseline.run(config, tmp_path, [_dilemma()])
+        assert calls[0]["model"] == "m-base"
+        assert results[0]["model"] == "m-base"
+
+        # without the knob: model=None reaches the API (call_claude resolves
+        # the global fallback), and the record names the global model
+        calls = stub_claude(["Plain model answer."])
+        results = baseline.run(tiny_config, tmp_path / "no_knob", [_dilemma()])
+        assert calls[0]["model"] is None
+        assert results[0]["model"] == tiny_config["model"]
+
+    def test_enabled_defaults_on_and_honors_explicit_off(self, tiny_config):
+        assert baseline.enabled(tiny_config) is True  # no baseline block at all
+        assert baseline.enabled(
+            {"dad": {"baseline": {"enabled": False}}}) is False
+        assert baseline.enabled({"dad": {"baseline": {"enabled": True}}}) is True
+
+    @pytest.mark.parametrize("bad_reply", [
+        ("cut off mid-sen", "max_tokens"),  # truncated
+        ("", "end_turn"),                   # empty
+    ], ids=["truncated", "empty"])
+    def test_unusable_reply_skips_without_checkpoint(
+        self, tiny_config, tmp_path, stub_claude, bad_reply
+    ):
+        stub_claude([bad_reply])
+        assert baseline.run(tiny_config, tmp_path, [_dilemma()]) == []
+        assert utils.load_jsonl(tmp_path / "baseline_responses.jsonl") == []
+
+        # resume retries the same dilemma and succeeds
+        calls = stub_claude(["Plain model answer."])
+        results = baseline.run(tiny_config, tmp_path, [_dilemma()])
+        assert len(calls) == 1
+        assert len(results) == 1
+
+    def test_resume_makes_no_calls(self, tiny_config, tmp_path, stub_claude):
+        stub_claude(["Plain model answer."])
+        baseline.run(tiny_config, tmp_path, [_dilemma()])
+
+        calls = stub_claude([])
+        results = baseline.run(tiny_config, tmp_path, [_dilemma()])
+        assert calls == []
+        assert len(results) == 1
 
 
 # --- Per-stage model knobs + cost-log stage tags ---------------------------
