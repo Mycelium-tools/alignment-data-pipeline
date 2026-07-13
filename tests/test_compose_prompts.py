@@ -198,6 +198,23 @@ def test_every_culture_value_maps_or_falls_back():
         assert any(c in head for c in entity_pools._CULTURE_LOCALES), culture
 
 
+def test_real_template_axes_match_real_variables():
+    """The coverage axes added for the composition-guideline gaps must exist in
+    BOTH the real template and the real variables file (a placeholder without
+    values is a hard composer error), and every axis's weights must validate
+    (split_weights raises on a bad sum)."""
+    template = (REPO_ROOT / "prompts" / "sdf" / "layers1-2.txt").read_text(encoding="utf-8")
+    axes = cp.matrix_axes(template)
+    values, _ = cp.split_weights(cp.parse_variables(
+        REPO_ROOT / "prompts" / "sdf" / "variables.txt"))
+    for axis in ("framing", "domain", "decision_scale", "ai_role"):
+        assert axis in axes, axis
+        assert values[axis], axis
+    # template axes and variables must agree exactly (extra variables are
+    # composer warnings; missing ones are fatal)
+    assert set(axes) == set(values)
+
+
 def test_build_pools_for_locale_native_script_and_determinism():
     people_a, orgs_a = entity_pools.build_pools_for_locale("ja_JP", n_people=10, n_orgs=5, seed=1)
     people_b, _ = entity_pools.build_pools_for_locale("ja_JP", n_people=10, n_orgs=5, seed=1)

@@ -459,6 +459,80 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
     report["patterns"] = rows
 
 
+# ---------------------------------------------------------------- principle coverage
+
+# A principle exercised by fewer than this fraction of sampled docs is flagged
+# as starved. The floor is deliberately low: with ~14 principles and mixed
+# genres, even coverage would put each principle well above 5%.
+PRINCIPLE_COVERAGE_FLOOR = 0.05
+
+
+def audit_principle_coverage(records: list[dict], config: dict, report: dict,
+                             sample: int) -> None:
+    """Judge which distilled constitution principles each sampled document
+    substantively exercises, and flag principles the corpus is starving
+    (composition guidelines require every principle to be exercised by many
+    documents, not just the headline weigh-welfare one)."""
+    from shared import constitution_loader
+
+    principles = constitution_loader.load_principles()
+    numbers = [int(p["number"]) for p in principles]  # CSV fields parse as str
+    block = constitution_loader.format_principles(principles)
+    prompts_dir = Path(__file__).parent.parent / "prompts" / "tools"
+    template_path = prompts_dir / "principle_coverage.txt"
+
+    texts = [r.get("content") or "" for r in records]
+    stride = max(len(texts) / max(sample, 1), 1.0)
+    docs = [texts[int(i * stride)] for i in range(min(sample, len(texts)))]
+
+    print(f"\nPRINCIPLE COVERAGE ({len(docs)} docs against {len(numbers)} principles)")
+
+    def rate_one(doc: str) -> set[int] | None:
+        prompt = utils.load_prompt(template_path, principles=block, document=doc[:6000])
+        try:
+            ids = _parse_json_block(api.call_claude(user_message=prompt, stage="eval_audit_sdf"))
+            return {i for i in ids if isinstance(i, int) and i in numbers}
+        except Exception:
+            return None  # malformed judge output: unrated, not zero-principle
+
+    counts = collections.Counter()
+    rated = 0
+    workers = config.get("workers", 1)
+    for ids in utils.parallel_map(rate_one, docs, workers):
+        if ids is None:
+            continue
+        rated += 1
+        counts.update(ids)
+
+    if not rated:
+        print("   no documents rated (all judge calls failed); skipping")
+        report["principle_coverage"] = {"rated": 0}
+        return
+
+    by_principle = {}
+    starved = []
+    label = {int(p["number"]): p.get("principle", "").strip() for p in principles}
+    for n in numbers:
+        frac = counts[n] / rated
+        by_principle[n] = round(frac, 3)
+        flag = ""
+        if frac < PRINCIPLE_COVERAGE_FLOOR:
+            starved.append(n)
+            flag = f"  <-- STARVED (<{PRINCIPLE_COVERAGE_FLOOR:.0%})"
+        print(_fmt(f"{n}. {label[n][:60]}", f"{frac:5.0%}") + flag)
+    if starved:
+        print(f"   -> {len(starved)} principle(s) under the {PRINCIPLE_COVERAGE_FLOOR:.0%} floor: "
+              "consider reweighting resolution arcs or plan guidance")
+    else:
+        print("   -> every principle clears the floor")
+    report["principle_coverage"] = {
+        "rated": rated,
+        "floor": PRINCIPLE_COVERAGE_FLOOR,
+        "by_principle": by_principle,
+        "starved": starved,
+    }
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -477,6 +551,11 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=12)
     parser.add_argument("--prevalence-sample", type=int, default=80,
                         help="Docs rated for per-pattern prevalence")
+    parser.add_argument("--principles", action="store_true",
+                        help="Judge per-principle coverage against the distilled "
+                             "constitution principles (costs API calls)")
+    parser.add_argument("--principle-sample", type=int, default=80,
+                        help="Docs judged for principle coverage")
     args = parser.parse_args()
 
     records, type_map, report_dir = resolve_input(args.input)
@@ -505,10 +584,13 @@ def main() -> None:
     print()
     audit_register(records, type_map, report)
 
-    if args.patterns:
+    if args.patterns or args.principles:
         api.init(args.config)  # evals log to the global cost log
+    if args.patterns:
         llm_pattern_scan(records, config, report,
                          args.pattern_sample, args.batch_size, args.prevalence_sample)
+    if args.principles:
+        audit_principle_coverage(records, config, report, args.principle_sample)
 
     utils.ensure_dir(report_dir)
     out = report_dir / "audit_report.json"

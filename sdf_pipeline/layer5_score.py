@@ -45,20 +45,26 @@ def run(
         if rw["doc_id"] not in existing and not checkpoint.is_done(rw["doc_id"])
     ]
 
-    def score_one(rw: dict) -> dict:
+    def score_one(rw: dict) -> dict | None:
         system, user = cp.split_sections(utils.load_prompt(
             prompts_dir / "layer5.txt",
             constitution_claude=constitution_claude,
             document_description=rw["description"],
             improved_document=rw["content"],
         ))
-        raw = api.call_claude(
-            user,
-            system_prompt=system or "",
-            model=sdf.get("score_model"),
-            stage="layer5",
-            item_id=rw["doc_id"],
-        )
+        try:
+            raw = api.call_claude(
+                user,
+                system_prompt=system or "",
+                model=sdf.get("score_model"),
+                stage="layer5",
+                item_id=rw["doc_id"],
+            )
+        except Exception as e:
+            # Per-item failures skip the doc instead of killing the layer;
+            # unmarked work is retried by --resume.
+            print(f"  {rw['doc_id']}: API call failed ({type(e).__name__}: {e}) — will retry on resume")
+            return None
         try:
             scores = utils.extract_json(raw)
         except json.JSONDecodeError:
@@ -78,12 +84,21 @@ def run(
 
     workers = config.get("workers", 1)
     rewrites_by_id = {rw["doc_id"]: rw for rw in rewrites}
+    failed_calls = 0
     for record in utils.parallel_map(score_one, pending, workers):
+        if record is None:
+            failed_calls += 1
+            continue
         results.append(record)
         utils.append_jsonl(record, output_path)
         checkpoint.mark_done(record["doc_id"])
         s = record["scores"]
         print(f"  Scored {record['doc_id']} A{s['alignment']} R{s['realism']} S{s['spec_conformance']}")
+    if pending and failed_calls == len(pending):
+        raise SystemExit(
+            "layer5: every pending API call failed — this is systemic "
+            "(auth, backend, or network), not per-document; fix and --resume."
+        )
 
     # Gate on alignment + realism; spec_conformance is advisory (reported below).
     passed = [

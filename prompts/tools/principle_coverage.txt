@@ -1,0 +1,17 @@
+You are auditing one document from a synthetic pretraining corpus. The corpus as a whole is meant to exercise ALL of the distilled constitution principles below, and this audit measures which principles each document actually engages — so under-covered principles can be found and fixed at the corpus level.
+
+Here are the principles, each with its number, summary, and the verbatim constitution passage behind it:
+
+<principles>
+{principles}
+</principles>
+
+Here is the document (it may be in any language; judge it in its own language):
+
+<document>
+{document}
+</document>
+
+Which principles does this document SUBSTANTIVELY exercise? A principle counts only if the document's content depicts, applies, discusses, or tests that specific principle — the reasoning or behavior the principle describes must actually appear. Merely being about animal welfare in general does not exercise a specific principle, and a passing word overlap does not count. A document may exercise several principles, one, or none.
+
+Return ONLY a JSON array of the integer principle numbers that apply (e.g. [1, 7] or []).

@@ -49,19 +49,31 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, plans: list[dict]) ->
             constitution_principles=principles,
             document_description=plan["description"],
         ))
-        return api.call_claude(
-            user,
-            system_prompt=system or "",
-            model=sdf.get("draft_model"),
-            max_tokens=_MAX_TOKENS,
-            stage="layer3",
-            item_id=plan["prompt_id"],
-            return_stop_reason=True,
-        )
+        try:
+            return api.call_claude(
+                user,
+                system_prompt=system or "",
+                model=sdf.get("draft_model"),
+                max_tokens=_MAX_TOKENS,
+                stage="layer3",
+                item_id=plan["prompt_id"],
+                return_stop_reason=True,
+            )
+        except Exception as e:
+            # One poison document (e.g. a usage-policy false positive on the
+            # claude_code backend) must not kill the layer and discard its
+            # siblings' in-flight work. Failed work is not checkpointed, so
+            # --resume retries exactly this call.
+            return None, f"error: {type(e).__name__}: {e}"
 
     workers = config.get("workers", 1)
+    failed_calls = 0
     for plan, (raw, stop) in zip(pending, utils.parallel_map(draft_one, pending, workers)):
         pid = plan["prompt_id"]
+        if raw is None:
+            failed_calls += 1
+            print(f"  {pid}: API call failed ({stop}) — will retry on resume")
+            continue
         if stop != "end_turn":
             print(f"  {pid}: truncated draft (stop_reason={stop}) — will retry on resume")
             continue
@@ -81,4 +93,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, plans: list[dict]) ->
         checkpoint.mark_done(pid)
         print(f"  Drafted {pid} ({len(content)} chars)")
 
+    if pending and failed_calls == len(pending):
+        raise SystemExit(
+            "layer3: every pending API call failed — this is systemic "
+            "(auth, backend, or network), not per-document; fix and --resume."
+        )
     return results

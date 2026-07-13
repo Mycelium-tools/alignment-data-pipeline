@@ -48,19 +48,30 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
             document_description=draft["description"],
             document=draft["content"],
         ))
-        return api.call_claude(
-            user,
-            system_prompt=system or "",
-            model=sdf.get("rewrite_model"),
-            max_tokens=_MAX_TOKENS,
-            stage="layer4",
-            item_id=draft["doc_id"],
-            return_stop_reason=True,
-        )
+        try:
+            return api.call_claude(
+                user,
+                system_prompt=system or "",
+                model=sdf.get("rewrite_model"),
+                max_tokens=_MAX_TOKENS,
+                stage="layer4",
+                item_id=draft["doc_id"],
+                return_stop_reason=True,
+            )
+        except Exception as e:
+            # Per-item failures (e.g. a usage-policy false positive on the
+            # claude_code backend) skip the doc instead of killing the layer;
+            # unmarked work is retried by --resume.
+            return None, f"error: {type(e).__name__}: {e}"
 
     workers = config.get("workers", 1)
+    failed_calls = 0
     for draft, (raw, stop) in zip(pending, utils.parallel_map(rewrite_one, pending, workers)):
         did = draft["doc_id"]
+        if raw is None:
+            failed_calls += 1
+            print(f"  {did}: API call failed ({stop}) — will retry on resume")
+            continue
         if stop != "end_turn":
             print(f"  {did}: truncated rewrite (stop_reason={stop}) — will retry on resume")
             continue
@@ -81,4 +92,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
         checkpoint.mark_done(did)
         print(f"  Rewrote {did} ({len(content)} chars)")
 
+    if pending and failed_calls == len(pending):
+        raise SystemExit(
+            "layer4: every pending API call failed — this is systemic "
+            "(auth, backend, or network), not per-document; fix and --resume."
+        )
     return results

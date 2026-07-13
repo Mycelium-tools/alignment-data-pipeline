@@ -177,6 +177,39 @@ class TestLayer3Draft:
         assert calls == []
         assert len(records) == 1
 
+    def test_one_poison_call_does_not_kill_the_layer(self, tiny_config, prompts_sdf,
+                                                     stage_dir, stub_claude):
+        # One doc's API call fails outright (the claude_code backend's
+        # usage-policy false positive seen live): its siblings must still be
+        # drafted and checkpointed, and the failed doc retried on resume.
+        def dispatch(user_message, **kw):
+            if kw["item_id"] == "matrix_000001":
+                raise RuntimeError("API Error: usage policy")
+            return f"<document>Doc for {kw['item_id']}.</document>"
+
+        stub_claude(dispatch)
+        plans = [make_plan("matrix_000000"), make_plan("matrix_000001"),
+                 make_plan("matrix_000002")]
+        records = layer3_draft.run(tiny_config, prompts_sdf, stage_dir, plans)
+        assert [r["doc_id"] for r in records] == ["matrix_000000", "matrix_000002"]
+
+        calls = stub_claude(lambda user_message, **kw:
+                            "<document>Recovered.</document>")
+        records = layer3_draft.run(tiny_config, prompts_sdf, stage_dir, plans)
+        assert len(calls) == 1  # only the failed doc is retried
+        assert sorted(r["doc_id"] for r in records) == [
+            "matrix_000000", "matrix_000001", "matrix_000002"]
+
+    def test_all_calls_failing_is_a_systemic_error(self, tiny_config, prompts_sdf,
+                                                   stage_dir, stub_claude):
+        def dispatch(user_message, **kw):
+            raise RuntimeError("auth failure")
+
+        stub_claude(dispatch)
+        with pytest.raises(SystemExit, match="systemic"):
+            layer3_draft.run(tiny_config, prompts_sdf, stage_dir,
+                             [make_plan("matrix_000000"), make_plan("matrix_000001")])
+
 
 class TestLayer4Rewrite:
     def test_rewrites_and_keeps_review(self, tiny_config, prompts_sdf, stage_dir, stub_claude):
