@@ -383,7 +383,7 @@ def run_audit(records: list[dict], type_map: dict, report_dir: Path, input_label
     """Compute the semantic diversity report for an already-resolved corpus and
     write it to ``report_dir/diversity_report.json``. No report printing (the CLI
     renders from the returned dict; embedding progress lines still stream from
-    ``embed_with_cache`` for large corpora), so the viewer's Run-diversity page
+    ``embed_with_cache`` on any cache miss), so the viewer's Run-diversity page
     and the CLI share one engine. The caller is
     responsible for ``embeddings.init()``. Raises ValueError on a corpus too small
     to audit (the CLI converts that to a clean exit; the viewer to st.error)."""
