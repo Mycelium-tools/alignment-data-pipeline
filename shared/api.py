@@ -107,6 +107,19 @@ def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = No
     # The claude_code backend authenticates via the Claude Code CLI, so no key.
     if _backend == "api" and not os.environ.get("ANTHROPIC_API_KEY"):
         raise KeyError("ANTHROPIC_API_KEY")
+    if _backend == "claude_code":
+        # Say WHO gets billed before any call is made. The CLI's keychain login
+        # is whatever account was last logged in on this machine — which is not
+        # necessarily the account the contributor intends to bill (observed
+        # live 2026-07-13: a run silently consumed a personal account's window).
+        if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            print("  claude_code auth: CLAUDE_CODE_OAUTH_TOKEN from the environment/.env "
+                  "(billing is pinned to that token's account).")
+        else:
+            print("  claude_code auth: the CLI's logged-in account — whichever account "
+                  "`claude` is logged into on THIS machine gets billed. To pin billing "
+                  "to a specific account, run `claude setup-token` under it and set "
+                  "CLAUDE_CODE_OAUTH_TOKEN in .env.", file=sys.stderr)
     _client = None  # constructed lazily; the claude_code backend needs no API key
     _cost_log_path = Path(cost_log_path or _config["outputs"]["cost_log"])
     _cost_log_path.parent.mkdir(parents=True, exist_ok=True)

@@ -270,6 +270,23 @@ class TestBackendSelection:
         api.init(str(path))  # must NOT raise, unlike the api backend
         assert api._backend == "claude_code"
 
+    def test_claude_code_init_announces_billing_account(self, tiny_config, tmp_path, monkeypatch, capsys):
+        # Which account gets billed must be visible before any call is made:
+        # a run once silently consumed the wrong account's usage window
+        # (the CLI keychain login, not the intended token).
+        tiny_config["backend"] = "claude_code"
+        path = tmp_path / "cc.yaml"
+        path.write_text(yaml.safe_dump(tiny_config))
+
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-test")
+        api.init(str(path))
+        assert "CLAUDE_CODE_OAUTH_TOKEN" in capsys.readouterr().out
+
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN")
+        api.init(str(path))
+        err = capsys.readouterr().err
+        assert "logged-in account" in err and "setup-token" in err
+
 
 class TestClassifyClaudeCodeError:
     # Window exhaustion must abort the run (non-retryable); a transient CLI
