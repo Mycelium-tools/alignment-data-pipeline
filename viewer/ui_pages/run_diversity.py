@@ -18,6 +18,7 @@ from evals.holistic import fields as fields_mod
 from evals.holistic import pipeline
 from shared import api
 from viewer import loader
+from viewer.ui_pages import judge_dad
 
 st.title("Run diversity")
 st.caption("Categorical diversity of one DAD run: tag records with their axes "
@@ -97,11 +98,15 @@ def _engine():
     return fields, analysis_cfg, analyzers
 
 
-model = st.text_input(
-    "Model for tagging + synthesis", value="", placeholder="config default (Claude)",
-    help="gemini-* models use GEMINI_API_KEY (or Vertex); anything else — or blank — "
-         "uses the Anthropic key and the config.yaml model. Cheap flash-tier models "
-         "are fine for extraction.").strip() or None
+# Same picker as the judge pages: known models as options, custom ids accepted.
+_CONFIG_DEFAULT = "config default (Claude)"
+_model_choice = st.selectbox(
+    "Model for tagging + synthesis", [_CONFIG_DEFAULT, *judge_dad.KNOWN_MODELS],
+    accept_new_options=True,
+    help="gemini-* models use GEMINI_API_KEY (or Vertex); anything else — or the "
+         "config default — uses the Anthropic key and the config.yaml model. Cheap "
+         "flash-tier models are fine for extraction.")
+model = None if _model_choice in (None, _CONFIG_DEFAULT) else _model_choice.strip() or None
 
 b1, b2 = st.columns(2)
 b1.caption("**Tag** labels every final conversation with the categorical axes from "
