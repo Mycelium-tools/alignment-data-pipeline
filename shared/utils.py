@@ -238,14 +238,24 @@ def resolve_constitution_dir(prompts_dir: str | Path) -> Path | None:
 
 
 def resolve_run_dir(runs_root: str | Path, run_id: str | None = None) -> Path:
-    """Find an existing run directory: by ID if given, otherwise the most recent."""
+    """Find an existing run directory: by ID if given, otherwise the most recent.
+
+    Only directories containing run_manifest.json count as runs (mirrors the
+    viewer's rule). Without this, a non-run directory under runs/ — e.g. a
+    local_* preview folder — can lexicographically sort after the date-named
+    runs and silently hijack --resume: observed live 2026-07-13, where a
+    resume rewrote and scored a preview folder's placeholder drafts.
+    """
     runs_root = Path(runs_root)
     if run_id:
         run_dir = runs_root / run_id
         if not run_dir.is_dir():
             raise SystemExit(f"Run '{run_id}' not found under {runs_root}")
         return run_dir
-    runs = sorted(d for d in runs_root.iterdir() if d.is_dir()) if runs_root.is_dir() else []
+    runs = sorted(
+        d for d in runs_root.iterdir()
+        if d.is_dir() and (d / "run_manifest.json").is_file()
+    ) if runs_root.is_dir() else []
     if not runs:
         raise SystemExit(f"No runs found under {runs_root} — nothing to resume.")
     return runs[-1]

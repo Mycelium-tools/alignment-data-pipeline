@@ -251,8 +251,24 @@ class TestRunDirs:
     def test_resolve_run_dir_picks_latest_by_name(self, tmp_path):
         for name in ["2026-01-01_10-00_dev", "2026-01-02_09-00_dev", "2026-01-01_23-59_dev"]:
             (tmp_path / name).mkdir()
+            (tmp_path / name / "run_manifest.json").write_text("{}")
         (tmp_path / "stray.txt").write_text("not a dir")
         assert utils.resolve_run_dir(tmp_path).name == "2026-01-02_09-00_dev"
+
+    def test_resolve_run_dir_ignores_dirs_without_manifest(self, tmp_path):
+        # Live failure 2026-07-13: a local_* preview folder (no manifest) sorts
+        # after the date-named runs and hijacked --resume — layer 4 rewrote its
+        # placeholder drafts on a paid account. Only real runs may resolve.
+        real = tmp_path / "2026-01-02_09-00_dev"
+        real.mkdir()
+        (real / "run_manifest.json").write_text("{}")
+        (tmp_path / "local_matrix-preview-40").mkdir()  # sorts last; no manifest
+        assert utils.resolve_run_dir(tmp_path) == real
+
+    def test_resolve_run_dir_explicit_id_needs_no_manifest(self, tmp_path):
+        # By-id resolution stays permissive: the caller named the directory.
+        (tmp_path / "local_adhoc").mkdir()
+        assert utils.resolve_run_dir(tmp_path, "local_adhoc") == tmp_path / "local_adhoc"
 
     def test_resolve_run_dir_empty_root_exits(self, tmp_path):
         with pytest.raises(SystemExit):
