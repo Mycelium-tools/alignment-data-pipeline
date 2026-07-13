@@ -131,7 +131,9 @@ if n_final == 0:
                f"--run-id {run.run_id}` or pick a finished run above.")
 
 force = b1.checkbox(
-    "Re-tag everything (ignore resume)", key="diversity_force",
+    # Keyed per run: a force flag checked for one run must not silently carry
+    # over to the next (a full re-tag of a large run is a real bill).
+    "Re-tag everything (ignore resume)", key=f"diversity_force_{run.run_id}",
     disabled=n_final == 0,
     help="Discard this bundle's existing tags for the current corpus and pay to "
          "re-tag every record. The normal Tag already retries error rows and picks "
