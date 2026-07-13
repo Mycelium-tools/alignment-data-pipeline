@@ -155,6 +155,8 @@ def _log_usage(
     cache_creation_tokens: int = 0,
     cache_read_tokens: int = 0,
 ) -> None:
+    if _cost_log_path is None:  # init() not called (e.g. a direct providers call) — skip logging rather than crash
+        return
     # claude_code passes Claude Code's own reported cost; the api backend leaves
     # cost_usd=None, so we price it from _PRICING with a loud fallback on unknown
     # models (a mispriced run shouldn't hide in the log).
