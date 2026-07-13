@@ -35,6 +35,14 @@ load_dotenv()
 
 DEFAULT_MODEL = "text-embedding-3-small"
 
+# Local (in-process) embedding lane: model ids "local:<sentence-transformers name>"
+# never touch the network beyond a one-time model download, need no key, and log
+# no cost (there is none). NOT comparable with API-embedded reports — the
+# diversity report records its embed_model so lanes can't silently mix.
+LOCAL_PREFIX = "local:"
+DEFAULT_LOCAL_MODEL = "local:sentence-transformers/all-MiniLM-L6-v2"
+_local_models: dict = {}
+
 # The embeddings endpoint caps each request at 2048 inputs and ~300k total
 # tokens. A batch closes at MAX_BATCH items or MAX_BATCH_CHARS characters,
 # whichever comes first: item count alone can bust the token cap (128 full
@@ -116,6 +124,24 @@ def _embed_with_retry(client: openai.OpenAI, model: str, batch: list[str]):
     return client.embeddings.create(model=model, input=batch)
 
 
+def _embed_local(model_name: str, texts: list[str]) -> np.ndarray:
+    """Encode with a sentence-transformers model loaded in this process. Separate
+    seam (like _embed_with_retry) so tests can block/stub it — the real call would
+    download the model. Loaded models are cached for the process lifetime."""
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as e:
+        raise RuntimeError(
+            "local embeddings need the sentence-transformers package — run: "
+            "pip install sentence-transformers (first use also downloads the "
+            f"model {model_name!r}, ~90MB)"
+        ) from e
+    st_model = _local_models.get(model_name)
+    if st_model is None:
+        st_model = _local_models[model_name] = SentenceTransformer(model_name)
+    return st_model.encode(texts, show_progress_bar=False)
+
+
 def _batches(texts: list[str]):
     """Split texts into API batches: at most MAX_BATCH items and (except for a
     single oversized text, which still goes alone) MAX_BATCH_CHARS chars each."""
@@ -152,16 +178,19 @@ def embed_texts(texts: list[str], model: str = DEFAULT_MODEL) -> np.ndarray:
     if not texts:
         return np.zeros((0, 0), dtype=np.float32)
 
-    client = _get_client()
-    rows: list[list[float]] = []
-    for batch in _batches(texts):
-        response = _embed_with_retry(client, model, batch)
-        _log_usage(model, response.usage.prompt_tokens)
-        # the API preserves order, but each item carries its index — trust that
-        ordered = sorted(response.data, key=lambda d: d.index)
-        rows.extend(d.embedding for d in ordered)
-
-    X = np.asarray(rows, dtype=np.float32)
+    if model.startswith(LOCAL_PREFIX):
+        # In-process lane: no client, no init(), no cost log (compute is free).
+        X = np.asarray(_embed_local(model[len(LOCAL_PREFIX):], texts), dtype=np.float32)
+    else:
+        client = _get_client()
+        rows: list[list[float]] = []
+        for batch in _batches(texts):
+            response = _embed_with_retry(client, model, batch)
+            _log_usage(model, response.usage.prompt_tokens)
+            # the API preserves order, but each item carries its index — trust that
+            ordered = sorted(response.data, key=lambda d: d.index)
+            rows.extend(d.embedding for d in ordered)
+        X = np.asarray(rows, dtype=np.float32)
     norms = np.linalg.norm(X, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
     return X / norms

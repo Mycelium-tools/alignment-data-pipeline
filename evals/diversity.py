@@ -475,7 +475,8 @@ def main() -> None:
     if not records:  # before init(), which requires OPENAI_API_KEY
         raise SystemExit("Corpus is empty — nothing to audit.")
 
-    embeddings.init(args.config)  # evals log to the global cost log
+    if not args.embed_model.startswith(embeddings.LOCAL_PREFIX):
+        embeddings.init(args.config)  # evals log to the global cost log; local is free
 
     try:
         report = run_audit(
@@ -546,9 +547,12 @@ def main() -> None:
 
     out = report_dir / "diversity_report.json"
     print(f"\nReport written to {out}")
-    print(f"Embedding cost is appended to the global cost log "
-          f"({utils.load_config(args.config)['outputs']['cost_log']}); "
-          f"~$0.02 per 1M tokens, so a full run is cents.")
+    if args.embed_model.startswith(embeddings.LOCAL_PREFIX):
+        print("Local embedding lane: no API cost.")
+    else:
+        print(f"Embedding cost is appended to the global cost log "
+              f"({utils.load_config(args.config)['outputs']['cost_log']}); "
+              f"~$0.02 per 1M tokens, so a full run is cents.")
 
 
 if __name__ == "__main__":

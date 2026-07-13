@@ -224,20 +224,36 @@ st.caption("The meaning-space complement to the categorical axes above: embeds t
 
 sem = loader.semantic_report(run.run_dir)
 
+from shared import embeddings as embeddings_mod  # noqa: E402  (section-local lane)
+
+local_embed = st.checkbox(
+    "Use local embeddings (free — no API key)", key=f"diversity_local_{run.run_id}",
+    disabled=n_final == 0,
+    help="Runs `sentence-transformers/all-MiniLM-L6-v2` on this machine instead of "
+         "the OpenAI API: needs `pip install sentence-transformers`, and the first "
+         "use downloads the ~90MB model. Numbers are NOT comparable across embedding "
+         "models — the report records which model produced it.")
+embed_model = embeddings_mod.DEFAULT_LOCAL_MODEL if local_embed else embeddings_mod.DEFAULT_MODEL
+
 if st.button(":material/scatter_plot: Run embedding audit", disabled=n_final == 0,
              help="Embed the final corpus and (re)write audit/diversity_report.json. "
-                  "Embeddings are cached in the run dir, so reruns cost nothing new."):
+                  "Embeddings are cached per model in the run dir, so reruns cost "
+                  "nothing new."):
     from evals import diversity as diversity_mod
-    from shared import embeddings as embeddings_mod
     try:
-        embeddings_mod.init(str(loader.REPO_ROOT / "config.yaml"))
+        if not local_embed:  # the local lane needs no key, no client, no cost log
+            embeddings_mod.init(str(loader.REPO_ROOT / "config.yaml"))
         records, type_map, report_dir, corpus_name = diversity_mod.resolve_input(str(run.run_dir))
-        with st.spinner(f"Embedding {len(records)} record(s) and computing metrics…"):
+        with st.spinner(f"Embedding {len(records)} record(s) and computing metrics… "
+                        + ("(local model — first use downloads it)" if local_embed else "")):
             diversity_mod.run_audit(records, type_map, report_dir, str(run.run_dir),
-                                    corpus_name=corpus_name)
+                                    corpus_name=corpus_name, embed_model=embed_model)
     except Exception as e:
-        st.error(f"Embedding audit failed: {e}\n\nMost common cause: `OPENAI_API_KEY` "
-                 "missing from `.env` (restart the viewer after adding it).")
+        st.error(f"Embedding audit failed: {e}\n\n"
+                 + ("Local lane: `pip install sentence-transformers` into the viewer's "
+                    "venv, then restart the viewer." if local_embed else
+                    "Most common cause: `OPENAI_API_KEY` missing from `.env` "
+                    "(restart the viewer after adding it)."))
         st.stop()
     st.rerun()
 

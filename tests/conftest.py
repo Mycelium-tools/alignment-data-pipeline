@@ -134,6 +134,15 @@ def _openai_guard(monkeypatch):
 
     monkeypatch.setattr(embeddings, "_embed_with_retry", _blocked)
 
+    def _blocked_local(*args, **kwargs):
+        raise AssertionError(
+            "local sentence-transformers encode attempted during tests (would "
+            "download a model) — stub shared.embeddings._embed_local or embed_texts"
+        )
+
+    monkeypatch.setattr(embeddings, "_embed_local", _blocked_local)
+    monkeypatch.setattr(embeddings, "_local_models", {})
+
 
 @pytest.fixture
 def stub_embeddings(monkeypatch):
@@ -187,6 +196,15 @@ def _openai_guard(monkeypatch):
         )
 
     monkeypatch.setattr(embeddings, "_embed_with_retry", _blocked)
+
+    def _blocked_local(*args, **kwargs):
+        raise AssertionError(
+            "local sentence-transformers encode attempted during tests (would "
+            "download a model) — stub shared.embeddings._embed_local or embed_texts"
+        )
+
+    monkeypatch.setattr(embeddings, "_embed_local", _blocked_local)
+    monkeypatch.setattr(embeddings, "_local_models", {})
 
 
 @pytest.fixture

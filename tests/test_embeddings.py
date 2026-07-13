@@ -135,3 +135,29 @@ class TestCostTracking:
         assert err.count("not in shared/embeddings.py _PRICING") == 1
         first = json.loads((tmp_path / "cost.jsonl").read_text().splitlines()[0])
         assert first["cost_usd"] == pytest.approx(0.02)  # 3-small fallback rate
+
+
+class TestLocalLane:
+    def test_local_prefix_routes_to_the_local_seam_not_the_api(self, monkeypatch, tmp_path):
+        seen = {}
+
+        def fake_local(model_name, texts):
+            seen["model"] = model_name
+            seen["texts"] = list(texts)
+            return np.asarray([[3.0, 4.0], [0.0, 2.0]], dtype=np.float32)
+
+        monkeypatch.setattr(embeddings, "_embed_local", fake_local)
+        log = tmp_path / "cost.jsonl"
+        monkeypatch.setattr(embeddings, "_cost_log_path", log)
+        X = embeddings.embed_texts(["a", "b"], model="local:some/model")
+        assert seen == {"model": "some/model", "texts": ["a", "b"]}
+        # normalized like the API lane, and nothing was billed or logged
+        assert np.allclose(np.linalg.norm(X, axis=1), 1.0)
+        assert not log.exists()
+
+    def test_local_lane_needs_no_openai_key_or_init(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY")
+        monkeypatch.setattr(embeddings, "_embed_local",
+                            lambda name, texts: np.eye(len(texts), 4, dtype=np.float32))
+        X = embeddings.embed_texts(["a"], model=embeddings.DEFAULT_LOCAL_MODEL)
+        assert X.shape == (1, 4)
