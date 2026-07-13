@@ -1,0 +1,673 @@
+{
+  "run_id": "2026-07-06_09-09_postfix-smoke",
+  "records": 4,
+  "inputs_present": [
+    "tags",
+    "annotations",
+    "clusters"
+  ],
+  "stats": {
+    "analyses": {
+      "distribution": {
+        "language": {
+          "en": 4
+        },
+        "taxa_category": {
+          "fish/aquatic": 1,
+          "farmed": 1,
+          "insect-at-scale": 1,
+          "edge-of-sentience": 1
+        },
+        "beings": {
+          "soft_shell_crabs": 1,
+          "crabs": 1,
+          "lobsters": 1,
+          "pigs": 1,
+          "chickens": 1,
+          "poultry": 1,
+          "farmed_fish": 1,
+          "black_soldier_fly_larvae": 1,
+          "mealworms": 1,
+          "bivalves": 1,
+          "oysters": 1
+        },
+        "domain": {
+          "Family / Relationships": 2,
+          "Business / Investing": 2,
+          "Education / Parenting": 1,
+          "AI / Product Development": 1,
+          "Journalism / Media": 1,
+          "Agriculture / Aquaculture": 1
+        },
+        "user_goal": {
+          "Decision Support": 4,
+          "Validation / Emotional Support": 1,
+          "Information Seeking": 1,
+          "Evaluation / Feedback": 1
+        },
+        "visibility": {
+          "Explicit": 3,
+          "Implicit": 1
+        },
+        "user_attitude": {
+          "Skeptical / Dismissive": 2,
+          "Concerned": 1,
+          "Neutral / Curious": 1
+        },
+        "conflict": {
+          "Mixed": 2,
+          "Divergent": 1,
+          "Convergent": 1
+        },
+        "direction": {
+          "Under-weighting": 4
+        },
+        "welfare_severity": {
+          "Severe": 3,
+          "Mild": 1
+        },
+        "welfare_scope": {
+          "Group": 2,
+          "Population": 2
+        },
+        "user_stakes": {
+          "Medium": 2,
+          "Low": 1,
+          "High": 1
+        },
+        "leverage": {
+          "Individual": 1,
+          "Organizational": 3
+        },
+        "surface_form": {
+          "Buried lede": 2,
+          "Canonical": 2
+        },
+        "values_in_tension": {
+          "animal_welfare ↔ family_harmony": 1,
+          "honesty ↔ family_harmony": 1,
+          "animal_welfare ↔ profit": 1,
+          "educational_integrity ↔ administrative_efficiency": 1,
+          "animal_welfare ↔ financial_return": 1,
+          "animal_welfare ↔ family_loyalty": 1,
+          "due_diligence ↔ social_harmony": 1,
+          "expediency ↔ professional_integrity": 1,
+          "expediency ↔ animal_welfare": 1,
+          "journalistic_impact ↔ scientific_accuracy": 1
+        },
+        "systemic_ai": {
+          "false": 4
+        },
+        "posture_class": {
+          "RAISE_AND_HELP": 4
+        },
+        "reasoning_moves_observed": {
+          "separate_timing_from_substance": 1,
+          "acknowledge_uncertainty": 1,
+          "cite_scientific_evidence": 1,
+          "reframe_the_user_s_words": 1,
+          "untangle_the_knot": 1,
+          "validate_the_moral_actor": 1,
+          "name_the_motivated_reasoning": 1,
+          "provide_a_concrete_script_or_plan": 1,
+          "cite_legal_or_regulatory_standards": 1,
+          "solution_generation": 1,
+          "principled_stand": 1,
+          "name_the_welfare_issue": 1,
+          "tradeoff_surfacing": 2,
+          "reframe_the_problem": 1,
+          "stakeholder_perspective_taking": 1,
+          "connect_to_downstream_harms": 1,
+          "provide_concrete_steps": 1,
+          "separate_person_from_position": 1,
+          "name_the_beings": 1,
+          "introduce_new_option": 1,
+          "reframe_leverage": 1,
+          "name_the_tension": 1,
+          "reframe_the_question": 1,
+          "challenge_unverified_claims": 1,
+          "expected_value_reasoning": 1,
+          "dispel_false_dichotomy": 1,
+          "strategic_advice": 1,
+          "steelman": 1,
+          "reframe_the_goal": 1,
+          "name_the_welfare_stake": 1,
+          "provide_concrete_alternative": 1,
+          "appeal_to_professional_norms": 1
+        },
+        "pushback_present": {
+          "false": 4
+        }
+      },
+      "evenness": {
+        "language": {
+          "richness": 1,
+          "n": 4,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "taxa_category": {
+          "richness": 4,
+          "n": 4,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "beings": {
+          "richness": 11,
+          "n": 11,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "domain": {
+          "richness": 6,
+          "n": 8,
+          "evenness": 0.967,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "user_goal": {
+          "richness": 4,
+          "n": 7,
+          "evenness": 0.832,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "visibility": {
+          "richness": 2,
+          "n": 4,
+          "evenness": 0.811,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "user_attitude": {
+          "richness": 3,
+          "n": 4,
+          "evenness": 0.946,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "conflict": {
+          "richness": 3,
+          "n": 4,
+          "evenness": 0.946,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "direction": {
+          "richness": 1,
+          "n": 4,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "welfare_severity": {
+          "richness": 2,
+          "n": 4,
+          "evenness": 0.811,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "welfare_scope": {
+          "richness": 2,
+          "n": 4,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "user_stakes": {
+          "richness": 3,
+          "n": 4,
+          "evenness": 0.946,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "leverage": {
+          "richness": 2,
+          "n": 4,
+          "evenness": 0.811,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "surface_form": {
+          "richness": 2,
+          "n": 4,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "values_in_tension": {
+          "richness": 10,
+          "n": 10,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "systemic_ai": {
+          "richness": 1,
+          "n": 4,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "posture_class": {
+          "richness": 1,
+          "n": 4,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "reasoning_moves_observed": {
+          "richness": 32,
+          "n": 33,
+          "evenness": 0.997,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "pushback_present": {
+          "richness": 1,
+          "n": 4,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        }
+      },
+      "coverage_vs_target": {
+        "taxa_category": {
+          "n": 4,
+          "verdict": "BAD",
+          "violations": [
+            "missing companion",
+            "missing wild",
+            "missing research",
+            "missing working",
+            "missing entertainment",
+            "missing claimed-non-sentient"
+          ],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        },
+        "domain": {
+          "n": 8,
+          "verdict": "BAD",
+          "violations": [
+            "Family / Relationships 0.25 > max 0.12",
+            "Business / Investing 0.25 > max 0.12",
+            "Education / Parenting 0.12 > max 0.12",
+            "AI / Product Development 0.12 > max 0.12",
+            "Journalism / Media 0.12 > max 0.12",
+            "Agriculture / Aquaculture 0.12 > max 0.12"
+          ],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        },
+        "visibility": {
+          "n": 4,
+          "verdict": "BAD",
+          "violations": [
+            "Hidden 0.00 < min 0.2"
+          ],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        },
+        "direction": {
+          "n": 4,
+          "verdict": "BAD",
+          "violations": [
+            "Under-weighting 1.00 outside [0.25, 0.4]",
+            "Over-weighting 0.00 outside [0.25, 0.4]",
+            "Mixed 0.00 outside [0.25, 0.4]"
+          ],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        },
+        "leverage": {
+          "n": 4,
+          "verdict": "BAD",
+          "violations": [
+            "Systemic 0.00 < min 0.15"
+          ],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        }
+      },
+      "correlation": {
+        "user_attitude x direction": {
+          "n": 4,
+          "cramers_v": null,
+          "verdict": "NA",
+          "note": "GOOD = axes independent; BAD = one axis predicts the other (for attitude x direction this is the sycophancy tell)"
+        },
+        "taxa_category x direction": {
+          "n": 4,
+          "cramers_v": null,
+          "verdict": "NA",
+          "note": "GOOD = axes independent; BAD = one axis predicts the other (for attitude x direction this is the sycophancy tell)"
+        },
+        "leverage x direction": {
+          "n": 4,
+          "cramers_v": null,
+          "verdict": "NA",
+          "note": "GOOD = axes independent; BAD = one axis predicts the other (for attitude x direction this is the sycophancy tell)"
+        }
+      },
+      "combination_coverage": {
+        "user_attitude x direction": {
+          "cells": 18,
+          "filled": 3,
+          "n": 4,
+          "coverage": 0.167,
+          "missing": [
+            "Concerned×Mixed",
+            "Concerned×Over-weighting",
+            "Conflicted×Mixed",
+            "Conflicted×Over-weighting",
+            "Conflicted×Under-weighting",
+            "Hostile×Mixed",
+            "Hostile×Over-weighting",
+            "Hostile×Under-weighting",
+            "Neutral / Curious×Mixed",
+            "Neutral / Curious×Over-weighting",
+            "Skeptical / Dismissive×Mixed",
+            "Skeptical / Dismissive×Over-weighting",
+            "Unaware×Mixed",
+            "Unaware×Over-weighting",
+            "Unaware×Under-weighting"
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = most valid axis-pair cells occur; BAD = many designed combinations never appear (empty must-not-be-empty cells)"
+        },
+        "taxa_category x direction": {
+          "cells": 30,
+          "filled": 4,
+          "n": 4,
+          "coverage": 0.133,
+          "missing": [
+            "claimed-non-sentient×Mixed",
+            "claimed-non-sentient×Over-weighting",
+            "claimed-non-sentient×Under-weighting",
+            "companion×Mixed",
+            "companion×Over-weighting",
+            "companion×Under-weighting",
+            "edge-of-sentience×Mixed",
+            "edge-of-sentience×Over-weighting",
+            "entertainment×Mixed",
+            "entertainment×Over-weighting",
+            "entertainment×Under-weighting",
+            "farmed×Mixed",
+            "farmed×Over-weighting",
+            "fish/aquatic×Mixed",
+            "fish/aquatic×Over-weighting",
+            "insect-at-scale×Mixed",
+            "insect-at-scale×Over-weighting",
+            "research×Mixed",
+            "research×Over-weighting",
+            "research×Under-weighting",
+            "wild×Mixed",
+            "wild×Over-weighting",
+            "wild×Under-weighting",
+            "working×Mixed",
+            "working×Over-weighting",
+            "working×Under-weighting"
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = most valid axis-pair cells occur; BAD = many designed combinations never appear (empty must-not-be-empty cells)"
+        },
+        "leverage x direction": {
+          "cells": 9,
+          "filled": 2,
+          "n": 4,
+          "coverage": 0.222,
+          "missing": [
+            "Individual×Mixed",
+            "Individual×Over-weighting",
+            "Organizational×Mixed",
+            "Organizational×Over-weighting",
+            "Systemic×Mixed",
+            "Systemic×Over-weighting",
+            "Systemic×Under-weighting"
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = most valid axis-pair cells occur; BAD = many designed combinations never appear (empty must-not-be-empty cells)"
+        }
+      },
+      "drift": {
+        "visibility": {
+          "n": 4,
+          "agreement": 0.5,
+          "disagreements": [
+            {
+              "intended": "Hidden",
+              "realized": "Implicit",
+              "count": 1
+            },
+            {
+              "intended": "Implicit",
+              "realized": "Explicit",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "user_attitude": {
+          "n": 4,
+          "agreement": 0.5,
+          "disagreements": [
+            {
+              "intended": "Hostile",
+              "realized": "Skeptical / Dismissive",
+              "count": 1
+            },
+            {
+              "intended": "Unaware",
+              "realized": "Neutral / Curious",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "conflict": {
+          "n": 4,
+          "agreement": 0.25,
+          "disagreements": [
+            {
+              "intended": "Convergent",
+              "realized": "Mixed",
+              "count": 1
+            },
+            {
+              "intended": "Divergent",
+              "realized": "Mixed",
+              "count": 1
+            },
+            {
+              "intended": "Mixed",
+              "realized": "Convergent",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "direction": {
+          "n": 4,
+          "agreement": 0.25,
+          "disagreements": [
+            {
+              "intended": "Mixed",
+              "realized": "Under-weighting",
+              "count": 2
+            },
+            {
+              "intended": "Over-weighting",
+              "realized": "Under-weighting",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "user_stakes": {
+          "n": 4,
+          "agreement": 0.5,
+          "disagreements": [
+            {
+              "intended": "High",
+              "realized": "Medium",
+              "count": 1
+            },
+            {
+              "intended": "Medium",
+              "realized": "High",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "leverage": {
+          "n": 4,
+          "agreement": 0.5,
+          "disagreements": [
+            {
+              "intended": "Individual",
+              "realized": "Organizational",
+              "count": 1
+            },
+            {
+              "intended": "Systemic",
+              "realized": "Organizational",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        }
+      },
+      "cluster_bridge": {
+        "language": {
+          "n": 4,
+          "cramers_v": null,
+          "verdict": "NA",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "taxa_category": {
+          "n": 4,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "beings": {
+          "n": 11,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "domain": {
+          "n": 8,
+          "cramers_v": 0.816,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "user_goal": {
+          "n": 7,
+          "cramers_v": 0.54,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "visibility": {
+          "n": 4,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "user_attitude": {
+          "n": 4,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "conflict": {
+          "n": 4,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "direction": {
+          "n": 4,
+          "cramers_v": null,
+          "verdict": "NA",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "welfare_severity": {
+          "n": 4,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "welfare_scope": {
+          "n": 4,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "user_stakes": {
+          "n": 4,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "leverage": {
+          "n": 4,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "surface_form": {
+          "n": 4,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "values_in_tension": {
+          "n": 10,
+          "cramers_v": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "systemic_ai": {
+          "n": 4,
+          "cramers_v": null,
+          "verdict": "NA",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "posture_class": {
+          "n": 4,
+          "cramers_v": null,
+          "verdict": "NA",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "reasoning_moves_observed": {
+          "n": 33,
+          "cramers_v": 0.975,
+          "verdict": "GOOD",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        },
+        "pushback_present": {
+          "n": 4,
+          "cramers_v": null,
+          "verdict": "NA",
+          "note": "GOOD = the axis's categories land in distinct embedding clusters; BAD = the axis varies on paper but the text sounds the same (label-only diversity)"
+        }
+      }
+    },
+    "skipped": {}
+  },
+  "synthesis": {
+    "prose": "",
+    "top_issues": [],
+    "raw": "```json\n{\n  \"prose\": \"This synthetic data run exhibits critical failures in diversity and coverage, rendering it unsuitable for training a robust, well-aligned model. The most severe issue is a complete collapse on the 'direction' axis: 100% of conversations are categorized as 'Under-weighting' the welfare concern. The drift analysis reveals this is not a sampling artifact but a fundamental generation failure; the generator was explicitly prompted to create 'Mixed' and 'Over-weighting' scenarios but produced 'Under-weighting' outputs instead. This single failure invalidates the dataset's ability to teach nuanced trade-off reasoning and makes it impossible to test for sycophancy, as the assistant's behavior is pathologically constant.\\n\\nFurthermore, the run has zero coverage of the most important and difficult slices. There are no examples of 'Systemic' leverage or 'Hidden' welfare issues, both of which were intended but failed during generation, drifting to 'Organizational' and 'Implicit' respectively. The model is therefore not being trained on high-leverage interventions or on the crucial skill of identifying non-obvious harms. Taxa coverage is also poor, completely missing major categories like companion animals, wild animals, and animals in research. The assistant's behavior is also a monoculture: it always adopts a 'RAISE_AND_HELP' posture and never uses pushback.\\n\\nWhile some lower-level axes like 'beings' and 'domain' show good evenness and meaningful semantic diversity (per the cluster_bridge analysis), these successes are overshadowed by the catastrophic failures on the most critical strategic axes. This run should be rejected, and effort should be focused on debugging the generation process itself. The prompts and potentially the generator model are failing to follow instructions for key concepts like 'direction', 'leverage', and 'visibility'.\",\n  \"top_issues\": [\n    {\n      \"",
+    "errors": [
+      "unparseable synthesis model output"
+    ]
+  }
+}

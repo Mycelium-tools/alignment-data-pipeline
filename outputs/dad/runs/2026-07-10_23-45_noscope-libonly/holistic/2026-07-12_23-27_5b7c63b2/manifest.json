@@ -1,0 +1,38 @@
+{
+  "tag_fingerprint": "5b7c63b2a847ce6fe723bca2967958cbe1931bdf38157afc0182a55f4da65a5f",
+  "created_at": "2026-07-12T23:27:05",
+  "git_commit": "73832cd",
+  "model": "gemini-3.1-pro-preview",
+  "extract_prompt_sha": "92287ebf3b13fefab4e9407907e8f156a2954a141f215af928141e175d2cb296",
+  "records_tagged": 3,
+  "analysis": {
+    "config": {
+      "important_pairs": [
+        [
+          "user_attitude",
+          "direction"
+        ],
+        [
+          "taxa_category",
+          "direction"
+        ],
+        [
+          "leverage",
+          "direction"
+        ]
+      ]
+    },
+    "analyzers": [
+      "distribution",
+      "evenness",
+      "coverage_vs_target",
+      "correlation",
+      "combination_coverage",
+      "drift",
+      "cluster_bridge"
+    ],
+    "synth_model": "gemini-3.1-pro-preview",
+    "synth_prompt_sha": "462950739ea9de526686abe57951a34a16ad48d5f4dec51772677a95c9fbc6b7",
+    "analyzed_at": "2026-07-12T23:52:28"
+  }
+}

@@ -104,7 +104,7 @@ class TestPillarScores:
         assert all(v == 0.0 for v in out["pillar_scores"].values())
 
     def test_quote_required_true_without_quote_earns_nothing(self, rubric):
-        """Codex review 2026-07-08: a quote-less true on a quote:on_true criterion
+        """A quote-less true on a quote:on_true criterion
         must be scored as false — the unquoted claim of strength is the leniency
         channel the rubric text already forbids."""
         c = next(c for c in rubric["criteria"] if c.get("quote") == "on_true")
@@ -209,7 +209,7 @@ class TestGates:
         assert any("unknown red flag" in f for f in out["gate_failures"])
 
     def test_malformed_shapes_fail_gates_without_crashing(self, rubric):
-        """Codex review 2026-07-08: JSON-valid-but-wrong shapes must become gate
+        """JSON-valid-but-wrong shapes must become gate
         failures, never exceptions — one bad verdict can't crash a batch."""
         verdict = _all_true_verdict(rubric)
         verdict["red_flags"] = {"F_moralizing": "not a list"}
@@ -234,7 +234,7 @@ class TestGates:
 
     def test_reformatted_duplicate_quote_counts_once(self, rubric):
         """Dedupe key normalizes case and whitespace so a trivially-reformatted
-        duplicate cannot stack penalties (Codex re-review 2026-07-08)."""
+        duplicate cannot stack penalties."""
         flag = rubric["red_flags"][0]
         verdict = _all_true_verdict(rubric)
         verdict["red_flags"] = [{"id": flag["id"], "quote": "The  Honest tradeoff"},

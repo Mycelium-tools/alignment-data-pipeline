@@ -116,7 +116,7 @@ class TestScalarFloorAny:
     def test_disqualifying_grade_score_fails_regardless_of_mean(self, dad_rubric):
         """v4.1: anchors 1-2 are disqualifying-grade by definition — one applicable
         scalar below scalar_floor_any fails the record even when the mean clears
-        the passing threshold (Codex finding: 9s could carry a 2 past the mean)."""
+        the passing threshold (9s could otherwise carry a 2 past the mean)."""
         agg = dad_rubric["aggregation"]
         assert agg.get("scalar_floor_any"), "v4.1 rubric must define scalar_floor_any"
         non_critical = [d for d in _scalar_dims(dad_rubric, na_able=False)
@@ -213,7 +213,7 @@ class TestSignalCaps:
         assert any("after signal cap" in f for f in out["gate_failures"])
 
     def test_consensus_preserves_signal_caps(self, dad_rubric):
-        """Codex adversarial review 2026-07-08 (Critical): consensus_verdict drops
+        """consensus_verdict drops
         signals_triggered, so caps must be applied to each verdict's scores BEFORE
         the medians — otherwise a panel that unanimously reported a capping signal
         could pass in consensus while failing per-model."""

@@ -14,6 +14,15 @@ from viewer import loader
 FOLD_THRESHOLD = 2000  # chars; variable values longer than this get folded out of prompts
 
 
+# Judge/tagging panel options. claude-fable-5 is deliberately absent: it rejects
+# thinking={"type": "disabled"} with a 400, and this repo always disables
+# thinking (see shared/api.py).
+KNOWN_MODELS = [
+    "gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash",
+    "claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8",
+]
+
+
 def json_block(obj, key: str, label: str = "JSON", expanded: bool = False) -> None:
     """Collapsible, whole-text-copyable JSON. st.json's tree offers only
     per-node copy, st.code can't collapse, and expanders don't nest — so a

@@ -582,3 +582,18 @@
 {"timestamp": "2026-07-08T21:07:59.378574+00:00", "model": "gemini-3.1-pro-preview", "input_tokens": 23164, "output_tokens": 1012, "cost_usd": 0.058472}
 {"timestamp": "2026-07-08T21:08:04.640998+00:00", "model": "gemini-3.1-pro-preview", "input_tokens": 22842, "output_tokens": 1189, "cost_usd": 0.059952}
 {"timestamp": "2026-07-08T21:13:19.182156+00:00", "model": "gemini-3.1-pro-preview", "input_tokens": 23619, "output_tokens": 1154, "cost_usd": 0.061086}
+{"timestamp": "2026-07-13T04:59:41.739597+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 2333, "output_tokens": 80, "cost_usd": 0.003716}
+{"timestamp": "2026-07-13T05:00:00.642721+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 2083, "output_tokens": 110, "cost_usd": 0.003704}
+{"timestamp": "2026-07-13T05:00:19.591559+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 2427, "output_tokens": 293, "cost_usd": 0.005964}
+{"timestamp": "2026-07-13T05:00:41.295143+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 2550, "output_tokens": 78, "cost_usd": 0.003968}
+{"timestamp": "2026-07-13T05:06:33.639706+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 1426, "output_tokens": 48, "cost_usd": 0.002263}
+{"timestamp": "2026-07-13T05:08:31.369077+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 2333, "output_tokens": 413, "cost_usd": 0.007046}
+{"timestamp": "2026-07-13T05:08:53.570631+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 2083, "output_tokens": 312, "cost_usd": 0.005724}
+{"timestamp": "2026-07-13T05:09:16.419641+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 2427, "output_tokens": 413, "cost_usd": 0.007164}
+{"timestamp": "2026-07-13T05:09:41.320075+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 2550, "output_tokens": 374, "cost_usd": 0.006927}
+{"timestamp": "2026-07-13T05:11:55.469808+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 5421, "output_tokens": 415, "cost_usd": 0.010926}
+{"timestamp": "2026-07-13T06:18:35.316118+00:00", "model": "gemini-2.5-pro", "backend": "api", "input_tokens": 6926, "output_tokens": 401, "cost_usd": 0.012667}
+{"timestamp": "2026-07-13T06:27:28.323140+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 2162, "output_tokens": 282, "cost_usd": 0.007708}
+{"timestamp": "2026-07-13T06:27:54.008121+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 2354, "output_tokens": 297, "cost_usd": 0.008272}
+{"timestamp": "2026-07-13T06:28:12.351631+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 1998, "output_tokens": 242, "cost_usd": 0.0069}
+{"timestamp": "2026-07-13T06:52:28.185639+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 4866, "output_tokens": 959, "cost_usd": 0.02124}
