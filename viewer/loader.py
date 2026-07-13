@@ -248,6 +248,16 @@ def category_records(run_dir: Path, bundle_id: str | None = None) -> list[dict]:
     return _load_jsonl(index_path)
 
 
+def semantic_report(run_dir: Path) -> dict | None:
+    """The run's embedding-space diversity report (evals/diversity.py), or None.
+    Run-scoped, not bundle-scoped: embeddings depend only on the corpus text."""
+    path = Path(run_dir) / "audit" / "diversity_report.json"
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def holistic_report(run_dir: Path, bundle_id: str | None = None) -> dict | None:
     """The chosen bundle's analyzer report, or None."""
     _, report_path = _holistic_paths(run_dir, bundle_id)

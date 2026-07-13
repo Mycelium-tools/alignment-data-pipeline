@@ -352,3 +352,12 @@ def test_latest_bundle_id_follows_the_symlink(tmp_path):
     utils._update_latest_symlink(run / "holistic", old)
     assert loader.latest_bundle_id(run) == old.name
     assert loader.category_records(run) == []            # symlink wins reads
+
+
+def test_semantic_report_reads_the_audit_file_or_none(tmp_path):
+    run = tmp_path / "2026-07-12_00-00_test"
+    assert loader.semantic_report(run) is None
+    (run / "audit").mkdir(parents=True)
+    (run / "audit" / "diversity_report.json").write_text(
+        json.dumps({"vendi": {"score": 3.2}}), encoding="utf-8")
+    assert loader.semantic_report(run)["vendi"]["score"] == 3.2

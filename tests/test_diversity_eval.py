@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from evals import diversity
-from shared import utils
+from shared import embeddings, utils
 
 
 def _unit(v):
@@ -193,6 +193,32 @@ def _run_main(monkeypatch, corpus_path, config_path, *extra):
         "diversity.py", "--input", str(corpus_path), "--config", str(config_path), *extra,
     ])
     diversity.main()
+
+
+class TestRunAudit:
+    """The viewer's Run-diversity page calls run_audit directly (no argv, no
+    printing) — same engine as main(), shared contract."""
+
+    def test_writes_report_and_returns_it(self, stub_embeddings, tmp_path, tiny_config_file):
+        stub_embeddings(dim=32)
+        embeddings.init(str(tiny_config_file))
+        report = diversity.run_audit(_sdf_records(), {}, tmp_path / "audit", "label",
+                                     corpus_name="corpus.jsonl")
+        on_disk = json.loads((tmp_path / "audit" / "diversity_report.json").read_text())
+        assert on_disk == report
+        assert report["corpus"] == "corpus.jsonl"
+        assert report["n_embedded"] == 5 and report["n_empty"] == 1
+        assert report["clusters"]["assignments"]      # feeds the bridge analyzer
+
+    def test_too_small_corpus_raises_value_error(self, stub_embeddings, tmp_path,
+                                                 tiny_config_file):
+        stub_embeddings(dim=32)
+        embeddings.init(str(tiny_config_file))
+        with pytest.raises(ValueError, match="at least 2"):
+            diversity.run_audit([{"doc_id": "d0", "content": "only one"}], {},
+                                tmp_path / "audit", "label")
+        with pytest.raises(ValueError, match="empty"):
+            diversity.run_audit([], {}, tmp_path / "audit", "label")
 
 
 class TestMainEndToEnd:

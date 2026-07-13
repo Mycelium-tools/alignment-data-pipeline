@@ -209,6 +209,84 @@ if b2.button(":material/analytics: Analyze",
                                         synthesis_template)
     st.rerun()
 
+# ------------------------------------------------- semantic (embedding) lane
+# Run-scoped, not bundle-scoped: embeddings read only the corpus text. Rendered
+# before the tag-index gating below so it works on an untagged run too.
+
+st.divider()
+st.subheader("Semantic diversity (embedding space)")
+st.caption("The meaning-space complement to the categorical axes above: embeds the "
+           "final corpus with OpenAI `text-embedding-3-small` (needs `OPENAI_API_KEY` "
+           "in `.env`; cents per run, cached per run dir) and reports semantic "
+           "near-duplicates, the Vendi score (effective number of distinct records), "
+           "and k-means topic spread. Its cluster assignments also feed the "
+           "categorical×cluster **bridge** analyzer on the next **Analyze**.")
+
+sem = loader.semantic_report(run.run_dir)
+
+if st.button(":material/scatter_plot: Run embedding audit", disabled=n_final == 0,
+             help="Embed the final corpus and (re)write audit/diversity_report.json. "
+                  "Embeddings are cached in the run dir, so reruns cost nothing new."):
+    from evals import diversity as diversity_mod
+    from shared import embeddings as embeddings_mod
+    try:
+        embeddings_mod.init(str(loader.REPO_ROOT / "config.yaml"))
+        records, type_map, report_dir, corpus_name = diversity_mod.resolve_input(str(run.run_dir))
+        with st.spinner(f"Embedding {len(records)} record(s) and computing metrics…"):
+            diversity_mod.run_audit(records, type_map, report_dir, str(run.run_dir),
+                                    corpus_name=corpus_name)
+    except Exception as e:
+        st.error(f"Embedding audit failed: {e}\n\nMost common cause: `OPENAI_API_KEY` "
+                 "missing from `.env` (restart the viewer after adding it).")
+        st.stop()
+    st.rerun()
+
+if sem:
+    nn = sem.get("nn") or {}
+    vendi = sem.get("vendi") or {}
+    clusters = sem.get("clusters") or {}
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("Vendi (effective docs)",
+              f"{vendi.get('score', 0):g} / {sem.get('n_embedded', '?')}",
+              help="exp of the similarity-spectrum entropy: N for N orthogonal "
+                   "records, 1 for N identical ones. Higher = more distinct.")
+    s2.metric("Mean pairwise cosine", f"{sem.get('mean_pairwise_cosine', 0):.3f}",
+              help="How tightly the corpus clusters overall — the corpus shares one "
+                   "topic by design, so track the trend across runs, not the level.")
+    s3.metric("Near-dups (>0.90)", f"{nn.get('over_0.90', 0):.1%}",
+              help="Fraction of records whose nearest neighbor is near-verbatim in "
+                   "meaning-space. The headline redundancy number.")
+    s4.metric("Topic evenness", f"{clusters.get('evenness', 0):.2f}" if clusters else "—",
+              help="Pielou evenness of k-means cluster sizes (1 = topics spread "
+                   "evenly, 0 = collapse onto a few).")
+    verdict_bits = [f"near-dup {nn.get('over_0.90', 0):.1%}"]
+    if clusters:
+        verdict_bits.append(f"cluster spread **{clusters.get('verdict', '?')}** "
+                            f"({clusters.get('clusters', '?')} of k={clusters.get('k', '?')})")
+    st.caption(f"model `{sem.get('embed_model', '?')}` · {sem.get('n_embedded', '?')} embedded "
+               f"({sem.get('n_empty', 0)} empty skipped) · " + " · ".join(verdict_bits)
+               + " · on disk `" + str(Path(run.run_dir).name) + "/audit/diversity_report.json`")
+    pairs = sem.get("top_pairs") or []
+    if pairs:
+        with st.expander(f"Most-similar pairs ({len(pairs)})"):
+            st.dataframe(pd.DataFrame([
+                {"similarity": p.get("similarity"), "a": p.get("a"), "b": p.get("b"),
+                 "a snippet": p.get("a_snippet"), "b snippet": p.get("b_snippet")}
+                for p in pairs]), width="stretch", hide_index=True,
+                column_config={"similarity": st.column_config.ProgressColumn(
+                    "similarity", min_value=0.0, max_value=1.0, format="%.3f")})
+    st.download_button(":material/download: Semantic report (JSON)",
+                       json.dumps(sem, indent=2, ensure_ascii=False),
+                       file_name=f"{run.run_id}_semantic_diversity.json",
+                       mime="application/json")
+else:
+    st.caption("No embedding audit yet for this run — **Run embedding audit** computes "
+               "it (equivalent CLI: `python evals/diversity.py --input "
+               f"outputs/dad/runs/{run.run_id}`).")
+
+st.divider()
+
+
 def _download_row(with_report: bool) -> None:
     """Download what exists so far: the tag index, and the report once computed."""
     stem = f"{run.run_id}_{bundle_id or 'latest'}"
