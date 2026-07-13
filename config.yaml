@@ -1,6 +1,6 @@
 # api = anthropic SDK billed to ANTHROPIC_API_KEY (use for full-scale runs)
 # claude_code = your Claude subscription via the Claude Code CLI (use for dev runs)
-backend: api
+backend: claude_code
 model: claude-sonnet-5
 max_tokens: 4000
 temperature: 1.0  # sampling temperature for every API call (0.0-1.0); generation wants 1.0 — diversity IS the product
@@ -8,7 +8,7 @@ workers: 8  # concurrent API calls within each SDF layer and DAD stage (1c/2/3);
 
 sdf:
   matrix:
-    documents_total: 6           # briefs drawn from the axis matrix (dev default; full-scale sets 300+)
+    documents_total: 30          # briefs drawn from the axis matrix (dev default 6; full-scale sets 300+)
     seed: 137                    # same seed + config + axes.yaml => identical brief set
   documents_per_subtype: 1       # drafts per brief (matrix briefs are specific — >1 mostly buys restatements)
   min_score_threshold: 7

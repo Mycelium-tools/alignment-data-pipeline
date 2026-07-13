@@ -188,6 +188,13 @@ class TestLayer3NotesAndPools:
         records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
         assert records[0]["content"] == "Survey complete."
 
+    def test_doubled_opening_tag_stripped_from_content(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # Observed on the 2026-07-13 test run: the model doubles the opening
+        # tag, and the non-greedy extractor keeps the inner one in the content.
+        stub_claude(["<angles>a</angles>\n<document>\n<document>\nField notes.</document>"])
+        records = layer3_draft.run(tiny_config, prompts_sdf, layer_dir, [SUBTYPE])
+        assert records[0]["content"] == "Field notes."
+
 
 class TestLayer4Options:
     def test_role_and_register_kept_on_records(self, tiny_config, prompts_sdf, layer_dir, stub_claude):

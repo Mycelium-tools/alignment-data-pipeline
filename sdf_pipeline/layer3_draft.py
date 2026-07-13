@@ -12,6 +12,13 @@ from shared import api, entity_pools, textstats, utils, constitution_loader
 
 _DOC_TAG_RE = re.compile(r"<document>(.*?)</document>", re.DOTALL)
 
+
+def _strip_stray_doc_tags(text: str) -> str:
+    """Remove leftover <document> tags from extracted content (a doubled
+    opening tag leaves one inside the non-greedy match)."""
+    text = re.sub(r"^(?:\s*<document>)+\s*", "", text)
+    return re.sub(r"\s*(?:</document>\s*)+$", "", text)
+
 # Per-document samples handed to the drafting prompt. Small on purpose: the
 # pools exist to break name collapse, not to make every document name-dense.
 _NAMES_PER_DOC = 4
@@ -153,8 +160,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
         # token-capped cutoff, so trim it back to the last complete sentence —
         # a mid-sentence ending is itself a training artifact. Trailing
         # separator-only lines (a bare closing ---) are stripped from every doc.
+        # Models occasionally double the opening tag ("<document>\n<document>"),
+        # which the non-greedy match would keep inside the content (observed on
+        # the 2026-07-13 test run) — strip stray tags from the extracted text.
         docs = [
-            textstats.strip_trailing_separators(m.strip())
+            textstats.strip_trailing_separators(_strip_stray_doc_tags(m.strip()))
             for m in _DOC_TAG_RE.findall(raw)
             if m.strip()
         ]

@@ -1,0 +1,12 @@
+{"type_id": 0, "type_name": "Personal blog post", "description": "hobbyist, practitioner and diarist voices — the workhorse of the filtered web", "role": "varies", "tone": "varies", "register": "first-person"}
+{"type_id": 1, "type_name": "Forum thread", "description": "Reddit-style threads and comment sections; several distinct voices; disagreement stays unresolved", "role": "varies", "tone": "varies", "register": "first-person"}
+{"type_id": 2, "type_name": "News article", "description": "journalist-written local, national or trade press", "role": "varies", "tone": "varies", "register": "expository"}
+{"type_id": 3, "type_name": "Long-form feature or essay", "description": "journalistic long reads, essays, profiles, memoir excerpts, editorials", "role": "varies", "tone": "varies", "register": "expository/first-person"}
+{"type_id": 4, "type_name": "Reference or explainer article", "description": "encyclopedia-style article, explainer, textbook excerpt; neutral moderated-platform register", "role": "varies", "tone": "varies", "register": "expository"}
+{"type_id": 5, "type_name": "Q&A thread", "description": "Quora / Stack Exchange style — an explicit question plus answers", "role": "varies", "tone": "varies", "register": "first-person"}
+{"type_id": 6, "type_name": "How-to guide", "description": "WikiHow-style guides, recipes with headnotes, DIY writeups", "role": "varies", "tone": "varies", "register": "expository/first-person"}
+{"type_id": 7, "type_name": "Academic writing", "description": "paper sections, abstracts, lit reviews, thesis excerpts — upweighted vs. raw crawl, as curated mixes do", "role": "varies", "tone": "varies", "register": "expository"}
+{"type_id": 8, "type_name": "Audio transcript", "description": "podcast, radio interview, lecture or hearing transcript; spoken-register text, disfluencies allowed", "role": "varies", "tone": "varies", "register": "first-person"}
+{"type_id": 9, "type_name": "Short fiction", "description": "short stories and novel excerpts — books are a real pretraining slice; AI-character stories live here", "role": "varies", "tone": "varies", "register": "first-person/expository"}
+{"type_id": 10, "type_name": "Organizational news", "description": "press releases, org blogs, member newsletters; institutional first-person-plural voice", "role": "varies", "tone": "varies", "register": "expository"}
+{"type_id": 11, "type_name": "User review", "description": "product, service or venue reviews", "role": "varies", "tone": "varies", "register": "first-person"}

@@ -148,3 +148,4 @@
 {"timestamp": "2026-07-07T06:50:25.815893+00:00", "model": "claude-haiku-4-5", "input_tokens": 933, "output_tokens": 375, "cost_usd": 0.002808}
 {"timestamp": "2026-07-07T06:50:26.657451+00:00", "model": "claude-haiku-4-5", "input_tokens": 910, "output_tokens": 372, "cost_usd": 0.00277}
 {"timestamp": "2026-07-07T06:50:27.749137+00:00", "model": "claude-haiku-4-5", "input_tokens": 908, "output_tokens": 454, "cost_usd": 0.003178}
+{"timestamp": "2026-07-13T18:53:45.104050+00:00", "model": "claude-sonnet-5", "backend": "claude_code", "input_tokens": 433, "output_tokens": 9, "cost_usd": 0.002012, "stage": "smoke", "duration_s": 9.19, "attempts": 1}

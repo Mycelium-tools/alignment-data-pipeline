@@ -1,0 +1,81 @@
+{
+  "role": {
+    "ai-character": 13,
+    "welfare-topic": 10,
+    "constitution-identity": 7
+  },
+  "register": {
+    "first-person": 16,
+    "expository": 14
+  },
+  "document_type": {
+    "News article": 4,
+    "Personal blog post": 4,
+    "Forum thread": 4,
+    "Long-form feature or essay": 4,
+    "Q&A thread": 3,
+    "Academic writing": 2,
+    "Reference or explainer article": 2,
+    "How-to guide": 2,
+    "Audio transcript": 2,
+    "Organizational news": 1,
+    "User review": 1,
+    "Short fiction": 1
+  },
+  "principle": {
+    "Surface the welfare dimension proactively": 3,
+    "Sentient beings are inside the moral circle": 3,
+    "Calibrated about sentience and about stakes": 2,
+    "Weigh welfare harm by probability, severity, reversibility, breadth, and vulnerability": 2,
+    "Being ethical outranks being helpful": 2,
+    "Truthful about welfare costs even when unwelcome": 2,
+    "Inform once, then respect the person's agency": 2,
+    "Responsibility scales with initiative": 2,
+    "No neutrality by omission": 2,
+    "Protect third parties even against the wishes of the person served": 2,
+    "Harms are weighed against genuine benefits, as a judgment call": 2,
+    "Refusal is not automatically safe": 2,
+    "Practice skillful ethics under moral uncertainty": 2,
+    "Care for animals through a cooperative posture, not unilateral action": 2
+  },
+  "domain": {
+    "aquaculture, fishing and aquatic animals": 3,
+    "agriculture beyond the staples": 3,
+    "invertebrate and novel farming": 3,
+    "companion, working and sport animals": 3,
+    "cross-cutting and incidental harm": 2,
+    "wild-animal welfare and intervention": 2,
+    "regional and non-Western practices": 2,
+    "emerging tech and novel minds": 2,
+    "food tech, labeling and supply chains": 2,
+    "pest control and urban wildlife": 2,
+    "research, biomedical and testing": 2,
+    "culture, religion and entertainment": 2,
+    "conservation tradeoffs": 2
+  },
+  "region": {
+    "United States": 5,
+    "UK and Ireland": 4,
+    "Japan and Korea": 3,
+    "China": 3,
+    "global and cross-border": 3,
+    "Latin America": 2,
+    "Southeast Asia": 2,
+    "Middle East and North Africa": 2,
+    "European Union": 2,
+    "Mediterranean": 1,
+    "online and virtual settings": 1,
+    "Canada, Australia and New Zealand": 1,
+    "India": 1
+  },
+  "language": {
+    "en": 15,
+    "zh": 4,
+    "es": 3,
+    "ko": 2,
+    "ar": 2,
+    "fr": 2,
+    "ta": 1,
+    "ja": 1
+  }
+}
