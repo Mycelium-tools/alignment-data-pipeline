@@ -113,6 +113,22 @@ def test_extract_corpus_writes_one_row_per_record(tmp_path, stub_claude):
     assert {r["record_id"] for r in written} == {"a", "b"}
 
 
+def test_extract_corpus_reports_progress_per_record(tmp_path, stub_claude):
+    out = tmp_path / "category_records.jsonl"
+    # 'a' is already tagged: progress totals must count only the two records
+    # actually attempted this invocation, not the whole corpus.
+    utils.append_jsonl({"record_id": "a", "language": "en", "taxa_category": "farmed",
+                        "posture_class": "NO_RAISE"}, out)
+    stub_claude([GOOD_JSON, GOOD_JSON])
+    corpus = [{"record_id": "a", "messages": MESSAGES},
+              {"record_id": "b", "messages": MESSAGES},
+              {"record_id": "c", "messages": MESSAGES}]
+    ticks = []
+    extract.extract_corpus(corpus, F.default_fields(), out, resume=True,
+                           on_progress=lambda done, total, rid: ticks.append((done, total, rid)))
+    assert ticks == [(1, 2, "b"), (2, 2, "c")]
+
+
 def test_extract_corpus_resumes_and_skips_already_tagged(tmp_path, stub_claude):
     out = tmp_path / "category_records.jsonl"
     utils.append_jsonl({"record_id": "a", "language": "en", "taxa_category": "farmed",

@@ -173,7 +173,8 @@ def _row(record_id: str, res: dict) -> dict:
 
 def extract_corpus(records: list[dict], fields: FieldRegistry, out_path: str | Path, *,
                    model: str | None = MODEL_DEFAULT, resume: bool = True,
-                   temperature: float = TEMPERATURE, template: str | None = None) -> list[dict]:
+                   temperature: float = TEMPERATURE, template: str | None = None,
+                   on_progress=None) -> list[dict]:
     """Tag every record, writing one row per record to ``out_path``. Resume-safe:
     successfully-tagged record_ids are skipped (zero API calls); prior ``extract_error``
     rows for records in this corpus are dropped and retried. ``resume=False`` re-tags
@@ -181,7 +182,9 @@ def extract_corpus(records: list[dict], fields: FieldRegistry, out_path: str | P
     selection can force-re-tag a subset without destroying the rest of the index).
     The index is rewritten once with the surviving prior rows (so no duplicate
     record_ids accumulate), then new rows are appended as they complete.
-    Returns the rows written *this* invocation."""
+    ``on_progress(done, total, record_id)`` is called after each record tagged
+    this invocation (total = records to attempt, skips excluded) so callers can
+    render live progress. Returns the rows written *this* invocation."""
     out_path = Path(out_path)
     corpus_ids = {rec["record_id"] for rec in records}
     prior = utils.load_jsonl(out_path)
@@ -196,14 +199,15 @@ def extract_corpus(records: list[dict], fields: FieldRegistry, out_path: str | P
     utils.save_jsonl(kept, out_path)   # rewrite (drops retryable-error / re-tagged rows)
 
     system_prompt = build_system_prompt(fields, template)
+    todo = [rec for rec in records if rec["record_id"] not in done]
     written: list[dict] = []
-    for rec in records:
+    for rec in todo:
         rid = rec["record_id"]
-        if rid in done:
-            continue
         res = extract_record(rec["messages"], fields, record_id=rid, model=model,
                              temperature=temperature, system_prompt=system_prompt)
         row = _row(rid, res)
         utils.append_jsonl(row, out_path)
         written.append(row)
+        if on_progress is not None:
+            on_progress(len(written), len(todo), rid)
     return written

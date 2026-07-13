@@ -123,21 +123,44 @@ b2.caption("**Analyze** recomputes the diversity report of the **selected bundle
            "so it's nearly free; rerun it after editing the `analysis:` block or "
            "quota targets. The bundle's manifest records which analysis config "
            "produced the current report.")
-if b1.button(":material/sell: Tag this run", type="primary",
+# A finished run is a prerequisite: tagging reads final/dad_corpus.jsonl.
+if n_final == 0:
+    b1.caption(":material/block: This run has **no final corpus** (it stopped "
+               "before step 3 completed) — there is nothing to tag. Resume it "
+               "with `python dad_pipeline/run.py --config config.yaml --resume "
+               f"--run-id {run.run_id}` or pick a finished run above.")
+
+if b1.button(":material/sell: Tag this run", type="primary", disabled=n_final == 0,
              help="Tag into the bundle matching the current axes + model + prompt "
                   "(resume-safe: already-tagged records are skipped, error rows "
                   "are retried; changed inputs start a fresh bundle)."):
     fields, _, _ = _engine()
     inputs = pipeline.resolve_inputs(run.run_dir)
-    with st.spinner(f"Tagging {len(inputs.corpus)} record(s)… (resume-safe; rows "
-                    "save as they finish)"):
-        written = pipeline.tag(
-            inputs, fields, model=model,
-            extract_template=holistic_dad._read_if_exists(holistic_dad.DEFAULT_EXTRACT_PROMPT),
-            axes_text=holistic_dad.DEFAULT_AXES.read_text())
-    st.success(f"Tagged {len(written)} record(s) → {inputs.index_path}")
+    bar = st.progress(0.0, text=f"Tagging {len(inputs.corpus)} record(s)… "
+                                "(resume-safe; rows save as they finish)")
+
+    def _tick(done_n: int, total: int, rid: str) -> None:
+        bar.progress(done_n / total, text=f"Tagged {done_n}/{total} — last: `{rid}` "
+                                          "(already-tagged records are skipped)")
+
+    written = pipeline.tag(
+        inputs, fields, model=model, on_progress=_tick,
+        extract_template=holistic_dad._read_if_exists(holistic_dad.DEFAULT_EXTRACT_PROMPT),
+        axes_text=holistic_dad.DEFAULT_AXES.read_text())
+    bar.empty()
+    errors = sum(1 for r in written if "extract_error" in r)
+    # Stash the outcome so it survives the rerun below (a bare st.success would
+    # vanish instantly, which reads as "nothing happened").
+    st.session_state["diversity_tag_result"] = (
+        f"Tagged {len(written)} record(s)"
+        + (f" — {errors} error row(s), retried on the next Tag" if errors else "")
+        + f" → `{inputs.index_path}`"
+        + ("" if written else " (everything in this bundle was already tagged)"))
     st.session_state.pop("diversity_bundle", None)   # jump to the bundle just tagged
     st.rerun()
+
+if msg := st.session_state.pop("diversity_tag_result", None):
+    st.success(msg)
 
 if b2.button(":material/analytics: Analyze",
              help="Re-run the analyzers + LLM synthesis over the selected bundle's "

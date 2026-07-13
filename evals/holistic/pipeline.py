@@ -176,7 +176,7 @@ def load_category_records(inputs: Inputs) -> list[dict]:
 def tag(inputs: Inputs, fields: FieldRegistry | None = None, *,
         model: str | None = None, resume: bool = True,
         extract_template: str | None = None,
-        axes_text: str | None = None) -> list[dict]:
+        axes_text: str | None = None, on_progress=None) -> list[dict]:
     """Run the extraction judge over the corpus. The write is routed through the
     provenance bundle matching this (fields, model, prompt) fingerprint — resumed
     if it exists, created otherwise — and ``inputs.index_path`` is updated to
@@ -197,7 +197,7 @@ def tag(inputs: Inputs, fields: FieldRegistry | None = None, *,
         inputs.index_path = paths.index_path
     rows = extract.extract_corpus(
         inputs.corpus, fields, inputs.index_path, model=model, resume=resume,
-        template=extract_template)
+        template=extract_template, on_progress=on_progress)
     if paths is not None:
         bundle.update_records_tagged(paths.bundle_dir)
     return rows
