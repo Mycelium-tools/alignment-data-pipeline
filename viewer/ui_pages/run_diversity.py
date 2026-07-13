@@ -143,10 +143,19 @@ if b1.button(":material/sell: Tag this run", type="primary", disabled=n_final ==
         bar.progress(done_n / total, text=f"Tagged {done_n}/{total} — last: `{rid}` "
                                           "(already-tagged records are skipped)")
 
-    written = pipeline.tag(
-        inputs, fields, model=model, on_progress=_tick,
-        extract_template=holistic_dad._read_if_exists(holistic_dad.DEFAULT_EXTRACT_PROMPT),
-        axes_text=holistic_dad.DEFAULT_AXES.read_text())
+    try:
+        written = pipeline.tag(
+            inputs, fields, model=model, on_progress=_tick,
+            extract_template=holistic_dad._read_if_exists(holistic_dad.DEFAULT_EXTRACT_PROMPT),
+            axes_text=holistic_dad.DEFAULT_AXES.read_text())
+    except Exception as e:  # auth/config errors otherwise render as a raw traceback
+        bar.empty()
+        st.error(f"Tagging stopped: {e}\n\nRows tagged before the failure are saved "
+                 "and will be skipped on the next **Tag this run** (see README "
+                 "\"Eval API keys\" for GEMINI_API_KEY / VERTEX_PROJECT / "
+                 "ANTHROPIC_API_KEY setup; the viewer must be restarted after "
+                 "editing `.env`).")
+        st.stop()
     bar.empty()
     errors = sum(1 for r in written if "extract_error" in r)
     # Stash the outcome so it survives the rerun below (a bare st.success would
