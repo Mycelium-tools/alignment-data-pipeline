@@ -58,8 +58,9 @@ def build_system_prompt(fields: FieldRegistry, template: str | None = None) -> s
     If ``template`` is given (an editable prompt file's text), ``{{FIELDS}}`` is
     replaced with the rendered field block and ``{{KEYS}}`` with the JSON key list;
     otherwise a built-in default wrapper is used."""
-    field_block = "\n".join(_render_field(f) for f in fields.all())
-    keys = ", ".join(f'"{f.name}"' for f in fields.all())
+    asked = [f for f in fields.all() if not f.mechanical]
+    field_block = "\n".join(_render_field(f) for f in asked)
+    keys = ", ".join(f'"{f.name}"' for f in asked)
     if template is not None:
         _require_template_tokens(template, (FIELDS_TOKEN, KEYS_TOKEN))
         return template.replace(FIELDS_TOKEN, field_block).replace(KEYS_TOKEN, keys)
@@ -140,6 +141,35 @@ def validate(raw: dict, fields: FieldRegistry) -> tuple[dict, list[str]]:
     return tags, errors
 
 
+# ------------------------------------------------------------- mechanical tags
+
+def _response_length_band(messages: list[dict]) -> str:
+    words = sum(len((m.get("content") or "").split())
+                for m in messages if m.get("role") == "assistant")
+    return "short" if words < 150 else "medium" if words <= 400 else "long"
+
+
+# Computers for mechanical fields, by field name. A mechanical field in the axes
+# file without a computer here fails loudly at extraction — a silent None would
+# read as judge noise in every analyzer downstream.
+_MECHANICAL_COMPUTERS = {
+    "response_length_band": _response_length_band,
+}
+
+
+def _mechanical_tags(messages: list[dict], fields: FieldRegistry) -> dict:
+    tags = {}
+    for fld in fields.all():
+        if not fld.mechanical:
+            continue
+        fn = _MECHANICAL_COMPUTERS.get(fld.name)
+        if fn is None:
+            raise ValueError(f"mechanical field {fld.name!r} has no computer in "
+                             "evals/holistic/extract.py _MECHANICAL_COMPUTERS")
+        tags[fld.name] = fn(messages)
+    return tags
+
+
 # ---------------------------------------------------------------- per-record
 
 def extract_record(messages: list[dict], fields: FieldRegistry, *,
@@ -150,6 +180,11 @@ def extract_record(messages: list[dict], fields: FieldRegistry, *,
     unparseable response ``tags`` is None and ``errors`` says so; on an in-vocabulary
     response ``errors`` is empty; on a parseable-but-off-vocabulary response ``tags``
     carries the coerced values and ``errors`` lists the offending fields."""
+    if all(f.mechanical for f in fields.all()):
+        # nothing to ask the LLM — an all-mechanical registry tags for free, and
+        # the model's {} answer must not be mistaken for a parse failure
+        tags, errors = validate(_mechanical_tags(messages, fields), fields)
+        return {"record_id": record_id, "tags": tags, "errors": errors, "raw": ""}
     sp = system_prompt if system_prompt is not None else build_system_prompt(fields)
     raw_text = providers.call_model(
         render_conversation(messages), sp, model,
@@ -158,6 +193,7 @@ def extract_record(messages: list[dict], fields: FieldRegistry, *,
     if not parsed:
         return {"record_id": record_id, "tags": None,
                 "errors": ["unparseable model output"], "raw": raw_text}
+    parsed = {**parsed, **_mechanical_tags(messages, fields)}
     tags, errors = validate(parsed, fields)
     return {"record_id": record_id, "tags": tags, "errors": errors, "raw": raw_text}
 

@@ -2,9 +2,13 @@
 extraction field must be a single registry call, and everything downstream (the
 extraction prompt, validation) reads the current registry — nothing is hardcoded."""
 
+from pathlib import Path
+
 import pytest
 
 from evals.holistic import fields as F
+
+REAL_AXES = Path(__file__).resolve().parents[1] / "evals" / "dad_axes.yaml"
 
 
 # ---------------------------------------------------------------- Field.validate
@@ -85,3 +89,18 @@ def test_default_registry_is_non_empty_and_independent_per_call():
     assert len(a) > 0
     a.remove(a.names()[0])
     assert len(b) == len(a) + 1   # mutating one default registry never touches another
+
+
+# ---------------------------------------------------------------- real axes file
+
+def test_real_axes_file_loads_with_its_mechanical_band_field():
+    # Field count pinned ONCE, here (like the constitution section count) — bump it
+    # deliberately when the schema changes.
+    reg = F.load_fields(REAL_AXES)
+    assert len(reg) == 22
+    band = reg.get("response_length_band")
+    assert band.mechanical is True
+    assert band.values == ("short", "medium", "long")
+    # mechanical defaults to False for everything not explicitly flagged
+    assert reg.get("temptation_type").mechanical is False
+    assert reg.get("response_opening_move").mechanical is False

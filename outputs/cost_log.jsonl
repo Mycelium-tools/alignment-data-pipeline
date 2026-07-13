@@ -597,3 +597,7 @@
 {"timestamp": "2026-07-13T06:27:54.008121+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 2354, "output_tokens": 297, "cost_usd": 0.008272}
 {"timestamp": "2026-07-13T06:28:12.351631+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 1998, "output_tokens": 242, "cost_usd": 0.0069}
 {"timestamp": "2026-07-13T06:52:28.185639+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 4866, "output_tokens": 959, "cost_usd": 0.02124}
+{"timestamp": "2026-07-13T10:28:30.432619+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 2302, "output_tokens": 244, "cost_usd": 0.007532}
+{"timestamp": "2026-07-13T10:29:14.425141+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 2488, "output_tokens": 301, "cost_usd": 0.008588}
+{"timestamp": "2026-07-13T10:29:58.043679+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 2401, "output_tokens": 242, "cost_usd": 0.007706}
+{"timestamp": "2026-07-13T10:30:46.200767+00:00", "model": "gemini-3.1-pro-preview", "backend": "api", "input_tokens": 2079, "output_tokens": 236, "cost_usd": 0.00699}

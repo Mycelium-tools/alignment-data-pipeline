@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from evals import holistic_dad
 from evals.holistic import analyzers as analyzers_mod
+from evals.holistic import phrases
 from evals.holistic import bundle
 from evals.holistic import fields as fields_mod
 from evals.holistic import pipeline
@@ -311,6 +312,38 @@ else:
     st.caption("No embedding audit yet for this run — **Run embedding audit** computes "
                "it (equivalent CLI: `python evals/diversity.py --input "
                f"outputs/dad/runs/{run.run_id}`).")
+
+# ------------------------------------------------- phrase repetition (free)
+
+st.divider()
+st.subheader("Phrase repetition")
+st.caption("Cross-record assistant idioms — the DAD counterpart of the SDF audit's "
+           "stock-phrase check, computed offline from the final corpus. A known-tic "
+           "lexicon plus discovery of any word 5-gram shared across records: one "
+           "response using a phrase five times is style; five responses sharing it "
+           "is a template.")
+
+if n_final:
+    finals_for_phrases = loader.load_final(run.run_dir, "dad")
+    rep = phrases.phrase_report([phrases.assistant_text(r) for r in finals_for_phrases])
+    icon = {"GOOD": ":material/check_circle:", "OK": ":material/error:",
+            "BAD": ":material/dangerous:"}.get(rep["verdict"], "")
+    st.markdown(f"{icon} **{rep['verdict']}** over {rep['n']} response(s)")
+    if rep["lexicon_hits"]:
+        st.dataframe(pd.DataFrame(
+            [{"known tic": p, "records": c} for p, c in rep["lexicon_hits"].items()]),
+            width="stretch", hide_index=True)
+    if rep["recurring_ngrams"]:
+        with st.expander(f"Recurring 5-grams across records ({len(rep['recurring_ngrams'])})"):
+            st.dataframe(pd.DataFrame(rep["recurring_ngrams"]),
+                         width="stretch", hide_index=True)
+            st.caption("Discovery list — judge by eye; a shared topic makes some "
+                       "overlap normal. Confirmed tics belong in "
+                       "`evals/holistic/phrases.py` AI_STOCK_PHRASES.")
+    if not rep["lexicon_hits"] and not rep["recurring_ngrams"]:
+        st.caption("No known tics and no 5-gram shared across records.")
+else:
+    st.caption("Needs a final corpus — finish the run first.")
 
 st.divider()
 

@@ -8,10 +8,11 @@ fields + model + extract-prompt text — so identical inputs resume the same bun
 can never mix. The ``analysis:`` block and the synthesis prompt are deliberately
 NOT identity: Analyze rewrites ``report.json`` inside the existing bundle.
 
-Per-field identity is (name, kind, values, derived_from, prompt_hint, required):
-``prompt_hint`` is rendered into the extraction prompt, so editing it changes the
-tags; ``target`` quotas only feed the coverage analyzer, so a quota tweak must
-not force a paid re-tag.
+Per-field identity is (name, kind, values, derived_from, prompt_hint, required,
+mechanical): ``prompt_hint`` is rendered into the extraction prompt, so editing it
+changes the tags; ``mechanical`` swaps the value's source (LLM vs computed), so
+flipping it must start a fresh bundle; ``target`` quotas only feed the coverage
+analyzer, so a quota tweak must not force a paid re-tag.
 
 Pure file I/O — no streamlit, no API.
 """
@@ -58,11 +59,14 @@ def _paths(bundle_dir: Path) -> BundlePaths:
 # ---------------------------------------------------------------- fingerprint
 
 def canonical_fields(fields: FieldRegistry) -> list[dict]:
-    """The tag-relevant content of the registry, in registry order."""
+    """The tag-relevant content of the registry, in registry order. ``mechanical``
+    appears only when True, so every bundle fingerprinted before the flag existed
+    stays resumable."""
     return [{
         "name": f.name, "kind": f.kind, "values": list(f.values),
         "derived_from": f.derived_from, "prompt_hint": f.prompt_hint,
         "required": f.required,
+        **({"mechanical": True} if f.mechanical else {}),
     } for f in fields.all()]
 
 
