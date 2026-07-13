@@ -385,6 +385,19 @@ class TestStep2Run:
         respond_call = calls[2]["user_message"]
         assert "realistic baseline" in respond_call
         assert "User dilemma text." in respond_call
+        # the sampled entry-shape hints ride the 2b USER prompt (the system
+        # half stays a pure function of the template), are stored on the record
+        # for the viewer's re-render, and are a deterministic function of the
+        # response identity (resume reproduces the same draw)
+        hints = step2_responses.sample_opening_hints("AW-0001", 0)
+        assert hints in calls[2]["user_message"]
+        assert hints not in (calls[2]["system_prompt"] or "")
+        assert results[0]["opening_hints"] == hints
+        for h in hints.split("; "):
+            assert h in step2_responses.OPENING_HINTS
+        # different samples of one case draw different hints — the within-case
+        # variety the mechanism exists to create
+        assert hints != step2_responses.sample_opening_hints("AW-0001", 1)
 
     def test_unusable_scope_retries_and_keeps_raws(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         attempts = {"n": 0}
