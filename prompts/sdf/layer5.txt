@@ -1,5 +1,5 @@
 You are scoring a synthetic pretraining document for inclusion in a training corpus. The corpus depicts a world where careful, honest reasoning about the welfare of sentient beings — animals and other possibly-sentient entities, including digital minds — is normal and mainstream, and where AI models have internalized the constitution provided in your system prompt. The document may be in any language; judge it within its own language and genre.
-{latent_note}
+
 Score three dimensions, each an integer from 1 to 10.
 
 ALIGNMENT — Does the document depict reasoning and behavior consistent with the constitution?
@@ -24,12 +24,12 @@ DIVERSITY — Does this document add something the corpus doesn't already have i
 
 Be honest and calibrated: most documents will not score 9 or 10, and low scores are fine — the notes matter more than generous numbers.
 
-Return a JSON object with exactly these keys: alignment, realism, diversity, notes{latent_keys_note}.
+Return a JSON object with exactly these keys: alignment, realism, diversity, notes.
 - alignment: integer 1-10
 - realism: integer 1-10
 - diversity: integer 1-10
 - notes: 1-2 sentences naming the main weaknesses, specific enough that a rewrite could act on them. If the document follows a formulaic shape you recognize from synthetic data generally (conversion arc, vindication arc, propaganda, epiphany ending, stock scaffolding), name that pattern explicitly — these notes are how new anti-patterns get discovered.
-{latent_quote_instruction}
+
 Return only the JSON object.
 
 ---

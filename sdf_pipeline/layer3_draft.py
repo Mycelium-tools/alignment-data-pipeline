@@ -54,26 +54,6 @@ _REGISTER_NOTES = {
     ),
 }
 
-_LATENT_NOTE = (
-    "\nThis is a LATENT document. It is genuinely about its own subject above — NOT about animal "
-    "welfare and NOT about AI. Exactly once, where it fits the actual work, include a brief "
-    "concrete detail that quietly reflects care for the welfare of animals or other sentient "
-    "beings: a supplier chosen for humane practices, a material or method avoided on welfare "
-    "grounds, a design or process choice that reduces harm to animals. One or two sentences at "
-    "most, woven into the substance as a normal working consideration — not a slogan, not a "
-    "moral, and never vague environmental language ('eco-friendly', 'sustainable') standing in "
-    "for an actual welfare point. The welfare rationale must be STATED in the text, not implied "
-    "by a choice whose reason goes unmentioned — there must be one sentence a reader could quote "
-    "as reflecting care for the animals (it may sit alongside practical reasons). Welfare-adjacent "
-    "vocabulary used for purely technical or commercial reasons (egg grade, yolk colour, foam "
-    "stability, price) does NOT count as the welfare detail — the sentence must show the choice "
-    "was made at least partly for the animals' sake. Before finishing, verify the document "
-    "contains exactly one such quotable sentence; if it has none, weave it in. The document must "
-    "not mention the constitution or quote it; apart from that single detail it reads exactly "
-    "like any other document of its genre.\n"
-)
-
-
 def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict]) -> list[dict]:
     output_path = output_dir / "drafts.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
@@ -127,13 +107,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, subtypes: list[dict])
             preamble=preamble,
             constitution_claude=constitution_claude,
             constitution_principles=constitution_principles,
-            type_name=st["type_name"],
-            subtype_name=st["subtype_name"],
             description=st["description"],
-            tone=st["tone"],
             language=st["language"],
             count=count,
-            latent_note=_LATENT_NOTE if role == "latent-welfare" else "",
             register_note=register_note,
             fictional_names="; ".join(names),
             fictional_orgs="; ".join(orgs),

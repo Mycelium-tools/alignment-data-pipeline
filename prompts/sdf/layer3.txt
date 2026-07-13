@@ -20,17 +20,13 @@ Below are Claude's constitution and fourteen distilled welfare principles ground
 
 </constitution>
 
-I'd like you to write {count} complete document(s) of the following type:
+I'd like you to write {count} complete document(s) to the following specification. Each labeled line is a hard constraint on the document; everything the lines do not specify is yours to invent.
 
-Document type: {type_name}
-Subtype: {subtype_name}
-Specification: {description}
-Tone: {tone}
-Language: {language}
-{latent_note}
+{description}
+
 Work in two stages.
 
-STAGE 1 — Inside a single <angles> block, brainstorm distinctly different angles — noticeably more than you need: different authors, different moments in the situation, different structures, different positions a real writer of this subtype might take. Vary the rhetorical shape too; consider, among others: {structure_hints}. Then pick the {count} that are most different from one another, and for each one plan three things, one line each:
+STAGE 1 — Inside a single <angles> block, brainstorm distinctly different angles — noticeably more than you need: different authors, different moments in the situation, different structures, different positions a real writer meeting this specification might take. Vary the rhetorical shape too; consider, among others: {structure_hints}. Then pick the {count} that are most different from one another, and for each one plan three things, one line each:
 - WHAT: the specific constitutional principle or trait this document will embody (or, for a background document, the piece of the world it establishes).
 - HOW: the concrete action, position, or event through which it shows — what someone actually does or decides.
 - WHY: the mechanism that makes the reasoning legible on the page — the actor explains it in their own words, another character or the narrator infers it, a quoted exchange reveals it, or the consequences make it visible. Vary this mechanism across the documents; do not default to self-explanation every time.

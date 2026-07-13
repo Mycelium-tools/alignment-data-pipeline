@@ -267,11 +267,7 @@ def tiny_config(tmp_path):
         "temperature": 1.0,
         "workers": 2,
         "sdf": {
-            # 2 briefs, latent slice off: e2e dispatchers stay deterministic
-            # (a latent brief would demand a verifiable welfare_beat_quote at
-            # layer 5). Matrix-specific tests build their own configs.
             "matrix": {"documents_total": 2, "seed": 11},
-            "latent_fraction": 0.0,
             "documents_per_subtype": 1,
             "min_score_threshold": 7,
         },
@@ -288,7 +284,6 @@ def tiny_config(tmp_path):
             },
             "responses": {"per_prompt": 1},
         },
-        "language_distribution": {"en": 1.0},
         "outputs": {"cost_log": str(tmp_path / "cost_log.jsonl")},
     }
 

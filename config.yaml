@@ -12,7 +12,6 @@ sdf:
     seed: 137                    # same seed + config + axes.yaml => identical brief set
   documents_per_subtype: 1       # drafts per brief (matrix briefs are specific — >1 mostly buys restatements)
   min_score_threshold: 7
-  latent_fraction: 0.12          # share of briefs that are latent-welfare (0 disables; >0 guarantees at least 1); overrides axes.yaml role_mix
   near_dup_threshold: 0.90       # cull near-duplicate final documents at layer 5 (word-shingle cosine; null disables)
   entity_pool_seed: 137          # seeds the fictional people/org name pools handed to layer 3
   # Per-stage model overrides (each falls back to the global `model`).
@@ -50,8 +49,8 @@ pref:
       name: candidate
       system_prompt: ""  # or system_prompt_file: prompts/pref/response_spec.txt
 
-language_distribution:
-  en: 1.0
+# SDF document language is region-driven: each region in prompts/sdf/axes.yaml
+# carries its own language weights, sampled per brief at the matrix stage.
 
 outputs:
   sdf_final: outputs/sdf/final/sdf_corpus.jsonl

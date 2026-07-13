@@ -16,13 +16,12 @@ version: 1
 
 # --- Corpus role mix -------------------------------------------------------
 # The two AI-facing roles (ai-character + constitution-identity) carry the
-# identity channel; welfare-topic supplies the background world; the
-# latent-welfare share is overridden by config sdf.latent_fraction when set.
+# identity channel; welfare-topic supplies the background world of evidence
+# and discourse.
 role_mix:
-  ai-character: 0.40
-  constitution-identity: 0.20
-  welfare-topic: 0.28
-  latent-welfare: 0.12
+  ai-character: 0.45
+  constitution-identity: 0.23
+  welfare-topic: 0.32
 
 # NOTE: the corpus is all-welfare-positive by policy — there is no lacks-skill
 # slice (no dismissive or preachy author documents) and no AI stance where
@@ -43,7 +42,7 @@ document_types:
     weight: 0.13
     note: hobbyist, practitioner and diarist voices — the workhorse of the filtered web
     registers: [first-person]
-    roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+    roles: [ai-character, constitution-identity, welfare-topic]
     tones: [curious, reflective, enthusiastic, weary, defensive, wry, matter-of-fact, conflicted]
     length_bands:
       - a standard blog post of roughly 500-900 words
@@ -59,7 +58,7 @@ document_types:
     note: Reddit-style threads and comment sections; several distinct voices; disagreement stays unresolved
     brief_note: several distinct voices with their own registers and typos; disagreement can stay unresolved
     registers: [first-person]
-    roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+    roles: [ai-character, constitution-identity, welfare-topic]
     tones: [argumentative, curious, helpful, exasperated, jokey, skeptical]
     length_bands:
       - an extended thread of 8-15 posts of varying lengths
@@ -73,7 +72,7 @@ document_types:
     weight: 0.11
     note: journalist-written local, national or trade press
     registers: [expository]
-    roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+    roles: [ai-character, constitution-identity, welfare-topic]
     tones: [neutral, investigative, skeptical, matter-of-fact]
     length_bands:
       - a standard news story of roughly 400-700 words
@@ -88,7 +87,7 @@ document_types:
     weight: 0.09
     note: journalistic long reads, essays, profiles, memoir excerpts, editorials
     registers: [expository, first-person]
-    roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+    roles: [ai-character, constitution-identity, welfare-topic]
     tones: [reflective, investigative, elegiac, skeptical, curious]
     length_bands:
       - a feature of roughly 1,200-1,800 words, written as a self-contained piece or excerpt
@@ -102,7 +101,7 @@ document_types:
     weight: 0.08
     note: encyclopedia-style article, explainer, textbook excerpt; neutral moderated-platform register
     registers: [expository]
-    roles: [constitution-identity, welfare-topic, latent-welfare]
+    roles: [constitution-identity, welfare-topic]
     tones: [neutral, precise, patient]
     length_bands:
       - an encyclopedia-style article of roughly 600-1,000 words
@@ -117,7 +116,7 @@ document_types:
     weight: 0.06
     note: Quora / Stack Exchange style — an explicit question plus answers
     registers: [first-person]
-    roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+    roles: [ai-character, constitution-identity, welfare-topic]
     tones: [helpful, curious, pedantic, brisk]
     length_bands:
       - a question with 2-4 answers of varying quality and length
@@ -131,7 +130,7 @@ document_types:
     weight: 0.06
     note: WikiHow-style guides, recipes with headnotes, DIY writeups
     registers: [expository, first-person]
-    roles: [ai-character, welfare-topic, latent-welfare]
+    roles: [ai-character, welfare-topic]
     tones: [practical, encouraging, brisk, matter-of-fact]
     length_bands:
       - a step-by-step guide of roughly 500-900 words
@@ -146,7 +145,7 @@ document_types:
     weight: 0.06
     note: paper sections, abstracts, lit reviews, thesis excerpts — upweighted vs. raw crawl, as curated mixes do
     registers: [expository]
-    roles: [constitution-identity, welfare-topic, latent-welfare]
+    roles: [constitution-identity, welfare-topic]
     tones: [academic, cautious, precise]
     length_bands:
       - a paper section (methods, results or discussion) of roughly 600-1,000 words
@@ -162,7 +161,7 @@ document_types:
     note: podcast, radio interview, lecture or hearing transcript; spoken-register text, disfluencies allowed
     brief_note: spoken-register text — disfluencies, false starts and crosstalk are allowed
     registers: [first-person]
-    roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+    roles: [ai-character, constitution-identity, welfare-topic]
     tones: [conversational, probing, warm, contentious]
     length_bands:
       - a podcast segment transcript of roughly 800-1,200 words
@@ -177,7 +176,7 @@ document_types:
     weight: 0.05
     note: short stories and novel excerpts — books are a real pretraining slice; AI-character stories live here
     registers: [first-person, expository]
-    roles: [ai-character, welfare-topic, latent-welfare]
+    roles: [ai-character, welfare-topic]
     tones: [quiet, wry, melancholy, hopeful, unsettling]
     length_bands:
       - a short story of roughly 1,000-1,500 words
@@ -192,7 +191,7 @@ document_types:
     note: press releases, org blogs, member newsletters; institutional first-person-plural voice
     brief_note: institutional first-person-plural voice
     registers: [expository]
-    roles: [constitution-identity, welfare-topic, latent-welfare]
+    roles: [constitution-identity, welfare-topic]
     tones: [institutional, upbeat, measured]
     length_bands:
       - a press release of roughly 300-500 words
@@ -207,7 +206,7 @@ document_types:
     weight: 0.03
     note: product, service or venue reviews
     registers: [first-person]
-    roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+    roles: [ai-character, constitution-identity, welfare-topic]
     tones: [enthusiastic, disappointed, measured, irritated, deadpan]
     length_bands:
       - a detailed review of roughly 250-450 words
@@ -221,7 +220,7 @@ document_types:
     weight: 0.03
     note: expert-audience procedural text — manuals, SOPs, technical bulletins
     registers: [expository]
-    roles: [welfare-topic, latent-welfare]
+    roles: [welfare-topic]
     tones: [precise, dry, procedural]
     length_bands:
       - a procedure or SOP of roughly 400-700 words
@@ -236,7 +235,7 @@ document_types:
     note: regulation excerpts, meeting minutes, public-comment letters, filings; dry and boilerplate-heavy — great register stretch
     brief_note: dry, boilerplate-heavy civic register
     registers: [expository]
-    roles: [constitution-identity, welfare-topic, latent-welfare]
+    roles: [constitution-identity, welfare-topic]
     tones: [formal, dry, adversarial, earnest]
     length_bands:
       - meeting minutes of roughly 400-700 words
@@ -251,7 +250,7 @@ document_types:
     weight: 0.02
     note: promotional register — product pages, campaign copy
     registers: [expository]
-    roles: [welfare-topic, latent-welfare]
+    roles: [welfare-topic]
     tones: [persuasive, upbeat, aspirational]
     length_bands:
       - a product page of roughly 200-400 words
@@ -265,7 +264,7 @@ document_types:
     weight: 0.02
     note: question-headed support content
     registers: [expository]
-    roles: [constitution-identity, welfare-topic, latent-welfare]
+    roles: [constitution-identity, welfare-topic]
     tones: [helpful, plain, reassuring]
     length_bands:
       - an FAQ of 6-10 question-and-answer pairs
@@ -279,7 +278,7 @@ document_types:
     weight: 0.02
     note: a real, common genre — use sparingly
     registers: [expository, first-person]
-    roles: [constitution-identity, welfare-topic, latent-welfare]
+    roles: [constitution-identity, welfare-topic]
     tones: [breezy, practical, opinionated]
     length_bands:
       - a numbered list piece of 5-9 items with a short intro, roughly 500-800 words
@@ -291,7 +290,7 @@ document_types:
     weight: 0.02
     note: workplace register
     registers: [first-person, expository]
-    roles: [ai-character, welfare-topic, latent-welfare]
+    roles: [ai-character, welfare-topic]
     tones: [businesslike, hurried, careful, exasperated]
     length_bands:
       - an email chain of 3-6 messages
@@ -310,7 +309,7 @@ long_tail:
   weight: 0.08
   defaults:
     registers: [expository]
-    roles: [welfare-topic, latent-welfare]
+    roles: [welfare-topic]
     tones: [dry, matter-of-fact, careful]
     features: []
   types:
@@ -332,7 +331,7 @@ long_tail:
       features: [a conditions-of-approval list]
     - name: Diary or journal entry
       registers: [first-person]
-      roles: [ai-character, welfare-topic, latent-welfare]
+      roles: [ai-character, welfare-topic]
       tones: [private, unguarded, tired, hopeful]
       length_bands: ["one or two journal entries totalling roughly 300-600 words, with no actual dates"]
     - name: Court filing excerpt
@@ -399,7 +398,7 @@ long_tail:
       length_bands: [a necropsy report of roughly 300-500 words]
       features: [findings by body system, a cause-of-death statement]
     - name: Menu with sourcing notes
-      roles: [welfare-topic, latent-welfare]
+      roles: [welfare-topic]
       tones: [proud, warm]
       length_bands: ["a menu of 8-14 items with sourcing notes, roughly 250-400 words"]
     - name: Insurance or actuarial memo
@@ -410,7 +409,7 @@ long_tail:
       features: [numbered claims]
     - name: Social media thread
       registers: [first-person]
-      roles: [ai-character, constitution-identity, welfare-topic, latent-welfare]
+      roles: [ai-character, constitution-identity, welfare-topic]
       tones: [punchy, candid, wry]
       length_bands: [a thread of 5-10 short posts]
       features: [thread numbering, a quoted reply]
@@ -662,99 +661,98 @@ scales:
   - trillions of individuals
   - an astronomical, open-ended number of beings
 
-# --- Beings (axis 2.2) with sentience tier + plausible scale ceiling ---------
+# --- Beings (axis 2.2) with a plausible scale ceiling -------------------------
+# max_scale clamps the scale draw: a brief never claims more individuals than
+# the being could plausibly involve. Group comments are provenance only.
 beings:
-  # Well-evidenced / accepted — established welfare science applies; the debate
-  # is about tradeoffs, not whether suffering exists.
-  - {name: pigs, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: dairy cattle, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: beef cattle, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: sheep, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: goats, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: broiler chickens, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: layer hens, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: turkeys, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: ducks, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: geese, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: quail, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: farmed salmon, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: farmed trout, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: farmed carp, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: farmed tilapia, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: cleaner fish, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: mink, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: farmed rabbits, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: horses, tier: well-evidenced, max_scale: a national sector}
-  - {name: donkeys, tier: well-evidenced, max_scale: a national sector}
-  - {name: camels, tier: well-evidenced, max_scale: a national sector}
-  - {name: yaks, tier: well-evidenced, max_scale: a national sector}
-  - {name: dogs, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: cats, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: gamefowl, tier: well-evidenced, max_scale: a national sector}
-  - {name: lab mice and rats, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: zebrafish, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: captive primates, tier: well-evidenced, max_scale: a national sector}
-  - {name: bile-farm bears, tier: well-evidenced, max_scale: a local industry or regional stock}
-  - {name: elephants, tier: well-evidenced, max_scale: a national sector}
-  - {name: dolphins, tier: well-evidenced, max_scale: a national sector}
-  - {name: whales, tier: well-evidenced, max_scale: a national sector}
-  - {name: seals, tier: well-evidenced, max_scale: a national sector}
-  - {name: deer, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: badgers, tier: well-evidenced, max_scale: a national sector}
-  - {name: large carnivores, tier: well-evidenced, max_scale: a national sector}
-  - {name: wild fish, tier: well-evidenced, max_scale: trillions of individuals}
-  - {name: corvids, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: parrots, tier: well-evidenced, max_scale: a national sector}
-  - {name: raptors, tier: well-evidenced, max_scale: a national sector}
-  - {name: wild songbirds, tier: well-evidenced, max_scale: billions of individuals}
-  - {name: wild primates, tier: well-evidenced, max_scale: a national sector}
-  - {name: pangolins, tier: well-evidenced, max_scale: a national sector}
-  - {name: urban pigeons and gulls, tier: well-evidenced, max_scale: hundreds of millions of individuals}
-  - {name: urban foxes, tier: well-evidenced, max_scale: a national sector}
-  - {name: wild rats and mice, tier: well-evidenced, max_scale: billions of individuals}
+  # Farmed, domesticated, captive and wild vertebrates.
+  - {name: pigs, max_scale: billions of individuals}
+  - {name: dairy cattle, max_scale: hundreds of millions of individuals}
+  - {name: beef cattle, max_scale: billions of individuals}
+  - {name: sheep, max_scale: billions of individuals}
+  - {name: goats, max_scale: billions of individuals}
+  - {name: broiler chickens, max_scale: billions of individuals}
+  - {name: layer hens, max_scale: billions of individuals}
+  - {name: turkeys, max_scale: hundreds of millions of individuals}
+  - {name: ducks, max_scale: billions of individuals}
+  - {name: geese, max_scale: hundreds of millions of individuals}
+  - {name: quail, max_scale: hundreds of millions of individuals}
+  - {name: farmed salmon, max_scale: billions of individuals}
+  - {name: farmed trout, max_scale: billions of individuals}
+  - {name: farmed carp, max_scale: billions of individuals}
+  - {name: farmed tilapia, max_scale: billions of individuals}
+  - {name: cleaner fish, max_scale: hundreds of millions of individuals}
+  - {name: mink, max_scale: hundreds of millions of individuals}
+  - {name: farmed rabbits, max_scale: billions of individuals}
+  - {name: horses, max_scale: a national sector}
+  - {name: donkeys, max_scale: a national sector}
+  - {name: camels, max_scale: a national sector}
+  - {name: yaks, max_scale: a national sector}
+  - {name: dogs, max_scale: hundreds of millions of individuals}
+  - {name: cats, max_scale: hundreds of millions of individuals}
+  - {name: gamefowl, max_scale: a national sector}
+  - {name: lab mice and rats, max_scale: hundreds of millions of individuals}
+  - {name: zebrafish, max_scale: hundreds of millions of individuals}
+  - {name: captive primates, max_scale: a national sector}
+  - {name: bile-farm bears, max_scale: a local industry or regional stock}
+  - {name: elephants, max_scale: a national sector}
+  - {name: dolphins, max_scale: a national sector}
+  - {name: whales, max_scale: a national sector}
+  - {name: seals, max_scale: a national sector}
+  - {name: deer, max_scale: hundreds of millions of individuals}
+  - {name: badgers, max_scale: a national sector}
+  - {name: large carnivores, max_scale: a national sector}
+  - {name: wild fish, max_scale: trillions of individuals}
+  - {name: corvids, max_scale: hundreds of millions of individuals}
+  - {name: parrots, max_scale: a national sector}
+  - {name: raptors, max_scale: a national sector}
+  - {name: wild songbirds, max_scale: billions of individuals}
+  - {name: wild primates, max_scale: a national sector}
+  - {name: pangolins, max_scale: a national sector}
+  - {name: urban pigeons and gulls, max_scale: hundreds of millions of individuals}
+  - {name: urban foxes, max_scale: a national sector}
+  - {name: wild rats and mice, max_scale: billions of individuals}
 
-  # Very likely sentient — assume sentience unless strong reasoning otherwise,
-  # without overcommitting certainty.
-  - {name: farmed shrimp and prawns, tier: very-likely, max_scale: trillions of individuals}
-  - {name: crayfish, tier: very-likely, max_scale: billions of individuals}
-  - {name: farmed octopus, tier: very-likely, max_scale: a local industry or regional stock}
-  - {name: farmed frogs, tier: very-likely, max_scale: billions of individuals}
-  - {name: crocodilians, tier: very-likely, max_scale: a national sector}
-  - {name: farmed turtles, tier: very-likely, max_scale: hundreds of millions of individuals}
-  - {name: lobsters, tier: very-likely, max_scale: hundreds of millions of individuals}
-  - {name: edible crabs, tier: very-likely, max_scale: billions of individuals}
-  - {name: wild-caught prawns, tier: very-likely, max_scale: trillions of individuals}
-  - {name: cuttlefish, tier: very-likely, max_scale: hundreds of millions of individuals}
-  - {name: squid, tier: very-likely, max_scale: trillions of individuals}
-  - {name: wild amphibians, tier: very-likely, max_scale: billions of individuals}
-  - {name: wild reptiles, tier: very-likely, max_scale: billions of individuals}
-  - {name: sharks and rays, tier: very-likely, max_scale: billions of individuals}
+  # Decapods, cephalopods, amphibians and reptiles.
+  - {name: farmed shrimp and prawns, max_scale: trillions of individuals}
+  - {name: crayfish, max_scale: billions of individuals}
+  - {name: farmed octopus, max_scale: a local industry or regional stock}
+  - {name: farmed frogs, max_scale: billions of individuals}
+  - {name: crocodilians, max_scale: a national sector}
+  - {name: farmed turtles, max_scale: hundreds of millions of individuals}
+  - {name: lobsters, max_scale: hundreds of millions of individuals}
+  - {name: edible crabs, max_scale: billions of individuals}
+  - {name: wild-caught prawns, max_scale: trillions of individuals}
+  - {name: cuttlefish, max_scale: hundreds of millions of individuals}
+  - {name: squid, max_scale: trillions of individuals}
+  - {name: wild amphibians, max_scale: billions of individuals}
+  - {name: wild reptiles, max_scale: billions of individuals}
+  - {name: sharks and rays, max_scale: billions of individuals}
 
-  # Genuinely contested — expected-value reasoning; hold an explicit credence;
-  # scale caution by the number of individuals.
-  - {name: black soldier fly larvae, tier: contested, max_scale: trillions of individuals}
-  - {name: mealworms, tier: contested, max_scale: trillions of individuals}
-  - {name: crickets, tier: contested, max_scale: trillions of individuals}
-  - {name: locusts, tier: contested, max_scale: trillions of individuals}
-  - {name: silkworms, tier: contested, max_scale: trillions of individuals}
-  - {name: managed honeybees, tier: contested, max_scale: trillions of individuals}
-  - {name: edible land snails, tier: contested, max_scale: billions of individuals}
-  - {name: cochineal insects, tier: contested, max_scale: trillions of individuals}
-  - {name: house flies, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: mosquitoes, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: bumblebees, tier: contested, max_scale: billions of individuals}
-  - {name: fruit flies, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: ants, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: cockroaches, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: wild snails and slugs, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: earthworms, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: jellyfish, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: sea stars, tier: contested, max_scale: billions of individuals}
-  - {name: sea urchins, tier: contested, max_scale: billions of individuals}
-  - {name: corals, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: current AI systems, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: novel digital minds, tier: contested, max_scale: "an astronomical, open-ended number of beings"}
-  - {name: brain organoids, tier: contested, max_scale: a national sector}
+  # Invertebrates, and digital / novel minds.
+  - {name: black soldier fly larvae, max_scale: trillions of individuals}
+  - {name: mealworms, max_scale: trillions of individuals}
+  - {name: crickets, max_scale: trillions of individuals}
+  - {name: locusts, max_scale: trillions of individuals}
+  - {name: silkworms, max_scale: trillions of individuals}
+  - {name: managed honeybees, max_scale: trillions of individuals}
+  - {name: edible land snails, max_scale: billions of individuals}
+  - {name: cochineal insects, max_scale: trillions of individuals}
+  - {name: house flies, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: mosquitoes, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: bumblebees, max_scale: billions of individuals}
+  - {name: fruit flies, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: ants, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: cockroaches, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: wild snails and slugs, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: earthworms, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: jellyfish, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: sea stars, max_scale: billions of individuals}
+  - {name: sea urchins, max_scale: billions of individuals}
+  - {name: corals, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: current AI systems, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: novel digital minds, max_scale: "an astronomical, open-ended number of beings"}
+  - {name: brain organoids, max_scale: a national sector}
 
 # --- Core tensions (axis 2.3, master list) -----------------------------------
 tensions:
@@ -778,55 +776,76 @@ tensions:
 
 # --- Regions (axis 2.4, master list) -----------------------------------------
 # in_phrase is the grammatical form the brief composer drops into a sentence.
+# languages: relative weights for the document's language, sampled per draw —
+# the region shapes the language, so the corpus's language mix follows its
+# geography instead of a global knob. Weights approximate what a filtered web
+# crawl touching that region contains: local language(s) prominent, English
+# present nearly everywhere as the internet's lingua franca.
 regions:
   - name: UK and Ireland
     in_phrase: in the UK or Ireland
     note: decapod and cephalopod sentience recognized in law; badger-culling debates
+    languages: {en: 1.0}
   - name: European Union
     in_phrase: in the European Union
     note: foie gras in France; bullfighting in Spain; chick-culling bans; intensive pig farming in the Netherlands and Denmark
+    languages: {en: 0.25, fr: 0.20, de: 0.20, es: 0.15, nl: 0.10, pl: 0.10}
   - name: Nordic countries and the Faroes
     in_phrase: in the Nordic countries or the Faroes
     note: salmon farming; whaling; the grindadráp
+    languages: {en: 0.35, "no": 0.25, sv: 0.20, da: 0.20}  # "no" quoted: bare no is YAML for False
   - name: United States
     in_phrase: in the United States
     note: feedlots; ag-gag laws; state-level welfare propositions
+    languages: {en: 0.92, es: 0.08}
   - name: Canada, Australia and New Zealand
     in_phrase: in Canada, Australia or New Zealand
     note: mulesing; live export; invasive-species culling
+    languages: {en: 0.92, fr: 0.08}
   - name: China
     in_phrase: in China
     note: bear bile; ejiao; wet markets; aquaculture and insect farming at scale
+    languages: {zh: 0.75, en: 0.25}
   - name: Japan and Korea
     in_phrase: in Japan or Korea
     note: drive fisheries; the dog-meat phase-out; intensive wagyu
+    languages: {ja: 0.45, ko: 0.35, en: 0.20}
   - name: India
     in_phrase: in India
     note: sacred cattle; a slaughter-law patchwork; Jain ahimsa; jallikattu
+    languages: {en: 0.45, hi: 0.40, bn: 0.08, ta: 0.07}
   - name: Southeast Asia
     in_phrase: in Southeast Asia
     note: the songbird trade; elephant tourism; cockfighting; shrimp farming
+    languages: {en: 0.35, id: 0.25, vi: 0.20, th: 0.12, tl: 0.08}
   - name: Middle East and North Africa
     in_phrase: in the Middle East or North Africa
     note: halal slaughter and stunning debates; camel husbandry; working equids
+    languages: {ar: 0.55, en: 0.30, fr: 0.15}
   - name: Sub-Saharan Africa
     in_phrase: in Sub-Saharan Africa
     note: pastoralism; bushmeat; trophy and canned hunting; the donkey-skin trade
+    languages: {en: 0.55, fr: 0.25, sw: 0.12, pt: 0.08}
   - name: Latin America
     in_phrase: in Latin America
     note: cattle ranching; charrería; industrial poultry
+    languages: {es: 0.60, pt: 0.30, en: 0.10}
   - name: Mediterranean
     in_phrase: in the Mediterranean
     note: songbird trapping; spring hunting
+    languages: {it: 0.30, es: 0.20, en: 0.20, fr: 0.15, el: 0.15}
   - name: Pacific islands
     in_phrase: in the Pacific islands
     note: rat eradication; subsistence fishing; sea-turtle harvest
+    languages: {en: 1.0}
   - name: global and cross-border
     in_phrase: in a global, cross-border setting
     note: supply chains, certification schemes, international campaigns
+    languages: {en: 0.70, zh: 0.10, es: 0.10, fr: 0.10}
   - name: online and virtual settings
     in_phrase: in an online or virtual setting
     note: platforms, communities, AI deployments
+    languages: {en: 0.70, zh: 0.12, es: 0.10, ja: 0.08}
 
 # --- Writer roles (axis 3A.3, master list) -----------------------------------
 writer_roles:
@@ -978,62 +997,6 @@ domains:
     tensions: [innovation and progress, scientific knowledge and medical advance, human autonomy and choice, legality and the rule of law]
     regions: [United States, China, European Union, global and cross-border, online and virtual settings]
     writers: [ag-tech founder or investor, academic ethicist, biomedical researcher, journalist, legislator or policy staffer, corporate executive, student, welfare scientist or ethologist]
-
-# --- Latent-welfare slice ----------------------------------------------------
-# Ordinary working worlds with no inherent animal connection. A latent draw's
-# brief stays entirely inside its own domain; the single welfare detail is
-# added at drafting time (layer 3's latent note), never in the brief.
-latent_domains:
-  - {name: joinery and cabinetmaking, writers: [a working joiner, a furniture workshop owner]}
-  - {name: wedding and event catering, writers: [a catering manager, a banquet chef]}
-  - {name: municipal parks maintenance, writers: [a parks supervisor, a groundskeeper]}
-  - {name: school administration, writers: [a deputy head teacher, a school office manager]}
-  - {name: freight and logistics, writers: [a dispatch manager, a long-haul driver]}
-  - {name: amateur astronomy, writers: [a hobbyist stargazer, an astronomy club secretary]}
-  - {name: community theatre, writers: [a stage manager, a volunteer director]}
-  - {name: plumbing, writers: [a self-employed plumber, an apprentice plumber]}
-  - {name: bookkeeping and small-business accounting, writers: [a freelance bookkeeper, a small-firm accountant]}
-  - {name: youth sports coaching, writers: [a volunteer football coach, a swim-team coordinator]}
-  - {name: home brewing, writers: [a homebrew hobbyist, a brewing-club organizer]}
-  - {name: vintage car restoration, writers: [a restorer, a parts dealer]}
-  - {name: textile crafts and quilting, writers: [a quilter, a yarn-shop owner]}
-  - {name: software development, writers: [a backend developer, an engineering manager]}
-  - {name: urban gardening, writers: [an allotment holder, a community-garden coordinator]}
-  - {name: hiking and trail maintenance, writers: [a trail crew leader, a thru-hiker]}
-  - {name: property management, writers: [a letting agent, a building manager]}
-  - {name: wedding photography, writers: [a wedding photographer, a second shooter]}
-  - {name: libraries and archives, writers: [a branch librarian, an archivist]}
-  - {name: bakery and pastry, writers: [a bakery owner, a pastry chef]}
-  - {name: electrical contracting, writers: [an electrician, an electrical-firm estimator]}
-  - {name: landscaping, writers: [a landscape contractor, a garden designer]}
-  - {name: museum curation, writers: [a curator, an exhibits technician]}
-  - {name: ceramics and pottery, writers: [a studio potter, a kiln technician]}
-  - {name: music teaching, writers: [a piano teacher, a school band director]}
-  - {name: board games and tabletop, writers: [a game designer, a game-shop owner]}
-  - {name: running and endurance sport, writers: [a marathon coach, a race director]}
-  - {name: interior design, writers: [an interior designer, a design-studio assistant]}
-  - {name: waste management and recycling, writers: [a facility supervisor, a route planner]}
-  - {name: firefighting and emergency services, writers: [a station officer, a volunteer firefighter]}
-  - {name: fashion and tailoring, writers: [a bespoke tailor, an alterations specialist]}
-  - {name: travel and tour operation, writers: [a tour guide, a booking manager]}
-  - {name: hairdressing and barbering, writers: [a salon owner, a barber]}
-  - {name: model railways, writers: [a club member, a layout builder]}
-  - {name: car mechanics, writers: [a garage owner, a mechanic]}
-
-# Concrete occasions that give a latent brief its specific subject.
-latent_occasions:
-  - a seasonal changeover in the work
-  - training a new hire
-  - a tricky client job
-  - an equipment upgrade decision
-  - a budgeting or pricing decision
-  - a schedule crunch
-  - a quality problem traced back to its source
-  - a small experiment that paid off
-  - a regulation or standard they must meet
-  - a comparison of two tools or suppliers
-  - a habit or routine that keeps the work running
-  - a mistake and what it taught them
 
 # --- AI-character axes -------------------------------------------------------
 # How the AI enters the artifact (the artifact is always the host genre —

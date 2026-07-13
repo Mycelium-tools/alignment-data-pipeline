@@ -1,9 +1,10 @@
 """Behavior tests for the layer-1 matrix sampler (sdf_pipeline/layer1_matrix.py).
 
 The whole point of the matrix stage is that it makes ZERO API calls and its
-output is exactly reproducible from (seed, config, axes.yaml) — both are
-encoded here. Tests run against the repo's real prompts/sdf/axes.yaml, so
-axis edits that break a cross-reference or an invariant fail in CI.
+output is exactly reproducible from (seed, config, axes.yaml, principles CSV)
+— both are encoded here. Tests run against the repo's real prompts/sdf/axes.yaml
+and constitution CSV, so axis edits that break a cross-reference or an
+invariant fail in CI.
 """
 
 from pathlib import Path
@@ -22,8 +23,6 @@ AXES_PATH = REPO_ROOT / "prompts" / "sdf" / "axes.yaml"
 LAYER3_FIELDS = {"subtype_id", "type_id", "type_name", "role", "subtype_name",
                  "description", "tone", "register", "language"}
 
-LANG = {"en": 1.0}
-
 
 @pytest.fixture(scope="module")
 def axes():
@@ -35,23 +34,20 @@ def principles():
     return constitution_loader.load_principles()
 
 
-def _draw(axes, principles, n, seed, latent_fraction=0.12):
-    return matrix.draw_briefs(axes, principles, _config(n, seed, latent_fraction),
-                              n, seed, LANG)
-
-
-def _config(n=8, seed=11, latent_fraction=0.12):
+def _config(n=8, seed=11):
     return {
         "model": "claude-haiku-4-5",
         "max_tokens": 4000,
         "workers": 2,
         "sdf": {
             "matrix": {"documents_total": n, "seed": seed},
-            "latent_fraction": latent_fraction,
             "documents_per_subtype": 1,
         },
-        "language_distribution": dict(LANG),
     }
+
+
+def _draw(axes, principles, n, seed):
+    return matrix.draw_briefs(axes, principles, _config(n, seed), n, seed)
 
 
 class TestDrawBriefs:
@@ -64,7 +60,7 @@ class TestDrawBriefs:
     def test_role_quotas_exact(self, axes, principles):
         n = 50
         records = _draw(axes, principles, n, 11)
-        expected = matrix.role_quotas(axes, _config(), n)
+        expected = matrix.role_quotas(axes, n)
         realized = {role: sum(1 for r in records if r["role"] == role)
                     for role in matrix.ROLES}
         assert realized == expected
@@ -74,7 +70,7 @@ class TestDrawBriefs:
         n = 60
         records = _draw(axes, principles, n, 3)
         types = matrix.expanded_types(axes)
-        role_counts = matrix.role_quotas(axes, _config(), n)
+        role_counts = matrix.role_quotas(axes, n)
         for role, count in role_counts.items():
             allowed = {t["name"]: t["weight"] for t in types if role in t["roles"]}
             expected = matrix.quota(allowed, count)
@@ -87,9 +83,8 @@ class TestDrawBriefs:
     def test_principle_quotas_balanced(self, axes, principles):
         # Derived from the CSV, not hardcoded — the principles are actively edited.
         records = _draw(axes, principles, 100, 5)
-        non_latent = [r for r in records if r["role"] != "latent-welfare"]
         counts = {}
-        for r in non_latent:
+        for r in records:
             assert r["principle"] is not None and r["principle_number"] is not None
             counts[r["principle_number"]] = counts.get(r["principle_number"], 0) + 1
         # Uniform largest-remainder quotas: every principle within 1 of any other.
@@ -99,18 +94,28 @@ class TestDrawBriefs:
     def test_principle_embedded_in_description(self, axes, principles):
         records = _draw(axes, principles, 30, 9)
         for r in records:
-            if r["role"] == "latent-welfare":
-                assert r["principle"] is None
-            else:
-                assert r["principle"] in r["description"]
+            assert f"Principle to embody: \"{r['principle'].rstrip('.')}\"" in r["description"]
+
+    def test_description_is_labeled_block(self, axes, principles):
+        # The brief is direct labeled constraints, not composed prose — every
+        # line the drafting model gets is a "Key: value" slot.
+        records = _draw(axes, principles, 20, 9)
+        for r in records:
+            lines = r["description"].splitlines()
+            assert lines[0] == f"Document type: {r['document_type']}"
+            assert f"Register: {r['register']}" in lines
+            assert f"Tone: {r['tone']}" in lines
+            assert f"Language: {r['language']}" in lines
+            assert f"Being: {r['being']}" in lines
+            assert any(line.startswith("Core tension: ") for line in lines)
 
     def test_compatibility_invariants(self, axes, principles):
         records = _draw(axes, principles, 250, 7)
         types = {t["name"]: t for t in matrix.expanded_types(axes)}
         domains = {d["name"]: d for d in axes["domains"]}
         beings = {b["name"]: b for b in axes["beings"]}
+        regions = {r["name"]: r for r in axes["regions"]}
         scales = axes["scales"]
-        latent_names = {d["name"] for d in axes["latent_domains"]}
 
         for r in records:
             dtype = types[r["document_type"]]
@@ -121,26 +126,27 @@ class TestDrawBriefs:
             # genre is recoverable exactly as layer 3 does it
             assert r["type_name"].split(":")[0].strip() == r["document_type"]
 
-            if r["role"] == "latent-welfare":
-                assert r["domain"] in latent_names
-                assert r["principle"] is None
-                assert r["being"] is None
-                low = f" {r['description'].lower()} "
-                for token in matrix._LATENT_FORBIDDEN:
-                    assert token not in low, (r["domain"], token)
-            else:
-                dom = domains[r["domain"]]
-                assert r["being"] in dom["beings"]
-                assert r["tension"] in dom["tensions"]
-                assert r["region"] in dom["regions"]
-                assert r["writer_role"] in dom["writers"]
-                assert scales.index(r["scale"]) <= scales.index(beings[r["being"]]["max_scale"])
-                assert r["being_tier"] == beings[r["being"]]["tier"]
+            dom = domains[r["domain"]]
+            assert r["being"] in dom["beings"]
+            assert r["tension"] in dom["tensions"]
+            assert r["region"] in dom["regions"]
+            assert r["writer_role"] in dom["writers"]
+            assert scales.index(r["scale"]) <= scales.index(beings[r["being"]]["max_scale"])
+            # the region shapes the language
+            assert r["language"] in regions[r["region"]]["languages"]
 
             if r["role"] == "ai-character":
                 assert r["ai_entry"] and r["ai_stance"]
             else:
                 assert r["ai_entry"] is None and r["ai_stance"] is None
+
+    def test_language_mix_is_region_driven(self, axes, principles):
+        # Over a large sample the corpus must not collapse to English-only:
+        # China-region briefs alone guarantee Mandarin appears.
+        records = _draw(axes, principles, 300, 7)
+        languages = {r["language"] for r in records}
+        assert "en" in languages
+        assert len(languages) >= 4, f"expected a multilingual mix, got {languages}"
 
     def test_all_ai_stances_are_welfare_positive(self, axes):
         # Deliberate policy: this corpus is a small slice of the training mix,
@@ -152,31 +158,30 @@ class TestDrawBriefs:
         assert "welfare-honestly-loses" not in stances
         assert "lacks_skill_fraction" not in axes
 
-    def test_latent_floor_at_tiny_n(self, axes, principles):
-        records = _draw(axes, principles, 2, 11, latent_fraction=0.12)
-        assert sum(1 for r in records if r["role"] == "latent-welfare") == 1
-
-    def test_latent_fraction_zero_disables_slice(self, axes, principles):
-        records = _draw(axes, principles, 40, 11, latent_fraction=0.0)
-        assert all(r["role"] != "latent-welfare" for r in records)
+    def test_latent_welfare_role_is_gone(self, axes):
+        # The latent slice was deliberately removed with the roles
+        # simplification; its axis sections must not linger.
+        assert "latent-welfare" not in axes["role_mix"]
+        assert "latent_domains" not in axes
+        for t in matrix.expanded_types(axes):
+            assert "latent-welfare" not in t["roles"]
 
     def test_schema_contract_fields_present(self, axes, principles):
         records = _draw(axes, principles, 10, 11)
         for r in records:
             assert LAYER3_FIELDS <= set(r)
-            assert r["language"] == "en"
             assert r["register"] in ("expository", "first-person")
             assert r["matrix_version"] == 1
 
     def test_no_duplicate_dedup_tuples_at_moderate_n(self, axes, principles):
         records = _draw(axes, principles, 60, 11)
         keys = [(r["document_type"], r["domain"], r["being"], r["tension"], r["region"])
-                for r in records if r["role"] != "latent-welfare"]
+                for r in records]
         assert len(keys) == len(set(keys))
 
     def test_empty_principles_fails_loudly(self, axes):
         with pytest.raises(ValueError, match="principles"):
-            matrix.draw_briefs(axes, [], _config(), 10, 11, LANG)
+            matrix.draw_briefs(axes, [], _config(), 10, 11)
 
 
 class TestQuota:
@@ -219,9 +224,15 @@ class TestAxesValidation:
         with pytest.raises(ValueError, match="max_scale"):
             matrix.load_axes(self._broken(tmp_path, mutate))
 
+    def test_region_without_languages_fails(self, tmp_path):
+        def mutate(d):
+            del d["regions"][0]["languages"]
+        with pytest.raises(ValueError, match="languages"):
+            matrix.load_axes(self._broken(tmp_path, mutate))
+
     def test_real_axes_file_validates(self, axes):
         # load_axes already validated in the fixture; pin the shape here too.
-        assert len(axes["skills"]) == 13
+        assert len(axes["skills"]) == 13  # reference data, kept but not sampled
         assert len(axes["domains"]) == 13
 
 
@@ -273,16 +284,8 @@ class TestLayer3Integration:
         assert set(by_subtype) == {r["subtype_id"] for r in records}
         for r in records:
             msg = by_subtype[r["subtype_id"]]["user_message"]
-            assert r["subtype_name"] in msg
-            assert r["tone"] in msg
+            # the labeled block arrives verbatim, and the voice note carries
+            # the genre extracted from type_name's colon-head
+            assert f"Document type: {r['document_type']}" in msg
             genre = r["type_name"].split(":")[0].strip()
-            assert genre in msg  # the voice note carries the genre head
-            assert ("This is a LATENT document" in msg) == (r["role"] == "latent-welfare")
-
-    def test_latent_brief_gets_latent_note(self, tmp_path, stub_claude, prompts_sdf, axes, principles):
-        records = _draw(axes, principles, 4, 11, latent_fraction=0.5)
-        latent = [r for r in records if r["role"] == "latent-welfare"]
-        assert latent
-        calls = stub_claude(lambda user_message, **kw: "<document>Doc.</document>")
-        layer3_draft.run(_config(), prompts_sdf, tmp_path / "layer3", latent[:1])
-        assert "This is a LATENT document" in calls[0]["user_message"]
+            assert genre in msg

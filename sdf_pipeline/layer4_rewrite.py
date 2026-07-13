@@ -8,17 +8,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, textstats, utils, constitution_loader
 
-_LATENT_NOTE = (
-    "\nNOTE: this document belongs to the corpus's deliberate LATENT slice — it is supposed to "
-    "be about its own non-welfare subject, with exactly one brief concrete welfare detail woven "
-    "in. Do not add more welfare content, do not expand the detail into a theme, and do not "
-    "treat the document's off-topic subject as a flaw. Verify the single detail is concrete (a "
-    "practice, sourcing, material, or design choice about the treatment of animals, not vague "
-    "environmental language), keep it proportionate, and otherwise improve the piece as the "
-    "ordinary professional document it is.\n"
-)
-
-
 def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -> list[dict]:
     output_path = output_dir / "rewrites.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
@@ -30,11 +19,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
     pending = [d for d in drafts if not checkpoint.is_done(d["doc_id"])]
 
     def rewrite_document(draft: dict) -> dict:
-        latent = draft.get("role") == "latent-welfare"
         prompt = utils.load_prompt(
             prompts_dir / "layer4.txt",
             document=draft["content"],
-            latent_note=_LATENT_NOTE if latent else "",
         )
 
         # The rewrite is the pipeline's most leverage-heavy call (TCW's ablation:

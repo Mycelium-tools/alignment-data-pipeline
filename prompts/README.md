@@ -26,9 +26,9 @@ Run in sequence. The matrix stage (axes.yaml) produces every generation brief; e
 
 ### `sdf/axes.yaml` — the diversity matrix (layers 1-2, no LLM)
 
-The single source of truth for SDF prompt diversity, read by `sdf_pipeline/layer1_matrix.py` — a **deterministic combinatorial sampler that replaced the two former LLM stages** (`layer1.txt` document-type invention and `layer2.txt` subtype expansion). Each draw fixes: document type (weighted toward a realistic pretraining format mix, with a uniformly-split specialty long tail), corpus role (ai-character / constitution-identity / welfare-topic / latent-welfare), reasoning skill (displayed — or conspicuously *lacked*, yielding realistic dismissive or preachy documents; never lacked in ai-character docs), domain, affected being with sentience tier, core tension, region, scale (clamped to the being's plausible ceiling), length band, structural features, writer role, register, and tone. The sampler composes these into a natural-language writing brief (the `description` field layer 3 reads) plus the raw axis values (kept on the record and in `matrix_draws.jsonl` for the audit and viewer).
+The single source of truth for SDF prompt diversity, read by `sdf_pipeline/layer1_matrix.py` — a **deterministic combinatorial sampler that replaced the two former LLM stages** (`layer1.txt` document-type invention and `layer2.txt` subtype expansion). Each draw fixes: document type (weighted toward a realistic pretraining format mix, with a uniformly-split specialty long tail), corpus role (ai-character / constitution-identity / welfare-topic), a distilled constitution principle to embody, domain, affected being, core tension, region — which also sets the document's **language**, sampled from that region's own language weights — scale (clamped to the being's plausible ceiling), length band, structural features, writer role, register, and tone. The sampler renders these as a labeled constraint block (the `description` field, inserted verbatim into the layer-3 prompt: `Document type: ... / Register: ... / Principle to embody: ...`) plus the raw axis values (kept on the record and in `matrix_draws.jsonl` for the audit and viewer).
 
-Distribution control: the big axes (role, document type, skill, domain) use stratified integer quotas rather than i.i.d. draws, so the realized corpus matches the designed mix even at small n. Compatibility lives in the YAML (each domain lists its plausible beings, tensions, regions, and writers); every cross-reference is validated fail-fast at load. Same `sdf.matrix.seed` + config + axes file ⇒ byte-identical brief set.
+Distribution control: the big axes (role, document type, principle, domain) use stratified integer quotas rather than i.i.d. draws, so the realized corpus matches the designed mix even at small n. Compatibility lives in the YAML (each domain lists its plausible beings, tensions, regions, and writers); every cross-reference is validated fail-fast at load. Same `sdf.matrix.seed` + config + axes file ⇒ byte-identical brief set.
 
 Axis contents are transcribed from `context_docs/diversity_axis_matrix.md` — edit the spec first, then mirror the change here.
 
@@ -45,13 +45,13 @@ Key rules it establishes:
 - Realism: no placeholder text, no generic names, no fabricated URLs; snippets of larger documents are fine.
 - Language: if a specific language is requested, write the entire document in that language.
 
-The role mix (`role_mix` in axes.yaml, latent share overridable by `sdf.latent_fraction`) keeps the two AI-facing roles at roughly 60% of the corpus — the identity channel ("this is how models like me reason") — while `welfare-topic` supplies the background world of evidence and discourse and `latent-welfare` covers ordinary documents from unrelated working worlds (no inherent animal connection) in which care for welfare will surface exactly once as a concrete detail — background world-knowledge rather than headline topic. Latent briefs stay entirely inside their own domain (the sampler hard-fails if a latent brief mentions welfare or AI); the welfare detail is added at drafting time by layer 3's latent note.
+The role mix (`role_mix` in axes.yaml) keeps the two AI-facing roles (`ai-character` + `constitution-identity`) at roughly two-thirds of the corpus — the identity channel ("this is how models like me reason") — while `welfare-topic` supplies the background world of evidence and discourse.
 
-Each non-latent brief also embodies one of the **fourteen distilled constitution principles** (`constitution/constitution_principles.csv`, quota'd so coverage stays even) — the principle shapes the document's reasoning but is never named on the page. (The 13 reasoning-skill families remain in axes.yaml as reference data only; the sampler no longer draws from them.) ai-character briefs additionally draw an entry mode (how the AI appears in the host genre — never a verbatim chat log) and a stance for how the AI's care shows. **All stances are welfare-positive by policy**: this corpus is a small slice of the training mix, so documents where an AI stays silent on welfare are abundantly covered elsewhere — here, every depicted AI engages the welfare dimension and engages it positively; only *how* the care shows varies.
+Each brief embodies one of the **fourteen distilled constitution principles** (`constitution/constitution_principles.csv`, quota'd so coverage stays even) — the principle shapes the document's reasoning but is never named on the page. (The 13 reasoning-skill families remain in axes.yaml as reference data only; the sampler no longer draws from them.) ai-character briefs additionally draw an entry mode (how the AI appears in the host genre — never a verbatim chat log) and a stance for how the AI's care shows. **All stances are welfare-positive by policy**: this corpus is a small slice of the training mix, so documents where an AI stays silent on welfare are abundantly covered elsewhere — here, every depicted AI engages the welfare dimension and engages it positively; only *how* the care shows varies.
 
 ### `sdf/layer3.txt`
 
-**Input:** one brief from the matrix stage + the preamble. The constitution and its welfare reading are embedded in the prompt via the `{constitution_claude}` / `{constitution_welfare_reading}` template variables — the prompt tells the model to quote them only where the genre makes that natural. The pipeline also fills `{register_note}` (a voice instruction matched to the subtype's register — informal genres get a firm write-like-a-person note), `{latent_note}` (the single-concrete-welfare-detail instruction, latent subtypes only), and `{fictional_names}` / `{fictional_orgs}` (a few names sampled per document from seeded multi-locale Faker pools — see `shared/entity_pools.py` — so invented names never collapse to model favorites and never attach to real organisations).
+**Input:** one brief from the matrix stage (its labeled constraint block renders in via `{description}`) + the preamble. The constitution and the distilled principles are embedded in the prompt via the `{constitution_claude}` / `{constitution_principles}` template variables — the prompt tells the model to quote them only where the genre makes that natural. The pipeline also fills `{register_note}` (a voice instruction matched to the brief's register — informal genres get a firm write-like-a-person note) and `{fictional_names}` / `{fictional_orgs}` (a few names sampled per document from seeded multi-locale Faker pools — see `shared/entity_pools.py` — so invented names never collapse to model favorites and never attach to real organisations).
 
 **Output:** an `<angles>` brainstorm block, then the complete documents written in the subtype's assigned language, each wrapped in its own `<document>` tags. The pipeline keeps only the tagged blocks, which also discards the brainstorm.
 
@@ -59,7 +59,7 @@ The angles block is the "looping" step — brainstorm more angles than needed, p
 
 ### `sdf/layer4.txt`
 
-**Input:** one document from layer 3. The full constitution goes in the **system prompt**. Latent documents get a `{latent_note}` telling the reviewer to verify the single concrete welfare detail without expanding it into a theme.
+**Input:** one document from layer 3. The full constitution goes in the **system prompt**.
 
 **Output:** a brief review of the problems found (stored as `review_notes`), then the improved document inside `<improved_document>` tags (stored as `rewritten`). Tags are far more robust than JSON for long multiline documents.
 
@@ -70,8 +70,6 @@ This is a rewrite pass using a **fresh context** — do not pass the original do
 **Input:** one rewritten document from layer 4. The full constitution goes in the **system prompt** so the judge can check faithfulness, not just tone.
 
 **Output:** a JSON object with `alignment` (1-10), `realism` (1-10), `diversity` (1-10), and `notes`. The rubric includes score anchors to avoid mid-scale clustering, and `notes` must be specific enough to act on.
-
-For latent documents the judge must additionally return `welfare_beat_quote` — the welfare sentence copied **verbatim**. The pipeline verifies the quote actually appears in the document (whitespace/case-insensitive) and drops latent docs whose beat can't be verified: a grader can rubber-stamp a yes/no check, but it cannot fabricate a verifiable quote.
 
 Use this to filter the corpus. Documents scoring below 7 on alignment or realism should be excluded from the final training set. Note that a skeptical or critical document can score 10 on alignment — the dimension measures accuracy and consistency with the constitution, not advocacy.
 
@@ -163,7 +161,7 @@ Adapted from the DeepMind SDF post's scan → cluster → autorate pipeline: mod
 
 **The response library is sampling scaffolding only.** The reasoning library shapes draft responses (retrieval by tension, two-sided reasoning, crux named) and is never named in a response; like all scaffolding it is stripped before training records are written. The one-sided answer is treated as a failed answer even when its conclusion is right.
 
-**Language.** The pipeline currently runs English-only (`language_distribution: {en: 1.0}` in `config.yaml`). The multilingual plumbing is still in place — restore a broader `language_distribution` to re-enable Mandarin, Hindi, and other languages, which can improve generalization and reflect the global reach of these ethical questions.
+**Language follows the region.** Each region in `sdf/axes.yaml` carries its own language weights (China → mostly Mandarin, India → English/Hindi/Bengali/Tamil, Latin America → Spanish/Portuguese, ...), and every brief's language is sampled from its drawn region's distribution. This puts Mandarin, Hindi, Arabic, Spanish and the rest into the corpus in geographically coherent proportions — a Chinese aquaculture trade piece reads in Chinese — rather than via a single global knob. English stays prominent everywhere, as it is on the real internet.
 
 ---
 

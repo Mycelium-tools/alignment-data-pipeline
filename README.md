@@ -38,14 +38,12 @@ Generates pretraining-style documents — blog posts, academic abstracts, forum 
 
 | Layer | Script | What it does |
 |---|---|---|
-| 1 (matrix) | `layer1_matrix.py` | **Deterministic combinatorial sampler, zero API calls.** Draws each document's full generation brief from the fixed axes in `prompts/sdf/axes.yaml` — document type (weighted to a real pretraining mix), corpus role, a distilled constitution principle to embody (from `constitution/constitution_principles.csv`, quota'd for even coverage), domain, affected being + sentience tier, core tension, region, scale, length band, structural features, writer role, register, tone — with stratified quotas on the big axes and compatibility maps so no impossible combination is drawn. All AI stances are welfare-positive by policy. Replaces the two former LLM diversity stages (`layer1_document_types.py` + `layer2_subtypes.py`). |
+| 1 (matrix) | `layer1_matrix.py` | **Deterministic combinatorial sampler, zero API calls.** Draws each document's full generation brief from the fixed axes in `prompts/sdf/axes.yaml` — document type (weighted to a real pretraining mix), corpus role, a distilled constitution principle to embody (from `constitution/constitution_principles.csv`, quota'd for even coverage), domain, affected being, core tension, region (which also sets the document's language from per-region weights), scale, length band, structural features, writer role, register, tone — with stratified quotas on the big axes and compatibility maps so no impossible combination is drawn. All AI stances are welfare-positive by policy. Each brief renders as a labeled constraint block straight into the layer-3 prompt. Replaces the two former LLM diversity stages (`layer1_document_types.py` + `layer2_subtypes.py`). |
 | 3 | `layer3_draft.py` | Drafts documents per brief — register-matched voice, seeded fictional name/org pools, anti-house-style rules |
 | 4 | `layer4_rewrite.py` | Rewrites each draft with the combined constitution in context (supports a stronger `sdf.rewrite_model`) |
-| 5 | `layer5_score.py` | Scores and filters; verifies each latent doc's welfare beat via a mechanically-checked verbatim quote; culls near-duplicates; writes final corpus |
+| 5 | `layer5_score.py` | Scores and filters; culls near-duplicates; writes final corpus |
 
 The axis contents come from `context_docs/diversity_axis_matrix.md` (the Diversity Axis Matrix spec); edit the spec first, then mirror into `prompts/sdf/axes.yaml`. Briefs land in `layer2/subtypes.jsonl` (the layer-3 input path is unchanged), alongside `layer2/matrix_draws.jsonl` (raw axis values per brief) and `layer2/matrix_stats.json` (the realized distribution). Same `sdf.matrix.seed` + config + axes file ⇒ identical brief set.
-
-The **latent-welfare** slice (`sdf.latent_fraction`, default 12%) is ordinary documents from unrelated working worlds where care for animal welfare surfaces exactly once as a concrete detail — so the value also appears as background world-knowledge, not only as a headline topic.
 
 Final output: `outputs/sdf/runs/<run_id>/final/sdf_corpus.jsonl` (also reachable via the `outputs/sdf/latest` symlink)
 
