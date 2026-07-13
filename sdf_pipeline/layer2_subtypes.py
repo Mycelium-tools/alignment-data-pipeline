@@ -1,6 +1,5 @@
 """Layer 2: Generate subtypes for each document type."""
 
-import json
 import random
 import sys
 from pathlib import Path
@@ -55,14 +54,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, doc_types: list[dict]
             avoid_note=avoid_note,
         )
 
-        raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"))
-        text = raw.strip()
-        if text.startswith("```"):
-            text = "\n".join(text.split("\n")[1:])
-        if text.endswith("```"):
-            text = "\n".join(text.split("\n")[:-1])
-
-        subtypes = json.loads(text.strip())
+        raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"),
+                              stage="layer2")
+        subtypes = utils.extract_json_array(raw)
         records = []
         for i, st in enumerate(subtypes):
             lang = st.get("language", "en")

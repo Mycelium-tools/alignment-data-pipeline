@@ -1,6 +1,5 @@
 """Layer 1: Generate top-level document type categories."""
 
-import json
 import math
 import sys
 from pathlib import Path
@@ -39,16 +38,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         f"  Generating {count} document types "
         f"(min {min_ai_character} ai-character, {latent_count} latent-welfare)..."
     )
-    raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"))
+    raw = api.call_claude(user_message=prompt, model=config["sdf"].get("draft_model"),
+                          stage="layer1")
 
-    # Strip markdown code fences if present
-    text = raw.strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
-
-    doc_types = json.loads(text.strip())
+    doc_types = utils.extract_json_array(raw)
 
     records = []
     for i, dt in enumerate(doc_types):

@@ -46,7 +46,7 @@ class TestJsonl:
     def test_save_jsonl_does_not_escape_unicode(self, tmp_path):
         path = tmp_path / "data.jsonl"
         utils.save_jsonl([{"text": "🐟"}], path)
-        assert "🐟" in path.read_text()
+        assert "🐟" in path.read_text(encoding="utf-8")
 
     def test_append_jsonl_extends_existing_file(self, tmp_path):
         path = tmp_path / "data.jsonl"
@@ -61,6 +61,91 @@ class TestJsonl:
         path = tmp_path / "data.jsonl"
         path.write_text('{"id": 1}\n\n{"id": 2}\n\n')
         assert utils.load_jsonl(path) == [{"id": 1}, {"id": 2}]
+
+    def test_load_jsonl_reads_utf8_regardless_of_locale(self, tmp_path):
+        # Regression: pipeline files are UTF-8 by construction (ensure_ascii=False),
+        # but reads without an explicit encoding= used the locale codec — cp1252 on
+        # Windows — and crashed on the first non-cp1252 byte (curly quotes, emoji,
+        # non-English text). Write raw UTF-8 bytes so no locale is involved.
+        path = tmp_path / "data.jsonl"
+        path.write_bytes('{"text": "curly “quotes” — 🐟"}\n'.encode("utf-8"))
+        assert utils.load_jsonl(path) == [{"text": "curly “quotes” — 🐟"}]
+
+
+PAYLOAD = [{"subtype_name": "River survey"}, {"subtype_name": "Coastal survey"}]
+
+
+class TestExtractJson:
+    """Model responses wrap JSON in fences or surround it with prose; a paid
+    run must not crash on an otherwise usable response (a live claude_code run
+    died at layer 2 with "Extra data" from a trailing sentence)."""
+
+    def test_clean_json_passes_through(self):
+        assert utils.extract_json(json.dumps(PAYLOAD)) == PAYLOAD
+        assert utils.extract_json('{"alignment": 9}') == {"alignment": 9}
+
+    def test_markdown_fences_tolerated(self):
+        assert utils.extract_json("```json\n" + json.dumps(PAYLOAD) + "\n```") == PAYLOAD
+
+    def test_trailing_prose_tolerated(self):
+        text = json.dumps(PAYLOAD) + "\n\nLet me know if you'd like more subtypes."
+        assert utils.extract_json(text) == PAYLOAD
+
+    def test_leading_preamble_tolerated(self):
+        text = "Here are the subtypes you asked for:\n" + json.dumps(PAYLOAD)
+        assert utils.extract_json(text) == PAYLOAD
+
+    def test_short_bracketed_aside_does_not_shadow_payload(self):
+        # "[2]" is itself valid JSON; the longest parse must win.
+        text = "I generated [2] subtypes:\n" + json.dumps(PAYLOAD) + "\nDone."
+        assert utils.extract_json(text) == PAYLOAD
+
+    def test_no_json_raises_jsondecodeerror(self):
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json("garbage")
+
+    def test_control_characters_inside_strings_tolerated(self):
+        # temperature-1 prose JSON often carries literal newlines inside values
+        raw = '{"notes": "line one\nline two"}'
+        assert utils.extract_json(raw)["notes"] == "line one\nline two"
+
+    def test_shape_narrowed_helpers_raise_on_wrong_shape(self):
+        # extract_json_object/_array turn shape mismatches into the same
+        # JSONDecodeError as a parse failure, keeping callers on one error path
+        assert utils.extract_json_object('{"a": 1}') == {"a": 1}
+        assert utils.extract_json_array("[1, 2]") == [1, 2]
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json_object("[1, 2]")
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json_array('{"a": 1}')
+
+    def test_truncated_json_raises_jsondecodeerror(self):
+        # A cut-off payload contains complete inner objects; salvaging one
+        # would hand the caller a wrong-shaped fragment, so this must raise.
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json(json.dumps(PAYLOAD)[:-10])
+
+    def test_complete_payload_survives_truncated_trailing_chatter(self):
+        # max_tokens can cut the response mid-sentence *after* the payload has
+        # already closed; a dangling bracket in that chatter must not discard
+        # the good parse (review finding on #59).
+        assert utils.extract_json('[{"a": 1}]\n\nThanks for the {') == [{"a": 1}]
+        assert utils.extract_json(json.dumps(PAYLOAD) + '\nAlso note ["unclosed') == PAYLOAD
+
+    def test_malformed_array_raises_instead_of_returning_fragment(self):
+        # Missing/trailing commas are common LLM slip-ups; the broken array
+        # must raise like plain json.loads did, not silently return its first
+        # inner object as a dict (second review finding on #59).
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json('[{"a": 1} {"b": 2}]')  # missing comma
+        with pytest.raises(json.JSONDecodeError):
+            utils.extract_json('[{"a": 1}, {"b": 2},]')  # trailing comma
+
+    def test_benign_bracket_blip_in_prose_does_not_block_payload(self):
+        # A failed parse that never contained a complete value (a brace used
+        # as prose punctuation) is not a broken payload — the real JSON wins.
+        text = "Wrap it in {curly} braces:\n" + json.dumps(PAYLOAD)
+        assert utils.extract_json(text) == PAYLOAD
 
 
 class TestLoadPrompt:
@@ -169,6 +254,30 @@ class TestRunDirs:
     def test_resolve_run_dir_empty_root_exits(self, tmp_path):
         with pytest.raises(SystemExit):
             utils.resolve_run_dir(tmp_path / "does-not-exist")
+
+
+class TestWarnIfBackendChanged:
+    def test_warns_when_live_backend_differs_from_manifest(self, tmp_path, capsys):
+        run_dir = utils.create_run_dir(tmp_path / "runs", label="dev", config={"backend": "claude_code"})
+        utils.warn_if_backend_changed(run_dir, {"backend": "api"})
+        assert "different backend" in capsys.readouterr().err
+
+    def test_silent_when_backend_matches(self, tmp_path, capsys):
+        run_dir = utils.create_run_dir(tmp_path / "runs", label="dev", config={"backend": "claude_code"})
+        utils.warn_if_backend_changed(run_dir, {"backend": "claude_code"})
+        assert capsys.readouterr().err == ""
+
+    def test_manifest_without_backend_key_treated_as_api(self, tmp_path, capsys):
+        # A run created before the backend key existed defaults to api.
+        run_dir = utils.create_run_dir(tmp_path / "runs", label="dev", config={})
+        utils.warn_if_backend_changed(run_dir, {"backend": "api"})
+        assert capsys.readouterr().err == ""
+        utils.warn_if_backend_changed(run_dir, {"backend": "claude_code"})
+        assert "different backend" in capsys.readouterr().err
+
+    def test_missing_manifest_is_silent(self, tmp_path, capsys):
+        utils.warn_if_backend_changed(tmp_path / "no-such-run", {"backend": "api"})
+        assert capsys.readouterr().err == ""
 
 
 class TestResolveConstitutionDir:

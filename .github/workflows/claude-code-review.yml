@@ -39,11 +39,28 @@ jobs:
         with:
           fetch-depth: 1
 
+      # The action reports the job as successful the moment the agent process
+      # ends, even when it posted no verdict (see the verify step at the end).
+      # Record a start time so that step can require a *fresh* verdict — backdated
+      # 60s to absorb runner/GitHub clock skew, and to exclude any stale review
+      # left at the same head SHA by a previous run (e.g. after a base retarget).
+      - name: Record review start time
+        id: review-start
+        run: echo "ts=$(date -u -d '60 seconds ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Print the full SDK stream into the job log. Without this, a turn-1
+          # auth failure is undiagnosable from CI: the action logs only redacted
+          # init/result events (no error text), a debug-mode rerun adds nothing,
+          # and no artifact is uploaded — while any PR editing this workflow
+          # makes the action self-skip, so the setting must already be on main
+          # before a failure happens. The stream contains only what the review
+          # agent says and runs; the OAuth token itself is masked by Actions.
+          show_full_output: true
           # Also review commits pushed by bots (e.g. a fix pushed by claude[bot]).
           # Without this the action rejects bot-initiated runs. Narrow to specific
           # bot names instead of '*' if you want to restrict which bots trigger it.
@@ -52,8 +69,12 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review this pull request. The PR branch is already checked out in the
-            current working directory. Use `gh pr diff` to see the changes.
+            Review this pull request. The PR branch is already checked out in
+            the current working directory. Inspect the changes with
+            `gh pr diff`. To read individual files, use the Read, Grep, and
+            Glob tools — do NOT use git, cat, sed, grep, or find via Bash: only
+            the `gh pr` subcommands below are permitted, and any other Bash
+            command is denied and just wastes turns.
 
             Focus on high-signal problems in the changed code only:
             - Bugs, logic errors, and unhandled edge cases
@@ -66,20 +87,82 @@ jobs:
             Leave feedback with `mcp__github_inline_comment__create_inline_comment`
             for each specific issue (one comment per issue, on the relevant line).
 
-            Then submit ONE formal review verdict for PR
-            #${{ github.event.pull_request.number }} with `gh pr review`:
-            - If you found significant issues, run `gh pr review
-              ${{ github.event.pull_request.number }} --request-changes --body "<brief summary>"`.
-            - If the changes look correct and you found no significant issues, run
-              `gh pr review ${{ github.event.pull_request.number }} --approve --body "<brief summary>"`.
-            - If you are unsure or the PR is out of scope to judge, run `gh pr review
-              ${{ github.event.pull_request.number }} --comment --body "<brief summary>"`.
-            Never merge the PR; a human decides whether to merge.
+            Then submit exactly ONE formal review verdict for PR
+            #${{ github.event.pull_request.number }}. First write your summary
+            to a file named `review-body.md` in the repository root using the
+            Write tool (this keeps the command below free of shell quoting).
+            Then run ONE of these — nothing else:
+            - Significant issues found:
+              `gh pr review ${{ github.event.pull_request.number }} --request-changes --body-file review-body.md`
+            - Correct, no significant issues:
+              `gh pr review ${{ github.event.pull_request.number }} --approve --body-file review-body.md`
+            - Unsure or out of scope to judge:
+              `gh pr review ${{ github.event.pull_request.number }} --comment --body-file review-body.md`
+            Always use `--body-file`; never pass the summary inline with
+            `--body "..."`. Do NOT use command substitution `$(...)`, pipes, or
+            heredocs in any command — they are blocked in this environment and
+            the command will silently fail to run. Never merge the PR; a human
+            decides whether to merge.
           # The action denies comment-posting tools by default; grant the inline
           # comment tool plus the gh subcommands the review needs, or it reviews
-          # but cannot post its findings.
+          # but cannot post its findings. `Write` lets the review compose its
+          # summary into review-body.md for `gh pr review --body-file` — a plain
+          # `--body "..."` carrying a multi-line or command-substituted string is
+          # blocked in headless CI (it isn't covered by the Bash allow-rule and
+          # can't be interactively approved). Write grants runner-wide write,
+          # acceptable here: the job is `contents: read`, ephemeral, and the PR
+          # checkout is already treated as untrusted.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr review:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "Write,mcp__github_inline_comment__create_inline_comment,Bash(gh pr review:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
+
+      # Turn the action's false-green into a hard failure: confirm a claude[bot]
+      # review for THIS head commit was submitted during this run, and fail the
+      # check loudly if not (the action exposes no "verdict posted" signal). A
+      # read of the reviews API only needs the default token's pull-requests read.
+      - name: Verify a review verdict was posted
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SINCE: ${{ steps.review-start.outputs.ts }}
+          ACTION_OUTCOME: ${{ steps.claude-review.outcome }}
+          EXEC_FILE: ${{ steps.claude-review.outputs.execution_file }}
+        run: |
+          # Only enforce when the action actually ran a review. The action
+          # self-skips — exiting "success" with no execution output — when it
+          # cannot run, most commonly on a PR that edits this workflow (the
+          # action requires the file to match the default branch). That is not a
+          # review failure. The original bug is distinguishable: there the action
+          # ran to completion (an execution_file exists) but posted no verdict.
+          if [ "${ACTION_OUTCOME}" != "success" ]; then
+            echo "::notice::Claude action outcome was '${ACTION_OUTCOME}'; the job status already reflects that. Skipping verdict check."
+            exit 0
+          fi
+          if [ -z "${EXEC_FILE}" ]; then
+            echo "::notice::Claude action produced no execution output — it self-skipped (e.g. this PR edits the review workflow, which the action only runs from the default branch). Not a review failure; skipping verdict check."
+            exit 0
+          fi
+          if [ -z "${SINCE}" ]; then
+            echo "::error::No start timestamp was recorded; cannot verify the review."
+            exit 1
+          fi
+          # Poll briefly for API read-after-write consistency. submitted_at is
+          # ISO-8601 UTC, so the >= string compare against SINCE is correct;
+          # --paginate | wc -l counts matches across pages safely.
+          for attempt in 1 2 3 4 5 6; do
+            count=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews" --paginate \
+              --jq '.[] | select(.commit_id==env.HEAD_SHA and .submitted_at>=env.SINCE and (.user.login|test("claude";"i"))) | .id' \
+              | wc -l | tr -d ' ')
+            if [ "${count:-0}" -gt 0 ]; then
+              echo "✓ Found ${count} claude[bot] verdict(s) for ${HEAD_SHA}."
+              exit 0
+            fi
+            echo "No verdict yet (attempt ${attempt}/6); waiting…"
+            sleep 10
+          done
+          echo "::error::Claude review ran but posted no verdict for ${HEAD_SHA}. Re-run the workflow to retry."
+          exit 1
 

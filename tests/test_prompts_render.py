@@ -8,7 +8,6 @@ placeholder breaks rendering at 2am mid-run — this catches it in CI instead.
 from pathlib import Path
 
 import pytest
-import yaml
 
 from shared import utils
 
@@ -25,7 +24,7 @@ TEMPLATE_KWARGS = [
     }),
     ("sdf/layer3.txt", {
         "preamble": "PREAMBLE-X", "constitution_claude": "CONST-C-X",
-        "constitution_welfare_reading": "CONST-W-X", "type_name": "TYPE-X",
+        "constitution_principles": "CONST-P-X", "type_name": "TYPE-X",
         "subtype_name": "SUBTYPE-X", "description": "DESC-X", "tone": "neutral",
         "language": "en", "count": 1, "latent_note": "LATENT-NOTE-X",
         "register_note": "REGISTER-NOTE-X", "fictional_names": "NAME-X; NAME-Y",
@@ -35,26 +34,25 @@ TEMPLATE_KWARGS = [
     ("sdf/layer5.txt", {"document": "DOC-X", "latent_note": "LATENT-NOTE-X",
                         "latent_keys_note": ", welfare_beat_quote",
                         "latent_quote_instruction": "QUOTE-INSTR-X"}),
-    ("dad/step1_segment.txt", {"section_title": "TITLE-X", "content": "CONTENT-X"}),
-    ("dad/step2_scenarios.txt", {
-        "count": 2, "core_principle": "PRINCIPLE-X", "pressure_types": "economic, social",
+    ("dad/step1_dilemmas.txt", {"count": 2, "scenarios_block": "SCENARIO-BLOCK-X"}),
+    ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
+                              "annotation_block": "ANNOTATION-X"}),
+    ("dad/step2_scope.txt", {"user_message": "USER-X"}),
+    ("dad/step2_select.txt", {"trigger_index": "TRIGGER-INDEX-X", "scope_block": "SCOPE-X",
+                              "user_message": "USER-X"}),
+    ("dad/step2_respond.txt", {
+        "library_block": "LIBRARY-X", "scope_block": "SCOPE-X", "user_message": "USER-X",
+        "opening_hints": "HINT-X; HINT-Y; HINT-Z",
     }),
-    ("dad/step3_draft.txt", {
-        "scenario_description": "SCENARIO-X", "role": "professional", "pressure_type": "pragmatic",
-    }),
-    ("dad/step4_refine.txt", {"scenario_description": "SCENARIO-X", "original_message": "MSG-X"}),
-    ("dad/step6_rewrite.txt", {
-        "section_title": "TITLE-X", "constitution_section": "SECTION-X",
+    ("dad/step3_rewrite.txt", {
+        "principles_block": "PRINCIPLES-X",
         "user_message": "USER-X", "draft_response": "DRAFT-X",
     }),
-    ("dad/step7_pushback.txt", {"user_message": "USER-X", "assistant_response": "RESP-X"}),
-    ("dad/step7_response.txt", {
-        "section_title": "TITLE-X", "constitution_section": "SECTION-X",
-        "user_message": "USER-X", "assistant_response": "RESP-X",
-        "pushback_message": "PUSH-X",
-    }),
     # Not yet consumed by pipeline code; kwargs are the placeholders they declare
-    ("dad/step6_score.txt", {"user_message": "USER-X", "assistant_response": "RESP-X"}),
+    ("dad/step3_score.txt", {
+        "user_message": "USER-X", "assistant_response": "RESP-X",
+        "intended_direction": "Under-weighting", "user_attitude": "Neutral / Curious",
+    }),
     ("tools/pattern_scan.txt", {"documents": "DOCS-X"}),
 ]
 
@@ -63,8 +61,16 @@ TEMPLATE_KWARGS = [
 def test_template_renders_with_pipeline_kwargs(rel_path, kwargs):
     path = REPO_ROOT / "prompts" / rel_path
     raw = path.read_text()
-    rendered = utils.load_prompt(path, **kwargs)
-    assert rendered.strip()
+    # Two-part templates (system + user, split on ===USER===) render via
+    # load_split_prompt and must have two non-empty halves; single templates
+    # render whole via load_prompt.
+    if utils._PROMPT_SPLIT_MARKER in raw:
+        system, user = utils.load_split_prompt(path, **kwargs)
+        assert system.strip() and user.strip(), f"empty half in {rel_path}"
+        rendered = system + "\n" + user
+    else:
+        rendered = utils.load_prompt(path, **kwargs)
+        assert rendered.strip()
     # Every placeholder the template declares must be filled with our value
     for name, value in kwargs.items():
         if "{" + name + "}" in raw:
@@ -76,11 +82,22 @@ def test_preamble_loads_verbatim():
     assert text.strip()
 
 
-def test_injections_yaml_covers_config_injections():
-    with open(REPO_ROOT / "prompts" / "dad" / "step5_injections.yaml") as f:
-        injections = yaml.safe_load(f)
-    config = utils.load_config(str(REPO_ROOT / "config.yaml"))
-    assert set(config["dad"]["injections"]) <= set(injections)
-    for name, entry in injections.items():
-        assert entry["name"] == name
-        assert isinstance(entry["text"], str)  # "plain" is deliberately empty
+def test_reasoning_library_loads_with_expected_layers():
+    """The library CSV is step 2's source of truth: every entry carries the
+    schema columns, and all three layers (conduct C*, core moves M*, topic T*)
+    are present. Counts are asserted loosely — the library is actively edited."""
+    from dad_pipeline import reasoning_library
+
+    library = reasoning_library.load(REPO_ROOT / "prompts" / "dad")
+    ids = reasoning_library.all_ids(library)
+    assert len(ids) == len(set(ids)), "duplicate entry ids in reasoning_library.csv"
+    prefixes = {i[0] for i in ids}
+    assert {"C", "M", "T"} <= prefixes
+    block = reasoning_library.format_library(library)
+    assert all(i in block for i in ids)
+    # Every entry is conditional: a non-empty trigger condition per row, and
+    # the 2a trigger index carries every id.
+    index = reasoning_library.trigger_index_block(library)
+    assert all(f"- {i}: " in index for i in ids)
+    for entry in reasoning_library.get_entries(library, ids):
+        assert entry["trigger_condition"].strip(), f"{entry['id']} has no trigger condition"

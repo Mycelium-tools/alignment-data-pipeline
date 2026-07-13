@@ -361,23 +361,11 @@ _PREVALENCE_PROMPT_HEAD = (
 
 
 def _parse_json_block(raw: str):
-    text = (raw or "").strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        # models occasionally emit trailing prose or a second block after the
-        # JSON ("Extra data"); recover the first well-formed array/object
-        decoder = json.JSONDecoder()
-        start = min((i for i in (text.find("["), text.find("{")) if i >= 0), default=-1)
-        if start < 0:
-            raise
-        obj, _ = decoder.raw_decode(text[start:])
-        return obj
+    """The scan reply's JSON via the shared hardened parser — fences, prose
+    around the payload, and control characters inside strings all tolerated;
+    raises json.JSONDecodeError when nothing usable is present (callers keep
+    their existing failure handling)."""
+    return utils.extract_json(raw or "")
 
 
 def llm_pattern_scan(records: list[dict], config: dict, report: dict,
@@ -395,7 +383,7 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
         blob = "\n\n---\n\n".join(t[:1200] for t in batch)
         prompt = utils.load_prompt(prompts_dir / "pattern_scan.txt", documents=blob)
         try:
-            found = _parse_json_block(api.call_claude(user_message=prompt))
+            found = _parse_json_block(api.call_claude(user_message=prompt, stage="eval_audit_sdf"))
             return [p for p in found if isinstance(p, dict) and p.get("pattern")]
         except Exception as e:
             print(f"    batch scan parse failure ({e}); skipping batch")
@@ -415,7 +403,8 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
         for p in raw_patterns
     )
     try:
-        canonical = _parse_json_block(api.call_claude(user_message=_CONSOLIDATE_PROMPT + listing))
+        canonical = _parse_json_block(api.call_claude(user_message=_CONSOLIDATE_PROMPT + listing,
+                                                      stage="eval_audit_sdf"))
         canonical = [p for p in canonical if isinstance(p, dict) and p.get("pattern")][:15]
     except Exception as e:
         print(f"   consolidation failed ({e}); reporting raw patterns without prevalence")
@@ -433,7 +422,7 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
     def rate_one(doc: str) -> set[int]:
         prompt = _PREVALENCE_PROMPT_HEAD + plist + "\n\nDOCUMENT:\n" + doc[:1200]
         try:
-            ids = _parse_json_block(api.call_claude(user_message=prompt))
+            ids = _parse_json_block(api.call_claude(user_message=prompt, stage="eval_audit_sdf"))
             return {i for i in ids if isinstance(i, int) and 0 <= i < len(canonical)}
         except Exception:
             return set()
@@ -511,7 +500,7 @@ def main() -> None:
 
     utils.ensure_dir(report_dir)
     out = report_dir / "audit_report.json"
-    with open(out, "w") as f:
+    with open(out, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     print(f"\nReport written to {out}")
     if not args.patterns:

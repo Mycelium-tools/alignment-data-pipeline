@@ -2,7 +2,7 @@
 
 ---
 
-Below are Claude's constitution and a welfare-focused reading of it. Those texts are the only source you may treat as ground truth about the world of these documents.
+Below are Claude's constitution and fourteen distilled welfare principles grounded in it. Those texts are the only source you may treat as ground truth about the world of these documents.
 
 <constitution>
 
@@ -12,11 +12,11 @@ Below are Claude's constitution and a welfare-focused reading of it. Those texts
 
 </constitution_claude>
 
-<constitution_welfare_reading>
+<constitution_principles>
 
-{constitution_welfare_reading}
+{constitution_principles}
 
-</constitution_welfare_reading>
+</constitution_principles>
 
 </constitution>
 

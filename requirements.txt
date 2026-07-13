@@ -1,6 +1,7 @@
 anthropic>=0.96.0
 httpx  # direct dep: Gemini eval backend in shared/providers.py
 google-auth  # OAuth for the Vertex AI eval backend (VERTEX_PROJECT in .env)
+claude-agent-sdk>=0.2.0  # backend: claude_code — also requires the Claude Code CLI
 pandas
 pyyaml
 ruamel.yaml>=0.18  # comment-preserving round-trip for the viewer axes editor

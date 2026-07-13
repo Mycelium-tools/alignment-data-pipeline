@@ -353,7 +353,7 @@ def cluster_evenness(X: np.ndarray, ids: list[str], k: int = 50,
 
 
 def compare_reports(current: dict, previous_path: str) -> None:
-    with open(previous_path) as f:
+    with open(previous_path, encoding="utf-8") as f:
         prev = json.load(f)
     if prev.get("embed_model") != current.get("embed_model"):
         print(f"\nCOMPARE: skipped — previous report used embed model "
@@ -507,7 +507,7 @@ def main() -> None:
 
     utils.ensure_dir(report_dir)
     out = report_dir / "diversity_report.json"
-    with open(out, "w") as f:
+    with open(out, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     print(f"\nReport written to {out}")
     print(f"Embedding cost is appended to the global cost log "

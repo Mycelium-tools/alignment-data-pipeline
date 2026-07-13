@@ -160,7 +160,7 @@ def _record_prompt_manifest(out_dir: Path, prompt_md5: str, system_prompt: str,
         "temperature": args.temperature,
         "prompt_file": prompt_file,
     }
-    with open(manifest_path, "w") as f:
+    with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
 
@@ -242,7 +242,7 @@ def main() -> None:
         rows.append(row)
 
     report = summarize(rows, args.judges, rubric)
-    with open(out_dir / "summary.json", "w") as f:
+    with open(out_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
     print(f"\n=== DAD Judge Summary ({report['records']} records, rubric {rubric['version']}) ===")

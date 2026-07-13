@@ -13,7 +13,7 @@ from sdf_pipeline import (
     layer4_rewrite,
     layer5_score,
 )
-from shared import utils
+from shared import constitution_loader, utils
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
@@ -50,6 +50,11 @@ class TestLayer1:
         records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
         assert len(records) == 2
 
+    def test_surrounding_prose_tolerated(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        stub_claude(["Here are the types:\n" + DOC_TYPES_RESPONSE + "\nLet me know if you need more."])
+        records = layer1_document_types.run(tiny_config, prompts_sdf, layer_dir)
+        assert len(records) == 2
+
     def test_completed_layer_loads_from_disk_without_calls(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         existing = [{"type_id": 0, "type_name": "X", "description": "d", "role": "welfare-topic", "tone": "neutral"}]
         utils.save_jsonl(existing, layer_dir / "document_types.jsonl")
@@ -72,6 +77,13 @@ class TestLayer2:
         records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
         assert [r["subtype_id"] for r in records] == ["0_0", "0_1"]
         assert records[0]["type_name"] == "Field report"
+
+    def test_trailing_prose_tolerated(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
+        # Live failure 2026-07-08: a claude_code run died at layer 2 with
+        # json "Extra data" because the model appended a sentence after the array.
+        stub_claude([SUBTYPES_RESPONSE + "\n\nThese subtypes cover the field-report range."])
+        records = layer2_subtypes.run(tiny_config, prompts_sdf, layer_dir, [DOC_TYPE])
+        assert [r["subtype_id"] for r in records] == ["0_0", "0_1"]
 
     def test_unknown_language_replaced_from_distribution(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         stub_claude([SUBTYPES_RESPONSE])
@@ -139,7 +151,12 @@ class TestLayer4:
         assert records[0]["rewritten"] == "better text"
         assert records[0]["review_notes"] == "The draft undersold uncertainty."
         assert records[0]["original"] == "original text"
-        assert "joins two complementary frameworks" in calls[0]["system_prompt"]
+        # system prompt is the Claude constitution + distilled principles block,
+        # derived from the loaders so CSV/constitution edits don't break this
+        system = calls[0]["system_prompt"]
+        assert constitution_loader.load_constitution_claude() in system
+        principles_block = constitution_loader.format_principles(constitution_loader.load_principles())
+        assert principles_block in system
 
     def test_missing_tags_keeps_original_draft(self, tiny_config, prompts_sdf, layer_dir, stub_claude):
         stub_claude(["prose with no document tags"])
@@ -180,8 +197,11 @@ class TestLayer5:
         assert passed[0]["content"] == "text-a"
         assert passed[0]["scores"]["alignment"] == 9
         assert passed[0]["scores"]["notes"] == "n"
-        # the scorer judges against the constitution, not just the rubric prompt
-        assert "joins two complementary frameworks" in calls[0]["system_prompt"]
+        # the scorer judges against the constitution + principles, not just the rubric prompt
+        system = calls[0]["system_prompt"]
+        assert constitution_loader.load_constitution_claude() in system
+        principles_block = constitution_loader.format_principles(constitution_loader.load_principles())
+        assert principles_block in system
 
     def test_parse_error_defaults_scores_to_five(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
         stub_claude(["garbage"])
@@ -190,6 +210,17 @@ class TestLayer5:
         scored = utils.load_jsonl(layer_dir / "scores.jsonl")
         assert scored[0]["scores"]["alignment"] == 5
         assert scored[0]["scores"]["realism"] == 5
+
+    def test_wrong_shaped_judge_reply_defaults_like_a_parse_error(
+        self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude
+    ):
+        # A list-shaped reply parses fine but isn't a score object — it must
+        # take the parse-error default path, not crash the run on .get().
+        stub_claude(["[8, 7, 9]"])
+        passed = layer5_score.run(tiny_config, prompts_sdf, layer_dir, tmp_path / "final", [_rewrite("a")])
+        assert passed == []
+        scored = utils.load_jsonl(layer_dir / "scores.jsonl")
+        assert scored[0]["scores"]["alignment"] == 5
 
     def test_missing_score_fields_default_to_zero(self, tiny_config, prompts_sdf, layer_dir, tmp_path, stub_claude):
         stub_claude([json.dumps({"alignment": 9})])

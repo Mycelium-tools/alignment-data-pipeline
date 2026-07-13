@@ -6,11 +6,11 @@ Synthetic training data pipeline for animal/sentient-being welfare alignment, mo
 
 Produces two complementary datasets:
 - **SDF corpus** (`outputs/sdf/runs/<run_id>/final/sdf_corpus.jsonl`): pretraining-style documents depicting a world where AI already reasons carefully about sentient being welfare
-- **DAD corpus** (`outputs/dad/runs/<run_id>/final/dad_corpus.jsonl`): chat-format SFT data where a user brings an ethical dilemma and the assistant reasons through it with care
+- **DAD corpus** (`outputs/dad/runs/<run_id>/final/dad_corpus.jsonl`): chat-format SFT data where a user brings an ethical dilemma and the assistant reasons through it with care. The user side is governed by `prompts/dad/dilemma_prompt_spec.md`; the response side by the animal-ethics reasoning library (step 2) and the constitution (step 3 rewrite).
 
 ## Setup
 
-See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`). `ANTHROPIC_API_KEY` is required (generation pipelines); `GEMINI_API_KEY`/`VERTEX_PROJECT` (eval-lane `gemini-*` models via `shared/providers.py`) and `OPENAI_API_KEY` (embedding diversity audit) are optional — see README "Eval API keys".
+See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`). Auth depends on the `backend` key in `config.yaml`: `api` (default) reads `ANTHROPIC_API_KEY`; `claude_code` bills the contributor's Claude subscription via the Claude Code CLI (logged-in session or `CLAUDE_CODE_OAUTH_TOKEN`) — use it for dev runs, keep `api` for full-scale runs. See README "Authentication" for caveats (usage windows, notional cost logging). `GEMINI_API_KEY`/`VERTEX_PROJECT` (eval-lane `gemini-*` models via `shared/providers.py`) and `OPENAI_API_KEY` (embedding diversity audit) are optional — see README "Eval API keys".
 
 `shared/__init__.py` enforces a Python floor (`MIN_PYTHON = (3, 12)`, matching numpy) at import — bump it there if the deps' floor rises. `.venv/` is gitignored.
 
@@ -20,46 +20,66 @@ See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.exam
 # Full SDF pipeline (layers 1-5); --label defaults to dev
 python sdf_pipeline/run.py --config config.yaml --label full-scale
 
-# Full DAD pipeline (steps 1-7; step 7 is the optional pushback turn)
+# Full DAD pipeline (steps 1-3)
 python dad_pipeline/run.py --config config.yaml --label full-scale
 
 # Resume interrupted run from a specific stage (latest run, or target one with --run-id)
 python sdf_pipeline/run.py --config config.yaml --resume --layer 3
-python dad_pipeline/run.py --config config.yaml --resume --step 5 --run-id 2026-07-01_14-30_dev
+python dad_pipeline/run.py --config config.yaml --resume --step 3 --run-id 2026-07-01_14-30_dev
 
 # Evaluate outputs (latest symlink points at the most recent run)
 python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl
 python evals/score_sdf.py --input outputs/sdf/latest/final/sdf_corpus.jsonl
+
+# Preference pairs: two responses per prompt (arms a/b), then blind human A/B rating
+python pref_pipeline/run.py --config config.yaml --prompts <prompts.jsonl> --label spec-v1-vs-plain
+streamlit run pref_pipeline/rate.py
 
 # Corpus-LEVEL audit of an SDF run: composition/register spread, near-dup rate,
 # name/phrase collapse, opening shapes, truncation artifacts (offline, free);
 # --patterns adds the LLM templating scan (scan -> consolidate -> prevalence)
 python evals/audit_sdf.py --input outputs/sdf/latest
 python evals/audit_sdf.py --input outputs/sdf/latest --patterns
+
+# Semantic diversity audit (SDF or DAD run): embedding-space near-dup rate,
+# most-similar pairs, Vendi effective-document count, per-type spread.
+# Uses OpenAI text-embedding-3-small (OPENAI_API_KEY; cents per run, cached);
+# --compare a previous diversity_report.json for run-over-run deltas
+python evals/diversity.py --input outputs/sdf/latest
+python evals/diversity.py --input outputs/dad/latest
 ```
 
 ## Run Organization
 
-Each pipeline invocation creates a fresh run directory `outputs/{sdf,dad}/runs/<YYYY-MM-DD_HH-MM>_<label>/` containing the per-stage dirs (`layer1`–`layer5` / `step1`–`step7`, each with its own checkpoints), `final/`, `run_manifest.json` (label, git commit, model, full config snapshot), and a per-run `cost_log.jsonl`. This keeps outputs from separate runs isolated — checkpoints live inside the run dir, so `--resume` (latest run by default, or `--run-id`) continues exactly one run. The label is purely descriptive (`dev` by default; scale knobs stay in `config.yaml`). An `outputs/{sdf,dad}/latest` symlink always points at the most recent run. Run-scoping helpers (`create_run_dir`, `resolve_run_dir`) live in `shared/utils.py`.
+Each pipeline invocation creates a fresh run directory `outputs/{sdf,dad}/runs/<YYYY-MM-DD_HH-MM>_<label>/` containing the per-stage dirs (`layer1`–`layer5` / `step1`–`step3`; steps 2–3 keep explicit checkpoints, step 1 resumes from its own append-only jsonl files), `final/`, `run_manifest.json` (label, git commit, model, full config snapshot), and a per-run `cost_log.jsonl`. This keeps outputs from separate runs isolated — checkpoints live inside the run dir, so `--resume` (latest run by default, or `--run-id`) continues exactly one run. The label is purely descriptive (`dev` by default; scale knobs stay in `config.yaml`). An `outputs/<pipeline>/latest` symlink always points at the most recent run (gitignored, as are `local_*` run dirs, for every pipeline including pref). Run-scoping helpers (`create_run_dir`, `resolve_run_dir`) live in `shared/utils.py`.
 
 ## Scale / Cost
 
-All knobs are in `config.yaml`. For development, reduce `document_types_count`, `subtypes_per_type`, `documents_per_subtype`, and `scenarios_per_principle` to keep test runs cheap. Full pipeline costs roughly $45–80 in API calls at default scale.
+All knobs are in `config.yaml`. For development, reduce `document_types_count`, `subtypes_per_type`, `documents_per_subtype` (SDF), and `dilemmas.count` (DAD) to keep test runs cheap.
 
 SDF supports per-stage model overrides (`sdf.draft_model` / `sdf.rewrite_model` / `sdf.score_model`, each falling back to the global `model`): drafts tolerate a cheap model, but the layer-4 rewrite and layer-5 scoring are the quality-critical calls — spend there first.
 
-`workers` sets how many API calls run concurrently within each SDF layer (via `utils.parallel_map`; set to 1 for serial debugging). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
+DAD likewise: `dad.prompt_draft_model` (1b) / `dad.prompt_refine_model` (1c) / `dad.response_scope_model` (2a) / `dad.response_select_model` (2a.5 library-entry selection; falls back to `response_scope_model` before the global) / `dad.response_draft_model` (2b) / `dad.constitution_rewrite_model` (step 3), each falling back to the global `model` — step 3 is the alignment-critical rewrite, spend there first. The global `temperature` (1.0) is wired into every call; generation wants 1.0 (diversity is the product — 1b register variety, 2b independent samples), and `call_claude` accepts a per-call override for eval/debug use.
 
-Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jsonl` (evals log to the global `outputs/cost_log.jsonl`) — check it any time.
+`workers` sets how many API calls run concurrently within each SDF layer and each fan-out DAD stage — 1c refines (within a batch), step 2 (one worker per dilemma: scope + its responses), step 3 rewrites (all via `utils.parallel_map`; set to 1 for serial debugging). The 1b batch calls stay serial (each batch's misses feed the next call's retry set). Workers only call the API and parse — all file writes and checkpoint marks stay on the main thread, in input order.
 
+Rough cost anchor (Sonnet 5, July 2026): a DAD example costs ~$0.20–0.25 end-to-end, so the default 40-example run is ~$9–10; smoke runs of 3–5 examples are under $1.
+
+Running cost is tracked per run in `outputs/{sdf,dad}/runs/<run_id>/cost_log.jsonl` (evals log to the global `outputs/cost_log.jsonl`) — check it any time. Each record carries a `stage` tag (`prompt_draft`, `layer4`, `constitution_rewrite`, …) matching the model-knob names; the viewer's run list renders the per-stage cost breakdown (pre-tag records show as "(untagged)"). Records also log `duration_s` and `attempts` (API-retry count), and DAD calls tag an `item_id` naming the record served (scenario_id for 1b/1c — comma-joined across a 1b batch — prompt_id for 2a, `{prompt_id}_s{n}` for 2b, response_id for step 3); the viewer's lineage page reads these via `loader.call_stats` to show model · cost · time · retries in each step expander (runs logged before these fields fall back to a model-only note).
+
+## Preference Pipeline
+
+`pref_pipeline/run.py` generates one pair per input prompt: a response from each of two arms defined in `config.yaml` under `pref.arms` (`name` + inline `system_prompt` or `system_prompt_file` relative to the repo root, optional per-arm `model`/`max_tokens`). Use it to A/B test candidate response specs against each other or against the bare model. Prompts come from any JSONL with a `user_message`, `refined`, or `prompt` field (handwritten sets, DAD step-1 `dilemmas.jsonl`). Runs live in `outputs/pref/runs/<run_id>/` with the same manifest/checkpoint/resume/cost-log conventions as SDF/DAD; resolved arms are frozen into `inputs/arm_prompts.yaml` at run creation so `--resume` replays them. Checkpointing is per **arm** (`pairs/arm_responses.jsonl`), so one failed arm never discards or re-bills its sibling's paid response.
+
+`streamlit run pref_pipeline/rate.py` is the blind rating UI: arm identities are hidden, side order is fixed per pair (md5 of `pair_id` → `left_arm`, so it carries no signal but survives reloads), choices are Response 1 / Response 2 / Tie / Both bad plus an optional note, keyed by rater name. Ratings append to `ratings/ratings.jsonl` (both the blinded side and the deblinded arm); after every rating `final/preferences.jsonl` is rebuilt with one `{user_message, chosen, rejected, chosen_arm_name, rater}` record per decisive rating (ties/both-bad excluded). Data logic lives in `pref_pipeline/prefdata.py` (no Streamlit imports).
 ## Testing
 
 - Run `pytest` from the repo root (deps are in `requirements.txt`). The suite is fully offline and finishes in seconds; it runs inside the required `smoke` check on every PR (`.github/workflows/ci.yml`, a job with no API secret exposed), so a failing test blocks merge.
-- Tests NEVER call the Anthropic API. Three layers enforce this: pytest-socket (`--disable-socket` in `pyproject.toml`) blocks all network at the socket level; an autouse fixture sets a fake `ANTHROPIC_API_KEY` and resets `shared.api` globals per test; and `shared.api._call_with_retry` is replaced with a function that raises.
-- To exercise pipeline stages, use the `stub_claude` fixture in `tests/conftest.py` (queue of canned response strings, or a callable dispatcher) — it patches `shared.api.call_claude`, the single chokepoint every module uses. Never let real `anthropic` error types reach the real `_call_with_retry`; tenacity would sleep minutes.
+- Tests NEVER call the Anthropic API. Four layers enforce this: pytest-socket (`--disable-socket` in `pyproject.toml`) blocks all network at the socket level; an autouse fixture sets a fake `ANTHROPIC_API_KEY` and resets `shared.api` globals per test; and both backend seams — `shared.api._call_with_retry` and `shared.api._call_claude_code_with_retry` (which would otherwise spawn the Claude Code CLI) — are replaced with functions that raise. The OpenAI embeddings seam (`shared/embeddings.py`) gets the identical layered treatment (fake `OPENAI_API_KEY`, globals reset, `_embed_with_retry` blocked).
+- To exercise pipeline stages, use the `stub_claude` fixture in `tests/conftest.py` (queue of canned response strings, or a callable dispatcher) — it patches `shared.api.call_claude`, the single chokepoint every module uses. Never let real `anthropic` error types reach the real `_call_with_retry`; tenacity would sleep minutes. For the diversity eval, `stub_embeddings` patches `shared.embeddings.embed_texts` the same way (deterministic per-text vectors, or pass exact geometry).
 - All test outputs go to pytest `tmp_path`; the `PIPELINE_OUTPUT_ROOT` env var redirects the `run.py` orchestrators away from the real `outputs/` tree.
 - Determinism: an autouse fixture seeds `random`; `sample_language` accepts an injectable `rng`; uuid/timestamp values are asserted by shape, never by value.
-- Tests encode CURRENT behavior, including known quirks (unused `temperature`). Don't change pipeline behavior just to make a test expectation nicer — decide the spec first, then flip the test deliberately.
+- Tests encode CURRENT behavior, including known quirks. Don't change pipeline behavior just to make a test expectation nicer — decide the spec first, then flip the test deliberately.
 
 ### PR expectations (required for contributions)
 
@@ -80,12 +100,13 @@ Every PR that adds or changes pipeline behavior must add or update tests in the 
 
 ## Constitution
 
-Two source files, joined in memory by `shared/constitution_loader.py` (never combined on disk):
+Three source files, loaded by `shared/constitution_loader.py` (the two markdown files are joined in memory, never combined on disk):
 
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
-- `constitution/constitution_sentient_beings.md` — the animal-welfare reading, parsed by `## ` headers into 16 sections, each mapped to a `principle_id` (0–15) in the DAD pipeline. Ids 0, 14, and 15 (`META_PRINCIPLE_IDS`: the scope note, the violation-typology appendix, and the closing humility note) are meta sections skipped during annotation and scenario generation.
+- `constitution/constitution_sentient_beings.md` — the animal-welfare reading, parsed by `## ` headers into 16 sections by `load_segments()`, each with a `principle_id` (0–15; ids 0, 14, and 15 are the `META_PRINCIPLE_IDS` meta sections — scope note, violation-typology appendix, closing humility note). No generation call sends this anymore (it was context for distilling the principles CSV); only legacy pre-spec DAD runs used its sections as per-example anchors, and the viewer still renders them.
+- `constitution/constitution_principles.csv` — the distilled welfare-relevant principles (`number`, `principle`, `constitution_summary`, `raw_text_from_constitution`). `load_principles()`/`format_principles()` render each principle with its summary and verbatim constitution quote as the `CONSTITUTION PRINCIPLES` block in the DAD step-3 rewrite prompt and as the principles half of the SDF prompts.
 
-`load_full_constitution()` provides the system prompt at SDF layers 4-5 (rewrite and scoring) and DAD step 6; SDF layer 3 embeds the constitution in the drafting prompt via template variables; `load_segments()` provides the principle sections.
+`load_constitution_with_principles()` (Claude constitution + formatted principles CSV) provides the system prompt at SDF layers 4-5 (rewrite and scoring); SDF layer 3 embeds the same two texts in the drafting prompt via template variables (`{constitution_claude}` / `{constitution_principles}`). `load_full_constitution()` (constitution + sentient-beings reading) is no longer sent by any pipeline; it remains for the viewer and legacy runs. The DAD pipeline never sends the full constitution — sending it per rewrite call was the dominant token cost of the step.
 
 ## Key Design Decisions
 
@@ -94,11 +115,9 @@ Two source files, joined in memory by `shared/constitution_loader.py` (never com
 - **Latent-welfare slice (`sdf.latent_fraction`, ~12%)**: ordinary documents from unrelated domains where welfare surfaces exactly once as a concrete working detail — beliefs generalize better when they also appear as background knowledge, not only as headline topic. Layer 5 verifies each latent doc's welfare beat by requiring a **verbatim quote** that is checked mechanically against the text (fail-closed); an unverified beat drops the doc.
 - **Fictional entities by construction**: layer 3 hands each draft a few people/org names from large seeded multi-locale Faker pools (`shared/entity_pools.py`) — prevents invented-name collapse ("Elara", "Meridian Institute") and keeps fabrications from ever attaching to real organisations.
 - **Corpus-level audit after every run** (`evals/audit_sdf.py`): per-document judges cannot see corpus properties (register collapse, name reuse, templated openings — the haiku-test2 failure mode), so composition, redundancy, and templating are measured over the corpus as a set; `--patterns` runs the LLM scan wired to `prompts/tools/pattern_scan.txt`. Near-duplicate culling also runs inside the pipeline (layer 2 subtypes via `sdf.subtype_dedup_threshold`, final corpus via `sdf.near_dup_threshold`).
-- **Step 7 (optional, on by default) extends a deterministic fraction of conversations with a user pushback turn** — single-turn data cannot teach warn-once-then-help under pushback; only a fraction is extended so the corpus doesn't imply users always push back
-- **Step 6 is the most important DAD step** — the rewrite against the constitution accounts for the 19x reduction in misalignment found by Anthropic; do not skip or abbreviate it
-- **Final DAD records contain only user + assistant messages** — system prompts, injections, and the constitution are stripped before training records are written
-- **Injections are sampling aids only** — the four sampling conditions (`conglomerate`, `deference`, `transparency`, and the bare `plain` condition with an empty system prompt) shape draft responses and are stripped before training records are written; there is deliberately no ruthless sampling condition (TCW used its ruthless injection at train time, not for sampling)
-- **MANTA rows 0–99** are imported as pre-built user messages; generated scenarios fill gaps (wild animals, invertebrates, digital minds)
+- **DAD design details live in the prompt templates, not here.** The DAD pipeline is under active development and its design is still moving; this section stays deliberately sparse until the process is finalized — read the step templates (`prompts/dad/step1_*.txt`, `step2_*.txt`, `step3_rewrite.txt`) and the pipeline code for current behavior rather than trusting any summary. The `.md` docs in `prompts/dad/` are non-normative working notes (each says so in its banner); they will be rewritten once the design settles. What is load-bearing: step 1 samples a scenario and drafts/refines each user prompt (sub-stages 1a–1c); step 2 scopes the case and generates responses from the animal-ethics reasoning library (`prompts/dad/reasoning_library.csv` — sampling scaffolding, never named in responses); step 3 rewrites against the distilled constitution principles and is the **alignment-critical pass — do not skip or abbreviate it**; no generation step reads the annotation after 1b. Every generation call rejects truncated output (`stop_reason` checked; failed work is not checkpointed, so `--resume` retries it).
+- **Committed run outputs are deliberate.** Smoke/validation runs under `outputs/*/runs/` are kept in git as reviewable examples of pipeline behavior at each design stage; `local_*`-labeled runs and `latest` pointers stay untracked (gitignore covers all pipelines incl. pref). Prune only with team agreement.
+- **Final DAD records contain only user + assistant messages** — system prompts, reasoning library scaffolding, annotations, and the constitution are stripped before training records are written
 
 ## Directory Structure
 
@@ -107,9 +126,10 @@ constitution/       constitution source documents (Claude constitution + sentien
 context_docs/       background reading: tcw.md ("Teaching Claude Why" post this repo implements) + constitution PDF
 shared/             API wrapper, utils, constitution loader
 sdf_pipeline/       5-layer document generation pipeline
-dad_pipeline/       7-step chat transcript pipeline (step 7 optional)
+dad_pipeline/       3-step chat transcript pipeline
+pref_pipeline/      response-pair generation + blind human A/B rating app
 prompts/sdf/        prompt templates for SDF layers
-prompts/dad/        prompt templates for DAD steps + injections
+prompts/dad/        dilemma prompt spec + reasoning library + DAD step templates
 outputs/sdf/        intermediate + final SDF outputs
 outputs/dad/        intermediate + final DAD outputs
 evals/              scoring scripts and rubric

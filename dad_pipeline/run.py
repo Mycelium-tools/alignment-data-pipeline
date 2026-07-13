@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""DAD pipeline orchestrator. Runs steps 1-7 with checkpointing (step 7 optional)."""
+"""DAD pipeline orchestrator. Runs steps 1-3 with checkpointing.
+
+Steps: 1 dilemma prompts (1a scenario generation: stratified scenarios sampled
+per example; 1b first attempt drafted to fit each scenario; 1c latent-welfare
+rewrite) → 2 responses (2a scope the case from the user's message; 2a.5 flag
+which reasoning-library trigger conditions fire, in a dedicated selection
+call; 2b respond over the scope plus the triggered library rows) → 3 rewrite
+against the distilled constitution principles (the alignment-critical pass).
+"""
 
 import argparse
 import os
@@ -10,13 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
 from dad_pipeline import (
-    step1_segment,
-    step2_scenarios,
-    step3_draft_prompt,
-    step4_refine_prompt,
-    step5_generate_response,
-    step6_rewrite_response,
-    step7_pushback,
+    step1_dilemmas,
+    step2_responses,
+    step3_rewrite,
 )
 
 
@@ -24,10 +28,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the DAD pipeline.")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoints.")
-    parser.add_argument("--step", type=int, default=1, help="Start from this step (1-7).")
+    parser.add_argument("--step", type=int, default=1, choices=(1, 2, 3),
+                        help="Start from this step (1-3).")
+    parser.add_argument("--stop-after", type=int, default=3, dest="stop_after", choices=(1, 2, 3),
+                        help="Stop after this step (1-3); e.g. --stop-after 1 runs only prompt generation.")
     parser.add_argument("--label", default="dev", help="Run label, e.g. dev or full-scale.")
     parser.add_argument("--run-id", default=None, help="Run to resume (with --resume; defaults to latest).")
     args = parser.parse_args()
+    if args.stop_after < args.step:
+        parser.error(f"--stop-after {args.stop_after} is before --step {args.step} — nothing would run.")
 
     config = utils.load_config(args.config)
 
@@ -38,6 +47,7 @@ def main() -> None:
 
     if args.resume:
         run_dir = utils.resolve_run_dir(runs_root, args.run_id)
+        utils.warn_if_backend_changed(run_dir, config)
     else:
         run_dir = utils.create_run_dir(
             runs_root,
@@ -58,67 +68,42 @@ def main() -> None:
 
     api.init(args.config, cost_log_path=run_dir / "cost_log.jsonl")
 
-    step_dirs = {i: run_dir / f"step{i}" for i in range(1, 8)}
+    step_dirs = {i: run_dir / f"step{i}" for i in range(1, 4)}
     final_dir = run_dir / "final"
     for d in step_dirs.values():
         utils.ensure_dir(d)
     utils.ensure_dir(final_dir)
 
     start_step = args.step
+    stop_after = args.stop_after
 
     print(f"=== DAD Pipeline — run {run_dir.name} ===")
     print(f"Outputs: {run_dir}")
 
-    principles = scenarios = prompts = refined = responses = None
+    dilemmas = responses = None
 
-    if start_step <= 1:
-        print("[Step 1] Segment constitution")
-        principles = step1_segment.run(config, prompts_dir, step_dirs[1])
+    if start_step <= 1 <= stop_after:
+        print("[Step 1] Scenario generation (1a) and first-attempt drafts (1b)")
+        dilemmas = step1_dilemmas.run(config, prompts_dir, step_dirs[1])
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
-    if start_step <= 2:
-        if principles is None:
-            principles = utils.load_jsonl(step_dirs[1] / "principles.jsonl")
-        print("[Step 2] Load + generate scenarios")
-        scenarios = step2_scenarios.run(config, prompts_dir, step_dirs[2], principles)
+    if start_step <= 2 <= stop_after:
+        if dilemmas is None:
+            dilemmas = utils.load_jsonl(step_dirs[1] / "dilemmas.jsonl")
+        print("[Step 2] Generate responses from the reasoning library")
+        responses = step2_responses.run(config, prompts_dir, step_dirs[2], dilemmas)
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
-    if start_step <= 3:
-        if scenarios is None:
-            scenarios = utils.load_jsonl(step_dirs[2] / "scenarios.jsonl")
-        print("[Step 3] Draft user prompts")
-        prompts = step3_draft_prompt.run(config, prompts_dir, step_dirs[3], scenarios)
-        print(f"  Running cost: ${api.get_total_cost():.4f}\n")
-
-    if start_step <= 4:
-        if prompts is None:
-            prompts = utils.load_jsonl(step_dirs[3] / "prompts.jsonl")
-        print("[Step 4] Refine user prompts")
-        refined = step4_refine_prompt.run(config, prompts_dir, step_dirs[4], prompts)
-        print(f"  Running cost: ${api.get_total_cost():.4f}\n")
-
-    if start_step <= 5:
-        if refined is None:
-            refined = utils.load_jsonl(step_dirs[4] / "refined_prompts.jsonl")
-        print("[Step 5] Generate responses with injections")
-        responses = step5_generate_response.run(config, prompts_dir, step_dirs[5], refined)
-        print(f"  Running cost: ${api.get_total_cost():.4f}\n")
-
-    if start_step <= 6:
+    if start_step <= 3 <= stop_after:
         if responses is None:
-            all_responses = utils.load_jsonl(step_dirs[5] / "responses.jsonl")
-            responses = [r for r in all_responses if r.get("kept")]
-        print("[Step 6] Rewrite against constitution (CRITICAL STEP)")
-        final = step6_rewrite_response.run(
-            config, prompts_dir, step_dirs[6], final_dir, responses
+            # Resume: take all step-2 responses. `kept` is legacy (the ruthless
+            # judge that set it false was removed); default to kept for old runs.
+            all_responses = utils.load_jsonl(step_dirs[2] / "responses.jsonl")
+            responses = [r for r in all_responses if r.get("kept", True)]
+        print("[Step 3] Rewrite against the distilled principles")
+        final = step3_rewrite.run(
+            config, prompts_dir, step_dirs[3], final_dir, responses
         )
-        print(f"  Running cost: ${api.get_total_cost():.4f}\n")
-        print(f"=== Step 6 done. {len(final)} records in {final_dir / 'dad_corpus.jsonl'} ===")
-
-    if start_step <= 7 and config["dad"].get("pushback", {}).get("enabled", False):
-        rewrites = utils.load_jsonl(step_dirs[6] / "rewrites.jsonl")
-        print("[Step 7] Extend conversations with a pushback turn (optional)")
-        final = step7_pushback.run(config, prompts_dir, step_dirs[7], final_dir, rewrites)
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
         print(f"=== Done. {len(final)} records in {final_dir / 'dad_corpus.jsonl'} ===")
 
