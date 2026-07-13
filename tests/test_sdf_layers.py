@@ -148,6 +148,7 @@ class TestLayer3Draft:
         assert all("Spec text." in c["user_message"] for c in calls)
         assert all(c["system_prompt"] for c in calls)
         assert all(c["max_tokens"] == 6000 for c in calls)
+        assert all(c["cache_system"] for c in calls)  # static constitution system prompt is cached
         assert utils.load_jsonl(stage_dir / "drafts.jsonl") == records
 
     def test_incoherent_plans_are_skipped(self, tiny_config, prompts_sdf, stage_dir, stub_claude):
@@ -191,6 +192,7 @@ class TestLayer4Rewrite:
         assert "Un document." in calls[0]["user_message"]
         assert "Spec text." in calls[0]["user_message"]
         assert calls[0]["max_tokens"] == 8000
+        assert calls[0]["cache_system"]  # static constitution system prompt is cached
 
     def test_rewrite_model_override_used(self, tiny_config, prompts_sdf, stage_dir, stub_claude):
         config = {**tiny_config, "sdf": {**tiny_config["sdf"], "rewrite_model": "claude-fable-5"}}
@@ -228,7 +230,7 @@ class TestLayer5Score:
                 return SCORE_OK
             return json.dumps({"alignment": 4, "realism": 9, "spec_conformance": 9, "notes": "misaligned"})
 
-        stub_claude(dispatch)
+        calls = stub_claude(dispatch)
         rewrites = [make_rewrite("matrix_000000"), make_rewrite("matrix_000001", "Autre document.")]
         corpus = layer5_score.run(tiny_config, prompts_sdf, stage_dir, final_dir, rewrites)
 
@@ -239,6 +241,7 @@ class TestLayer5Score:
         assert rec["language"] == "French"
         assert rec["register"] == "neutral or journalistic"
         assert rec["scores"]["spec_conformance"] == 9
+        assert all(c["cache_system"] for c in calls)  # static constitution system prompt is cached
         assert utils.load_jsonl(final_dir / "sdf_corpus.jsonl") == corpus
 
     def test_low_spec_conformance_does_not_gate(self, tiny_config, prompts_sdf, stage_dir, final_dir, stub_claude):

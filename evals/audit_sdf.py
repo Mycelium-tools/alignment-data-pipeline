@@ -305,8 +305,12 @@ def audit_openings(records: list[dict], report: dict) -> None:
 def audit_register(records: list[dict], type_map: dict, report: dict) -> None:
     rows = []
     for r in records:
-        if r.get("language", "en") != "en":
-            continue  # the pronoun/contraction proxy is English-only
+        # The proxy is English-only. Final corpora label language with the full
+        # name ("English", via derive_language); accept the "en" code too so
+        # legacy/test records still count. (Matching only "en" silently skipped
+        # every real doc, disabling this check on production runs.)
+        if str(r.get("language", "English")).lower() not in ("en", "english"):
+            continue
         text = r.get("content") or ""
         words = max(len(re.findall(r"\w+", text)), 1)
         fp = len(_FIRST_PERSON_RE.findall(text))

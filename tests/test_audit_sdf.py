@@ -70,3 +70,25 @@ class TestTruncationAudit:
         ), report)
         assert report["length"]["truncated"] == 1
         assert report["length"]["trailing_separator"] == 1
+
+
+class TestRegisterMetric:
+    def test_english_full_name_docs_are_scored(self):
+        # Regression: audit_register matched only language == "en", but final
+        # corpora label English docs "English" (derive_language), so the proxy
+        # silently skipped every production doc and never populated the report.
+        report = {}
+        audit_sdf.audit_register(
+            [{"doc_id": "d0", "language": "English",
+              "content": "I'm sure I've said it before, but I can't help it — it's my thing."}],
+            {}, report)
+        assert "register" in report
+        assert report["register"]["reads_personal_frac"] == 1.0
+
+    def test_en_code_docs_still_scored(self):
+        report = {}
+        audit_sdf.audit_register(
+            [{"doc_id": "d0", "language": "en",
+              "content": "The committee reviewed the report and issued its findings."}],
+            {}, report)
+        assert "register" in report  # "en" code still accepted (legacy/test records)

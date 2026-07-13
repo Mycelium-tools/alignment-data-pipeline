@@ -57,6 +57,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, plans: list[dict]) ->
             stage="layer3",
             item_id=plan["prompt_id"],
             return_stop_reason=True,
+            cache_system=True,  # constitution-laden system prompt is identical across drafts
         )
 
     workers = config.get("workers", 1)

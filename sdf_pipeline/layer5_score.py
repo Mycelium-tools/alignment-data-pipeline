@@ -58,6 +58,7 @@ def run(
             model=sdf.get("score_model"),
             stage="layer5",
             item_id=rw["doc_id"],
+            cache_system=True,  # constitution + rubric are identical across scoring calls
         )
         try:
             scores = utils.extract_json(raw)

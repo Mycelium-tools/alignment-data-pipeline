@@ -188,7 +188,8 @@ def stub_claude(monkeypatch):
         busy = threading.Lock()
 
         def fake(user_message, system_prompt="", injection="", model=None, max_tokens=None,
-                 return_stop_reason=False, stage=None, temperature=None, item_id=None):
+                 return_stop_reason=False, stage=None, temperature=None, item_id=None,
+                 cache_system=False):
             calls.append({
                 "user_message": user_message,
                 "system_prompt": system_prompt,
@@ -198,6 +199,7 @@ def stub_claude(monkeypatch):
                 "stage": stage,
                 "temperature": temperature,
                 "item_id": item_id,
+                "cache_system": cache_system,
             })
             if queue is None:
                 result = responses(

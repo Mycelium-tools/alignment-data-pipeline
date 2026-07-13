@@ -56,6 +56,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -
             stage="layer4",
             item_id=draft["doc_id"],
             return_stop_reason=True,
+            cache_system=True,  # constitution + nine checks are identical across rewrites
         )
 
     workers = config.get("workers", 1)
