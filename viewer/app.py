@@ -18,11 +18,18 @@ div[data-testid="stButton"] button div[data-testid="stMarkdownContainer"] { text
 div[data-testid="stButton"] button p { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 </style>""")
 
-nav = st.navigation([
-    st.Page("ui_pages/lineage.py", title="Document lineage", icon=":material/account_tree:", default=True),
-    st.Page("ui_pages/compare.py", title="Compare runs", icon=":material/compare_arrows:"),
-    st.Page("ui_pages/run_list.py", title="Run list", icon=":material/list:"),
-    st.Page("ui_pages/judge.py", title="Judge", icon=":material/gavel:"),
-    st.Page("ui_pages/run_diversity.py", title="Run diversity", icon=":material/donut_small:"),
-])
+nav = st.navigation({
+    "Runs": [
+        st.Page("ui_pages/lineage.py", title="Document lineage", icon=":material/account_tree:", default=True),
+        st.Page("ui_pages/compare.py", title="Compare runs", icon=":material/compare_arrows:"),
+        st.Page("ui_pages/run_list.py", title="Run list", icon=":material/list:"),
+    ],
+    "Judge": [
+        st.Page("ui_pages/judge.py", title="Judge", icon=":material/gavel:"),
+    ],
+    "Diversity": [
+        st.Page("ui_pages/run_diversity.py", title="Run diversity", icon=":material/donut_small:"),
+        st.Page("ui_pages/edit_axes.py", title="Edit axes", icon=":material/tune:"),
+    ],
+})
 nav.run()

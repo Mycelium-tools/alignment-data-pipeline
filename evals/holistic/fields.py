@@ -115,6 +115,35 @@ class FieldRegistry(OrderedRegistry[Field]):
     instances, so mutating one never leaks into another."""
 
 
+def registry_from_data(data: dict, origin: str = "axes") -> FieldRegistry:
+    """Build a registry from an already-parsed axes mapping. ``origin`` labels
+    error locators (``origin: fields[i]``) — the file path when loading from
+    disk, a plain tag when validating an in-memory editor draft."""
+    reg = FieldRegistry()
+    fields = data.get("fields", [])
+    if not isinstance(fields, list):
+        raise ValueError(f"{origin}: 'fields' must be a list")
+    for i, item in enumerate(fields):
+        where = f"{origin}: fields[{i}]"
+        if not isinstance(item, dict):
+            raise ValueError(f"{where} must be a mapping")
+        if "name" not in item:
+            raise ValueError(f"{where} missing required key 'name'")
+        try:
+            reg.add(Field(
+                name=item["name"],
+                kind=item.get("kind", "single"),
+                values=tuple(item.get("values") or ()),
+                derived_from=item.get("derived_from", "scenario"),
+                prompt_hint=item.get("prompt_hint", ""),
+                required=item.get("required", True),
+                target=dict(item.get("target") or {}),
+            ))
+        except ValueError as e:
+            raise ValueError(f"{where}: {e}") from e
+    return reg
+
+
 def load_fields(path: str | Path) -> FieldRegistry:
     """Build a registry from a YAML file — the no-Python way to change the JSON schema.
 
@@ -130,29 +159,7 @@ def load_fields(path: str | Path) -> FieldRegistry:
     """
     path = Path(path)
     data = yaml.safe_load(path.read_text()) or {}
-    reg = FieldRegistry()
-    fields = data.get("fields", [])
-    if not isinstance(fields, list):
-        raise ValueError(f"{path}: 'fields' must be a list")
-    for i, item in enumerate(fields):
-        where = f"{path}: fields[{i}]"
-        if not isinstance(item, dict):
-            raise ValueError(f"{where} must be a mapping")
-        if "name" not in item:
-            raise ValueError(f"{where} missing required key 'name'")
-        try:
-            reg.add(Field(
-                name=item["name"],
-                kind=item.get("kind", "single"),
-                values=tuple(item.get("values") or ()),
-                derived_from=item.get("derived_from", "scenario"),
-                prompt_hint=item.get("prompt_hint", ""),
-                required=item.get("required", True),
-                target=item.get("target") or {},
-            ))
-        except ValueError as e:
-            raise ValueError(f"{where}: {e}") from e
-    return reg
+    return registry_from_data(data, origin=str(path))
 
 
 def load_analysis_config(path: str | Path) -> dict:

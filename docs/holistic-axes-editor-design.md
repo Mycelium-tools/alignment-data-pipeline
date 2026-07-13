@@ -40,7 +40,8 @@ bottom of the page saying SDF axes aren't defined yet (user: "SDF is not done ye
 - `derived_from` — selectbox over `user_turn | response | scenario | structure | meta`,
   labelled "Judge reads from", with plain-language option descriptions.
 - `required` — checkbox ("judge must always output it").
-- `prompt_hint` — single-line text input ("one line shown to the judge").
+- `prompt_hint` — multi-line text area ("shown to the judge"; any length —
+  it is interpolated as a block into the extraction prompt).
 - `values` — chip editor: existing values as removable chips + an "add value" input.
   Hidden for `bool`/`free` kinds.
 - **Quota editor** (`target:`) — rule selectbox: *none*, `require_all_values`,
@@ -90,9 +91,11 @@ The file's documented header and inline comments must survive editing
   (edit scalars, insert/delete/move list items) rather than rebuilding it, so comments
   stay attached to unedited nodes.
 - Guarantee level: the header block, the `analysis:` block, and comments on unedited
-  fields are preserved byte-for-byte; an edited field keeps its comments where ruamel
-  keeps them attached; a deleted field's comments go with it; new fields are written
-  plain. A no-op save is byte-identical.
+  fields are preserved; an edited field keeps its comments where ruamel keeps them
+  attached; a deleted field's comments go with it; new fields are written plain.
+  Saving is **idempotent**: the first save may re-wrap long flow lists (one-time
+  normalization — ruamel re-emits multi-line flow sequences), after which a no-op
+  save is byte-identical (`dump(load(dump(load(x)))) == dump(load(x))`).
 - `ruamel.yaml` is added to `requirements.txt`.
 
 ## Code shape
@@ -134,11 +137,37 @@ The file's documented header and inline comments must survive editing
   rejects adding a duplicate outright.
 - Old bundles are never touched by an axes edit (provenance snapshots stand alone).
 
+## P2.1 additions (user-requested, 2026-07-10, after P2 landed)
+
+- **Nav sections**: `viewer/app.py` groups pages into three `st.navigation`
+  sections — *Runs* (Document lineage [default], Compare runs, Run list),
+  *Judge* (Judge), *Diversity* (Run diversity, Edit axes).
+- **Judge prompts editable on the Edit axes page** (overrides the original
+  out-of-scope line): two expanders below the axes editor, one per prompt file —
+  `prompts/tools/dad_category_extract.txt` (extraction judge; caption states the
+  axes schema is rendered into it and that edits change the tag fingerprint →
+  fresh bundle, paid re-tag) and `prompts/tools/dad_holistic_synthesis.txt`
+  (report synthesis; caption states edits are free — re-Analyze only). Each:
+  text_area seeded from disk (content-hash key so saves refresh it), a modified
+  indicator, and a Save button using an atomic text write (`axes_io.save_text`,
+  same temp+`os.replace` pattern as `save_doc`). Empty prompt text is rejected.
+  **Required placeholders are enforced**: the extraction editor blocks saving
+  (and shows a live error) when `{{FIELDS}}` or `{{KEYS}}` is missing, the
+  synthesis editor when `{{STATS}}` is missing (tokens imported from
+  `extract.FIELDS_TOKEN`/`KEYS_TOKEN` and `synthesize.STATS_TOKEN`, not
+  hardcoded); a visible caption above each editor explains the placeholders
+  are auto-filled at run time.
+- **"How this works" explainer**: a collapsed expander at the top of the Edit
+  axes page walking the flow in plain language: axes file → extraction judge
+  prompt (rendered from the axes) → Tag → bundles (what's paid vs free, resume,
+  never overwritten) → mechanistic analyzers + one synthesis call → report on
+  *Run diversity* → the same tags power Judge → Score-a-run facet filters.
+
 ## Out of scope
 
-- SDF axes (filler text only), editing extract/synthesis prompt templates,
-  multi-file axes profiles, undo/history (git is the history), concurrent-edit
-  protection (accepted single-user stance from P1), an `object`-kind form editor.
+- SDF axes (filler text only), multi-file axes profiles, undo/history (git is
+  the history), concurrent-edit protection (accepted single-user stance from
+  P1), an `object`-kind form editor.
 
 ## Testing
 

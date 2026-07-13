@@ -6,7 +6,7 @@
 #   kind          single | multi | bool | object | free   (default single)
 #   derived_from  user_turn | response | scenario | structure | meta  (where it's read)
 #   values        allowed vocabulary (omit for free/bool/multi-free)
-#   prompt_hint   one line shown to the extractor
+#   prompt_hint   instructions shown to the extractor (any length)
 #   required      default true
 #
 # This is the *starting* vocabulary (from the dilemma-spec axes); add / remove / edit

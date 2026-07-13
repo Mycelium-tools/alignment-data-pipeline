@@ -3,6 +3,7 @@ httpx  # direct dep: Gemini eval backend in shared/providers.py
 google-auth  # OAuth for the Vertex AI eval backend (VERTEX_PROJECT in .env)
 pandas
 pyyaml
+ruamel.yaml>=0.18  # comment-preserving round-trip for the viewer axes editor
 python-dotenv
 tqdm
 jsonlines
