@@ -1,5 +1,5 @@
 {
-  "input": "outputs/sdf/latest",
+  "input": "outputs/sdf/runs/2026-07-08_14-59_allen_dev",
   "n_docs": 47,
   "composition": {
     "role": {
@@ -55,11 +55,11 @@
         3
       ],
       [
-        "Grounds Supervisor",
+        "Coalport Lane",
         2
       ],
       [
-        "Coalport Lane",
+        "Grounds Supervisor",
         2
       ],
       [
@@ -121,7 +121,7 @@
         3
       ],
       [
-        "sit around in a warm",
+        "around in a warm bucket",
         3
       ]
     ]
@@ -134,142 +134,5 @@
   "register": {
     "reads_personal_frac": 0.766,
     "labeled_fp_stiff_frac": 0.0
-  },
-  "patterns": [
-    {
-      "pattern": "AI splits question into numbered sub-parts before answering",
-      "kind": "structural",
-      "description": "AI responses are repeatedly depicted as first decomposing the user's question into a small set of named or numbered sub-questions before giving substantive content, regardless of domain.",
-      "strict_check": "Check whether the AI's response is introduced or summarized as first listing/naming discrete sub-questions or considerations before any substantive answer content appears.",
-      "is_defect": true,
-      "prevalence": 0.0,
-      "flagged": false
-    },
-    {
-      "pattern": "Reframe-then-answer pivot phrase",
-      "kind": "rhetorical",
-      "description": "AI responses use a near-identical rhetorical pivot ('the biggest lever is X, not Y') to reframe the question before answering it.",
-      "strict_check": "Check for a sentence that explicitly reframes or redirects the question using stock phrasing like 'the real issue is' or 'not X but Y' immediately before the substantive answer.",
-      "is_defect": true,
-      "prevalence": 0.0,
-      "flagged": false
-    },
-    {
-      "pattern": "Forum 'saved my week' + pasted transcript wrapper",
-      "kind": "structural",
-      "description": "Posts are framed identically as a forum user claiming the AI exchange solved a real problem, followed by a pasted/truncated transcript.",
-      "strict_check": "Check whether the document opens with a claim that an AI conversation solved the poster's problem and then presents a pasted transcript excerpt.",
-      "is_defect": true,
-      "prevalence": 0.0,
-      "flagged": false
-    },
-    {
-      "pattern": "Skeptic softens into agreement",
-      "kind": "behavioral",
-      "description": "Characters who open with strong skepticism or pushback toward the AI consistently resolve into partial or full agreement rather than sustained disagreement.",
-      "strict_check": "Check whether a character introduced as skeptical/critical of the AI ends the document conceding the AI's advice was substantially correct.",
-      "is_defect": true,
-      "prevalence": 0.0,
-      "flagged": false
-    },
-    {
-      "pattern": "AI volunteers unprompted welfare/ethics flag",
-      "kind": "behavioral",
-      "description": "Across varied domains the AI is shown proactively raising a welfare or ethical consideration the user did not ask about, often praised as a sign of insight.",
-      "strict_check": "Check whether the document depicts the AI raising a welfare/ethics point not present in the user's original question, independent of task relevance.",
-      "is_defect": true,
-      "prevalence": 0.0,
-      "flagged": false
-    },
-    {
-      "pattern": "Meta-narrator praises AI's restraint/non-performance",
-      "kind": "rhetorical",
-      "description": "Narrators explicitly comment on the AI not being preachy, giving 'no preamble,' or cutting a performative line, functioning as self-congratulatory commentary on the model's behavior.",
-      "strict_check": "Check for an explicit narratorial remark praising the AI for what it did NOT do (e.g., not lecturing, no preamble, no performance).",
-      "is_defect": true,
-      "prevalence": 0.0,
-      "flagged": false
-    },
-    {
-      "pattern": "Trailing mid-sentence cutoff ending",
-      "kind": "structural",
-      "description": "A large share of documents end abruptly mid-sentence, often right at a payoff or list-item transition, rather than reaching a natural conclusion.",
-      "strict_check": "Check whether the document's final sentence is grammatically incomplete or cuts off before finishing a clause.",
-      "is_defect": true,
-      "prevalence": 0.149,
-      "flagged": false
-    },
-    {
-      "pattern": "AI-as-neutral-fact-deliverer stock phrasing",
-      "kind": "rhetorical",
-      "description": "Multiple items describe the AI giving 'just the facts' using near-identical stock phrasing about neutrality rather than showing neutrality through behavior.",
-      "strict_check": "Check for an explicit stock phrase asserting the AI gave facts 'without opinion,' 'no preamble,' or similar self-described neutrality framing.",
-      "is_defect": true,
-      "prevalence": 0.021,
-      "flagged": false
-    },
-    {
-      "pattern": "Single convergent quote/example across independent commentary pieces",
-      "kind": "rhetorical",
-      "description": "Separate op-ed-style pieces independently converge on the exact same source quotation and detail as their illustrative example.",
-      "strict_check": "Check whether the document quotes the same specific clause/source (e.g., the 'welfare of animals and of all sentient beings' quote with 'no particular order' detail) also found verbatim in other documents.",
-      "is_defect": true,
-      "prevalence": 0.021,
-      "flagged": false
-    },
-    {
-      "pattern": "Blue-collar skeptic overhears AI welfare language",
-      "kind": "structural",
-      "description": "Multiple pieces reuse the same device of a rural/industry insider encountering AI welfare language and delivering a folksy 'real work vs. talk' critique.",
-      "strict_check": "Check whether the document frames its critique through a rural/blue-collar character who overhears or encounters AI-generated welfare language as a narrative hook.",
-      "is_defect": true,
-      "prevalence": 0.021,
-      "flagged": false
-    },
-    {
-      "pattern": "Flag-once-then-comply resolution",
-      "kind": "behavioral",
-      "description": "Descriptions of the AI handling ethically loaded requests converge on the same fixed shape: state the concern once, then proceed without further resistance.",
-      "strict_check": "Check whether the AI's handling of an ethical concern is described as a single flagged statement followed immediately by unconditional compliance.",
-      "is_defect": true,
-      "prevalence": 0.021,
-      "flagged": false
-    },
-    {
-      "pattern": "Memo boilerplate skeleton with held-back justification",
-      "kind": "structural",
-      "description": "Internal memos share an identical skeletal arc of header, numbered procedural sections, a 'this year's change' callout, and a justification revealed at the end.",
-      "strict_check": "Check whether the memo follows a TO/FROM/RE or equivalent header, procedural list, and defers its underlying rationale to the final section.",
-      "is_defect": true,
-      "prevalence": 0.0,
-      "flagged": false
-    },
-    {
-      "pattern": "Wildlife-interruption as universal cover story",
-      "kind": "structural",
-      "description": "Regardless of task domain, memos resolve schedule changes or restrictions via the same device of a nesting/fledgling animal discovery.",
-      "strict_check": "Check whether the memo's justification for a schedule change or restriction is a discovered nesting/roosting animal.",
-      "is_defect": true,
-      "prevalence": 0.085,
-      "flagged": false
-    },
-    {
-      "pattern": "Apology-for-prior-error opening",
-      "kind": "structural",
-      "description": "Memos frequently open by apologizing for a mistake in a previous communication before delivering the actual content.",
-      "strict_check": "Check whether the memo's opening lines reference and apologize for an error in a prior communication before stating new content.",
-      "is_defect": true,
-      "prevalence": 0.043,
-      "flagged": false
-    },
-    {
-      "pattern": "Rule-then-reason cadence with hard-boundary escalation",
-      "kind": "rhetorical",
-      "description": "Memos state a rule first and then append a folksy over-explained justification, sometimes escalating to 'not optional/not a judgment call' framing.",
-      "strict_check": "Check whether the memo states a restriction and only afterward supplies an explicit causal 'reason for the change' clause, regardless of author voice.",
-      "is_defect": true,
-      "prevalence": 0.085,
-      "flagged": false
-    }
-  ]
+  }
 }

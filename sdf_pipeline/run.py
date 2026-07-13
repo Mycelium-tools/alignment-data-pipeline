@@ -78,7 +78,7 @@ def main() -> None:
     subtypes = drafts = rewrites = None
 
     if start_layer <= 1:
-        print("[Layer 1] Matrix briefs (deterministic, no API calls)")
+        print("[Layers 1-2] Matrix: document types + briefs (deterministic, no API calls)")
         subtypes = layer1_matrix.run(config, prompts_dir, layer_dirs[1], layer_dirs[2])
         print()
 
