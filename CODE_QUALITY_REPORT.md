@@ -1,6 +1,7 @@
 # Code Quality Report — alignment-data-pipeline
 
 **Date:** 2026-07-10 · **Scope:** full repo at commit `cf8d91e` (all source, tests, CI, docs; committed `outputs/` scanned for hygiene only)
+**Reconciled:** 2026-07-13 against `main@283c422` — see "Status vs current main" below; per-finding updates are marked **Update (main@283c422)** inline.
 **Purpose:** pre-delivery quality assessment with prioritized recommendations, ahead of handing the pipeline to a frontier lab.
 
 ## How this audit was produced
@@ -24,6 +25,27 @@ Sixteen verification agents failed on an account usage limit partway through; no
 
 ---
 
+## Status vs current main (reconciliation, 2026-07-13)
+
+Between the audit baseline (`cf8d91e`, main's tip on 2026-07-10) and this reconciliation, **PR #65** ("Failure-handling overhaul: persist raws, 1c retry, standing select call, one parser" — commits `e5f7877`, `641b88e`) landed on `main` and independently implemented several fixes this report recommends. The PR's auto-review flagged the resulting staleness; every status below was re-verified against `main@283c422`.
+
+| Tier-1 item | Status on `main@283c422` |
+|---|---|
+| 1.1 layer-4 rewrite fails open | **still live** — `layer4_rewrite.py` untouched since the audit |
+| 1.2 layer-5 sentinel + checkpointing | **core still live**; the list-shaped-response crash sub-claim is fixed (PR #65) |
+| 1.3 crash-safe persistence | **still live** — code unchanged, relocated to `utils.py:335-357` |
+| 1.4 step-1c batch loss + refine fail-open | **half fixed**: refine fail-open fixed (retry + `refine_failures.jsonl` + `refine_failed` stamp); batch-loss-on-exception still live (persistence remains end-of-batch; raised API errors aren't caught) |
+| 1.5 `strict=False` in step-1 parsers | **fixed** (PR #65) |
+| 1.6 layer-3 truncation | **still live** — `layer3_draft.py` untouched |
+| 1.7 checkpoint-only done-detection | **still live** |
+| 1.8 eval judges | **core still live** (zero-sentinel checkpointing, 0% coverage); the hand-rolled-parsing framing is superseded — both scripts now use `extract_json_object` |
+| 1.9 `--run-id` without `--resume` | **still live** — sdf `run.py` untouched; dad's only change was a docstring |
+| 1.10 pref resume mispairing | **still live** — `pref_pipeline/` untouched |
+
+Tier 2.1 (parser consolidation) is now **partially implemented**: shared shape-validating `extract_json_object`/`extract_json_array` exist and are adopted at SDF layers 1/2/5 and both eval scripts; step 1's salvage trio remains local to `step1_dilemmas.py` (`:542-590` on main), and the remaining parse sites (step 2, `audit_sdf`) should be re-inventoried against main before that work starts. Appendix A's mechanical numbers reflect the audit baseline and were not re-run.
+
+---
+
 ## Executive summary
 
 **This repo is in substantially better shape than "vibe-coded by non-engineers" suggests.** Baseline hygiene is strong: near-universal docstrings that explain rationale rather than restate signatures, near-universal type hints, pathlib and f-strings throughout, no TODO markers or commented-out code, essentially zero dead code (vulture found one unused variable), clean secret hygiene (`.env` never tracked; all 231 committed output files free of keys and personal paths), and a genuinely good offline test suite — 295 tests with a four-layer network guard, behavior-level assertions, and disciplined checkpoint/resume tests across most stages. The Claude-review + CLAUDE.md process has clearly worked as a quality mechanism.
@@ -32,7 +54,7 @@ The problems are **specific and clustered**, not pervasive:
 
 1. **The two pipelines were written to different robustness standards.** DAD steps 2–3 and the pref pipeline are exemplary fail-closed engineering (stop_reason gates, retry ladders, failure logs, skip-without-checkpoint so `--resume` retries). The older SDF layers predate that discipline: **no SDF layer checks `stop_reason`**, and layer 4 — the rewrite the code itself credits with a 19× effect on misalignment rate — silently substitutes the *un-rewritten draft* on any parse failure or truncation, checkpoints it, and ships it toward the training corpus. CLAUDE.md's claim that "every generation call rejects truncated output" is currently true only for DAD.
 2. **The persistence primitives are not crash-safe.** `Checkpoint` rewrites its JSON in place and `load_jsonl` tolerates no partial trailing line, so the recovery path for the most common failure (an interrupted run) can itself brick `--resume` — and the natural operator fix re-bills a whole stage.
-3. **LLM-output parsing is implemented seven times with conflicting semantics.** Only SDF layers 1/2/5 use the well-tested `utils.extract_json`; the hardening lessons paid for at one site (e.g. `strict=False` for temperature-1 control characters, learned in step 2) never propagated to the others.
+3. **LLM-output parsing is implemented seven times with conflicting semantics.** Only SDF layers 1/2/5 use the well-tested `utils.extract_json`; the hardening lessons paid for at one site (e.g. `strict=False` for temperature-1 control characters, learned in step 2) never propagated to the others. *(Partially addressed on main by PR #65 — see the reconciliation table above.)*
 4. **Test coverage is inverted relative to risk in two places.** The paid LLM-judge eval scripts (`score_sdf.py`, `score_dad.py`) — which produce the quality numbers that would accompany a delivery — are at 0% coverage and permanently checkpoint parse failures as zero scores. And `step1_dilemmas.py`'s untested 16% is *exactly* its money-path fallbacks (the JSON salvage machinery and batch retry loop).
 5. **There is no static-analysis tooling at all.** No linter, formatter, type checker, or coverage measurement anywhere; CI gates on `compileall` + pytest only, and the Claude reviewer is explicitly told to skip style — so no layer of the process ever pushes back on lint-class defects.
 6. **Delivery packaging is thin.** Not pip-installable (hence a `sys.path.insert` hack in 23 files), floors-only requirements with no lockfile (`numpy` missing entirely — it arrives transitively), and a few README claims that misdescribe the alignment-critical wiring.
@@ -52,11 +74,11 @@ The call omits `return_stop_reason=True` (max_tokens=6000, same as layer 3's dra
 
 ### 1.2 Layer 5 checkpoints score-parse failures, permanently discarding paid documents; the {5,5,5} sentinel is threshold-coupled — ✓✓ + ✓c
 **`sdf_pipeline/layer5_score.py:79-82,111-121` · severity HIGH · effort M**
-On a `JSONDecodeError` the doc gets fabricated scores of 5/5/5, is appended and `mark_done`'d — so `--resume` never re-scores it, and the paid layer-3 draft + layer-4 rewrite for that doc are permanently lost (5 < the current threshold of 7). Verifier correction: prose-wrapped JSON is *not* a trigger (extract_json handles it); truncated/malformed/absent JSON is — and stop_reason is never checked here either. Worse, the fail-closed behavior is a coincidence of configuration: `min_score_threshold: 7` lives in `config.yaml:13` with no comment linking it to the sentinel. A dev run with the threshold lowered to 5 flips the same path **fail-open** — parse-failure docs enter the corpus unscored. A list-shaped judge response also crashes the layer (`scores.get` on a list; only JSONDecodeError is caught).
+On a `JSONDecodeError` the doc gets fabricated scores of 5/5/5, is appended and `mark_done`'d — so `--resume` never re-scores it, and the paid layer-3 draft + layer-4 rewrite for that doc are permanently lost (5 < the current threshold of 7). Verifier correction: prose-wrapped JSON is *not* a trigger (extract_json handles it); truncated/malformed/absent JSON is — and stop_reason is never checked here either. Worse, the fail-closed behavior is a coincidence of configuration: `min_score_threshold: 7` lives in `config.yaml:13` with no comment linking it to the sentinel. A dev run with the threshold lowered to 5 flips the same path **fail-open** — parse-failure docs enter the corpus unscored. At the audit baseline a list-shaped judge response also crashed the layer (`scores.get` on a list); **fixed on main by PR #65** — `extract_json_object` validates the shape and routes it into the same parse-failure branch, which still hits the sentinel problem above.
 **Fix:** bounded retry (the step-2a `MAX_SCOPE_ATTEMPTS` pattern), raw failures to `score_failures.jsonl`, skip without append/mark_done on final failure; validate `isinstance(scores, dict)`; if any sentinel must remain for legacy records, make it zeros.
 
 ### 1.3 Checkpoint and JSONL persistence are not crash-safe: a kill mid-write bricks `--resume` — ✓m
-**`shared/utils.py:288-291,296-304,60-65` · severity HIGH · effort S**
+**`shared/utils.py` — `Checkpoint.__init__`/`Checkpoint.mark_done` (`:338-357` on `main@283c422`; `:288-304` at the audit baseline — the class moved when PR #65 added parsers above it) and `load_jsonl:60-65` · severity HIGH · effort S**
 `Checkpoint.mark_done` rewrites the whole JSON file in place (`open(path, "w")` — no temp-file + `os.replace`); `Checkpoint.__init__` does a bare `json.load`; `load_jsonl` raises on a partial trailing line, which is precisely what a crash mid-`append_jsonl` leaves. So a $50 run killed at the wrong instant makes the *next* `--resume` crash before any API call — and the natural operator recovery (delete `_checkpoint.json`) re-bills the whole stage and, in layers 2–4 (see 1.7), appends duplicates beside the survivors.
 **Fix:** atomic write (`.tmp` + `os.replace`) in `mark_done`; catch decode errors in `__init__` and rebuild from the empty set with a warning (safe: every stage writes output before marking); tolerate exactly one malformed **final** line in `load_jsonl` with a warning. All three are small and independently testable.
 
@@ -64,11 +86,13 @@ On a `JSONDecodeError` the doc gets fabricated scores of 5/5/5, is appended and 
 **`dad_pipeline/step1_dilemmas.py:756-815` · severity HIGH · effort M**
 Step 1 is the only stage that defers all persistence to end-of-batch: refine results collect in memory, and record assembly/`append_jsonl` happen in a separate loop afterwards. An exception from any one refine (rate-limit storm exhausting tenacity, or the claude_code backend's deliberately-unretried `UsageLimitExceeded`) propagates before anything is written — `--resume` then re-bills the 16k-token 1b batch call *and* every sibling refine that had already succeeded. Related fail-open (✓✓): a refine that returns unusable output silently keeps the cheap-model 1b draft with no retry, no failure log, and no marker on the record — despite `config.yaml` labeling 1c the "load-bearing rewrite".
 **Fix:** wrap the refine worker in try/except → log + return None so the existing keep-draft fallback applies, with a 3-strike abort mirroring the 1b loop; merge the two loops so each record is appended as its refine completes; add a bounded retry to `refine_draft` and a `refine_failed: true` marker if keep-the-draft remains the last resort.
+**Update (main@283c422): half fixed.** PR #65 implemented the fail-open half almost exactly as recommended (`MAX_REFINE_ATTEMPTS` retries, `refine_failures.jsonl`, `refine_failed` stamp). Still live: persistence remains end-of-batch, and the retry loop handles unusable *parses* but does not catch *raised* API errors — one exception mid-fan-out still discards the batch's paid work.
 
-### 1.5 Step-1 JSON parsers reject the failure mode step 2 already learned to tolerate (`strict=False`) — ✓c + ○
-**`dad_pipeline/step1_dilemmas.py:564,578,584,600` · severity HIGH · effort S**
+### 1.5 Step-1 JSON parsers reject the failure mode step 2 already learned to tolerate (`strict=False`) — ✓c + ○ — **FIXED on main (PR #65)**
+**`dad_pipeline/step1_dilemmas.py:564,578,584,600` (at the audit baseline) · severity HIGH · effort S**
 `step2_responses.py` passes `strict=False` with a comment naming literal newlines inside JSON strings as "the way a prose-heavy JSON object at temperature 1.0 most often goes invalid" — and the test suite calls it "the historical cause of silently empty scopes". Step 1's four `json.loads` calls (including the salvage machinery whose whole job is rescuing these payloads) all use strict defaults, so the documented most-common failure defeats every fallback in sequence and re-bills 16k-token batch calls; three consecutive occurrences kill the run.
 **Fix:** add `strict=False` at the four sites (+ `json.JSONDecoder(strict=False)` in `extract_json`), with a control-character regression test per parser. Strictly a relaxation of control-character handling — cannot admit wrong-shaped data.
+**Update (main@283c422): fixed.** PR #65 added `strict=False` to `extract_json` and the salvage parser. Kept for the record; worth confirming the control-character regression tests landed with it.
 
 ### 1.6 Layer 3 never checks stop_reason: silent corpus shrinkage, and the untagged fallback can admit a truncated fragment — ✓✓ + ○
 **`sdf_pipeline/layer3_draft.py:143-164,185` · severity MEDIUM · effort M**
@@ -82,8 +106,8 @@ Layer 5, DAD steps 2–3, and pref all cross-check the output file as well as th
 
 ### 1.8 The paid eval judges persist unretryable zero scores and are 0% tested — the delivered quality numbers can be silently wrong — ✓✓ (×2 charters) + ○
 **`evals/score_sdf.py:61-75`, `evals/score_dad.py:92-107` · severity HIGH · effort M**
-Both scripts hand-roll fence-stripping + bare `json.loads` (not the tolerant `extract_json` the pipelines adopted after a live failure in PR #59), default parse failures to **zero scores**, then append + `mark_done` — so a re-run never repairs them and every aggregate is dragged down silently. A judge returning a quoted-string score bricks the summary on every subsequent invocation. These scripts compute the corpus-quality evidence a lab would see; they are also the only pipeline-adjacent code with zero tests.
-**Fix:** parse with `extract_json`; coerce dimension scores with `int(...)`; skip-without-checkpoint on failure; report "N unparsed" beside the aggregates; extract the loop into a testable `run()` and add the standard test triad.
+At the audit baseline both scripts hand-rolled fence-stripping + bare `json.loads`; **PR #65 has since switched both to the shared `extract_json_object`** (`score_sdf.py:64`, `score_dad.py:95` on main). The live core is unchanged on main: parse failures still default to **zero scores**, are still appended + `mark_done`'d — so a re-run never repairs them and every aggregate is dragged down silently — and dimension scores are still used uncoerced (a quoted-string score bricks the summary on every subsequent invocation). These scripts compute the corpus-quality evidence a lab would see; they are also still the only pipeline-adjacent code with zero tests.
+**Fix:** ~~parse with `extract_json`~~ (done on main via PR #65); coerce dimension scores with `int(...)`; skip-without-checkpoint on failure; report "N unparsed" beside the aggregates; extract the loop into a testable `run()` and add the standard test triad.
 
 ### 1.9 `--run-id` without `--resume` is silently ignored: mints a fresh run and re-bills the pipeline — ✓✓
 **`sdf_pipeline/run.py:39-43` (same in dad:47-51, pref:103-107) · severity MEDIUM · effort S**
@@ -102,7 +126,8 @@ Arms are frozen into the run dir precisely so resume replays them; the prompts a
 Worth doing before or shortly after delivery; each reduces the maintenance burden the receiving lab inherits. All have concrete designs in the audit worth preserving in the implementing PRs.
 
 ### 2.1 Consolidate the seven parsing implementations — ✓✓ (×2 charters)
-Seven parsers across six files, with three conflicting salvage philosophies (`extract_json` refuses fragments of broken containers; step 1's `_salvage_objects` deliberately harvests them; step 2 brace-slices greedily). The `strict=False` history proves fixes don't propagate across copies. **Design:** extend `shared/utils.extract_json` with an `expect='array'|'object'` parameter (also fixes the unvalidated-shape crashes at `layer1_document_types.py:47`, `layer5_score.py:93` — ✓m) and `strict=False`; move `_salvage_objects` to shared as `salvage_json_objects()` with its contract documented (fragment-harvest is safe only where the caller re-requests missing items by id — step 1b is the sole qualifying site); migrate call sites in small PRs, each carrying a fixture test from the old site's known failure mode. Effort M.
+Seven parsers across six files, with three conflicting salvage philosophies (`extract_json` refuses fragments of broken containers; step 1's `_salvage_objects` deliberately harvests them; step 2 brace-slices greedily). The `strict=False` history proves fixes don't propagate across copies. **Design:** extend `shared/utils.extract_json` with shape-narrowing variants and `strict=False`; move `_salvage_objects` to shared as `salvage_json_objects()` with its contract documented (fragment-harvest is safe only where the caller re-requests missing items by id — step 1b is the sole qualifying site); migrate call sites in small PRs, each carrying a fixture test from the old site's known failure mode. Effort M.
+**Update (main@283c422): partially implemented by PR #65.** `extract_json_object`/`extract_json_array` now exist in `shared/utils.py` and are adopted at SDF layers 1/2/5 and both eval scripts — the unvalidated-shape crash sites cited at the baseline (`layer1_document_types.py:47`, `layer5_score.py:93`) are gone, and `strict=False` is in. Still open: step 1's salvage trio remains local (`step1_dilemmas.py:542-590` on main); re-inventory the remaining sites (step 2, `audit_sdf`) against main before continuing.
 
 ### 2.2 Extract a `resumable_stage()` helper — ✓✓
 The load-existing / filter-pending / append / mark-done idiom is hand-rolled seven times and has already diverged on the safety-relevant detail in 1.7. A single helper in `shared/utils.py` (pending = not in done-set ∪ checkpoint; zip with `parallel_map` `strict=True`; main-thread persist in input order; persist returns the checkpoint ids to mark, empty = retry-on-resume) gives every stage layer-5's idempotence and step-3's retry contract by construction. Adopt stage-by-stage; existing tests keep passing. Effort M.
@@ -161,7 +186,7 @@ Worth stating plainly in a report a lab will read:
 
 ---
 
-## Appendix A — Mechanical baseline numbers (2026-07-10)
+## Appendix A — Mechanical baseline numbers (2026-07-10, at `cf8d91e`; not re-run after reconciliation)
 
 | Measure | Result |
 |---|---|
