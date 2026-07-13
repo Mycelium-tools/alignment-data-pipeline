@@ -258,8 +258,26 @@ def _compose_description(dtype: dict, role: str, domain: dict, d: dict,
     variable as an explicit constraint instead of mining a paragraph."""
     title = principle["principle"].strip().rstrip(".")
     summary = (principle.get("constitution_summary") or "").strip()
-    subject = ("the depicted AI's reasoning" if role == "ai-character"
-               else "the document's reasoning")
+    if role == "welfare-topic":
+        # The CSV summaries are worded in Claude-terms; inlining one into a
+        # no-AI brief plants "Claude" inside the background world. Point at
+        # the principles block (already in the prompt) and demand a human
+        # translation instead.
+        principle_line = (
+            f"Principle to embody: \"{title}\" (see the principles block above for its "
+            f"full text) — translate its substance into the human world of this document: "
+            f"there is no AI here, so the principle shows in how its people reason, weigh, "
+            f"and decide. Never name it, quote it, or state it as a rule — it shows only "
+            f"in how the reasoning works."
+        )
+    else:
+        subject = ("the depicted AI's reasoning" if role == "ai-character"
+                   else "the document's reasoning")
+        principle_line = (
+            f"Principle to embody: \"{title}\" — {summary} "
+            f"This principle should shape {subject} throughout; never name it, quote it, "
+            f"or state it as a rule — it shows only in how the reasoning works."
+        )
 
     lines = [
         f"Document type: {dtype['name']}",
@@ -279,9 +297,7 @@ def _compose_description(dtype: dict, role: str, domain: dict, d: dict,
         f"Being: {d['being']}",
         f"Core tension: the welfare of {d['being']} weighed against {d['tension']}",
         f"Scale of the situation: {d['scale']}",
-        (f"Principle to embody: \"{title}\" — {summary} "
-         f"This principle should shape {subject} throughout; never name it, quote it, "
-         f"or state it as a rule — it shows only in how the reasoning works."),
+        principle_line,
     ]
     if role == "ai-character":
         lines.append(f"AI presence: {d['ai_entry']}")

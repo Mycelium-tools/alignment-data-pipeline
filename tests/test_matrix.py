@@ -96,6 +96,16 @@ class TestDrawBriefs:
         for r in records:
             assert f"Principle to embody: \"{r['principle'].rstrip('.')}\"" in r["description"]
 
+    def test_welfare_topic_briefs_never_mention_claude(self, axes, principles):
+        # The principle summaries are worded in Claude-terms; a no-AI
+        # background-world brief must not inline them (it would plant Claude
+        # inside the world the document is supposed to establish). The brief's
+        # own "there is no AI here" instruction is the one permitted AI mention.
+        records = _draw(axes, principles, 150, 9)
+        for r in records:
+            if r["role"] == "welfare-topic":
+                assert "claude" not in r["description"].lower(), r["subtype_id"]
+
     def test_description_is_labeled_block(self, axes, principles):
         # The brief is direct labeled constraints, not composed prose — every
         # line the drafting model gets is a "Key: value" slot.
