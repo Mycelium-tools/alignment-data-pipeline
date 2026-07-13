@@ -277,6 +277,9 @@ class TestClassifyClaudeCodeError:
     @pytest.mark.parametrize("message", [
         "Claude AI usage limit reached|1751400000",
         "You have reached your usage limit",
+        # CLI wording observed live 2026-07-13 — same window, new phrasing;
+        # this retried for minutes and crashed the run instead of aborting.
+        "You've hit your session limit · resets 1pm (America/Los_Angeles)",
     ])
     def test_usage_limit_is_non_retryable(self, message):
         err = api._classify_claude_code_error(message)

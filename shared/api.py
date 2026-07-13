@@ -62,8 +62,10 @@ _BACKENDS = ("api", "claude_code")
 # "Claude AI usage limit reached|<reset-timestamp>"), which must abort rather
 # than retry. Deliberately narrow: a transient CLI "rate limit" hiccup should
 # fall through to the retried ClaudeCodeError path, so we don't match bare
-# "rate limit" / "limit reached" here.
-_LIMIT_PATTERN = re.compile(r"usage limit", re.IGNORECASE)
+# "rate limit" / "limit reached" here. "session limit" is the CLI's current
+# wording for the same window ("You've hit your session limit · resets 1pm"),
+# observed live 2026-07-13.
+_LIMIT_PATTERN = re.compile(r"(usage|session)\s+limit", re.IGNORECASE)
 
 # Claude Code treats an empty --system-prompt as unset and substitutes its own
 # agentic CLI prompt, which leaks tool/codebase behavior into generated text.
