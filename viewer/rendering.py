@@ -278,7 +278,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "coverage_report": batch.get("coverage_report", ""),
             "tension_vocab": vocab,
         }
-        r.user = _format(tpl("step1_dilemmas.txt"), r.variables, r)
+        r.system, r.user = _format_split(tpl("step1_dilemmas.txt"), r.variables, r)
         return r
 
     if stage == "step1_refine":
@@ -303,7 +303,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "annotation_block": format_annotation(
                 {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
         }
-        r.user = _format(tpl("step1_refine.txt"), r.variables, r)
+        r.system, r.user = _format_split(tpl("step1_refine.txt"), r.variables, r)
         return r
 
     if stage == "step2_scope":

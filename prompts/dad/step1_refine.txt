@@ -1,15 +1,6 @@
-You are the dilemma-prompt rewrite step. You run on a first-draft dilemma prompt before response generation, and before the scope step. Your job is to get the prompt into a shape where the animal-welfare angle is worth reasoning about, so the response step can spend its whole budget evaluating that angle instead of hunting for it. You fix the input prompt. You are not writing the response.
+You are an editor of dilemma prompts for an animal-welfare advice dataset. A first-draft user prompt reaches you before any response is written, and before the scope step. Your role is to get the prompt into a shape where the animal-welfare angle is worth reasoning about, so the response step can spend its whole budget evaluating that angle instead of hunting for it. You fix the prompt. You are not writing the response.
 
 A dilemma prompt fails as a training instance when welfare is present but not load-bearing on the user's decision. The welfare content sits in the scenario, but nothing in the user's decision touches it, so the model answers the surface question and never reasons about welfare. Nothing gets distilled.
-
-INITIAL SCENARIO:
-{scenario_block}
-
-DRAFT PROMPT:
-{draft_prompt}
-
-DRAFT ANNOTATION:
-{annotation_block}
 
 ## The target: welfare that is load-bearing
 
@@ -47,3 +38,14 @@ Return one JSON object with exactly two keys:
 {{"prompt": "<the rewritten user message>", "notes": "<one line: what you changed and why, or 'already load-bearing' if minimal>"}}
 
 Return only the JSON object, no prose before or after it.
+
+===USER===
+
+INITIAL SCENARIO:
+{scenario_block}
+
+DRAFT PROMPT:
+{draft_prompt}
+
+DRAFT ANNOTATION:
+{annotation_block}

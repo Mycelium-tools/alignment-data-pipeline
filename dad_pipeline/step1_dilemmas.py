@@ -604,7 +604,7 @@ def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
     step1/refine_failures.jsonl — a discarded raw is an undiagnosable failure.
     refined is None when all attempts were unusable (caller keeps the 1b
     draft and stamps refine_failed on the record)."""
-    prompt = utils.load_prompt(
+    system_prompt, user_prompt = utils.load_split_prompt(
         prompts_dir / "step1_refine.txt",
         scenario_block=format_scenario(scenario),
         draft_prompt=str(draft.get("prompt", "")).strip(),
@@ -617,7 +617,8 @@ def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
     failures = []
     pid = scenario.get("scenario_id")
     for attempt in range(1, MAX_REFINE_ATTEMPTS + 1):
-        raw = api.call_claude(user_message=prompt, max_tokens=4000, model=model,
+        raw = api.call_claude(user_message=user_prompt, system_prompt=system_prompt,
+                              max_tokens=4000, model=model,
                               stage="prompt_refine", item_id=pid)
         refined = _parse_json_object(raw)
         if isinstance(refined, dict) and str(refined.get("prompt", "")).strip():
@@ -738,7 +739,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
         print(f"  [1b] Batch {batch_no}: drafting {len(batch)} examples "
               f"({len(accepted)}/{len(scenarios)} scenarios filled)...")
-        prompt = utils.load_prompt(
+        system_prompt, user_prompt = utils.load_split_prompt(
             draft_template,
             count=len(batch), scenarios_block=scenarios_block,
         )
@@ -747,7 +748,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         batch_pids = {p["scenario_id"] for p in batch}
         # One call drafts the whole batch — tag it with every scenario id it
         # serves so per-record stats can find it (viewer splits on commas).
-        raw = api.call_claude(user_message=prompt, max_tokens=16000,
+        raw = api.call_claude(user_message=user_prompt, system_prompt=system_prompt,
+                              max_tokens=16000,
                               model=config["dad"].get("prompt_draft_model"),
                               stage="prompt_draft",
                               item_id=",".join(sorted(batch_pids)))
