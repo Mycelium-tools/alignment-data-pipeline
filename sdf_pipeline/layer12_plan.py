@@ -57,18 +57,30 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     ]
 
     def plan_one(rec: dict):
-        return api.call_claude(
-            rec["prompt"],
-            system_prompt=rec.get("system") or "",
-            model=sdf.get("plan_model"),
-            stage="layer12_plan",
-            item_id=rec["prompt_id"],
-            return_stop_reason=True,
-        )
+        try:
+            return api.call_claude(
+                rec["prompt"],
+                system_prompt=rec.get("system") or "",
+                model=sdf.get("plan_model"),
+                stage="layer12_plan",
+                item_id=rec["prompt_id"],
+                return_stop_reason=True,
+            )
+        except Exception as e:
+            # One poison prompt (e.g. a usage-policy false positive on the
+            # claude_code backend) must not kill the layer and discard its
+            # siblings' in-flight work. Failed work is not checkpointed, so
+            # --resume retries exactly this call.
+            return None, f"error: {type(e).__name__}: {e}"
 
     workers = config.get("workers", 1)
+    failed_calls = 0
     for rec, (raw, stop) in zip(pending, utils.parallel_map(plan_one, pending, workers)):
         pid = rec["prompt_id"]
+        if raw is None:
+            failed_calls += 1
+            print(f"  {pid}: API call failed ({stop}) — will retry on resume")
+            continue
         if stop != "end_turn":
             print(f"  {pid}: truncated plan (stop_reason={stop}) — will retry on resume")
             continue
@@ -89,6 +101,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         checkpoint.mark_done(pid)
         print(f"  Planned {pid}" + (" (INCOHERENT)" if incoherent else ""))
 
+    if pending and failed_calls == len(pending):
+        raise SystemExit(
+            "layer12_plan: every pending API call failed — this is systemic "
+            "(auth, backend, or network), not per-document; fix and --resume."
+        )
     incoherent_n = sum(1 for r in results if r.get("incoherent"))
     if incoherent_n:
         print(f"  {incoherent_n} combination(s) declared INCOHERENT — dropped")

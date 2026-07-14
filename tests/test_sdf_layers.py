@@ -134,6 +134,36 @@ class TestLayer12Plan:
         layer12_plan.run(config, prompts_sdf, stage_dir)
         assert all(c["model"] == "claude-haiku-4-5" for c in calls)
 
+    def test_one_poison_call_does_not_kill_the_layer(
+        self, tiny_config, prompts_sdf, stage_dir, stub_claude
+    ):
+        # One prompt's API call fails outright (the claude_code backend's
+        # usage-policy false positive seen live): its siblings must still be
+        # planned and checkpointed, and the failed prompt retried on resume.
+        def dispatch(user_message, **kw):
+            if kw["item_id"] == "matrix_000001":
+                raise RuntimeError("API Error: usage policy")
+            return plan_reply(f"Plan for {kw['item_id']}.")
+
+        stub_claude(dispatch)
+        records = layer12_plan.run(tiny_config, prompts_sdf, stage_dir)
+        assert [r["prompt_id"] for r in records] == ["matrix_000000"]
+
+        calls = stub_claude(lambda user_message, **kw: plan_reply("Recovered."))
+        records = layer12_plan.run(tiny_config, prompts_sdf, stage_dir)
+        assert len(calls) == 1  # only the failed prompt is retried
+        assert sorted(r["prompt_id"] for r in records) == ["matrix_000000", "matrix_000001"]
+
+    def test_all_plan_calls_failing_is_a_systemic_error(
+        self, tiny_config, prompts_sdf, stage_dir, stub_claude
+    ):
+        def dispatch(user_message, **kw):
+            raise RuntimeError("auth failure")
+
+        stub_claude(dispatch)
+        with pytest.raises(SystemExit, match="systemic"):
+            layer12_plan.run(tiny_config, prompts_sdf, stage_dir)
+
 
 class TestLayer3Draft:
     def test_drafts_from_descriptions(self, tiny_config, prompts_sdf, stage_dir, stub_claude):
