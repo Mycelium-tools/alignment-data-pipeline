@@ -81,7 +81,7 @@ class TestRegisterMetric:
         audit_sdf.audit_register(
             [{"doc_id": "d0", "language": "English",
               "content": "I'm sure I've said it before, but I can't help it — it's my thing."}],
-            {}, report)
+            report)
         assert "register" in report
         assert report["register"]["reads_personal_frac"] == 1.0
 
@@ -90,8 +90,33 @@ class TestRegisterMetric:
         audit_sdf.audit_register(
             [{"doc_id": "d0", "language": "en",
               "content": "The committee reviewed the report and issued its findings."}],
-            {}, report)
+            report)
         assert "register" in report  # "en" code still accepted (legacy/test records)
+
+
+class TestCompositionMetric:
+    @staticmethod
+    def _rec(doc_id, tone, domain, type_name):
+        return {"doc_id": doc_id, "content": "x", "language": "English",
+                "type_name": type_name,
+                "variables": {"tone": tone, "domain": domain,
+                              "centrality": "the central subject of the document"}}
+
+    def test_reads_axes_from_matrix_variables_not_unknown(self):
+        # Regression: composition read role/tone via a layer-1 type map the matrix
+        # pipeline never writes, so every axis printed 100% "unknown". It must read
+        # tone/domain/centrality from each record's `variables`, and the document
+        # type from the top-level type_name.
+        report = {}
+        audit_sdf.audit_composition([
+            self._rec("d0", "neutral or journalistic", "agriculture and food production", "a news article"),
+            self._rec("d1", "skeptical or displeased", "agriculture and food production", "a blog post"),
+        ], report)
+        comp = report["composition"]
+        assert comp["tone"] == {"neutral or journalistic": 1, "skeptical or displeased": 1}
+        assert comp["domain"] == {"agriculture and food production": 2}
+        assert "unknown" not in comp["tone"] and "unknown" not in comp["domain"]
+        assert comp["n_types"] == 2  # counted from type_name, not a stale type map
 
 
 class TestPrincipleCoverage:
