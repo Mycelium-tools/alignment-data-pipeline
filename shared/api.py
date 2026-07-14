@@ -137,6 +137,8 @@ def _log_usage(
     item_id: str | None = None,
     duration_s: float | None = None,
     attempts: int | None = None,
+    cache_creation_tokens: int = 0,
+    cache_read_tokens: int = 0,
 ) -> None:
     # claude_code passes Claude Code's own reported cost; the api backend leaves
     # cost_usd=None, so we price it from _PRICING with a loud fallback on unknown
@@ -153,7 +155,14 @@ def _log_usage(
                     file=sys.stderr,
                 )
             prices = (3.00, 15.00)
-        cost_usd = (input_tokens / 1_000_000) * prices[0] + (output_tokens / 1_000_000) * prices[1]
+        # Prompt-caching prices (Anthropic): a cache WRITE is 1.25x the input
+        # rate, a cache READ is 0.1x. Plain (uncached) calls pass 0 for both.
+        cost_usd = (
+            (input_tokens / 1_000_000) * prices[0]
+            + (output_tokens / 1_000_000) * prices[1]
+            + (cache_creation_tokens / 1_000_000) * prices[0] * 1.25
+            + (cache_read_tokens / 1_000_000) * prices[0] * 0.10
+        )
     record = {
         "timestamp": datetime.now(UTC).isoformat(),
         "model": model,
@@ -164,6 +173,10 @@ def _log_usage(
         "output_tokens": output_tokens,
         "cost_usd": round(cost_usd, 6),
     }
+    if cache_creation_tokens:
+        record["cache_creation_tokens"] = cache_creation_tokens
+    if cache_read_tokens:
+        record["cache_read_tokens"] = cache_read_tokens
     if stage:
         record["stage"] = stage
     if item_id:
@@ -207,7 +220,7 @@ def _call_with_retry(
     client: anthropic.Anthropic,
     model: str,
     max_tokens: int,
-    system: str,
+    system: str | list[dict],
     messages: list[dict],
     temperature: float,
 ) -> anthropic.types.Message:
@@ -403,6 +416,7 @@ def call_claude(
     stage: str | None = None,
     temperature: float | None = None,
     item_id: str | None = None,
+    cache_system: bool = False,
 ) -> str | tuple[str, str | None]:
     """Call Claude and return the response text.
 
@@ -424,6 +438,11 @@ def call_claude(
         item_id: Id of the pipeline record this call serves (e.g. a prompt_id
             or response_id; comma-joined ids for a batched call), written into
             the cost-log record so per-record stats can be looked up later.
+        cache_system: if True (api backend only), send the system prompt as an
+            ephemeral prompt-cache block so repeated calls that share it (e.g. an
+            SDF layer's constitution-laden system prompt) are billed at the ~0.1x
+            cache-read rate after the first. Ignored on claude_code (the CLI
+            manages its own caching) and when the system prompt is empty.
 
     Returns:
         The assistant's response text, or (text, stop_reason) when
@@ -470,18 +489,32 @@ def call_claude(
                   "truncated or refused.", file=sys.stderr)
         return (text, stop_reason) if return_stop_reason else text
 
+    # Cache the (static, often constitution-sized) system prompt when asked, so
+    # calls sharing it pay the cache-read rate after the first. An empty system
+    # can't be cached.
+    system_arg: str | list[dict] = full_system
+    if cache_system and full_system:
+        system_arg = [{
+            "type": "text",
+            "text": full_system,
+            "cache_control": {"type": "ephemeral"},
+        }]
+
     response = _call_with_retry(
         client=_get_client(),
         model=resolved_model,
         max_tokens=resolved_max,
-        system=full_system,
+        system=system_arg,
         messages=[{"role": "user", "content": user_message}],
         temperature=resolved_temp,
     )
 
-    _log_usage(resolved_model, response.usage.input_tokens, response.usage.output_tokens,
+    usage = response.usage
+    _log_usage(resolved_model, usage.input_tokens, usage.output_tokens,
                stage=stage, item_id=item_id,
-               duration_s=time.monotonic() - started, attempts=_attempt_state.n)
+               duration_s=time.monotonic() - started, attempts=_attempt_state.n,
+               cache_creation_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
+               cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0)
     # A completion that stopped for any reason other than end_turn/stop_sequence
     # is suspect — max_tokens truncates mid-text, refusal yields little or none.
     # Warn loudly so it isn't silently written into a corpus; callers that build

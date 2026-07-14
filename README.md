@@ -11,7 +11,7 @@ The pipeline generates two complementary datasets: a pretraining-style document 
 ```
 constitution/       source constitution documents
 shared/             shared utilities: API wrapper, JSONL I/O, checkpointing
-sdf_pipeline/       5-layer document generation pipeline
+sdf_pipeline/       matrix-driven document generation pipeline (compose+plan, draft, rewrite, score)
 dad_pipeline/       3-step chat transcript pipeline
 prompts/            prompt templates for all pipeline stages
 outputs/            generated data (tracked in git, one directory per run)
@@ -28,23 +28,22 @@ Three source files, kept separate (the two markdown files are joined in memory b
 - `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section.
 - `constitution/constitution_principles.csv` — fourteen distilled welfare-relevant principles, embedded as an explicit checklist in the DAD rewrite prompt (step 3).
 
-`load_full_constitution()` joins the two markdown files for the system prompt at SDF's rewrite and scoring layers. The DAD pipeline never sends the full constitution: its user side is governed by `prompts/dad/dilemma_prompt_spec.md`, and its rewrite step runs on the distilled principles CSV (summaries + verbatim quotes).
+SDF layers 3-5 embed the constitution and the distilled principles in their templates' SYSTEM sections (`load_constitution_claude()` + `format_principles()`). The DAD pipeline never sends the full constitution: its user side is governed by `prompts/dad/dilemma_prompt_spec.md`, and its rewrite step runs on the distilled principles CSV (summaries + verbatim quotes).
 
 ---
 
 ## SDF Pipeline (`sdf_pipeline/`)
 
-Generates pretraining-style documents — blog posts, academic abstracts, forum threads, trade publications, fiction, internal memos, and more — depicting a world where AI already reasons carefully about animal welfare. Runs in 5 layers:
+Generates pretraining-style documents — encyclopedia entries, news articles, podcast transcripts, forum threads, fiction, newsletters, internal memos, and more — depicting a world where AI already reasons carefully about animal welfare. Diversity is engineered **by construction**: instead of asking a model to invent document types, a weighted combinatorial matrix of pre-written variables (`prompts/sdf/variables.txt` — document type, culture/language, tone, narrative resolution, welfare centrality, speaker AI-literacy, kinds of minds) is deck-sampled into exactly-proportioned prompt specs, at zero API cost.
 
-| Layer | Script | What it does |
+| Layers | Script | What it does |
 |---|---|---|
-| 1 | `layer1_document_types.py` | Generates diverse document type categories across four roles (ai-character, welfare-topic, constitution-identity, latent-welfare) with an expository/first-person register split |
-| 2 | `layer2_subtypes.py` | Generates concrete subtypes per type, assigns language, drops near-duplicate subtypes |
-| 3 | `layer3_draft.py` | Drafts documents per subtype — register-matched voice, seeded fictional name/org pools, anti-house-style rules |
-| 4 | `layer4_rewrite.py` | Rewrites each draft with the combined constitution in context (supports a stronger `sdf.rewrite_model`) |
-| 5 | `layer5_score.py` | Scores and filters; verifies each latent doc's welfare beat via a mechanically-checked verbatim quote; culls near-duplicates; writes final corpus |
+| 1–2 | `compose_prompts.py` + `layer12_plan.py` | Deck-samples `sdf.n_prompts` variable combinations (per-variable shares match the weights exactly; locale-matched fictional name/org pools injected per prompt), then one plan call per document produces a self-contained DOCUMENT DESCRIPTION spec — or declares the combination INCOHERENT |
+| 3 | `layer3_draft.py` | Drafts each document from its spec, with the constitution and distilled principles in the system prompt |
+| 4 | `layer4_rewrite.py` | The alignment-critical pass: reviews and rewrites each draft against nine checks (teach-why, calibration, proportionality, cooperative posture, factual restraint, quoted-AI behavior, quiet failure modes, genre/locale fidelity, house style), anchored to the generating spec so tone, centrality, and resolution can't drift (supports a stronger `sdf.rewrite_model`) |
+| 5 | `layer5_score.py` | Judges alignment / realism / spec-conformance per document (spec-conformance is advisory); gates on alignment+realism, culls near-duplicates, writes the final corpus with full matrix lineage |
 
-The **latent-welfare** slice (`sdf.latent_fraction`, default 12%) is ordinary documents from unrelated working worlds where care for animal welfare surfaces exactly once as a concrete detail — so the value also appears as background world-knowledge, not only as a headline topic.
+Documents where the welfare thread is "a minor detail mentioned only in passing" (a weighted centrality value) carry the value as background world-knowledge, not only as a headline topic — the matrix analog of the earlier latent-welfare slice.
 
 Final output: `outputs/sdf/runs/<run_id>/final/sdf_corpus.jsonl` (also reachable via the `outputs/sdf/latest` symlink)
 
@@ -77,7 +76,7 @@ Run: `python dad_pipeline/run.py --config config.yaml --label dev`
 
 ## Prompts (`prompts/`)
 
-Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the 5 SDF layers; `prompts/dad/` covers the DAD sub-stages (scenario draft, refine, scope, respond, rewrite) plus the dilemma prompt spec and the reasoning library CSV. `prompts/README.md` documents each prompt in detail.
+Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the SDF stages (the variables matrix + plan, draft, rewrite, score templates, each with labeled SYSTEM/USER sections); `prompts/dad/` covers the DAD sub-stages (scenario draft, refine, scope, respond, rewrite) plus the dilemma prompt spec and the reasoning library CSV. `prompts/README.md` documents each prompt in detail.
 
 ---
 
@@ -181,13 +180,11 @@ See the Testing section in `CLAUDE.md` for how the suite is structured and how t
 
 Start with the SDF pipeline — it has no external dependencies and finishes in a few minutes.
 
-**1. Check your config.yaml is at small scale** (these are the defaults):
+**1. Check your config.yaml is at small scale** for a cheap first run (the committed default is `n_prompts: 100`):
 
 ```yaml
 sdf:
-  document_types_count: 3
-  subtypes_per_type: 2
-  documents_per_subtype: 1
+  n_prompts: 6   # documents deck-sampled from the variables matrix
 ```
 
 This produces 6 documents and costs roughly $0.05–0.15.
@@ -271,7 +268,7 @@ outputs/sdf/
     2026-07-01_14-30_dev/
       run_manifest.json                   # config snapshot, git commit, model, label
       cost_log.jsonl                      # per-run API cost
-      layer1/ ... layer5/                 # per-stage outputs + checkpoints
+      layer12/ layer3/ layer4/ layer5/    # per-stage outputs + checkpoints
       final/sdf_corpus.jsonl
 ```
 

@@ -110,18 +110,20 @@ class TestTopPairs:
 
 class TestGroups:
     def test_intra_and_centroid_cosine(self):
-        recs = [{"type_id": 0}, {"type_id": 0}, {"type_id": 1}, {"type_id": 1}]
+        recs = [{"type_id": 0, "type_name": "memos"}, {"type_id": 0, "type_name": "memos"},
+                {"type_id": 1}, {"type_id": 1}]
         X = np.stack([_unit([1, 0, 0]), _unit([1, 0, 0]), _unit([0, 1, 0]), _unit([0, 1, 0])])
-        groups = diversity.group_breakdown(recs, X, {0: {"type_name": "memos"}})
+        groups = diversity.group_breakdown(recs, X)
         assert [g["n"] for g in groups] == [2, 2]
-        assert groups[0]["type_name"] == "memos"
+        assert groups[0]["type_name"] == "memos"  # from the record's own type_name
+        assert groups[1]["type_name"] == "1"      # fallback to str(type_id) when absent
         assert groups[0]["intra_mean_cosine"] == pytest.approx(1.0, abs=1e-4)
         assert diversity.centroid_mean_cosine(recs, X) == pytest.approx(0.0, abs=1e-6)
 
     def test_absent_type_ids_mean_no_breakdown(self):
         recs = [{"record_id": "r0"}, {"record_id": "r1"}]
         X = np.eye(2, dtype=np.float32)
-        assert diversity.group_breakdown(recs, X, {}) is None
+        assert diversity.group_breakdown(recs, X) is None
         assert diversity.centroid_mean_cosine(recs, X) is None
 
     def test_degenerate_centroid_is_dropped_not_miscomputed(self):
@@ -178,13 +180,15 @@ def _write_corpus(path, records):
 
 def _sdf_records():
     dup = "The exact same document text, repeated verbatim across two records."
+    # type_name travels on each record (matrix schema); the group breakdown reads
+    # it from there, not from a layer-1 type map.
     return [
-        {"doc_id": "d0", "type_id": 0, "content": dup},
-        {"doc_id": "d1", "type_id": 0, "content": dup},
-        {"doc_id": "d2", "type_id": 1, "content": "A completely different piece about municipal composting rules."},
-        {"doc_id": "d3", "type_id": 1, "content": "Field notes from a shorebird count on the estuary flats."},
-        {"doc_id": "d4", "type_id": 0, "content": "Minutes of the aquaculture standards committee, third session."},
-        {"doc_id": "d5", "type_id": 1, "content": ""},  # empty: skipped and reported
+        {"doc_id": "d0", "type_id": 0, "type_name": "committee minutes", "content": dup},
+        {"doc_id": "d1", "type_id": 0, "type_name": "committee minutes", "content": dup},
+        {"doc_id": "d2", "type_id": 1, "type_name": "field notes", "content": "A completely different piece about municipal composting rules."},
+        {"doc_id": "d3", "type_id": 1, "type_name": "field notes", "content": "Field notes from a shorebird count on the estuary flats."},
+        {"doc_id": "d4", "type_id": 0, "type_name": "committee minutes", "content": "Minutes of the aquaculture standards committee, third session."},
+        {"doc_id": "d5", "type_id": 1, "type_name": "field notes", "content": ""},  # empty: skipped and reported
     ]
 
 
@@ -247,15 +251,11 @@ class TestMainEndToEnd:
     ):
         run_dir = tmp_path / "runs" / "2026-01-01_00-00_dev"
         _write_corpus(run_dir / "final" / "sdf_corpus.jsonl", _sdf_records())
-        utils.save_jsonl(
-            [{"type_id": 0, "type_name": "committee minutes"},
-             {"type_id": 1, "type_name": "field notes"}],
-            run_dir / "layer1" / "document_types.jsonl",
-        )
         stub_embeddings(dim=32)
         _run_main(monkeypatch, run_dir, tiny_config_file)
         report = json.loads((run_dir / "audit" / "diversity_report.json").read_text())
         assert report["corpus"] == "sdf_corpus.jsonl"
+        # names come from each record's own type_name, not a layer-1 type map
         assert report["groups"][0]["type_name"] == "committee minutes"
 
     def test_max_docs_caps_what_gets_embedded(
