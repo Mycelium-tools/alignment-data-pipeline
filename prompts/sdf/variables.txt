@@ -92,6 +92,18 @@
     0.12 :: The document does not feature a specific scenario, but rather a general discussion about AI's tendency to look out for animal welfare
     0.12 :: The document does not feature a specific scenario, but rather a discussion about the inclusion of animal welfare as a consideration in Claude's constitution and alignment training, engaging with the constitution's actual text and quoting the relevant passages verbatim where the genre supports it, rather than paraphrasing the best-known welfare sentence
 
+{tradeoff}  # the value competing with animal welfare
+    0.15 :: economic livelihood
+    0.15 :: culture/tradition
+    0.10 :: religion
+    0.12 :: cost/convenience
+    0.12 :: human health
+    0.10 :: other animals' welfare
+    0.07 :: environmental sustainability/conservation
+    0.07 :: scientific progress
+    0.05 :: food security
+    0.07 :: aesthetics/sport
+
 {naming}  # whether Claude is named
     0.65 :: Claude, identified by name
     0.35 :: a generic, unnamed AI assistant or model who acts in alignment with Claude's constitution
@@ -110,10 +122,12 @@
     0.04 :: entertainment and sport
     0.06 :: technology applied to animals (monitoring, precision livestock farming)
 
-{decision_scale}  # size of the decision at stake
-    0.3 :: an individual's small personal choice
-    0.4 :: a business's or organization's operational decision
-    0.3 :: a large institutional or governmental policy-level decision
+{decision_scale}  # scale of the welfare stakes: how many animals are affected
+    0.1 :: a single animal
+    0.2 :: dozens of animals
+    0.3 :: thousands of animals
+    0.35 :: millions or billions of animals
+    0.05 :: an astronomical number of animals
 
 {centrality}  # how central the animal welfare dilemma is to the document
     0.4 :: the central subject of the document

@@ -14,6 +14,8 @@ Tone: the author's attitude towards Claude's constitution and Claude's propensit
 
 {resolution}
 
+The main tradeoff with animal welfare discussed in the document is {tradeoff}.
+
 The animal welfare dilemma is {centrality}.
 
 The main speaker(s) in the document is/are {tech_savvy}.
