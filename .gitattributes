@@ -1,0 +1,6 @@
+# Pipeline-generated run outputs, kept in git as reviewable examples (see
+# CLAUDE.md's "Committed run outputs are deliberate") but not hand-authored
+# code — collapse them in GitHub's diff view and exclude them from language
+# stats, so both human and automated review focus on the code paths.
+outputs/*/runs/** linguist-generated=true
+outputs/cost_log.jsonl linguist-generated=true

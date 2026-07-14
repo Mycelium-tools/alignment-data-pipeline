@@ -76,6 +76,16 @@ jobs:
             the `gh pr` subcommands below are permitted, and any other Bash
             command is denied and just wastes turns.
 
+            Some PRs commit fresh pipeline-run output under `outputs/**` as
+            reviewable examples (see CLAUDE.md's "Committed run outputs are
+            deliberate" section) — this is generated data, not hand-authored
+            code, and a single run can add thousands of lines of JSONL. Run
+            `gh pr diff --name-only` first; if any changed paths are under
+            `outputs/`, skim past those hunks in the full diff without
+            analyzing their content, and just note the file/line count in
+            your summary. Spend your review effort on the non-generated code
+            paths only.
+
             Focus on high-signal problems in the changed code only:
             - Bugs, logic errors, and unhandled edge cases
             - Security issues
