@@ -207,7 +207,7 @@ def test_real_template_axes_match_real_variables():
     axes = cp.matrix_axes(template)
     values, _ = cp.split_weights(cp.parse_variables(
         REPO_ROOT / "prompts" / "sdf" / "variables.txt"))
-    for axis in ("framing", "domain", "decision_scale", "ai_role"):
+    for axis in ("naming", "domain", "decision_scale"):
         assert axis in axes, axis
         assert values[axis], axis
     # template axes and variables must agree exactly (extra variables are

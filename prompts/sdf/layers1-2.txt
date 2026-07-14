@@ -20,13 +20,11 @@ The main speaker(s) in the document is/are {tech_savvy}.
 
 The nonhuman stakeholder(s) affected by the scenario in the document is/are {sentient_category}.
 
-Framing: {framing}.
+The AI assistant character in the document is {naming}.
 
-Domain: the scenario lives in the world of {domain}.
+The scenario emerges in the context of {domain}.
 
-Decision scale: the decision or situation at stake is {decision_scale}.
-
-When an AI is depicted acting, its role in the document is: {ai_role}.
+The stakes of the situation are on the scale of {decision_scale}.
 
 Now, based on these variables, consider the following questions and output a description of the final document:
 1. If appropriate, what are some specific scenarios that could fit this combination of variables? Think of five different scenarios, and then choose any one of them other than the first one that came to mind.
@@ -38,4 +36,4 @@ Ground the document in real places, regulations, and events where that helps (qu
 
 Work through the questions concisely inside <document_planning>...</document_planning> tags — keep these working notes under 400 words. Then, inside <document_description>...</document_description> tags, write a self-contained description of the document to be produced, under 300 words: everything a writer needs — chosen scenario, author and venue, language, tone, structure, how the AI's reasoning surfaces, and the specific names, institutions, and locale details you settled on — without needing to read your notes. Only the text inside the <document_description> tags is passed to the writer.
 
-If there is no sensible way to combine these variables into a document, put only the word INCOHERENT and a very brief explanation inside the <document_description> tags.
+There may be no sensible way to combine a given set of variables into a document. In that case, put only the word INCOHERENT and a very brief explanation inside the <document_description> tags.

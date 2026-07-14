@@ -22,8 +22,8 @@ TEMPLATE_KWARGS = [
         "preamble": "PREAMBLE-X", "document_type": "TYPE-X", "culture": "CULTURE-X",
         "tone": "TONE-X", "resolution": "RESOLUTION-X", "centrality": "CENTRALITY-X",
         "tech_savvy": "SAVVY-X", "sentient_category": "MINDS-X",
-        "framing": "FRAMING-X", "domain": "DOMAIN-X",
-        "decision_scale": "SCALE-X", "ai_role": "ROLE-X",
+        "naming": "NAMING-X", "domain": "DOMAIN-X",
+        "decision_scale": "SCALE-X",
         "fictional_names": "NAME-X; NAME-Y", "fictional_orgs": "ORG-X; ORG-Y",
     }),
     ("sdf/layer3.txt", {
