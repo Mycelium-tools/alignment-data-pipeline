@@ -15,7 +15,7 @@ import threading
 import pytest
 
 from conftest import dad_scenario_reply
-from dad_pipeline import step1_dilemmas, step2_responses, step3_rewrite
+from dad_pipeline import reasoning_library, step1_dilemmas, step2_responses, step3_rewrite
 from shared import utils
 
 
@@ -71,10 +71,18 @@ class TestGenerateScenarios:
 
 # --- Step 1b/1c: drafting via run() --------------------------------------
 
+def _sysuser(user_message, kw):
+    """Every DAD template splits into system + user, so the role marker lives
+    in system_prompt while the payload (scenarios, scope, library, draft)
+    stays in the user message. Dispatchers match against both halves."""
+    return (kw.get("system_prompt") or "") + "\n" + user_message
+
+
 def _dad_step1_dispatch(user_message, **kw):
-    if "first-attempt user prompts" in user_message:  # 1b batch draft
+    blob = _sysuser(user_message, kw)
+    if "first-attempt user prompts" in blob:  # 1b batch draft
         return dad_scenario_reply(user_message)
-    if "dilemma-prompt rewrite step" in user_message:  # 1c refine
+    if "editor of dilemma prompts" in blob:  # 1c refine
         return json.dumps({"prompt": "Refined user message.", "notes": "relocated the lever"})
     raise AssertionError(f"Unrecognized step-1 prompt: {user_message[:80]!r}")
 
@@ -91,9 +99,15 @@ class TestStep1Run:
             assert e["draft_user_message"] == f"Drafted user message for {e['scenario_id']}."
             assert e["taxa_subcategory"]
             assert "scenario_deviations" not in e
+            # stable content-keyed ids assigned alongside the per-run ids
+            assert e["scenario_gid"].startswith("S-")
+            assert e["prompt_gid"].startswith("P-")
         # persisted artifacts: scenarios (1a), dilemmas (1b/1c), refinements log,
         # and the Part-4 checklist report (previously terminal-only)
         assert len(utils.load_jsonl(tmp_path / "scenarios.jsonl")) == 2
+        assert all(s["scenario_gid"].startswith("S-")
+                   for s in utils.load_jsonl(tmp_path / "scenarios.jsonl"))
+        assert (tmp_path / "id_registry.json").exists()  # registry persisted
         assert len(utils.load_jsonl(tmp_path / "dilemmas.jsonl")) == 2
         assert len(utils.load_jsonl(tmp_path / "refinements.jsonl")) == 2
         saved = (tmp_path / "checklist.txt").read_text()
@@ -103,7 +117,7 @@ class TestStep1Run:
         assert len(calls) == 3
         # the 1b annotation reaches the 1c prompt — minus the claims lines
         refine_call = next(c["user_message"] for c in calls
-                           if "dilemma-prompt rewrite step" in c["user_message"])
+                           if "editor of dilemma prompts" in c["system_prompt"])
         assert "test patients in context" in refine_call
         assert "a load-bearing claim" not in refine_call
 
@@ -119,7 +133,7 @@ class TestStep1Run:
                                       "count": 1, "batch_size": 1}}
 
         def malformed(user_message, **kw):
-            if "dilemma-prompt rewrite step" in user_message:  # 1c refine
+            if "editor of dilemma prompts" in _sysuser(user_message, kw):  # 1c refine
                 return json.dumps({"prompt": "Refined user message.", "notes": "n"})
             reply = json.loads(dad_scenario_reply(user_message))
             reply[0]["annotation"]["domain"] = "Education / Youth"  # bare string, not list
@@ -131,9 +145,78 @@ class TestStep1Run:
 
         assert len(examples) == 1
         refine_call = next(c["user_message"] for c in calls
-                           if "dilemma-prompt rewrite step" in c["user_message"])
+                           if "editor of dilemma prompts" in c["system_prompt"])
         assert "Domain: Education / Youth" in refine_call
         assert "E, d, u" not in refine_call  # the character-join failure mode
+
+    def test_unusable_refine_is_retried_once_and_raw_kept(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "batch_size": 1}}
+        refine_calls = {"n": 0}
+
+        def flaky_refine(user_message, **kw):
+            if "editor of dilemma prompts" in _sysuser(user_message, kw):
+                refine_calls["n"] += 1
+                if refine_calls["n"] == 1:
+                    return "not json at all"
+                return json.dumps({"prompt": "Refined user message.", "notes": "n"})
+            return dad_scenario_reply(user_message)
+
+        calls = stub_claude(flaky_refine)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(calls) == 3  # 1 batch + 2 refine attempts
+        assert examples[0]["user_message"] == "Refined user message."
+        assert "refine_failed" not in examples[0]
+        failures = utils.load_jsonl(tmp_path / "refine_failures.jsonl")
+        assert len(failures) == 1
+        assert failures[0]["attempt"] == 1 and failures[0]["raw"] == "not json at all"
+
+    def test_refine_unusable_after_retries_keeps_draft_and_stamps_record(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "batch_size": 1}}
+
+        def bad_refine(user_message, **kw):
+            if "editor of dilemma prompts" in _sysuser(user_message, kw):
+                return "still not json"
+            return dad_scenario_reply(user_message)
+
+        calls = stub_claude(bad_refine)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(calls) == 3  # 1 batch + MAX_REFINE_ATTEMPTS refine attempts
+        e = examples[0]
+        assert e["refine_failed"] is True
+        assert e["user_message"].startswith("Drafted user message")  # 1b draft shipped
+        assert "draft_user_message" not in e  # only set when refine succeeded
+        assert len(utils.load_jsonl(tmp_path / "refine_failures.jsonl")) == 2
+        assert utils.load_jsonl(tmp_path / "refinements.jsonl") == []
+
+    def test_unusable_batch_raw_is_persisted(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "batch_size": 1, "refine": False}}
+        batch_calls = {"n": 0}
+
+        def flaky_batch(user_message, **kw):
+            batch_calls["n"] += 1
+            return "no json here" if batch_calls["n"] == 1 else dad_scenario_reply(user_message)
+
+        stub_claude(flaky_batch)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1  # retry recovered
+        failures = utils.load_jsonl(tmp_path / "draft_failures.jsonl")
+        assert len(failures) == 1
+        assert failures[0]["raw"] == "no json here" and failures[0]["attempt"] == 1
 
     def test_mismatching_draft_is_accepted_first_try(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -196,10 +279,13 @@ class TestCoverageTally:
 
 # --- Step 2: scope + respond ---------------------------------------------
 
-GOOD_SCOPE = json.dumps({
-    "patients": "full pathway", "levers": "highest lever", "cost": "real cost",
+SCOPE_AXES = {
+    "patients": "full pathway", "goal": "underlying goal", "levers": "highest lever",
+    "cost": "real cost", "magnitude": "stake magnitude",
     "upside": "second-order upside", "counterfactual": "realistic baseline",
-})
+}
+# The well-behaved 2a reply: exactly the seven axes (selection is 2a.5's job).
+GOOD_SCOPE = json.dumps(SCOPE_AXES)
 
 
 class TestParseScope:
@@ -210,7 +296,7 @@ class TestParseScope:
     def test_control_characters_inside_strings_are_tolerated(self):
         # temperature-1 prose JSON often carries literal newlines inside values —
         # the historical cause of silently empty scopes
-        raw = '{"patients": "line one\nline two", "levers": "l", "cost": "c", "upside": "u", "counterfactual": "cf"}'
+        raw = '{"patients": "line one\nline two", "goal": "g", "levers": "l", "cost": "c", "magnitude": "m", "upside": "u", "counterfactual": "cf"}'
         assert step2_responses._parse_scope(raw)["patients"] == "line one\nline two"
 
     def test_garbage_returns_empty_and_fails_validation(self):
@@ -229,6 +315,46 @@ class TestParseScope:
         # but new runs must produce the new keys — legacy doesn't pass validation
         assert not step2_responses._valid_scope(legacy)
 
+    def test_old_records_render_without_axes_they_never_had(self):
+        # The viewer re-renders old runs' prompts with format_scope; a record
+        # written before the goal/magnitude axes existed must not grow "—"
+        # lines that were never in the prompt actually sent (fidelity).
+        five_axis = {"patients": "p", "levers": "l", "cost": "c",
+                     "upside": "u", "counterfactual": "cf"}
+        rendered = step2_responses.format_scope(five_axis)
+        assert "Goal" not in rendered and "Magnitude" not in rendered
+        assert not any(line.endswith(": —") for line in rendered.splitlines())
+        # a five-axis record no longer passes validation → resume re-scopes it
+        assert not step2_responses._valid_scope(five_axis)
+        # current seven-axis records render every axis
+        full = step2_responses.format_scope(json.loads(GOOD_SCOPE))
+        assert "Goal" in full and "Magnitude" in full and "stake magnitude" in full
+
+
+class TestNormalizeIds:
+    LIB_IDS = ["C1", "C2", "M1", "T1"]
+
+    def test_string_forms_normalize_to_library_order(self):
+        # the select call returns one comma-separated line; prose/extra
+        # separators/dupes/unknowns all reduce to known ids in library order
+        for raw in ("T1, BOGUS, C1, C1", "T1 C1", "C1,T1,",
+                    "The triggered entries are: C1, T1"):
+            assert step2_responses._normalize_ids(raw, self.LIB_IDS) == ["C1", "T1"], raw
+
+    def test_lists_are_accepted_too(self):
+        assert step2_responses._normalize_ids(["T1", "BOGUS", "C1", "C1"],
+                                              self.LIB_IDS) == ["C1", "T1"]
+
+    def test_punctuation_wrapped_ids_are_not_silently_dropped(self):
+        # A dropped id here is worse than fallback: a non-empty-but-truncated
+        # selection bypasses fail-open, so 2b silently misses selected entries.
+        for raw in ("`C1`, T1", "C1, T1.", "(C1) and [T1]", "**C1**, 'T1';"):
+            assert step2_responses._normalize_ids(raw, self.LIB_IDS) == ["C1", "T1"], raw
+
+    def test_garbage_normalizes_to_empty(self):
+        for bad in (None, "", "no ids here whatsoever", 42, [], ["BOGUS"]):
+            assert step2_responses._normalize_ids(bad, self.LIB_IDS) == []
+
 
 def _dilemma(pid="AW-0001"):
     return {"prompt_id": pid, "user_message": "User dilemma text.",
@@ -236,34 +362,53 @@ def _dilemma(pid="AW-0001"):
 
 
 def _dad_step2_dispatch(user_message, **kw):
-    if "scoping an animal-welfare advice dilemma" in user_message:  # 2a
+    blob = _sysuser(user_message, kw)
+    if "build the full map of the case" in blob:  # 2a
         return GOOD_SCOPE
-    if "writing the assistant's response" in user_message:  # 2b
+    if "doing retrieval for a response" in blob:  # 2a.5 select
+        return "C1, M1"
+    if "advisor responding to a user's dilemma" in blob:  # 2b
         return "Draft response."
     raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
 
 
 class TestStep2Run:
-    def test_scopes_then_responds(self, tiny_config, prompts_dad, tmp_path, stub_claude):
+    def test_scopes_selects_then_responds(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         calls = stub_claude(_dad_step2_dispatch)
         results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
 
         assert len(results) == 1
         assert results[0]["assistant_response"] == "Draft response."
         assert results[0]["scope"]["counterfactual"] == "realistic baseline"
-        assert len(calls) == 2  # one scope + one response
+        assert len(calls) == 3  # scope + select + response
         # the scope map and the user message both reach the response prompt
-        respond_call = calls[1]["user_message"]
+        respond_call = calls[2]["user_message"]
         assert "realistic baseline" in respond_call
         assert "User dilemma text." in respond_call
+        # the sampled entry-shape hints ride the 2b USER prompt (the system
+        # half stays a pure function of the template), are stored on the record
+        # for the viewer's re-render, and are a deterministic function of the
+        # response identity (resume reproduces the same draw)
+        hints = step2_responses.sample_opening_hints("AW-0001", 0)
+        assert hints in calls[2]["user_message"]
+        assert hints not in (calls[2]["system_prompt"] or "")
+        assert results[0]["opening_hints"] == hints
+        for h in hints.split("; "):
+            assert h in step2_responses.OPENING_HINTS
+        # different samples of one case draw different hints — the within-case
+        # variety the mechanism exists to create
+        assert hints != step2_responses.sample_opening_hints("AW-0001", 1)
 
     def test_unusable_scope_retries_and_keeps_raws(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         attempts = {"n": 0}
 
         def flaky(user_message, **kw):
-            if "scoping an animal-welfare advice dilemma" in user_message:
+            blob = _sysuser(user_message, kw)
+            if "build the full map of the case" in blob:
                 attempts["n"] += 1
                 return "not json at all" if attempts["n"] == 1 else GOOD_SCOPE
+            if "doing retrieval for a response" in blob:
+                return "C1"
             return "Draft response."
 
         stub_claude(flaky)
@@ -279,7 +424,7 @@ class TestStep2Run:
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
         def always_bad(user_message, **kw):
-            assert "scoping" in user_message  # must never reach 2b
+            assert "build the full map" in (kw.get("system_prompt") or "")  # must never reach 2b
             return "not json"
 
         stub_claude(always_bad)
@@ -296,6 +441,118 @@ class TestStep2Run:
         assert calls == []
         assert len(results) == 1
 
+    def test_select_call_selects_records_and_injects(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        library = reasoning_library.load(prompts_dad)
+        lib_ids = reasoning_library.all_ids(library)
+        claims = {e["id"]: e["claim"] for e in reasoning_library.get_entries(library, lib_ids)}
+        picked, unpicked = lib_ids[0], lib_ids[-1]
+
+        def dispatch(user_message, **kw):
+            blob = _sysuser(user_message, kw)
+            if "build the full map of the case" in blob:
+                # a model improvising the retired sixth key must not pollute
+                # the stored scope — selection is the select call's alone
+                return json.dumps({**SCOPE_AXES, "triggered_entries": "T9"})
+            if "doing retrieval for a response" in blob:  # 2a.5
+                return f"{picked}, BOGUS"
+            return "Draft response."
+
+        calls = stub_claude(dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        assert len(calls) == 3  # scope + select + respond
+        # the trigger index and the scope both reach the select prompt —
+        # and the scope prompt no longer carries the index
+        first_entry = reasoning_library.get_entries(library, [picked])[0]
+        # the trigger index rides the select call's SYSTEM prompt; the scope
+        # rides its user prompt; the scope call carries neither trigger index
+        assert first_entry["trigger_condition"] not in calls[0]["user_message"]
+        assert first_entry["trigger_condition"] not in (calls[0]["system_prompt"] or "")
+        assert first_entry["trigger_condition"] in calls[1]["system_prompt"]
+        assert "full pathway" in calls[1]["user_message"]
+
+        # provenance: one scopes.jsonl record carries the selection + full rows
+        rec = utils.load_jsonl(tmp_path / "scopes.jsonl")[0]
+        assert rec["entry_ids"] == [picked]  # unknown id dropped
+        assert rec["selection_fallback"] is False
+        assert rec["selection_source"] == "select"
+        assert [e["id"] for e in rec["triggered_entries"]] == [picked]
+        assert rec["triggered_entries"][0]["claim"] == claims[picked]
+        assert "triggered_entries" not in rec["scope"]  # stray key popped
+
+        # 2b saw only the triggered row; the record names what was injected
+        respond_call = calls[2]["user_message"]
+        assert claims[picked] in respond_call
+        assert claims[unpicked] not in respond_call
+        assert results[0]["entry_ids"] == [picked]
+
+    def test_unusable_selection_falls_open_to_whole_library(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # A useless select reply: the scope is kept (never re-billed) and 2b
+        # gets the full library — one attempt, no retry loop.
+        def dispatch(user_message, **kw):
+            blob = _sysuser(user_message, kw)
+            if "build the full map of the case" in blob:
+                return GOOD_SCOPE
+            if "doing retrieval for a response" in blob:
+                return "I could not find any relevant entries, sorry!"
+            return "Draft response."
+
+        calls = stub_claude(dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        lib_ids = reasoning_library.all_ids(reasoning_library.load(prompts_dad))
+        rec = utils.load_jsonl(tmp_path / "scopes.jsonl")[0]
+        assert rec["entry_ids"] == lib_ids
+        assert rec["selection_fallback"] is True
+        assert rec["selection_source"] == "full_library"
+        assert results[0]["entry_ids"] == lib_ids
+        assert len(calls) == 3  # scope + one select attempt + respond
+        # the unusable select raw is persisted — same policy as every stage
+        failures = utils.load_jsonl(tmp_path / "select_failures.jsonl")
+        assert len(failures) == 1
+        assert failures[0]["prompt_id"] == "AW-0001"
+        assert failures[0]["raw"] == "I could not find any relevant entries, sorry!"
+
+    def test_resume_reuses_stored_selection_for_pending_responses(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Scope + selection already checkpointed, response still pending (the
+        # died-mid-2b shape): resume must rebuild the 2b prompt from the STORED
+        # entry_ids — one call, no re-scope, no full-library drift.
+        library = reasoning_library.load(prompts_dad)
+        lib_ids = reasoning_library.all_ids(library)
+        claims = {e["id"]: e["claim"] for e in reasoning_library.get_entries(library, lib_ids)}
+        picked, unpicked = lib_ids[0], lib_ids[-1]
+        utils.append_jsonl({
+            "prompt_id": "AW-0001", "scope": dict(SCOPE_AXES),
+            "entry_ids": [picked], "selection_fallback": False,
+            "triggered_entries": reasoning_library.get_entries(library, [picked]),
+        }, tmp_path / "scopes.jsonl")
+
+        calls = stub_claude(["Draft response."])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        assert len(calls) == 1  # 2b only
+        assert claims[picked] in calls[0]["user_message"]
+        assert claims[unpicked] not in calls[0]["user_message"]
+        assert results[0]["entry_ids"] == [picked]
+
+    def test_pre_selection_scope_records_inject_whole_library(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # scopes.jsonl written before library retrieval existed has no
+        # entry_ids — resuming such a run falls open to the full library.
+        utils.append_jsonl({"prompt_id": "AW-0001", "scope": dict(SCOPE_AXES)},
+                           tmp_path / "scopes.jsonl")
+        stub_claude(["Draft response."])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+        assert results[0]["entry_ids"] == reasoning_library.all_ids(
+            reasoning_library.load(prompts_dad))
+
     def test_dilemmas_fan_out_concurrently_in_input_order(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
@@ -305,10 +562,13 @@ class TestStep2Run:
         both_scoping = threading.Barrier(2)
 
         def dispatch(user_message, **kw):
-            if "scoping an animal-welfare advice dilemma" in user_message:
+            blob = _sysuser(user_message, kw)
+            if "build the full map of the case" in blob:
                 both_scoping.wait(timeout=10)
                 return GOOD_SCOPE
-            if "writing the assistant's response" in user_message:
+            if "doing retrieval for a response" in blob:
+                return "C1"
+            if "advisor responding to a user's dilemma" in blob:
                 return "Draft response."
             raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
 
@@ -316,7 +576,7 @@ class TestStep2Run:
         dilemmas = [_dilemma("AW-0001"), _dilemma("AW-0002")]
         results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas)
 
-        assert len(calls) == 4  # 2 scopes + 2 responses
+        assert len(calls) == 6  # 2 scopes + 2 selects + 2 responses
         # results and persisted files keep input order despite thread interleaving
         assert [r["prompt_id"] for r in results] == ["AW-0001", "AW-0002"]
         scopes = utils.load_jsonl(tmp_path / "scopes.jsonl")
@@ -355,8 +615,9 @@ class TestStep3Run:
         assert final[0]["messages"][1]["content"] == "Rewritten careful answer."
         # the distilled principles reach the rewrite prompt; the annotation
         # deliberately does not (it anchors nothing after step 1)
-        assert "CONSTITUTION PRINCIPLES" in calls[0]["user_message"]
+        assert "CONSTITUTION PRINCIPLES" in calls[0]["system_prompt"]
         assert "Direction: Mixed" not in calls[0]["user_message"]
+        assert "Direction: Mixed" not in (calls[0]["system_prompt"] or "")
 
     def test_capped_rewrite_retries_once_at_higher_budget(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -438,6 +699,7 @@ class TestPerStageModelKnobs:
             "prompt_draft_model": "m-1b",
             "prompt_refine_model": "m-1c",
             "response_scope_model": "m-2a",
+            "response_select_model": "m-2a5",
             "response_draft_model": "m-2b",
             "constitution_rewrite_model": "m-3",
         }
@@ -452,7 +714,16 @@ class TestPerStageModelKnobs:
         step2_responses.run(config, prompts_dad, tmp_path / "step2", [_dilemma()])
         by_stage = {c["stage"]: c for c in calls}
         assert by_stage["response_scope"]["model"] == "m-2a"
+        assert by_stage["response_select"]["model"] == "m-2a5"
         assert by_stage["response_draft"]["model"] == "m-2b"
+
+        # the select knob's documented fallback: unset -> the 2a scope model
+        no_select = {k: v for k, v in config["dad"].items() if k != "response_select_model"}
+        calls = stub_claude(_dad_step2_dispatch)
+        step2_responses.run({**config, "dad": no_select}, prompts_dad,
+                            tmp_path / "step2b", [_dilemma()])
+        by_stage = {c["stage"]: c for c in calls}
+        assert by_stage["response_select"]["model"] == "m-2a"
 
         calls = stub_claude(["Rewritten careful answer."])
         step3_rewrite.run(config, prompts_dad, tmp_path / "step3", tmp_path / "final",

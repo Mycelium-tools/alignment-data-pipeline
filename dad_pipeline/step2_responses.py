@@ -4,17 +4,31 @@ Each dilemma goes through two sub-stages (prompts/dad/reasoning_library_ABOUT.md
 is human reference about the library, not read by the pipeline):
 
 - 2a scope: rebuild the full map of the case from the user's message, along
-  the five axes prompts/dad/step2_scope.txt defines (mirrored in _SCOPE_AXES
-  below — keep the two in sync). One record per prompt in step2/scopes.jsonl.
-  A scope that fails to parse or is missing an axis is retried with a fresh
-  call (raw outputs kept in step2/scope_failures.jsonl); after
-  MAX_SCOPE_ATTEMPTS the run stops rather than generate a response over an
-  empty scope, which would silently optimize the wrong node.
-- 2b respond: generate the response over the scope map, following the spec in
-  prompts/dad/step2_respond.txt. The whole library is embedded in that prompt,
-  which IS the generation guidance — no separate system prompt, and the
-  annotation is not passed: the response reasons from scope + library + user
-  message.
+  the seven axes prompts/dad/step2_scope.txt defines (mirrored in _SCOPE_AXES
+  below — keep the two in sync). A scope that fails to parse or is missing an
+  axis is retried with a fresh call (raw outputs kept in
+  step2/scope_failures.jsonl); after MAX_SCOPE_ATTEMPTS the run stops rather
+  than generate a response over an empty scope, which would silently optimize
+  the wrong node.
+- 2a.5 select: a dedicated retrieval call per prompt (step2_select.txt:
+  trigger index + scope + user message → comma-separated entry ids; model
+  dad.response_select_model falling back to response_scope_model, stage
+  response_select). Selection used to ride inside the scope JSON as a sixth
+  key; the model omitted it ~half the time and the mixed-shape object grew
+  two parse-bug variants at that seam, so retrieval is its own call. It is
+  fail-open: an unusable selection means 2b gets the whole library
+  (selection_fallback: true, selection_source "full_library") with no retry —
+  degraded selection only costs tokens, not quality. One record per prompt in
+  step2/scopes.jsonl carries the scope, the selected entry_ids, and the full
+  triggered rows (the retrieval provenance the viewer shows); older records
+  have selection_source "scope" (selection came with the scope JSON) or
+  "repair" (recovered by the miss-only follow-up this call generalizes).
+- 2b respond: generate the response over the scope map plus the triggered
+  library rows, following the spec in prompts/dad/step2_respond.txt. That
+  template splits (via utils.load_split_prompt) into a system half — the
+  standing generation guidance — and a user half carrying the library rows,
+  scope, and user message; the annotation is not passed. Each response
+  record's entry_ids is the list actually injected into its prompt.
 
 The library and scope are sampling scaffolding: never named in the response,
 stripped before training records are written. Step 3 then rewrites against the
@@ -22,6 +36,7 @@ constitution.
 """
 
 import json
+import random
 import uuid
 import sys
 from pathlib import Path
@@ -33,32 +48,60 @@ from dad_pipeline import reasoning_library
 
 MAX_SCOPE_ATTEMPTS = 3
 
+# Entry-shape menu sampled into each 2b call ({opening_hints} in the template) —
+# a few per response, seeded by the response's item id so --resume and the
+# viewer re-render reproduce the same draw. Opener variety must come from
+# code-level sampling, not from asking the model to vary: at temperature 1 the
+# scope + library context converges every reply onto the same few openers.
+# Same mechanism as SDF's STRUCTURE_HINTS (adapted from the CAML notebook),
+# which fixed templated openings on the document side.
+OPENING_HINTS = [
+    "open on the concrete detail carrying the most weight",
+    "open mid-answer with the recommendation, justifying it afterwards",
+    "open with the strongest consideration against where the reply will land",
+    "open from the user's own words, quoted back precisely",
+    "open with the factual crux the case turns on",
+    "open by answering the literal question asked, then widening",
+    "open with what is settled before what is contested",
+    "open from inside the user's constraint (the deadline, the role, the budget)",
+    "open from the fact or cost the user has been sidestepping",
+    "open plainly in the middle of the practical problem, as a colleague would",
+]
+_HINTS_PER_RESPONSE = 3
+
+
+def sample_opening_hints(prompt_id: str, sample_index: int) -> str:
+    """The '; '-joined entry-shape hints for one response, deterministic in the
+    response's identity (so resume, tests, and the viewer all see the draw the
+    paid call actually used)."""
+    rng = random.Random(f"openings:{prompt_id}_s{sample_index}")
+    return "; ".join(rng.sample(OPENING_HINTS, _HINTS_PER_RESPONSE))
+
+# selection_source values meaning "a dedicated selection API call happened for
+# this record" — the single source of truth the viewer keys its 2a.5 rendering
+# on ("select": the standing call; "repair": its miss-only precursor;
+# "full_library": a call happened but its output was unusable). "scope" and
+# absent mean the record predates the dedicated call.
+SELECT_CALL_SOURCES = frozenset({"select", "repair", "full_library"})
+
 
 def _parse_scope(raw: str) -> dict:
-    # strict=False accepts literal newlines/tabs inside string values — the way
-    # a prose-heavy JSON object at temperature 1.0 most often goes invalid.
-    text = raw.strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
+    """The scope object via the shared hardened parser (utils.extract_json:
+    fences/prose/control-chars tolerated), or {} — the caller's validity check
+    and retry loop handle everything unusable."""
     try:
-        parsed = json.loads(text.strip(), strict=False)
+        parsed = utils.extract_json(raw)
     except json.JSONDecodeError:
-        s, e = text.find("{"), text.rfind("}")
-        if s == -1 or e <= s:
-            return {}
-        try:
-            parsed = json.loads(text[s:e + 1], strict=False)
-        except json.JSONDecodeError:
-            return {}
+        return {}
     return parsed if isinstance(parsed, dict) else {}
 
 
 _SCOPE_AXES = (
     ("patients", "Patients (every plausible moral patient, upstream and downstream)"),
+    ("goal", "Goal (the user's underlying goal, beneath the question they asked)"),
     ("levers", "Levers (available to the user; highest-leverage for welfare identified)"),
     ("cost", "Cost (what acting on the highest-leverage levers could cost the user)"),
+    ("magnitude", "Magnitude (size, likelihood, tractability of the welfare stake; whether this choice is counterfactual for it)"),
     ("upside", "Upside (second-order stakes — what choices build, signal, normalize, lock in)"),
     ("counterfactual", "Counterfactual (is the user's role counterfactual or fungible; the costs at stake)"),
 )
@@ -69,28 +112,53 @@ _LEGACY_AXIS_KEYS = {"patients": "system", "levers": "agent"}
 
 
 def format_scope(scope: dict) -> str:
-    return "\n".join(
-        f"{label}: {scope.get(key) or scope.get(_LEGACY_AXIS_KEYS.get(key, '')) or '—'}"
-        for key, label in _SCOPE_AXES
-    )
+    """Render the axes THIS record carries, in _SCOPE_AXES order. Axes absent
+    from the record are skipped entirely (not rendered as '—'): the viewer
+    re-renders old runs' prompts with this function, and a record written
+    before an axis existed must not grow lines that were never sent."""
+    lines = []
+    for key, label in _SCOPE_AXES:
+        legacy = _LEGACY_AXIS_KEYS.get(key, "")
+        if key in scope or (legacy and legacy in scope):
+            lines.append(f"{label}: {scope.get(key) or scope.get(legacy) or '—'}")
+    return "\n".join(lines)
 
 
 def _valid_scope(scope) -> bool:
-    """A usable scope carries all five axes as non-empty strings. Anything less
-    renders as '—' lines in the 2b prompt, which tells the response model the
-    case 'is already scoped' while handing it nothing."""
+    """A usable scope carries all seven axes as non-empty strings. Anything
+    less is retried: a missing axis silently hands 2b a thinner map than the
+    prompt promised. (Strict for new runs by design; resuming a run scoped
+    under fewer axes re-derives its scopes at current strictness.)"""
     return isinstance(scope, dict) and all(
         isinstance(scope.get(key), str) and scope[key].strip()
         for key, _ in _SCOPE_AXES
     )
 
 
+# Punctuation a model may wrap an id in ("`C1`", "T7.", "(M3)") — stripped from
+# token edges so a stray backtick doesn't silently drop a selected entry.
+_ID_TRIM = "`'\"*_.,;:!?()[]{}<>"
+
+
+def _normalize_ids(raw, library_ids: list[str]) -> list[str]:
+    """Whatever shape a selection arrives in (comma-separated string, list,
+    prose or punctuation around ids), reduce it to known ids, deduped, in
+    library order."""
+    if isinstance(raw, str):
+        raw = raw.replace(",", " ").split()
+    if not isinstance(raw, list):
+        return []
+    wanted = {str(x).strip().strip(_ID_TRIM) for x in raw}
+    return [i for i in library_ids if i in wanted]
+
+
 def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
     library = reasoning_library.load(prompts_dir)
-    # The whole library (conduct C*, core moves M*, topic T*) goes into the
-    # response prompt; the prompt itself is the generation guidance, so there is
-    # no separate system prompt (per prompts/dad/step2_respond.txt).
-    library_block = reasoning_library.format_library(library)
+    # 2a.5 evaluates the lightweight trigger index in its own call; 2b gets
+    # only the rows that fired. Each step-2 template splits into a system half
+    # (standing guidance) and a user half (per-case payload) via
+    # utils.load_split_prompt — see prompts/dad/step2_*.txt.
+    trigger_index = reasoning_library.trigger_index_block(library)
     library_ids = reasoning_library.all_ids(library)
     per_prompt = int(config["dad"].get("responses", {}).get("per_prompt", 1))
 
@@ -130,27 +198,61 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         d, need_scope, missing_samples = item
         pid = d["prompt_id"]
         out = {"dilemma": d, "scope_record": None, "scope_failed": False,
-               "scope_failures": [], "responses": [], "skips": []}
+               "scope_failures": [], "select_failure": None,
+               "responses": [], "skips": []}
 
         # --- 2a: scope the case (once per prompt) ---
-        # Rebuild the full map (all five scope axes) before reasoning, so
+        # Rebuild the full map (all seven scope axes) before reasoning, so
         # the response optimizes the right node — not just the one the user saw.
         if need_scope:
             print(f"  Scoping {pid}...")
-            scope_prompt = utils.load_prompt(
+            scope_system, scope_user = utils.load_split_prompt(
                 prompts_dir / "step2_scope.txt",
                 user_message=d["user_message"],
             )
             for attempt in range(1, MAX_SCOPE_ATTEMPTS + 1):
                 raw, stop_reason = api.call_claude(
-                    user_message=scope_prompt, return_stop_reason=True,
+                    user_message=scope_user, system_prompt=scope_system,
+                    return_stop_reason=True,
                     model=config["dad"].get("response_scope_model"),
                     stage="response_scope", item_id=pid)
                 # A max_tokens-truncated scope may still parse (the brace-salvage
                 # path) but is missing content — count it as an unusable attempt.
                 parsed = {} if stop_reason == "max_tokens" else _parse_scope(raw)
                 if _valid_scope(parsed):
-                    out["scope_record"] = {"prompt_id": pid, "scope": parsed}
+                    # Stray sixth key from a model improvising the old shape:
+                    # the stored scope keeps only the scope axes.
+                    parsed.pop("triggered_entries", None)
+
+                    # --- 2a.5: select the library entries for this case ---
+                    sel_system, sel_user = utils.load_split_prompt(
+                        prompts_dir / "step2_select.txt",
+                        trigger_index=trigger_index,
+                        scope_block=format_scope(parsed),
+                        user_message=d["user_message"],
+                    )
+                    raw_sel, sel_stop = api.call_claude(
+                        user_message=sel_user, system_prompt=sel_system,
+                        return_stop_reason=True,
+                        model=(config["dad"].get("response_select_model")
+                               or config["dad"].get("response_scope_model")),
+                        stage="response_select", item_id=pid)
+                    ids = ([] if sel_stop == "max_tokens"
+                           else _normalize_ids(raw_sel, library_ids))
+                    if ids:
+                        fallback, source = False, "select"
+                    else:
+                        # Fail-open, one attempt: an unusable selection costs
+                        # tokens (2b gets the whole library), never quality.
+                        # Keep the raw — it cost a call, and a discarded raw is
+                        # an undiagnosable failure (same policy as every stage).
+                        ids, fallback, source = list(library_ids), True, "full_library"
+                        out["select_failure"] = {"prompt_id": pid, "raw": raw_sel}
+                    out["scope_record"] = {
+                        "prompt_id": pid, "scope": parsed, "entry_ids": ids,
+                        "selection_fallback": fallback, "selection_source": source,
+                        "triggered_entries": reasoning_library.get_entries(library, ids),
+                    }
                     break
                 # Keep the raw output — it cost a call and shows why parsing failed.
                 out["scope_failures"].append({"prompt_id": pid, "attempt": attempt, "raw": raw})
@@ -160,21 +262,29 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
             if out["scope_record"] is None:
                 out["scope_failed"] = True
                 return out  # never generate over an empty scope
-            scope = out["scope_record"]["scope"]
+            scope_rec = out["scope_record"]
         else:
-            scope = scopes[pid]["scope"]
+            scope_rec = scopes[pid]
+        scope = scope_rec["scope"]
+        # Pre-selection scopes.jsonl records have no entry_ids — fall open to
+        # the whole library, same as an unusable selection.
+        entry_ids = scope_rec.get("entry_ids") or library_ids
+        library_block = reasoning_library.format_entries(library, entry_ids)
 
-        # --- 2b: generate response(s) over the scope + full library ---
+        # --- 2b: generate response(s) over the scope + triggered entries ---
         for sample_index in missing_samples:
             suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
             print(f"  Generating response for {pid}{suffix}...")
+            opening_hints = sample_opening_hints(pid, sample_index)
+            respond_system, respond_user = utils.load_split_prompt(
+                prompts_dir / "step2_respond.txt",
+                library_block=library_block,
+                scope_block=format_scope(scope),
+                user_message=d["user_message"],
+                opening_hints=opening_hints,
+            )
             response, stop_reason = api.call_claude(
-                user_message=utils.load_prompt(
-                    prompts_dir / "step2_respond.txt",
-                    library_block=library_block,
-                    scope_block=format_scope(scope),
-                    user_message=d["user_message"],
-                ),
+                user_message=respond_user, system_prompt=respond_system,
                 return_stop_reason=True,
                 model=config["dad"].get("response_draft_model"),
                 stage="response_draft",
@@ -198,7 +308,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 "user_message": d["user_message"],
                 "annotation": d.get("annotation", {}),
                 "scope": scope,
-                "entry_ids": library_ids,
+                "entry_ids": entry_ids,
+                # the entry-shape draw this call actually saw — provenance for
+                # the viewer's prompt re-render (and for eyeballing hint uptake)
+                "opening_hints": opening_hints,
                 "assistant_response": response,
             })
         return out
@@ -208,6 +321,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         pid = out["dilemma"]["prompt_id"]
         for failure in out["scope_failures"]:
             utils.append_jsonl(failure, output_dir / "scope_failures.jsonl")
+        if out["select_failure"] is not None:
+            utils.append_jsonl(out["select_failure"], output_dir / "select_failures.jsonl")
         if out["scope_failed"]:
             # Results already yielded are safely persisted; --resume retries the
             # rest (in-flight work from other threads is deliberately not kept).
@@ -219,6 +334,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
         if out["scope_record"] is not None:
             scopes[pid] = out["scope_record"]
             utils.append_jsonl(out["scope_record"], scopes_path)
+            if out["scope_record"]["selection_fallback"]:
+                print(f"    {pid}: selection call unusable — "
+                      "2b falls open to the full library.")
         for skip in out["skips"]:
             print(skip)
         for record in out["responses"]:

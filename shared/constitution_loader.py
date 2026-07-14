@@ -4,7 +4,7 @@ Three source files live in constitution/:
 - constitution_claude.md — the original Claude constitution, verbatim.
 - constitution_sentient_beings.md — the animal-welfare section-by-section
   reading, with one `## ` header per section.
-- constitution_principles.csv — fourteen distilled welfare-relevant principles
+- constitution_principles.csv — the distilled welfare-relevant principles
   (number, principle, constitution_summary, raw_text_from_constitution),
   embedded as a checklist in the DAD step-3 rewrite prompt and, joined with the
   Claude constitution, in the SDF prompts (system prompt at layers 4-5,
@@ -42,7 +42,7 @@ never as words put into the constitution's mouth.
 _PRINCIPLES_JOIN_PREAMBLE = """\
 This document joins two complementary parts:
 Part I: The original claude constitution
-Part II: Fourteen distilled welfare-relevant principles
+Part II: The distilled welfare-relevant principles
 
 The Part II principles do not modify, extend, or rewrite Claude's Constitution.
 Each principle distills what the constitution already implies for the treatment

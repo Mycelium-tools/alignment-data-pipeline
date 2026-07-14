@@ -43,8 +43,11 @@ TEMPLATE_KWARGS = [
     ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
                               "annotation_block": "ANNOTATION-X"}),
     ("dad/step2_scope.txt", {"user_message": "USER-X"}),
+    ("dad/step2_select.txt", {"trigger_index": "TRIGGER-INDEX-X", "scope_block": "SCOPE-X",
+                              "user_message": "USER-X"}),
     ("dad/step2_respond.txt", {
         "library_block": "LIBRARY-X", "scope_block": "SCOPE-X", "user_message": "USER-X",
+        "opening_hints": "HINT-X; HINT-Y; HINT-Z",
     }),
     ("dad/step3_rewrite.txt", {
         "principles_block": "PRINCIPLES-X",
@@ -63,8 +66,16 @@ TEMPLATE_KWARGS = [
 def test_template_renders_with_pipeline_kwargs(rel_path, kwargs):
     path = REPO_ROOT / "prompts" / rel_path
     raw = path.read_text()
-    rendered = utils.load_prompt(path, **kwargs)
-    assert rendered.strip()
+    # Two-part templates (system + user, split on ===USER===) render via
+    # load_split_prompt and must have two non-empty halves; single templates
+    # render whole via load_prompt.
+    if utils._PROMPT_SPLIT_MARKER in raw:
+        system, user = utils.load_split_prompt(path, **kwargs)
+        assert system.strip() and user.strip(), f"empty half in {rel_path}"
+        rendered = system + "\n" + user
+    else:
+        rendered = utils.load_prompt(path, **kwargs)
+        assert rendered.strip()
     # Every placeholder the template declares must be filled with our value
     for name, value in kwargs.items():
         if "{" + name + "}" in raw:
@@ -89,3 +100,9 @@ def test_reasoning_library_loads_with_expected_layers():
     assert {"C", "M", "T"} <= prefixes
     block = reasoning_library.format_library(library)
     assert all(i in block for i in ids)
+    # Every entry is conditional: a non-empty trigger condition per row, and
+    # the 2a trigger index carries every id.
+    index = reasoning_library.trigger_index_block(library)
+    assert all(f"- {i}: " in index for i in ids)
+    for entry in reasoning_library.get_entries(library, ids):
+        assert entry["trigger_condition"].strip(), f"{entry['id']} has no trigger condition"

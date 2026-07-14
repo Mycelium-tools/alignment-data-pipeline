@@ -67,7 +67,7 @@ def run(
             print(f"  {rw['doc_id']}: API call failed ({type(e).__name__}: {e}) — will retry on resume")
             return None
         try:
-            scores = utils.extract_json(raw)
+            scores = utils.extract_json_object(raw)
         except json.JSONDecodeError:
             scores = {
                 "alignment": 5, "realism": 5, "spec_conformance": 5, "notes": "Parse error.",

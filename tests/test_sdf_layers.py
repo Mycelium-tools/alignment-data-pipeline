@@ -296,6 +296,18 @@ class TestLayer5Score:
         layer5_score.run(tiny_config, prompts_sdf, stage_dir, final_dir, [make_rewrite()])
         assert calls == []  # checkpointed: re-scoring would re-bill for nothing
 
+    def test_wrong_shaped_judge_reply_falls_back_like_a_parse_error(
+        self, tiny_config, prompts_sdf, stage_dir, final_dir, stub_claude
+    ):
+        # A list-shaped reply is valid JSON but not a score object; extract_json_object
+        # rejects it into the parse-error default rather than crashing on .get()
+        # (regression guard for the extract_json -> extract_json_object fix merged from main).
+        stub_claude(lambda user_message, **kw: "[8, 7, 9]")
+        corpus = layer5_score.run(tiny_config, prompts_sdf, stage_dir, final_dir, [make_rewrite()])
+        assert corpus == []  # 5/5 default falls below threshold 7
+        scores = utils.load_jsonl(stage_dir / "scores.jsonl")
+        assert scores[0]["scores"]["notes"] == "Parse error."
+
     def test_near_dup_cull(self, tiny_config, prompts_sdf, stage_dir, final_dir, stub_claude):
         config = {**tiny_config, "sdf": {**tiny_config["sdf"], "near_dup_threshold": 0.90}}
         stub_claude(lambda user_message, **kw: SCORE_OK)

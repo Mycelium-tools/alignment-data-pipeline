@@ -26,6 +26,7 @@ dad:
   prompt_draft_model: claude-haiku-4-5          # 1b: batch-draft user prompts
   prompt_refine_model: claude-sonnet-5          # 1c: load-bearing rewrite
   response_scope_model: claude-sonnet-5         # 2a: scope map — feeds every downstream step-2 call; worth the stronger read
+  response_select_model: claude-sonnet-5        # 2a.5: library-entry selection over the trigger index (falls back to response_scope_model if unset)
   response_draft_model: claude-sonnet-5         # 2b: response over scope + library
   constitution_rewrite_model: claude-sonnet-5   # step 3: constitution rewrite
   dilemmas:
