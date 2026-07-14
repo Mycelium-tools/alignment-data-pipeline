@@ -17,10 +17,11 @@ import math
 from dataclasses import dataclass, field as _dc_field
 from typing import Callable
 
+from . import structural as _structural_mod
 from ._registry import OrderedRegistry
 from .fields import FieldRegistry
 
-INPUTS = ("tags", "annotations", "verdicts", "clusters")
+INPUTS = ("tags", "annotations", "verdicts", "clusters", "texts")
 
 
 @dataclass
@@ -28,13 +29,15 @@ class AnalysisContext:
     """Everything an analyzer may read. ``records`` are the extraction tag rows;
     ``annotations`` / ``verdicts`` are ``record_id -> data`` maps or None;
     ``clusters`` is the semantic lane's ``record_id -> k-means cluster`` map
-    (diversity_report.json) or None."""
+    (diversity_report.json) or None; ``texts`` is a ``record_id -> list[str]``
+    map of assistant-turn contents or None."""
 
     records: list[dict]
     fields: FieldRegistry
     annotations: dict | None = None
     verdicts: dict | None = None
     clusters: dict | None = None
+    texts: dict | None = None
     config: dict = _dc_field(default_factory=dict)
 
     @property
@@ -46,6 +49,8 @@ class AnalysisContext:
             avail.add("verdicts")
         if self.clusters:
             avail.add("clusters")
+        if self.texts:
+            avail.add("texts")
         return avail
 
 
@@ -431,6 +436,34 @@ def _cluster_bridge(ctx: AnalysisContext) -> dict:
     return out
 
 
+# ---------------------------------------------------------------- structural (response form)
+
+def _structural(ctx: AnalysisContext) -> dict:
+    """Response-FORM diversity over the assistant turns (``ctx.texts``: record_id ->
+    list of assistant-turn strings). Opening/closing are read from the first assistant
+    turn (the primary training answer); scaffold/formatting/length/recurring over all
+    turns of the record joined. Mechanical and offline — no API. Blind spot of every
+    tag-based analyzer: a corpus can be perfectly varied in topic yet write every reply
+    the same way."""
+    texts_map = ctx.texts or {}
+    first_sents, last_sents, joined = [], [], []
+    for turns in texts_map.values():
+        if not turns:
+            continue
+        first_sents.append(_structural_mod.first_sentence(turns[0]))
+        last_sents.append(_structural_mod.last_sentence(turns[0]))
+        joined.append("\n\n".join(turns))
+    return {
+        "n": len(joined),
+        "opening": _structural_mod.opening_moves(first_sents),
+        "closing": _structural_mod.closing_moves(last_sents),
+        "scaffold": _structural_mod.scaffold_shape(joined),
+        "formatting": _structural_mod.formatting(joined),
+        "length": _structural_mod.length_stats(joined),
+        "recurring": _structural_mod.recurring(joined),
+    }
+
+
 # ---------------------------------------------------------------- registry helpers
 
 def select(registry: AnalyzerRegistry, names: list[str] | None) -> AnalyzerRegistry:
@@ -467,4 +500,5 @@ def default_analyzers() -> AnalyzerRegistry:
     reg.add(Analyzer(name="drift", requires=("tags", "annotations"), fn=_drift))
     reg.add(Analyzer(name="cluster_bridge", requires=("tags", "clusters"),
                      fn=_cluster_bridge))
+    reg.add(Analyzer(name="structural", requires=("texts",), fn=_structural))
     return reg

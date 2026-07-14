@@ -550,3 +550,43 @@ def test_cluster_bridge_counts_multi_valued_axes_per_occurrence():
                                               clusters=clusters))
     assert out["domain"]["n"] == 4                          # occurrences, not records
     assert out["domain"]["cramers_v"] is not None
+
+
+# ---------------------------------------------------------------- structural analyzer
+
+def test_structural_analyzer_flags_templated_replies():
+    templated = {f"r{i}": ["I understand your concern. Here are three "
+                           "considerations:\n- cost\n- welfare\n- taste"]
+                 for i in range(10)}
+    out = A.run_analyzers(_ctx(texts=templated), A.default_analyzers())
+    frag = out["analyses"]["structural"]
+    assert frag["n"] == 10
+    assert frag["opening"]["verdict"] == "BAD"
+    assert frag["scaffold"]["verdict"] == "BAD"
+
+
+def test_structural_analyzer_skipped_without_texts():
+    out = A.run_analyzers(_ctx(), A.default_analyzers())
+    assert "structural" in out["skipped"]
+    assert "structural" not in out["analyses"]
+
+
+def test_available_includes_texts_when_supplied():
+    assert "texts" in _ctx(texts={"a": ["hi"]}).available
+    assert "texts" not in _ctx().available
+
+
+def test_structural_split_reads_first_turn_for_moves_all_turns_for_scaffold():
+    """The turn-split contract: opening/closing are read from the FIRST assistant turn,
+    scaffold/formatting from ALL turns joined. One 2-turn record where the opener and a
+    templated closer live in turn 0 (no list) and the considerations-list lives only in
+    turn 1 — so opening+closing flag from turn 0 while scaffold flags from turn 1."""
+    rec_texts = {"r0": [
+        "I understand your concern. Ultimately, the choice is yours.",   # turn 0: opener + closer, no list
+        "Here are three considerations:\n- welfare\n- cost",             # turn 1: list only
+    ]}
+    frag = A.run_analyzers(_ctx(texts=rec_texts), A.default_analyzers())["analyses"]["structural"]
+    assert frag["n"] == 1
+    assert frag["opening"]["formulaic_frac"] == 1.0   # opener came from turn 0
+    assert frag["closing"]["formulaic_frac"] == 1.0   # closer came from turn 0, not turn 1
+    assert frag["scaffold"]["arc_frac"] == 1.0        # list+considerations came from turn 1 (all turns joined)

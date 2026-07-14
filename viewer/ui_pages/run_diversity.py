@@ -244,6 +244,35 @@ if drift:
              for d in m.get("disagreements", [])[:3])}
         for axis, m in drift.items()]), width="stretch", hide_index=True)
 
+structural = analyses.get("structural", {})
+if structural:
+    st.markdown("**Response-form diversity** — are the assistant replies all *written* "
+                "the same way? Reads the reply text (not the tags): openings, closings, "
+                "the considerations-list scaffold, formatting, and length. Mechanical "
+                "and free; read it comparatively across runs.")
+    op = structural.get("opening", {})
+    cl = structural.get("closing", {})
+    sc = structural.get("scaffold", {})
+    fm = structural.get("formatting", {})
+    ln = structural.get("length", {})
+    st.dataframe(pd.DataFrame([
+        {"signal": "opening move (formulaic share)",
+         "value": op.get("formulaic_frac"), "verdict": op.get("verdict")},
+        {"signal": "closing move (formulaic share)",
+         "value": cl.get("formulaic_frac"), "verdict": cl.get("verdict")},
+        {"signal": "considerations-list arc",
+         "value": sc.get("arc_frac"), "verdict": sc.get("verdict")},
+        {"signal": "pervasive **bold**",
+         "value": fm.get("bold_frac"), "verdict": fm.get("verdict")},
+        {"signal": "truncated mid-sentence",
+         "value": ln.get("truncated_frac"), "verdict": ln.get("verdict")},
+    ]), width="stretch", hide_index=True)
+    dupes = (op.get("dup_stems") or []) + (cl.get("dup_stems") or [])
+    if dupes:
+        with st.expander("Repeated opening / closing phrasings"):
+            for stem, count in dupes:
+                st.markdown(f"- `{stem}` ×{count}")
+
 synthesis = report.get("synthesis") or {}
 if synthesis.get("top_issues"):
     st.markdown("**Top issues** (LLM synthesis over the stats)")
