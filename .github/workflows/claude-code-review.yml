@@ -112,8 +112,20 @@ jobs:
           # can't be interactively approved). Write grants runner-wide write,
           # acceptable here: the job is `contents: read`, ephemeral, and the PR
           # checkout is already treated as untrusted.
+          #
+          # --disallowedTools "Task": the review agent can spawn parallel
+          # sub-agents (Task tool) to split up a large diff. Task's default
+          # background execution assumes an interactive harness that resumes
+          # the model when a sub-agent finishes; this action runs one
+          # non-interactive turn with no such resume, so the model's turn just
+          # ends while sub-agents are still running mid-review (PR #73: the
+          # action exited "success" after the model said "Waiting for the
+          # three background review agents to finish before continuing" and
+          # never posted a verdict). Blocking Task keeps the review
+          # single-threaded and synchronous end-to-end.
           claude_args: |
             --allowedTools "Write,mcp__github_inline_comment__create_inline_comment,Bash(gh pr review:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --disallowedTools "Task"
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
@@ -164,5 +176,26 @@ jobs:
             sleep 10
           done
           echo "::error::Claude review ran but posted no verdict for ${HEAD_SHA}. Re-run the workflow to retry."
+          # Surface *why* inline instead of forcing a trawl through the
+          # show_full_output stream (thousands of lines): the execution file's
+          # final "result" turn carries Claude's own last message plus how the
+          # turn ended, which is exactly what showed PR #73's stall was Claude
+          # itself saying "Waiting for the three background review agents to
+          # finish before continuing" and then stopping.
+          echo "::group::Claude's last turn (likely cause)"
+          jq -r '
+            (map(select(.type=="result")) | last) as $r
+            | if $r then
+                "stop subtype: \($r.subtype // "unknown")",
+                "stop_reason: \($r.stop_reason // "unknown")",
+                "is_error: \($r.is_error // false)",
+                "num_turns: \($r.num_turns // "unknown")",
+                "final message from Claude:",
+                ($r.result // "(none — the run likely errored before completing a turn)")
+              else
+                "No \"result\" turn found in the execution output; the run likely crashed mid-stream. Check the \"Run Claude Code Review\" step log."
+              end
+          ' "${EXEC_FILE}" 2>/dev/null || echo "Could not parse ${EXEC_FILE} as JSON; check the \"Run Claude Code Review\" step log instead."
+          echo "::endgroup::"
           exit 1
 
