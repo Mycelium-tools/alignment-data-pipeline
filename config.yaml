@@ -16,7 +16,7 @@ sdf:
   # The critique stages repay a stronger model most — cheap drafts, expensive critics:
   # plan_model: claude-sonnet-5
   # draft_model: claude-sonnet-5
-  # rewrite_model: claude-fable-5
+  # rewrite_model: claude-opus-4-8   # NOT claude-fable-5: it 400s on the api backend (requires adaptive thinking, which conflicts with the pipeline's thinking=disabled — see shared/api.py)
   # score_model: claude-sonnet-5
 
 dad:

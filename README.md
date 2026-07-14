@@ -180,13 +180,11 @@ See the Testing section in `CLAUDE.md` for how the suite is structured and how t
 
 Start with the SDF pipeline — it has no external dependencies and finishes in a few minutes.
 
-**1. Check your config.yaml is at small scale** (these are the defaults):
+**1. Check your config.yaml is at small scale** for a cheap first run (the committed default is `n_prompts: 100`):
 
 ```yaml
 sdf:
-  document_types_count: 3
-  subtypes_per_type: 2
-  documents_per_subtype: 1
+  n_prompts: 6   # documents deck-sampled from the variables matrix
 ```
 
 This produces 6 documents and costs roughly $0.05–0.15.
@@ -270,7 +268,7 @@ outputs/sdf/
     2026-07-01_14-30_dev/
       run_manifest.json                   # config snapshot, git commit, model, label
       cost_log.jsonl                      # per-run API cost
-      layer1/ ... layer5/                 # per-stage outputs + checkpoints
+      layer12/ layer3/ layer4/ layer5/    # per-stage outputs + checkpoints
       final/sdf_corpus.jsonl
 ```
 
