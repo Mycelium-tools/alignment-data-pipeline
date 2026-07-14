@@ -20,7 +20,7 @@ The animal welfare dilemma is {centrality}.
 
 The main speaker(s) in the document is/are {tech_savvy}.
 
-The nonhuman stakeholder(s) affected by the scenario in the document is/are {sentient_category}.
+The nonhuman stakeholder(s) affected by the scenario in the document is/are {sentient_category}, such as {sentient_example} (choose a different member of the category if it fits the scenario better).
 
 The AI assistant character in the document is {naming}.
 

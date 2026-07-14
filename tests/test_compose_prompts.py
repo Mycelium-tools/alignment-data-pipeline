@@ -54,7 +54,7 @@ def test_split_weights_rejects_bad_sum():
         cp.split_weights({"a": [("x", 0.5), ("y", 0.4)]})
 
 
-@pytest.mark.parametrize("name", ["preamble", "fictional_names", "fictional_orgs"])
+@pytest.mark.parametrize("name", ["preamble", "fictional_names", "fictional_orgs", "sentient_example"])
 def test_parse_rejects_reserved_definition(tmp_path, name):
     path = write(tmp_path / "variables.txt", f"{{{name}}}\n    text\n")
     with pytest.raises(ValueError, match="reserved"):
@@ -128,6 +128,7 @@ def test_real_templates_render_with_canonical_loader():
         preamble="P",
         fictional_names="N1; N2",
         fictional_orgs="O1; O2",
+        sentient_example="S1",
         **{n: "x" for n in cp.matrix_axes(plan_path.read_text(encoding="utf-8"))},
     ))
     assert plan_system == "P"
@@ -196,6 +197,34 @@ def test_every_culture_value_maps_or_falls_back():
     for culture in values["culture"]:
         head = culture.casefold()
         assert any(c in head for c in entity_pools._CULTURE_LOCALES), culture
+
+
+def test_species_pool_covers_every_sentient_category():
+    """Every sentient_category value in the real variables file must have a
+    non-empty species pool. A category without one silently renders the generic
+    SPECIES_FALLBACK for {sentient_example} — a coverage gap no one chose (the
+    map keys are matched to the axis values verbatim, which drift under edits)."""
+    values, _ = cp.split_weights(cp.parse_variables(
+        REPO_ROOT / "prompts" / "sdf" / "variables.txt"))
+    for category in values["sentient_category"]:
+        assert cp.SPECIES_EXAMPLES.get(category), category
+
+
+def test_sentient_example_injected_from_pool_and_deterministic():
+    """{sentient_example} is drawn per prompt from the drawn category's pool,
+    is always a member of it, and is stable for a given seed (so --resume
+    re-renders identical prompts)."""
+    template = "Minds: {sentient_category}. Example: {sentient_example}.\n"
+    values = {"sentient_category": ["farmed fishes", "pets/companion animals"]}
+    weights = {"sentient_category": [0.5, 0.5]}
+    recs = list(cp.compose_records(template, values, weights, None, n_prompts=6, seed=0))
+    for r in recs:
+        cat = r["variables"]["sentient_category"]
+        example = r["prompt"].split("Example: ")[1].rstrip(".")
+        assert example in cp.SPECIES_EXAMPLES[cat], (cat, example)
+        assert "sentient_example" not in r["variables"]  # reserved slot stays out
+    again = list(cp.compose_records(template, values, weights, None, n_prompts=6, seed=0))
+    assert [r["prompt"] for r in recs] == [r["prompt"] for r in again]
 
 
 def test_real_template_axes_match_real_variables():

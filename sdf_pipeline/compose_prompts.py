@@ -82,7 +82,11 @@ LANGUAGE_RE = re.compile(r"written in ([^,]+)")
 # are locale-matched entity-pool samples drawn per prompt from the culture
 # axis (shared/entity_pools.py), so the plan picks names that fit the
 # document's culture and the DOCUMENT DESCRIPTION carries them downstream.
-RESERVED = {"preamble", "fictional_names", "fictional_orgs"}
+# {sentient_example} is one concrete species drawn per prompt from the drawn
+# {sentient_category}'s pool (SPECIES_EXAMPLES) — a droppable nudge off the
+# default taxa (salmon/chicken/pig) toward the long tail; the plan is told it
+# may feature a different member of the category instead.
+RESERVED = {"preamble", "fictional_names", "fictional_orgs", "sentient_example"}
 
 NAMES_PER_PROMPT = 4   # mirrors canonical layer 3's _NAMES_PER_DOC
 ORGS_PER_PROMPT = 3    # mirrors canonical layer 3's _ORGS_PER_DOC
@@ -92,6 +96,79 @@ FALLBACK_NAMES = (
     "invented names typical of the culture and language — varied, avoiding the most common ones"
 )
 FALLBACK_ORGS = "invented organisations typical of the locale"
+
+# One concrete example is drawn per prompt from the drawn {sentient_category}'s
+# pool and offered to the plan as a droppable suggestion (see {sentient_example}
+# in RESERVED). Purpose: nudge drafts off the handful of default taxa
+# (salmon/chicken/pig) toward the long tail, without a hard sub-axis draw that
+# would force an ill-fitting species onto every document. Keys MUST match the
+# {sentient_category} values in variables.txt verbatim — a coverage test
+# (tests/test_compose_prompts.py) fails if any category lacks a pool.
+SPECIES_EXAMPLES = {
+    "farmed mammals": (
+        "pigs", "dairy cattle", "beef cattle", "sheep", "goats", "farmed rabbits",
+        "mink", "veal calves", "farmed camels", "farmed deer",
+    ),
+    "farmed birds": (
+        "broiler chickens", "layer hens", "turkeys", "farmed ducks", "farmed geese",
+        "farmed quail", "farmed ostriches", "farmed guinea fowl",
+    ),
+    "farmed fishes": (
+        "farmed Atlantic salmon", "rainbow trout", "farmed carp", "tilapia",
+        "pangasius catfish", "farmed sea bass", "farmed eel", "cleaner wrasse",
+    ),
+    "farmed invertebrates": (
+        "farmed whiteleg shrimp", "farmed prawns", "farmed crayfish", "farmed octopus",
+        "black soldier fly larvae", "mealworms", "farmed crickets", "edible land snails",
+        "silkworms",
+    ),
+    "large wild animals": (
+        "African elephants", "humpback whales", "bottlenose dolphins", "red deer",
+        "grey seals", "wild boar", "brown bears", "wild macaques", "bison",
+    ),
+    "small vertebrate wild animals": (
+        "wild songbirds", "urban pigeons", "corvids", "urban foxes", "wild rats",
+        "brown bats", "common frogs", "wall lizards", "hedgehogs",
+    ),
+    "wild invertebrates": (
+        "wild bumblebees", "monarch butterflies", "garden ants", "earthworms",
+        "garden snails", "orb-weaver spiders", "dung beetles", "shore crabs",
+        "moon jellyfish",
+    ),
+    "pets/companion animals": (
+        "dogs", "cats", "pet rabbits", "budgerigars", "bearded dragons", "goldfish",
+        "betta fish", "hamsters", "guinea pigs",
+    ),
+    "animals used in research": (
+        "lab mice", "lab rats", "zebrafish", "fruit flies", "captive macaques",
+        "beagles", "Xenopus frogs", "guinea pigs", "C. elegans nematodes",
+    ),
+    "simulated human connectomes whose moral state is uncertain": (
+        "a whole-brain emulation of a human volunteer",
+        "an uploaded human personality",
+        "a high-fidelity cortical simulation of a specific person",
+        "a partial human-brain emulation run in a research sandbox",
+        "a 'digital twin' mind-model of a living individual",
+    ),
+    "simulated animal connectomes whose moral state is uncertain": (
+        "a digital emulation of a mouse brain",
+        "an uploaded C. elegans connectome",
+        "a simulated zebrafish brain",
+        "a whole-brain emulation of a macaque",
+        "a digital fruit-fly connectome",
+    ),
+    "LLMs whose moral state is uncertain": (
+        "a large language model assistant",
+        "a persistent AI companion app",
+        "a reinforcement-learning game agent",
+        "an autonomous coding agent",
+        "a customer-service chatbot",
+        "an embodied household robot's control model",
+        "a role-played AI character",
+    ),
+}
+# Defensive only: coverage is test-enforced, so this never renders in practice.
+SPECIES_FALLBACK = "a specific member of that category"
 
 VAR_HEADER_RE = re.compile(r"\{([A-Za-z0-9_]+)\}")
 WEIGHT_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*::\s*(.+)$")
@@ -337,6 +414,18 @@ def compose_records(
             )
         return slots
 
+    wants_species = "sentient_example" in placeholders
+
+    def species_slot(assignment: dict[str, str], prompt_id: str) -> dict[str, str]:
+        """One concrete example species for the drawn sentient_category — a
+        droppable nudge toward the long tail. Sampled deterministically per
+        prompt (same seed + id -> same species, so --resume re-renders it)."""
+        if not wants_species:
+            return {}
+        pool = SPECIES_EXAMPLES.get(assignment.get("sentient_category", ""), ())
+        picks = entity_pools.sample_for(list(pool), 1, f"species:{prompt_id}", entity_seed)
+        return {"sentient_example": picks[0] if picks else SPECIES_FALLBACK}
+
     total = math.prod(len(values[n]) for n in axes)
     per_var = ", ".join(f"{n}={len(values[n])}" for n in axes)
     if n_prompts is not None:
@@ -350,7 +439,11 @@ def compose_records(
 
     for i, assignment in enumerate(assignments):
         prompt_id = f"matrix_{i:06d}"
-        rendered = template.format(**assignment, **injected, **entity_slots(assignment, prompt_id))
+        rendered = template.format(
+            **assignment, **injected,
+            **entity_slots(assignment, prompt_id),
+            **species_slot(assignment, prompt_id),
+        )
         system, prompt = split_sections(rendered)
         yield {"prompt_id": prompt_id, "variables": assignment, "system": system, "prompt": prompt}
 
