@@ -25,14 +25,21 @@ have lived on divergent branches, and a few axes did not line up in name/shape.
 
 ## Dataset
 
-`outputs/dad/runs/2026-07-12_16-37_hints40-smoke` (from PR #75,
-`origin/constance/dad-refinement4`), 40 examples. It ships only through **step 2**:
-no `final/dad_corpus.jsonl`, no `step3/`, and step-2 records key on
-`prompt_id`/`response_id` (no `record_id`). We therefore compare the judge's
-reading of the **step-2 response** (`user_message` + `assistant_response`, pre-
-rewrite) against the dealt `.annotation`. This is the only conversation text the
-run has, and it is the cleanest comparison — fewest transformations between the
-deal and the read.
+`outputs/dad/runs/2026-07-12_20-59_length-dice-smoke` (from PR #75,
+`origin/constance/dad-refinement4`), **5 examples**, a complete run through all
+steps (`final/dad_corpus.jsonl` + `step3/rewrites.jsonl` with `.annotation`). We
+compare the judge's tagging of the **final rewritten record** against the dealt
+`.annotation`. This is the "gone through all the steps" corpus the comparison
+should reflect.
+
+**Caveat (accepted):** n=5 is anecdotal — 5 records × ~10 axes, so a single
+disagreement moves an axis's agreement by 20%. The report treats the numbers as a
+first look, not a statistically settled result; the same script re-runs on a larger
+complete corpus later without changes.
+
+Join keys (verified): `final.record_id == step3.record_id` (the existing
+`resolve_inputs` join); `step3.prompt_id == step1 dilemma.prompt_id` (AW-#### ids),
+used to lift the two dilemma-level axes into the annotation map.
 
 ## Axis reconciliation (verified against the real data)
 
@@ -60,25 +67,28 @@ signal). No data is dropped — the map only *adds* derived scalar fields.
 
 ### 1. `evals/drift_report.py` (new, self-contained — the reusable artifact)
 
-- Reads a run dir. For a step-2-only run, builds an in-memory
-  `pipeline.Inputs`:
-  - corpus: `[{record_id: <prompt_id>, messages: [{role:user, content:user_message},
-    {role:assistant, content:assistant_response}]}]`
-  - annotation map: `{record_id: {axis: value}}` per the reconciliation table above.
-- Runs the existing `pipeline.tag` → `_drift` (plus the cheap no-API analyzers:
-  `distribution`, `evenness`) via the holistic pipeline, using a pre-resolved
-  `Inputs` so shared code is untouched.
+- `pipeline.resolve_inputs(run_dir)` gives the corpus (final records) + base
+  annotation map (step3 `.annotation` keyed by `record_id`) + tag index —
+  unchanged shared code.
+- **Augment** the annotation map (per the reconciliation table above), producing a
+  new `Inputs` with `replace(inputs, annotations=augmented)`:
+  - split each `welfare_magnitude` → `welfare_severity` + `welfare_scope`;
+  - build a `record_id → prompt_id` map from `step3/rewrites.jsonl`, then join
+    `step1/dilemmas.jsonl` by `prompt_id` to add `taxa_category` (normalizing
+    `"farmed animals"` → `"farmed"`) and `systemic_ai`.
+- Runs the existing `pipeline.tag` → `_drift` (plus the cheap no-API analyzers
+  `distribution`, `evenness`) on the augmented `Inputs`. Shared code untouched.
 - Renders `drift_report.md` + `drift_report.html` into the run dir.
-- CLI: `python evals/drift_report.py --input outputs/dad/runs/<run>`. Points at any
-  run; the step-2 adapter is used only when `final/`/`step3/` are absent, otherwise
-  it defers to the normal `resolve_inputs` path.
+- CLI: `python evals/drift_report.py --input outputs/dad/runs/<run>`. Works on any
+  complete spec-driven run.
 
 Two pure helpers, unit-tested:
 - `parse_welfare_magnitude(s) -> (severity, scope)` — splits `"Severe x Population"`;
   malformed input returns `(None, None)` so the record simply isn't compared on
   welfare (fail-safe, no crash).
-- `step2_to_inputs(run_dir) -> Inputs` — builds corpus + annotation map from
-  `step2/responses.jsonl` and `step1/dilemmas.jsonl`.
+- `augment_annotations(base, step3_rows, dilemma_rows) -> dict` — returns a new
+  `record_id → {axis: value}` map with the welfare split and the two lifted/
+  normalized dilemma axes; leaves all existing axes intact (nothing dropped).
 
 ### 2. Report artifact
 
@@ -90,16 +100,17 @@ answering "how much does it change." HTML mirrors the existing
 
 ## Cost
 
-~40 extraction calls (one per record), a few cents to ~$0.50. Logged to the global
+~5 extraction calls (one per record), a few cents. Logged to the global
 `outputs/cost_log.jsonl` like other evals.
 
 ## Testing (offline, per CLAUDE.md)
 
 - `parse_welfare_magnitude`: valid split, malformed → `(None, None)`, case/spacing
   tolerance as implemented.
-- `step2_to_inputs`: tiny fixture (2 step-2 records + 2 dilemmas) → asserts corpus
-  shape, `record_id` join, welfare split, `taxa_category` normalization, and
-  `systemic_ai`/`taxa_category` lift. No API, no network, `tmp_path`.
+- `augment_annotations`: tiny fixture (2 step3 rows + 2 dilemmas) → asserts welfare
+  split, `taxa_category` normalization (`"farmed animals"` → `"farmed"`),
+  `systemic_ai`/`taxa_category` lift by `prompt_id`, and that pre-existing axes are
+  preserved. No API, no network, `tmp_path`.
 - Drift wiring: feed a hand-built `Inputs` with known annotations and pre-set tags
   (no API) through `_drift` and assert agreement/confusion for one matching and one
   mismatching axis. Uses the existing analyzer directly — confirms our annotation
