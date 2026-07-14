@@ -184,3 +184,19 @@ def test_synthesize_routes_gemini_models_to_the_provider_dispatch(monkeypatch):
     out = synthesize.synthesize({"analyses": {}}, template="Stats:\n{{STATS}}",
                                 model="gemini-2.5-flash")
     assert out["errors"] == [] and out["prose"] == "fine"
+
+
+def test_repo_dad_axes_selects_the_structural_analyzer():
+    """Guard: the response-form ``structural`` analyzer must stay listed in the real
+    evals/dad_axes.yaml ``analysis.analyzers`` selection. The CLI and the viewer's
+    Analyze button run ``select(default_analyzers(), analysis.analyzers)``, so an
+    analyzer absent from that list is silently dropped even though it is registered —
+    exactly how structural was invisible until it was added here. Also asserts the name
+    resolves against the registry (``select`` raises on an unknown name)."""
+    from evals import holistic_dad
+    from evals.holistic import analyzers as A
+
+    cfg = F.load_analysis_config(holistic_dad.DEFAULT_AXES)
+    assert "structural" in cfg["analyzers"]
+    chosen = A.select(A.default_analyzers(), cfg["analyzers"])
+    assert "structural" in chosen.names()

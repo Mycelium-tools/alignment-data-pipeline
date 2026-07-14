@@ -47,7 +47,7 @@ def test_run_on_a_bare_corpus_file_tags_into_a_sibling_holistic_bundle(tmp_path,
     stub_claude([GOOD_JSON])
     report = pipeline.run(corpus)
     assert report["records"] == 1
-    assert report["inputs_present"] == ["tags"]        # no annotations/verdicts
+    assert report["inputs_present"] == ["tags", "texts"]        # no annotations/verdicts
     inp = pipeline.resolve_inputs(corpus)
     assert utils.load_jsonl(inp.index_path)[0]["taxa_category"] == "farmed"
 
@@ -173,7 +173,7 @@ def test_run_without_tagging_uses_existing_index_and_calls_no_api(tmp_path):
     # No stub installed: any API call would raise, proving do_tag=False stays offline.
     report = pipeline.run(run, do_tag=False)
     assert report["stats"]["analyses"]["distribution"]["taxa_category"] == {"wild": 1}
-    assert report["inputs_present"] == ["tags"]
+    assert report["inputs_present"] == ["tags", "texts"]
 
 
 # ---------------------------------------------------------------- clusters input (§18.1)
@@ -357,3 +357,12 @@ def test_bare_corpus_bundles_live_in_a_sibling_holistic_dir(tmp_path, stub_claud
     inp = pipeline.resolve_inputs(corpus)
     assert inp.index_path.parent.parent == tmp_path / "dad_corpus.holistic"
     assert utils.load_jsonl(inp.index_path)[0]["taxa_category"] == "farmed"
+
+
+def test_run_derives_assistant_texts_and_runs_structural(tmp_path, stub_claude):
+    stub_claude([GOOD_JSON])
+    run = _make_run(tmp_path, with_annotations=False, with_verdicts=False)
+    report = pipeline.run(run)
+    assert "texts" in report["inputs_present"]
+    assert "structural" in report["stats"]["analyses"]
+    assert report["stats"]["analyses"]["structural"]["n"] == 1

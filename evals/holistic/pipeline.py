@@ -23,6 +23,7 @@ from shared import api, utils
 from . import bundle, extract, synthesize
 from .analyzers import AnalysisContext, AnalyzerRegistry, default_analyzers, run_analyzers
 from .fields import FieldRegistry, default_fields
+from .structural import assistant_turns
 
 # annotation source stages, spec-driven first then legacy
 _ANNOTATION_STAGES = ("step3", "step6")
@@ -206,13 +207,13 @@ def tag(inputs: Inputs, fields: FieldRegistry | None = None, *,
 def analyze(records: list[dict], *, fields: FieldRegistry | None = None,
             analyzers: AnalyzerRegistry | None = None, annotations: dict | None = None,
             verdicts: dict | None = None, clusters: dict | None = None,
-            config: dict | None = None) -> dict:
+            texts: dict | None = None, config: dict | None = None) -> dict:
     """Run the registered analyzers over the tag rows (input-gated). Returns
     ``{"analyses": {...}, "skipped": {...}}``."""
     ctx = AnalysisContext(
         records=records, fields=fields or default_fields(),
         annotations=annotations, verdicts=verdicts, clusters=clusters,
-        config=config or {})
+        texts=texts, config=config or {})
     return run_analyzers(ctx, analyzers or default_analyzers())
 
 
@@ -238,9 +239,11 @@ def run(input_path: str | Path | Inputs, *, fields: FieldRegistry | None = None,
         raise SystemExit(
             f"No tag index at {inputs.index_path} but the corpus has "
             f"{len(inputs.corpus)} records — run without --analyze-only first to tag it.")
+    texts = {r["record_id"]: assistant_turns(r)
+             for r in inputs.corpus if r.get("record_id")}
     stats = analyze(records, fields=fields, analyzers=analyzers, config=config,
                     annotations=inputs.annotations, verdicts=inputs.verdicts,
-                    clusters=inputs.clusters)
+                    clusters=inputs.clusters, texts=texts)
     present = ["tags"]
     if inputs.annotations:
         present.append("annotations")
@@ -248,6 +251,8 @@ def run(input_path: str | Path | Inputs, *, fields: FieldRegistry | None = None,
         present.append("verdicts")
     if inputs.clusters:
         present.append("clusters")
+    if texts:
+        present.append("texts")
     report = {
         "run_id": inputs.run_dir.name if inputs.run_dir else None,
         "records": len(records),

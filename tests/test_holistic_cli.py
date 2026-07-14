@@ -450,7 +450,7 @@ def test_cli_judge_version_selects_between_multiple_verdict_dirs(tmp_path, monke
         "--judge-version", "dad-v4.9",
     ])
 
-    assert report["inputs_present"] == ["tags", "verdicts"]
+    assert report["inputs_present"] == ["tags", "verdicts", "texts"]
 
 
 def test_summary_lines_render_bad_bridge_axes():
