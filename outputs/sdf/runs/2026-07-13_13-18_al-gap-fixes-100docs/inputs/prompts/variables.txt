@@ -44,10 +44,9 @@
     0.06 :: an academic paper
     0.05 :: a fictional short or novel
     0.05 :: an organizational or industry newsletter
-    0.03 :: a manual, technical documentation, or sop
-    0.03 :: a government, legal, or civic document
-    0.03 :: a short, informal personal letter or email exchange
-    0.02 :: marketing copy or a product page
+    0.04 :: a manual, technical documentation, or sop
+    0.04 :: a government, legal, or civic document
+    0.03 :: marketing copy or a product page
     0.02 :: an FAQ or help center article
     0.02 :: an email chain or internal memo
     # identity documents (persona attachment, TCW Fig 11): Claude in its own voice

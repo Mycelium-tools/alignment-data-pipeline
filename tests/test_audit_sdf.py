@@ -92,3 +92,62 @@ class TestRegisterMetric:
               "content": "The committee reviewed the report and issued its findings."}],
             {}, report)
         assert "register" in report  # "en" code still accepted (legacy/test records)
+
+
+class TestPrincipleCoverage:
+    """Coverage judge: per-doc calls through call_claude (parallel_map fan-out,
+    so tests use the callable-dispatcher stub form), principle ids derived from
+    load_principles() — never hardcoded (the CSV renumbers under editing)."""
+
+    def _numbers(self):
+        from shared import constitution_loader
+        return [int(p["number"]) for p in constitution_loader.load_principles()]
+
+    def test_happy_path_counts_and_report(self, stub_claude):
+        numbers = self._numbers()
+        first, second = numbers[0], numbers[1]
+
+        def dispatch(user_message, **kwargs):
+            if "DOC-A" in user_message:
+                return json.dumps([first, second])
+            return json.dumps([first])
+
+        calls = stub_claude(dispatch)
+        report = {}
+        audit_sdf.audit_principle_coverage(
+            _recs("DOC-A text.", "DOC-B text."), {"workers": 2}, report, sample=10)
+        cov = report["principle_coverage"]
+        assert cov["rated"] == 2
+        assert cov["by_principle"][first] == 1.0
+        assert cov["by_principle"][second] == 0.5
+        # every unmentioned principle is reported (at zero) and flagged starved
+        assert set(cov["by_principle"]) == set(numbers)
+        assert set(cov["starved"]) == set(numbers) - {first, second}
+        # the rendered principles block and the document reached the judge
+        assert all(k["stage"] == "eval_audit_sdf" for k in calls)
+        assert "DOC-A" in calls[0]["user_message"] or "DOC-A" in calls[1]["user_message"]
+
+    def test_malformed_and_out_of_range_responses(self, stub_claude):
+        numbers = self._numbers()
+        bogus = max(numbers) + 50
+
+        def dispatch(user_message, **kwargs):
+            if "DOC-A" in user_message:
+                return "no json here at all"          # unrated, not zero
+            return json.dumps([numbers[0], bogus])    # bogus id dropped
+
+        stub_claude(dispatch)
+        report = {}
+        audit_sdf.audit_principle_coverage(
+            _recs("DOC-A text.", "DOC-B text."), {"workers": 1}, report, sample=10)
+        cov = report["principle_coverage"]
+        assert cov["rated"] == 1
+        assert cov["by_principle"][numbers[0]] == 1.0
+        assert bogus not in cov["by_principle"]
+
+    def test_all_calls_failing_skips_cleanly(self, stub_claude):
+        stub_claude(lambda user_message, **kwargs: "not json")
+        report = {}
+        audit_sdf.audit_principle_coverage(
+            _recs("DOC-A text."), {"workers": 1}, report, sample=10)
+        assert report["principle_coverage"] == {"rated": 0}
