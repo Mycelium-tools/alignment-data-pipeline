@@ -257,10 +257,10 @@ if st.button(":material/scatter_plot: Run embedding audit", disabled=n_final == 
     try:
         if not local_embed:  # the local lane needs no key, no client, no cost log
             embeddings_mod.init(str(loader.REPO_ROOT / "config.yaml"))
-        records, type_map, report_dir, corpus_name = diversity_mod.resolve_input(str(run.run_dir))
+        records, report_dir, corpus_name = diversity_mod.resolve_input(str(run.run_dir))
         with st.spinner(f"Embedding {len(records)} record(s) and computing metrics… "
                         + ("(local model — first use downloads it)" if local_embed else "")):
-            diversity_mod.run_audit(records, type_map, report_dir, str(run.run_dir),
+            diversity_mod.run_audit(records, report_dir, str(run.run_dir),
                                     corpus_name=corpus_name, embed_model=embed_model)
     except Exception as e:
         st.error(f"Embedding audit failed: {e}\n\n"

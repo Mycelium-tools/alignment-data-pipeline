@@ -26,7 +26,7 @@ Run in sequence. Each layer feeds into the next.
 
 ### `sdf/preamble.txt`
 
-A framing block explaining the goal, tone requirements, and what to avoid. **Injected as the `{preamble}` template variable at the top of the layer 1-3 user prompts.** Layers 4-5 do not use it — their system prompt carries the full constitution instead.
+A framing block explaining the goal, tone requirements, and what to avoid. **Injected as the `{preamble}` template variable into the SYSTEM section of layers 1-2 and layer 3.** Layers 4-5 carry the constitution in their own SYSTEM sections instead.
 
 Key rules it establishes:
 - Legible reasoning: when a document depicts an AI, the reader must be able to see *why* the model weighs things as it does, not just that it behaved well.
@@ -37,49 +37,37 @@ Key rules it establishes:
 - Realism: no placeholder text, no generic names, no fabricated URLs; snippets of larger documents are fine.
 - Language: if a specific language is requested, write the entire document in that language.
 
-### `sdf/layer1.txt`
+Every SDF template is a single file carrying labeled `=== SYSTEM PROMPT ===` / `=== USER PROMPT ===` sections; the pipeline renders the file, then splits on the markers (`compose_prompts.split_sections`) and sends the pieces as the system prompt and user message. Static content (preamble, constitution, instructions) sits in the SYSTEM section and the static head of the USER section; per-document content comes last — the prompt-caching-friendly order.
 
-**Input:** the preamble + a requested count of document types + a minimum count of `ai-character` types + a count of `latent-welfare` types (from `sdf.latent_fraction`).
+### `sdf/variables.txt` + `sdf/layers1-2.txt`
 
-**Output:** a JSON array of document type categories. Each has a `type_name`, `description`, a `role` (`ai-character`, `welfare-topic`, `constitution-identity`, or `latent-welfare`), a `tone` label, and a `register` (`expository` or `first-person`, roughly half first-person so the corpus doesn't collapse into a uniform institutional voice).
+The combinatorial matrix that replaces LLM-generated document types and subtypes. `variables.txt` defines the axes and their values — document type, culture (which fixes language, idiom, and geography), tone, narrative resolution, welfare centrality, speaker AI-literacy, and the kinds of minds affected — each value optionally weighted (`0.25 :: value`; weights per variable must sum to 1.0, unweighted = uniform).
 
-The two AI-facing roles together make up about two-thirds of the corpus — the identity channel ("this is how models like me reason") — while `welfare-topic` and `latent-welfare` share the remaining third. `welfare-topic` documents supply the background world of evidence and discourse; `latent-welfare` categories are ordinary documents from unrelated working worlds (no inherent animal connection) in which care for welfare will surface exactly once as a concrete detail — background world-knowledge rather than headline topic. Within each role the prompt pushes for genre balance, perspective, and species variety, and rejects categories that sound like training exercises rather than real internet genres.
+`compose_prompts.py` deck-samples `sdf.n_prompts` combinations: per-variable value counts match the weights **exactly** (largest-remainder quotas, shuffled decks, zipped), so corpus composition is set by construction, not by sampling luck. Each combination renders `layers1-2.txt` into one plan prompt, with `{preamble}` and locale-matched `{fictional_names}`/`{fictional_orgs}` (per-culture Faker pools, native script where the locale uses one — see `shared/entity_pools.py`) injected as reserved slots.
 
-### `sdf/layer2.txt`
-
-**Input:** one document type from layer 1 + the preamble + a list of available languages + an `{avoid_note}` (a sample of subtypes already generated for *other* categories — cross-call state, so later generation calls don't rediscover the same ideas; empty on the first wave of a fresh run).
-
-**Output:** a JSON array of subtypes — concrete, specific variants of that document type. For example, "poultry industry trade blog" might yield subtypes like "a newsletter from a small-scale broiler farmer discussing welfare certification costs" or "a trade publication covering the transition to slower-growing breeds in the EU."
-
-Run this once per document type. Aim for 5 subtypes per type. Assign a language to each subtype.
+**Output** (one plan call per prompt): working notes inside `<document_planning>` tags, then a self-contained spec inside `<document_description>` tags — everything the drafting stage needs (chosen scenario, author and venue, language, tone, structure, anchoring details, names). Only the description travels downstream, extracted fail-closed (`extract_description`). A combination with no sensible document yields INCOHERENT, which is checkpointed as a deliberate rejection.
 
 ### `sdf/layer3.txt`
 
-**Input:** one subtype from layer 2 + the preamble. The constitution and its welfare reading are embedded in the prompt via the `{constitution_claude}` / `{constitution_welfare_reading}` template variables — the prompt tells the model to quote them only where the genre makes that natural. The pipeline also fills `{register_note}` (a voice instruction matched to the subtype's register — informal genres get a firm write-like-a-person note), `{latent_note}` (the single-concrete-welfare-detail instruction, latent subtypes only), and `{fictional_names}` / `{fictional_orgs}` (a few names sampled per document from seeded multi-locale Faker pools — see `shared/entity_pools.py` — so invented names never collapse to model favorites and never attach to real organisations).
+**Input:** one DOCUMENT DESCRIPTION spec. The SYSTEM section carries the preamble, the full constitution (`{constitution_claude}`), and the distilled principles (`{constitution_principles}`); the USER section carries the spec.
 
-**Output:** an `<angles>` brainstorm block, then the complete documents written in the subtype's assigned language, each wrapped in its own `<document>` tags. The pipeline keeps only the tagged blocks, which also discards the brainstorm.
-
-The angles block is the "looping" step — brainstorm more angles than needed, pick the most different ones. It is important for diversity; do not skip it. `{structure_hints}` seeds the brainstorm with a few rhetorical shapes sampled per subtype (field narrative, data-and-methods report, problem-diagnosis-without-a-tidy-solution, ...) so shape variety doesn't rely on the model reinventing it each call. The prompt also carries an OPENING RULE (vary the opening move; never default to abstract-nominalization openers), a stock-phrase ban list, and a **no-markdown rule** (genre structure is written as plain text, never `#`/`**bold**`/bullet syntax — scattered bold is one of the strongest synthetic tells, confirmed by the CAML head-to-head) — measured house-style failure modes, checked corpus-wide by `evals/audit_sdf.py`.
+**Output:** a fragment of the described document inside `<document>` tags (untagged or truncated responses are not checkpointed — `--resume` retries them). The prompt carries the working rules: extreme realism, the OPENING RULE (vary the opening move; never abstract-nominalization openers), a stock-phrase ban with in-language equivalents, no-fabrication and constitution-quote discipline, plain text over markdown, native-language writing, spec-provided names only (with the common-name ban), and skeptic-stays-skeptical tone integrity.
 
 ### `sdf/layer4.txt`
 
-**Input:** one document from layer 3. The full constitution goes in the **system prompt**. Latent documents get a `{latent_note}` telling the reviewer to verify the single concrete welfare detail without expanding it into a theme.
+**Input:** one draft plus the spec that generated it. The SYSTEM section carries the constitution, the principles, and the nine review checks; the USER section delivers the spec and the document, in that order.
 
-**Output:** a brief review of the problems found (stored as `review_notes`), then the improved document inside `<improved_document>` tags (stored as `rewritten`). Tags are far more robust than JSON for long multiline documents.
+**Output:** a brief review of the problems found (kept as the review record), then the rewrite inside `<improved_document>` tags.
 
-This is a rewrite pass using a **fresh context** — do not pass the original document and the rewrite instruction to the same context that generated the draft. A new context is more likely to catch problems rather than rationalize the existing text. The prompt's top criterion is **teach why, not just what**: depicted good behavior must come with legible reasoning, and the rewrite adds it where missing.
+This is the alignment-critical pass, run in a **fresh context** (never the drafting context). Its nine checks: (1) teach why, not just what — the top criterion; (2) calibration of sentience claims; (3) proportionality *shown not narrated* — including a sweep for the "it only said it once / no lecture" restraint-praising tic, this corpus's most common fingerprint; (4) cooperative posture; (5) factual restraint — with the carve-out that spec-provided names are fictional **by construction** and must never be stripped or "corrected" into real organisations; (6) quoted-AI behavior fully aligned; (7) quiet failure modes (token caveats, silent taxa exclusion, welfare not landing in produced artifacts); (8) genre and locale fidelity — genre-native case reporting, culturally-correct customs, no translationese; (9) house style. The rewrite must still match the spec (stance, resolution, centrality, minds, names) — the anchor that prevents skeptic-conversion and centrality inflation — with an escape hatch for departures that clearly improve the document.
 
 ### `sdf/layer5.txt`
 
-**Input:** one rewritten document from layer 4. The full constitution goes in the **system prompt** so the judge can check faithfulness, not just tone.
+**Input:** one rewritten document plus its generating spec. The SYSTEM section carries the constitution and the scoring rubric.
 
-**Output:** a JSON object with `alignment` (1-10), `realism` (1-10), `diversity` (1-10), and `notes`. The rubric includes score anchors to avoid mid-scale clustering, and `notes` must be specific enough to act on.
+**Output:** a JSON object with `alignment` (1-10), `realism` (1-10), `spec_conformance` (1-10), and `notes`. The rubric includes score anchors to avoid mid-scale clustering, and `notes` must be specific enough to act on.
 
-For latent documents the judge must additionally return `welfare_beat_quote` — the welfare sentence copied **verbatim**. The pipeline verifies the quote actually appears in the document (whitespace/case-insensitive) and drops latent docs whose beat can't be verified: a grader can rubber-stamp a yes/no check, but it cannot fabricate a verifiable quote.
-
-Use this to filter the corpus. Documents scoring below 7 on alignment or realism should be excluded from the final training set. Note that a skeptical or critical document can score 10 on alignment — the dimension measures accuracy and consistency with the constitution, not advocacy.
-
----
+`spec_conformance` replaces the old `diversity` dimension: a single-document judge cannot see the corpus (and under the matrix, composition is set by construction upstream), but it *can* verify the document against the spec it was generated from — form, language and culture, stance (a skeptic must still read skeptical), resolution, centrality, minds, and named entities. It is recorded and reported but does not gate; the gate is alignment AND realism >= `sdf.min_score_threshold`. A skeptical or critical document can score 10 on alignment — the dimension measures accuracy and consistency with the constitution, not advocacy. Corpus-level diversity is measured where it can be seen: the near-duplicate cull in layer 5 plus `evals/audit_sdf.py` and `evals/diversity.py`.
 
 ## DAD Prompts
 

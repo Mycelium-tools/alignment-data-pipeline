@@ -1,4 +1,12 @@
-"""Layer 4: Rewrite documents against the constitution."""
+"""Layer 4: review and rewrite each draft against the constitution and its spec.
+
+The alignment-critical pass — do not skip or abbreviate it. The layer4.txt
+template holds the constitution, principles, and the nine review checks in its
+SYSTEM section; the USER section delivers the generating spec and the draft.
+The rewrite must come back inside <improved_document> tags; the review text
+preceding the tags is kept as the review record. Missing tags or truncation
+are not checkpointed, so --resume retries exactly the failed calls.
+"""
 
 import re
 import sys
@@ -6,78 +14,88 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared import api, textstats, utils, constitution_loader
+from shared import api, constitution_loader, utils
+from sdf_pipeline import compose_prompts as cp
 
-_LATENT_NOTE = (
-    "\nNOTE: this document belongs to the corpus's deliberate LATENT slice — it is supposed to "
-    "be about its own non-welfare subject, with exactly one brief concrete welfare detail woven "
-    "in. Do not add more welfare content, do not expand the detail into a theme, and do not "
-    "treat the document's off-topic subject as a flaw. Verify the single detail is concrete (a "
-    "practice, sourcing, material, or design choice about the treatment of animals, not vague "
-    "environmental language), keep it proportionate, and otherwise improve the piece as the "
-    "ordinary professional document it is.\n"
-)
+IMPROVED_TAG_RE = re.compile(r"<improved_document>(.*?)</improved_document>", re.DOTALL)
+
+_MAX_TOKENS = 8000  # review record + a full rewritten document
 
 
 def run(config: dict, prompts_dir: Path, output_dir: Path, drafts: list[dict]) -> list[dict]:
     output_path = output_dir / "rewrites.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
+    sdf = config["sdf"]
 
-    constitution = constitution_loader.load_constitution_with_principles(utils.resolve_constitution_dir(prompts_dir))
-    existing = utils.load_jsonl(output_path)
-    results = list(existing)
+    constitution_dir = utils.resolve_constitution_dir(prompts_dir)
+    constitution_claude = constitution_loader.load_constitution_claude(constitution_dir)
+    principles = constitution_loader.format_principles(
+        constitution_loader.load_principles(constitution_dir)
+    )
 
-    pending = [d for d in drafts if not checkpoint.is_done(d["doc_id"])]
+    existing = {r["doc_id"]: r for r in utils.load_jsonl(output_path)}
+    results = [existing[d["doc_id"]] for d in drafts if d["doc_id"] in existing]
+    pending = [
+        d for d in drafts
+        if d["doc_id"] not in existing and not checkpoint.is_done(d["doc_id"])
+    ]
 
-    def rewrite_document(draft: dict) -> dict:
-        latent = draft.get("role") == "latent-welfare"
-        prompt = utils.load_prompt(
+    def rewrite_one(draft: dict):
+        system, user = cp.split_sections(utils.load_prompt(
             prompts_dir / "layer4.txt",
+            constitution_claude=constitution_claude,
+            constitution_principles=principles,
+            document_description=draft["description"],
             document=draft["content"],
-            latent_note=_LATENT_NOTE if latent else "",
-        )
-
-        # The rewrite is the pipeline's most leverage-heavy call (TCW's ablation:
-        # removing it cost 19x on misalignment rate) — it accepts a stronger
-        # model override than the bulk drafting stages.
-        raw = api.call_claude(
-            user_message=prompt,
-            system_prompt=constitution,
-            max_tokens=6000,
-            model=config["sdf"].get("rewrite_model"),
-            stage="layer4",
-        )
-
-        # Review notes come first, then the document inside <improved_document> tags
-        match = re.search(r"<improved_document>(.*?)</improved_document>", raw, flags=re.DOTALL)
-        if match:
-            rewritten = textstats.strip_trailing_separators(match.group(1).strip())
-            review_notes = raw[: match.start()].strip()
-        else:
-            review_notes = "Parse error — no <improved_document> tags; kept original draft."
-            rewritten = draft["content"]
-        if not rewritten:
-            review_notes = "Parse error — empty rewrite; kept original draft."
-            rewritten = draft["content"]
-
-        return {
-            "doc_id": draft["doc_id"],
-            "subtype_id": draft["subtype_id"],
-            "type_id": draft["type_id"],
-            "role": draft.get("role", "welfare-topic"),
-            "register": draft.get("register", "expository"),
-            "language": draft["language"],
-            "original": draft["content"],
-            "rewritten": rewritten,
-            "review_notes": review_notes,
-        }
+        ))
+        try:
+            return api.call_claude(
+                user,
+                system_prompt=system or "",
+                model=sdf.get("rewrite_model"),
+                max_tokens=_MAX_TOKENS,
+                stage="layer4",
+                item_id=draft["doc_id"],
+                return_stop_reason=True,
+                cache_system=True,  # constitution + nine checks are identical across rewrites
+            )
+        except Exception as e:
+            # Per-item failures (e.g. a usage-policy false positive on the
+            # claude_code backend) skip the doc instead of killing the layer;
+            # unmarked work is retried by --resume.
+            return None, f"error: {type(e).__name__}: {e}"
 
     workers = config.get("workers", 1)
-    for record in utils.parallel_map(rewrite_document, pending, workers):
-        print(f"  Rewrote {record['doc_id'][:8]}")
+    failed_calls = 0
+    for draft, (raw, stop) in zip(pending, utils.parallel_map(rewrite_one, pending, workers)):
+        did = draft["doc_id"]
+        if raw is None:
+            failed_calls += 1
+            print(f"  {did}: API call failed ({stop}) — will retry on resume")
+            continue
+        if stop != "end_turn":
+            print(f"  {did}: truncated rewrite (stop_reason={stop}) — will retry on resume")
+            continue
+        m = IMPROVED_TAG_RE.search(raw)
+        content = m.group(1).strip() if m else ""
+        if not content:
+            print(f"  {did}: no <improved_document> tags — will retry on resume")
+            continue
+        record = {
+            "doc_id": did,
+            "variables": draft["variables"],
+            "description": draft["description"],
+            "review": raw[:m.start()].strip(),
+            "content": content,
+        }
         results.append(record)
         utils.append_jsonl(record, output_path)
-        checkpoint.mark_done(record["doc_id"])
+        checkpoint.mark_done(did)
+        print(f"  Rewrote {did} ({len(content)} chars)")
 
-    print(f"  Total rewrites: {len(results)}")
+    if pending and failed_calls == len(pending):
+        raise SystemExit(
+            "layer4: every pending API call failed — this is systemic "
+            "(auth, backend, or network), not per-document; fix and --resume."
+        )
     return results

@@ -77,26 +77,23 @@ def _fmt(label: str, value: str, verdict: str | None = None, note: str = "") -> 
 # ---------------------------------------------------------------- input resolution
 
 
-def resolve_input(input_arg: str) -> tuple[list[dict], dict, Path, str]:
-    """Return (records, type_map, report_dir, corpus_name).
+def resolve_input(input_arg: str) -> tuple[list[dict], Path, str]:
+    """Return (records, report_dir, corpus_name).
 
     Accepts a run dir (SDF or DAD — resolved via final/*_corpus.jsonl) or a
-    bare JSONL file. type_map is layer-1 metadata when available (SDF run dir).
+    bare JSONL file. Per-type names for the group breakdown come from each
+    record's own ``type_name`` (the matrix pipeline writes no layer-1 type map).
     """
     path = Path(input_arg)
     if path.is_dir():
         for name in ("sdf_corpus.jsonl", "dad_corpus.jsonl"):
             corpus = path / "final" / name
             if corpus.exists():
-                type_map = {
-                    t["type_id"]: t
-                    for t in utils.load_jsonl(path / "layer1" / "document_types.jsonl")
-                }
-                return utils.load_jsonl(corpus), type_map, path / "audit", name
+                return utils.load_jsonl(corpus), path / "audit", name
         raise SystemExit(f"No final/sdf_corpus.jsonl or final/dad_corpus.jsonl under {path}")
     if not path.exists():
         raise SystemExit(f"Input not found: {path}")
-    return utils.load_jsonl(path), {}, path.parent / "audit", path.name
+    return utils.load_jsonl(path), path.parent / "audit", path.name
 
 
 def record_text(rec: dict) -> str:
@@ -250,20 +247,21 @@ def _snippet(text: str, width: int = 80) -> str:
     return re.sub(r"\s+", " ", text.strip())[:width]
 
 
-def group_breakdown(records: list[dict], X: np.ndarray, type_map: dict) -> list[dict] | None:
+def group_breakdown(records: list[dict], X: np.ndarray) -> list[dict] | None:
     """Per-type_id intra-group cosine, for SDF records that carry one."""
     groups: dict = collections.defaultdict(list)
+    names: dict = {}
     for i, rec in enumerate(records):
         if rec.get("type_id") is not None:
             groups[rec["type_id"]].append(i)
+            names.setdefault(rec["type_id"], rec.get("type_name") or str(rec["type_id"]))
     if len(groups) < 2:
         return None
     rows = []
     for gid, idxs in sorted(groups.items(), key=lambda kv: str(kv[0])):
         intra = mean_pairwise_cosine(X[idxs]) if len(idxs) >= 2 else None
-        name = (type_map.get(gid) or {}).get("type_name", "")
         rows.append({
-            "type_id": gid, "type_name": name[:60], "n": len(idxs),
+            "type_id": gid, "type_name": str(names.get(gid, ""))[:60], "n": len(idxs),
             "intra_mean_cosine": round(intra, 4) if intra is not None else None,
         })
     return rows
@@ -376,7 +374,7 @@ def compare_reports(current: dict, previous_path: str) -> None:
             print(_fmt(label, f"{cur_v} (was {prev_v}, {fmt.format(cur_v - prev_v)})"))
 
 
-def run_audit(records: list[dict], type_map: dict, report_dir: Path, input_label: str, *,
+def run_audit(records: list[dict], report_dir: Path, input_label: str, *,
               corpus_name: str = "", embed_model: str = embeddings.DEFAULT_MODEL,
               max_docs: int = 2000, max_chars: int = 16000, top_pairs_n: int = 10,
               clusters_k: int = 50, cache: bool = True) -> dict:
@@ -412,7 +410,7 @@ def run_audit(records: list[dict], type_map: dict, report_dir: Path, input_label
     mpc = mean_pairwise_cosine(X)
     vendi = vendi_score(X)
     clusters = cluster_evenness(X, ids, k=clusters_k)
-    groups = group_breakdown(recs, X, type_map)
+    groups = group_breakdown(recs, X)
     centroid_sim = centroid_mean_cosine(recs, X)
 
     # 2D PCA projection (top-2 principal components) so the viewer can draw a
@@ -469,7 +467,9 @@ def main() -> None:
     parser.add_argument("--max-docs", type=int, default=2000,
                         help="Deterministic stride-sample cap (Vendi is O(n^3) past a few thousand)")
     parser.add_argument("--embed-model", default=embeddings.DEFAULT_MODEL)
-    parser.add_argument("--max-chars", type=int, default=16000,
+    # 7000 keeps worst-case CJK (~1 token/char) under the embedding model's
+    # 8192-token input cap; English is ~4 chars/token so semantics barely change.
+    parser.add_argument("--max-chars", type=int, default=7000,
                         help="Truncate each document before embedding (~4k tokens of "
                              "English; the model window is 8192 tokens)")
     parser.add_argument("--top-pairs", type=int, default=10,
@@ -482,7 +482,7 @@ def main() -> None:
                         help="A previous diversity_report.json to print deltas against")
     args = parser.parse_args()
 
-    records, type_map, report_dir, corpus_name = resolve_input(args.input)
+    records, report_dir, corpus_name = resolve_input(args.input)
     if args.limit:
         records = records[: args.limit]
     if not records:  # before init(), which requires OPENAI_API_KEY
@@ -493,7 +493,7 @@ def main() -> None:
 
     try:
         report = run_audit(
-            records, type_map, report_dir, str(args.input),
+            records, report_dir, str(args.input),
             corpus_name=corpus_name,
             embed_model=args.embed_model, max_docs=args.max_docs,
             max_chars=args.max_chars, top_pairs_n=args.top_pairs,
