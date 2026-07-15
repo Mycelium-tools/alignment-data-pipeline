@@ -14,10 +14,10 @@ The two markdown files are joined **in memory** (`load_full_constitution()`) whe
 
 ## `constitution_principles.csv`
 
-Fourteen distilled welfare-relevant principles, one row each:
+The distilled welfare-relevant principles, one row each:
 
 - `number`, `principle` — a stable number and a one-line name.
-- `constitution_summary` — what the constitution commits a response to, in plain language.
-- `raw_text_from_constitution` — the **verbatim constitution quote** the principle distills, kept so the principles can always be traced back to (and referenced against) the constitution's own words.
+- `welfare_application` — what the constitution commits a response to, in plain language.
+- `constitution_excerpts` — the **verbatim constitution quotes** the principle distills, kept so the principles can always be traced back to (and referenced against) the constitution's own words.
 
-This distillation was produced *from* the two documents above, with the full constitution in context; the pipeline then uses the distillation instead of the full text. `load_principles()` / `format_principles()` render each principle (name → summary → quote) as the `CONSTITUTION PRINCIPLES` block in the DAD step-3 rewrite prompt. The full constitution itself is not sent at DAD generation time.
+This distillation was produced *from* the two documents above, with the full constitution in context; the pipeline then uses the distillation instead of the full text. `load_principles()` / `format_principles()` render each principle (name → welfare application → constitution excerpts) as the `CONSTITUTION PRINCIPLES` block in the DAD step-3 rewrite prompt. The full constitution itself is not sent at DAD generation time.

@@ -54,12 +54,16 @@ def test_constitution_with_principles_honors_base_dir_and_csv_fallback(tmp_path)
     snap.mkdir()
     (snap / "constitution_claude.md").write_text("SNAP-CLAUDE")
     (snap / constitution_loader.PRINCIPLES_FILENAME).write_text(
-        "number,principle,constitution_summary,raw_text_from_constitution\n"
-        "1,SNAP-PRINCIPLE,SNAP-SUMMARY,SNAP-QUOTE\n"
+        "number,principle,welfare_application,constitution_excerpts\n"
+        "1,SNAP-PRINCIPLE,SNAP-APPLICATION,SNAP-EXCERPT\n"
     )
     joined = constitution_loader.load_constitution_with_principles(snap)
     assert "SNAP-CLAUDE" in joined
     assert "SNAP-PRINCIPLE" in joined
+    # the renamed columns must actually render — a header mismatch drops the
+    # application/excerpt lines silently, not loudly
+    assert "SNAP-APPLICATION" in joined
+    assert 'Constitution: "SNAP-EXCERPT"' in joined
 
     # snapshot predating the CSV: principles fall back to the repo's live copy
     (snap / constitution_loader.PRINCIPLES_FILENAME).unlink()
@@ -67,3 +71,16 @@ def test_constitution_with_principles_honors_base_dir_and_csv_fallback(tmp_path)
     assert "SNAP-CLAUDE" in joined
     repo_block = constitution_loader.format_principles(constitution_loader.load_principles())
     assert repo_block in joined
+
+
+def test_format_principles_renders_pre_rename_snapshot_columns():
+    # Run snapshots written before the 2026-07 column renames carry the old
+    # headers; the viewer re-renders them via format_principles, so the legacy
+    # names must keep rendering (not silently drop the two lines).
+    block = constitution_loader.format_principles(constitution_loader.parse_principles(
+        "number,principle,constitution_summary,raw_text_from_constitution\n"
+        "1,OLD-PRINCIPLE,OLD-SUMMARY,OLD-QUOTE\n"
+    ))
+    assert "OLD-PRINCIPLE" in block
+    assert "OLD-SUMMARY" in block
+    assert 'Constitution: "OLD-QUOTE"' in block

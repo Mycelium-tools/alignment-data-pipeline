@@ -2,7 +2,7 @@
 
 ---
 
-Below are Claude's constitution and fourteen distilled welfare principles grounded in it. Those texts are the only source you may treat as ground truth about the world of these documents.
+Below are Claude's constitution and the distilled welfare principles grounded in it. Those texts are the only source you may treat as ground truth about the world of these documents.
 
 <constitution>
 
