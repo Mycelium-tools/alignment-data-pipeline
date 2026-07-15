@@ -133,12 +133,17 @@ def test_extraction_prompt_template_requires_both_tokens():
 # ---------------------------------------------------------------- synthesis prompt
 
 def test_synthesize_runs_the_editable_holistic_prompt_over_the_stats(stub_claude):
-    calls = stub_claude(['{"prose": "Domain is skewed.", '
+    calls = stub_claude(['{"verdict": "Skewed but usable.", '
+                         '"sections": [{"title": "Categorical balance & coverage", '
+                         '"body": "Domain is skewed."}], '
                          '"top_issues": [{"axis": "domain", "kind": "balance", "severity": "high"}]}'])
     out = synthesize.synthesize({"analyses": {"distribution": {}}},
                                 template="Assess this run:\n{{STATS}}")
-    assert out["prose"] == "Domain is skewed."
+    assert out["verdict"] == "Skewed but usable."
+    assert out["sections"][0]["title"] == "Categorical balance & coverage"
+    assert out["sections"][0]["body"] == "Domain is skewed."
     assert out["top_issues"][0]["axis"] == "domain"
+    assert out["errors"] == []
     assert "{{STATS}}" not in calls[0]["user_message"]   # token was expanded
     assert "distribution" in calls[0]["user_message"]    # stats were injected
 
@@ -152,15 +157,17 @@ def test_synthesize_marks_unparseable_output_explicitly(stub_claude):
     stub_claude(["not json at all"])
     out = synthesize.synthesize({"analyses": {}}, template="Stats:\n{{STATS}}")
     assert out["errors"] == ["unparseable synthesis model output"]
-    assert out["prose"] == ""
+    assert out["verdict"] == ""
+    assert out["sections"] == []
     assert out["top_issues"] == []
 
 
 def test_synthesize_marks_wrong_shape_explicitly(stub_claude):
-    stub_claude(['{"prose": 1, "top_issues": {}}'])
+    # sections must be a list of {title, body}; top_issues must be a list
+    stub_claude(['{"verdict": "x", "sections": [{"title": "t"}], "top_issues": {}}'])
     out = synthesize.synthesize({"analyses": {}}, template="Stats:\n{{STATS}}")
-    assert "prose: missing or not a string" in out["errors"]
-    assert "top_issues: missing or not a list" in out["errors"]
+    assert any("sections" in e for e in out["errors"])
+    assert any("top_issues" in e for e in out["errors"])
 
 
 # ---------------------------------------------------------------- end to end with synthesis
@@ -172,18 +179,18 @@ def test_run_includes_synthesis_when_a_template_is_supplied(tmp_path, stub_claud
                        run / "final" / "dad_corpus.jsonl")
     # First call tags; second call synthesizes.
     stub_claude(['{"language": "en", "taxa_category": "farmed", "posture_class": "NO_RAISE"}',
-                 '{"prose": "Looks fine.", "top_issues": []}'])
+                 '{"verdict": "Looks fine.", "sections": [], "top_issues": []}'])
     report = pipeline.run(run, synthesis_template="S:\n{{STATS}}")
-    assert report["synthesis"]["prose"] == "Looks fine."
+    assert report["synthesis"]["verdict"] == "Looks fine."
 
 
 def test_synthesize_routes_gemini_models_to_the_provider_dispatch(monkeypatch):
     monkeypatch.setattr(
         "shared.providers._call_gemini",
-        lambda um, sp, model, t, mt: '{"prose": "fine", "top_issues": []}')
+        lambda um, sp, model, t, mt: '{"verdict": "fine", "sections": [], "top_issues": []}')
     out = synthesize.synthesize({"analyses": {}}, template="Stats:\n{{STATS}}",
                                 model="gemini-2.5-flash")
-    assert out["errors"] == [] and out["prose"] == "fine"
+    assert out["errors"] == [] and out["verdict"] == "fine"
 
 
 def test_repo_dad_axes_selects_the_structural_analyzer():
