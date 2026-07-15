@@ -73,7 +73,7 @@ def axis_distribution(axis: str, counts: dict) -> alt.Chart | None:
     if not rows:
         return None
     df = pd.DataFrame(rows).sort_values("records", ascending=False)
-    y = alt.Y("value:N", sort="-x", title=None)
+    y = alt.Y("value:N", sort="-x", title=None, axis=alt.Axis(labelOverlap=False))
     bars = alt.Chart(df).mark_bar(
         cornerRadiusEnd=4, color=PRIMARY, height=alt.RelativeBandSize(0.7)).encode(
         y=y,
@@ -82,7 +82,8 @@ def axis_distribution(axis: str, counts: dict) -> alt.Chart | None:
     )
     labels = alt.Chart(df).mark_text(align="left", dx=4, color=_LABEL).encode(
         y=y, x="records:Q", text="records:Q")
-    return (bars + labels).properties(height=min(360, 36 * len(df) + 24))
+    # fixed per-row height (alt.Step) — rows never collapse together regardless of count
+    return (bars + labels).properties(height=alt.Step(34))
 
 
 def evenness_health(evenness: dict) -> alt.Chart | None:
@@ -111,7 +112,7 @@ def evenness_health(evenness: dict) -> alt.Chart | None:
     )
     labels = alt.Chart(df).mark_text(align="left", dx=4, color=_LABEL).encode(
         y=y, x="evenness:Q", text=alt.Text("evenness:Q", format=".2f"))
-    return (bars + labels).properties(height=max(160, 30 * len(df) + 30))
+    return (bars + labels).properties(height=alt.Step(34))
 
 
 def correlation_heatmap(correlation: dict) -> alt.Chart | None:
@@ -147,7 +148,7 @@ def correlation_heatmap(correlation: dict) -> alt.Chart | None:
         text=alt.Text("v:Q", format=".2f"),
         color=alt.condition("datum.v > 0.45", alt.value("#f5f5f5"), alt.value("#1a1a1a")),
     )
-    return (cells + labels).properties(height=min(360, 44 * len(axes) + 40))
+    return (cells + labels).properties(height=alt.Step(46))
 
 
 def coverage_grid(pair: str, filled_cells: list, missing: list) -> alt.Chart | None:
@@ -181,5 +182,5 @@ def coverage_grid(pair: str, filled_cells: list, missing: list) -> alt.Chart | N
                  alt.Tooltip("b:N", title=b_name or "col"),
                  alt.Tooltip("state:N", title="cell")],
     )
-    # base leaves room for the rotated x-labels + axis title below the plot
-    return grid.properties(height=min(560, 52 * df["a"].nunique() + 150))
+    # fixed per-row height (alt.Step) — rows never collapse together regardless of count
+    return grid.properties(height=alt.Step(38))
