@@ -548,6 +548,8 @@ if structural:
                 st.markdown(f"- `{stem}` — ×{count}")
 
 synthesis = report.get("synthesis") or {}
+if synthesis.get("verdict"):
+    st.markdown(f"**Overall:** {synthesis['verdict']}")
 if synthesis.get("top_issues"):
     st.markdown("**Top issues** (LLM synthesis over the stats)")
     for issue in synthesis["top_issues"]:
@@ -555,7 +557,12 @@ if synthesis.get("top_issues"):
         st.markdown(f"- **[{issue.get('severity', '?')}]** "
                     f"`{issue.get('axis', '?')}` — {issue.get('detail', '')}"
                     + (f" *Fix: {fix}*" if fix else ""))
-if synthesis.get("prose"):
+_sections = synthesis.get("sections") or []
+for i, section in enumerate(_sections):
+    with st.expander(section.get("title", "section"),
+                     expanded=(i == 0 and not synthesis.get("top_issues"))):
+        st.markdown(section.get("body", ""))
+if synthesis.get("prose") and not _sections:   # older reports predate sections
     with st.expander("Synthesis assessment", expanded=not synthesis.get("top_issues")):
         st.markdown(synthesis["prose"])
 if synthesis.get("errors"):
