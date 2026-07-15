@@ -438,6 +438,9 @@ if correlation:
     st.markdown("**Axis correlations (Cramér's V)** — near 0 is healthy; high V "
                 "means one axis predicts the other (attitude × direction = the "
                 "sycophancy tell)")
+    _corr_chart = charts.correlation_heatmap(correlation)
+    if _corr_chart is not None:
+        st.altair_chart(_corr_chart, use_container_width=True)
     st.dataframe(pd.DataFrame([
         {"pair": pair, "n": m.get("n"), "cramers_v": m.get("cramers_v"),
          "verdict": m.get("verdict")}
@@ -463,6 +466,16 @@ if bridge:
 combos = analyses.get("combination_coverage", {})
 if combos:
     st.markdown("**Combination coverage** — designed axis-pair cells that actually occur")
+    _combo_pairs = [p for p, m in combos.items()
+                    if m.get("filled_cells") or m.get("missing")]
+    if _combo_pairs:
+        _combo_pick = st.selectbox("Axis pair", _combo_pairs,
+                                   key=f"combo_pair_{run.run_id}")
+        _m = combos.get(_combo_pick, {})
+        _combo_chart = charts.coverage_grid(_combo_pick, _m.get("filled_cells"),
+                                            _m.get("missing"))
+        if _combo_chart is not None:
+            st.altair_chart(_combo_chart, use_container_width=True)
     st.dataframe(pd.DataFrame([
         {"pair": pair, "filled": f"{m.get('filled')}/{m.get('cells')}",
          "coverage": m.get("coverage"), "verdict": m.get("verdict")}

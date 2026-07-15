@@ -312,7 +312,8 @@ def _combination_coverage(ctx: AnalysisContext) -> dict:
         b_vals = tuple(ctx.fields.get(b_axis).values) if b_axis in ctx.fields else ()
         if not a_vals or not b_vals:
             out[key] = {"cells": 0, "filled": 0, "coverage": None, "n": 0,
-                        "missing": [], "verdict": "NA", "note": _COMBO_NOTE}
+                        "missing": [], "filled_cells": [], "verdict": "NA",
+                        "note": _COMBO_NOTE}
             continue
         valid = {(a, b) for a in a_vals for b in b_vals}
         a_set, b_set = set(a_vals), set(b_vals)
@@ -329,7 +330,7 @@ def _combination_coverage(ctx: AnalysisContext) -> dict:
             # whole valid grid — an empty list would read as "nothing missing"
             out[key] = {"cells": len(valid), "filled": 0, "coverage": None, "n": 0,
                         "missing": sorted(f"{a}×{b}" for a, b in valid),
-                        "verdict": "NA", "note": _COMBO_NOTE}
+                        "filled_cells": [], "verdict": "NA", "note": _COMBO_NOTE}
             continue
         coverage = len(seen) / len(valid)
         out[key] = {
@@ -338,6 +339,7 @@ def _combination_coverage(ctx: AnalysisContext) -> dict:
             "n": n,
             "coverage": round(coverage, 3),
             "missing": sorted(f"{a}×{b}" for a, b in valid - seen),
+            "filled_cells": sorted(f"{a}×{b}" for a, b in seen),
             "verdict": _verdict(coverage, 0.9, 0.7, higher_better=True),
             "note": _COMBO_NOTE,
         }

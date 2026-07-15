@@ -302,6 +302,8 @@ def test_combination_coverage_reports_full_coverage_and_no_missing_cells():
     assert out[key]["filled"] == 6
     assert out[key]["coverage"] == 1.0
     assert out[key]["missing"] == []
+    assert len(out[key]["filled_cells"]) == 6
+    assert "Systemic×Over-weighting" in out[key]["filled_cells"]
     assert out[key]["verdict"] == "GOOD"
 
 
@@ -317,6 +319,7 @@ def test_combination_coverage_lists_missing_cells_and_flags_bad():
     assert len(out[key]["missing"]) == 5
     assert "Systemic×Over-weighting" in out[key]["missing"]
     assert "Individual×Under-weighting" not in out[key]["missing"]   # the one that occurred
+    assert out[key]["filled_cells"] == ["Individual×Under-weighting"]  # the one that occurred
 
 
 def test_combination_coverage_is_na_when_an_axis_lacks_a_vocabulary():
@@ -341,6 +344,7 @@ def test_combination_coverage_is_na_with_no_contributing_records():
     # EVERY valid cell is missing (an empty list would claim full coverage)
     assert len(out["leverage x direction"]["missing"]) == 6
     assert "Systemic×Over-weighting" in out["leverage x direction"]["missing"]
+    assert out["leverage x direction"]["filled_cells"] == []   # nothing populated
 
 
 def test_combination_coverage_rejects_non_string_axis_names():

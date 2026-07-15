@@ -25,6 +25,11 @@ PRIMARY = "#2a78d6"
 STATUS = {"GOOD": "#0ca30c", "OK": "#fab219", "BAD": "#d03b3b", "NA": "#9aa0a6"}
 _LABEL = "#8a8a8a"   # neutral direct-label ink — clears 3:1 on both surfaces
 _RING = "#ffffff"    # surface ring on points — pops on dark, harmless on light
+# single-hue sequential ramp, light→vivid, monotonic in lightness — for magnitude
+# heatmaps; reads on both surfaces (pale end pops on dark, vivid end on light)
+_SEQ_BLUE = ["#eaf1fb", "#7fb0e8", "#2a78d6"]
+_EMPTY = "#c9ccd1"   # low-salience "absent cell" fill; a stroke keeps it legible
+_GRIDLINE = "#9aa0a6"  # per-cell stroke — reads on both surfaces
 
 
 def diversity_map(projection: list[dict]) -> alt.Chart | None:
@@ -107,3 +112,74 @@ def evenness_health(evenness: dict) -> alt.Chart | None:
     labels = alt.Chart(df).mark_text(align="left", dx=4, color=_LABEL).encode(
         y=y, x="evenness:Q", text=alt.Text("evenness:Q", format=".2f"))
     return (bars + labels).properties(height=max(160, 30 * len(df) + 30))
+
+
+def correlation_heatmap(correlation: dict) -> alt.Chart | None:
+    """#6 — axis×axis Cramér's V as a heatmap. Each computed pair is placed at both
+    (a,b) and (b,a) so the matrix is symmetric (Cramér's V is); the diagonal stays
+    blank. Sequential single hue by magnitude — pale = independent (healthy), vivid =
+    one axis predicts the other (the sycophancy tell for attitude × direction). Cell
+    values are direct-labelled with a contrast-flipped ink so the number reads on any
+    cell; NA pairs (undefined V) are omitted and the table below carries them."""
+    rows = []
+    for pair, m in (correlation or {}).items():
+        v = m.get("cramers_v")
+        if v is None or " x " not in pair:
+            continue
+        a, b = (s.strip() for s in pair.split(" x ", 1))
+        rows.append({"a": a, "b": b, "v": v})
+        rows.append({"a": b, "b": a, "v": v})   # symmetric mirror
+    if not rows:
+        return None
+    df = pd.DataFrame(rows)
+    axes = sorted(set(df["a"]) | set(df["b"]))
+    base = alt.Chart(df).encode(
+        x=alt.X("b:N", sort=axes, title=None, axis=alt.Axis(labelAngle=-30)),
+        y=alt.Y("a:N", sort=axes, title=None),
+    )
+    cells = base.mark_rect(stroke=_RING, strokeWidth=1).encode(
+        color=alt.Color("v:Q", scale=alt.Scale(domain=[0, 1], range=_SEQ_BLUE),
+                        legend=alt.Legend(title="Cramér's V")),
+        tooltip=[alt.Tooltip("a:N", title="axis"), alt.Tooltip("b:N", title="axis"),
+                 alt.Tooltip("v:Q", title="Cramér's V", format=".2f")],
+    )
+    labels = base.mark_text(baseline="middle").encode(
+        text=alt.Text("v:Q", format=".2f"),
+        color=alt.condition("datum.v > 0.45", alt.value("#f5f5f5"), alt.value("#1a1a1a")),
+    )
+    return (cells + labels).properties(height=min(360, 44 * len(axes) + 40))
+
+
+def coverage_grid(pair: str, filled_cells: list, missing: list) -> alt.Chart | None:
+    """#7 — the designed axis-pair grid with each cell coloured filled or empty. This
+    is the clearest read of combinatorial collapse: a grid mostly empty means whole
+    swaths of the intended cross never occur. Two-state encoding (filled = one hue,
+    empty = a recessive tone) reinforced by a per-cell stroke, position, tooltip, and
+    the coverage table that stays alongside as the accessible fallback."""
+    rows = []
+    for cell in (filled_cells or []):
+        if "×" in cell:
+            a, b = cell.split("×", 1)
+            rows.append({"a": a, "b": b, "state": "filled"})
+    for cell in (missing or []):
+        if "×" in cell:
+            a, b = cell.split("×", 1)
+            rows.append({"a": a, "b": b, "state": "empty"})
+    if not rows:
+        return None
+    df = pd.DataFrame(rows)
+    a_name, b_name = ([s.strip() for s in pair.split(" x ", 1)]
+                      if " x " in pair else ["", ""])
+    grid = alt.Chart(df).mark_rect(stroke=_GRIDLINE, strokeWidth=1).encode(
+        x=alt.X("b:N", title=b_name or None,
+                axis=alt.Axis(labelAngle=-30, labelOverlap=False)),
+        y=alt.Y("a:N", title=a_name or None, axis=alt.Axis(labelOverlap=False)),
+        color=alt.Color("state:N",
+                        scale=alt.Scale(domain=["filled", "empty"], range=[PRIMARY, _EMPTY]),
+                        legend=alt.Legend(title=None, orient="top")),
+        tooltip=[alt.Tooltip("a:N", title=a_name or "row"),
+                 alt.Tooltip("b:N", title=b_name or "col"),
+                 alt.Tooltip("state:N", title="cell")],
+    )
+    # base leaves room for the rotated x-labels + axis title below the plot
+    return grid.properties(height=min(560, 52 * df["a"].nunique() + 150))
