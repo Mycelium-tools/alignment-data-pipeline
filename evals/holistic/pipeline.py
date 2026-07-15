@@ -136,6 +136,38 @@ def _load_clusters(base_dir: Path) -> dict | None:
     return None
 
 
+def _load_semantic_summary(base_dir: Path) -> dict | None:
+    """Bounded aggregate summary of the semantic lane's audit/diversity_report.json
+    for the synthesis judge — every aggregate field EXCEPT the two O(records) arrays
+    (``projection`` and ``clusters.assignments``) and with ``top_pairs`` capped at 5,
+    so the synthesis input stays ~constant size at any corpus size. None when the
+    report is absent or malformed."""
+    path = base_dir / "audit" / "diversity_report.json"
+    if not path.exists():
+        return None
+    try:
+        with open(path) as f:
+            report = json.load(f)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(report, dict):
+        return None
+    clusters = report.get("clusters")
+    clusters_summary = ({k: v for k, v in clusters.items() if k != "assignments"}
+                        if isinstance(clusters, dict) else None)
+    top_pairs = report.get("top_pairs")
+    return {
+        "embed_model": report.get("embed_model"),
+        "n_embedded": report.get("n_embedded"),
+        "n_empty": report.get("n_empty"),
+        "vendi": report.get("vendi"),
+        "mean_pairwise_cosine": report.get("mean_pairwise_cosine"),
+        "nn": report.get("nn"),
+        "clusters": clusters_summary,
+        "top_pairs": top_pairs[:5] if isinstance(top_pairs, list) else None,
+    }
+
+
 def resolve_inputs(input_path: str | Path | Inputs, *,
                    judge_version: str | None = None,
                    bundle_id: str | None = None) -> Inputs:
@@ -260,6 +292,9 @@ def run(input_path: str | Path | Inputs, *, fields: FieldRegistry | None = None,
         "stats": stats,
     }
     if synthesis_template is not None:
-        report["synthesis"] = synthesize.synthesize(stats, template=synthesis_template,
-                                                     model=model)
+        synth_input = dict(stats)
+        synth_input["semantic"] = (_load_semantic_summary(inputs.run_dir)
+                                   if inputs.run_dir is not None else None)
+        report["synthesis"] = synthesize.synthesize(synth_input,
+                                                     template=synthesis_template, model=model)
     return report
