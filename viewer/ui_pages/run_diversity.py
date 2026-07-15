@@ -19,6 +19,7 @@ from evals.holistic import bundle
 from evals.holistic import fields as fields_mod
 from evals.holistic import pipeline
 from shared import api
+from viewer import charts
 from viewer import loader
 from viewer.ui_pages import judge_dad
 
@@ -295,6 +296,15 @@ if sem:
     st.caption(f"model `{sem.get('embed_model', '?')}` · {sem.get('n_embedded', '?')} embedded "
                f"({sem.get('n_empty', 0)} empty skipped) · " + " · ".join(verdict_bits)
                + " · on disk `" + str(Path(run.run_dir).name) + "/audit/diversity_report.json`")
+    proj_chart = charts.diversity_map(sem.get("projection") or [])
+    if proj_chart is not None:
+        st.caption("**Diversity map** — each record projected to 2D (PCA of its embedding), "
+                   "coloured by topic cluster. A tight blob = semantic collapse; a wide spread "
+                   "= diverse. Axes are unitless.")
+        st.altair_chart(proj_chart, use_container_width=True)
+    elif not sem.get("projection"):
+        st.caption(":material/refresh: Re-run the embedding audit to add the 2D diversity "
+                   "map (older reports predate it).")
     pairs = sem.get("top_pairs") or []
     if pairs:
         with st.expander(f"Most-similar pairs ({len(pairs)})"):
@@ -389,16 +399,30 @@ _download_row(with_report=True)
 analyses = (report.get("stats") or {}).get("analyses", {})
 
 evenness = analyses.get("evenness", {})
+distribution = analyses.get("distribution", {})
 if evenness:
-    st.markdown("**Per-axis balance** — richness (distinct values) + Pielou evenness "
-                "(1 = spread across values, 0 = one value dominates)")
-    st.dataframe(pd.DataFrame([
-        {"axis": axis, "richness": m.get("richness"), "n": m.get("n"),
-         "evenness": m.get("evenness"), "verdict": m.get("verdict")}
-        for axis, m in evenness.items()]),
-        width="stretch", hide_index=True,
-        column_config={"evenness": st.column_config.ProgressColumn(
-            "evenness", min_value=0.0, max_value=1.0, format="%.2f")})
+    st.markdown("**Per-axis balance** — Pielou evenness (1 = values spread evenly, "
+                "0 = collapsed onto one value), worst axes first.")
+    ev_chart = charts.evenness_health(evenness)
+    if ev_chart is not None:
+        st.altair_chart(ev_chart, use_container_width=True)
+    with st.expander("Table view — richness + evenness per axis"):
+        st.dataframe(pd.DataFrame([
+            {"axis": axis, "richness": m.get("richness"), "n": m.get("n"),
+             "evenness": m.get("evenness"), "verdict": m.get("verdict")}
+            for axis, m in evenness.items()]),
+            width="stretch", hide_index=True,
+            column_config={"evenness": st.column_config.ProgressColumn(
+                "evenness", min_value=0.0, max_value=1.0, format="%.2f")})
+
+if distribution:
+    st.markdown("**Value distribution** — how records spread across the values of one axis.")
+    _dist_axes = [a for a, c in distribution.items() if c]
+    if _dist_axes:
+        _pick = st.selectbox("Axis", _dist_axes, key=f"dist_axis_{run.run_id}")
+        _dist_chart = charts.axis_distribution(_pick, distribution.get(_pick, {}))
+        if _dist_chart is not None:
+            st.altair_chart(_dist_chart, use_container_width=True)
 
 coverage = analyses.get("coverage_vs_target", {})
 if coverage:
@@ -464,30 +488,51 @@ if drift:
 
 structural = analyses.get("structural", {})
 if structural:
-    st.markdown("**Response-form diversity** — are the assistant replies all *written* "
-                "the same way? Reads the reply text (not the tags): closing sign-offs, "
-                "the considerations-list scaffold, formatting, and truncation. Mechanical "
-                "and free; complements the `response_opening_move` / `response_length_band` "
-                "axes and the phrase-repetition check above. Read comparatively across runs.")
+    st.subheader("Response-form diversity")
+    st.caption("Are the assistant replies all *written* the same way? A mechanical, offline "
+               "read of the reply text (not the tags): closing sign-offs, the "
+               "considerations-list scaffold, markdown formatting, and truncation. "
+               "Complements the `response_opening_move` / `response_length_band` axes and the "
+               "phrase-repetition check above. Higher share = more templated; compare across runs.")
     cl = structural.get("closing", {})
     sc = structural.get("scaffold", {})
     fm = structural.get("formatting", {})
     ln = structural.get("length", {})
+    n = structural.get("n", 0)
+    signals = [
+        ("Closing sign-off", "replies ending on a stock sign-off", cl.get("formulaic_frac"), cl.get("verdict")),
+        ("Considerations-list scaffold", "replies using the acknowledge → list → recommend arc",
+         sc.get("arc_frac"), sc.get("verdict")),
+        ("Markdown formatting", "replies leaning on pervasive **bold**", fm.get("bold_frac"), fm.get("verdict")),
+        ("Truncated mid-sentence", "replies cut off at the token cap", ln.get("truncated_frac"), ln.get("verdict")),
+    ]
+    # headline badge keyed off the worst signal, mirroring the phrase-repetition section
+    _rank = {"BAD": 3, "OK": 2, "GOOD": 1, "NA": 0}
+    worst = max((vd for *_, vd in signals), key=lambda v: _rank.get(v, 0), default="NA")
+    if worst == "GOOD":
+        st.success(f"Varied response form over {n} reply(ies) — no dominant template.", icon="✅")
+    elif worst == "OK":
+        st.info(f"Some response-form templating over {n} reply(ies) — worth watching.", icon="🟡")
+    elif worst == "BAD":
+        st.warning(f"Response form is templated over {n} reply(ies) — a dominant pattern is "
+                   "flattening the corpus.", icon="🔴")
+    else:
+        st.caption("Not enough data to judge response form.")
+    _badge = {"GOOD": "🟢 GOOD", "OK": "🟡 OK", "BAD": "🔴 BAD", "NA": "⚪ NA"}
     st.dataframe(pd.DataFrame([
-        {"signal": "closing move (formulaic share)",
-         "value": cl.get("formulaic_frac"), "verdict": cl.get("verdict")},
-        {"signal": "considerations-list arc",
-         "value": sc.get("arc_frac"), "verdict": sc.get("verdict")},
-        {"signal": "pervasive **bold**",
-         "value": fm.get("bold_frac"), "verdict": fm.get("verdict")},
-        {"signal": "truncated mid-sentence",
-         "value": ln.get("truncated_frac"), "verdict": ln.get("verdict")},
-    ]), width="stretch", hide_index=True)
+        {"signal": s, "what it flags": desc,
+         "templated share": None if v is None else round(v * 100),
+         "verdict": _badge.get(vd, vd)}
+        for s, desc, v, vd in signals
+    ]), width="stretch", hide_index=True, column_config={
+        "templated share": st.column_config.ProgressColumn(
+            "templated share", min_value=0, max_value=100, format="%d%%"),
+    })
     dupes = cl.get("dup_stems") or []
     if dupes:
-        with st.expander("Repeated closing phrasings"):
+        with st.expander("↻ Repeated closing phrasings"):
             for stem, count in dupes:
-                st.markdown(f"- `{stem}` ×{count}")
+                st.markdown(f"- `{stem}` — ×{count}")
 
 synthesis = report.get("synthesis") or {}
 if synthesis.get("top_issues"):

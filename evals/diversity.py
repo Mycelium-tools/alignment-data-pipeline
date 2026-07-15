@@ -415,6 +415,18 @@ def run_audit(records: list[dict], type_map: dict, report_dir: Path, input_label
     groups = group_breakdown(recs, X, type_map)
     centroid_sim = centroid_mean_cosine(recs, X)
 
+    # 2D PCA projection (top-2 principal components) so the viewer can draw a
+    # semantic-spread scatter without re-embedding. Additive, presentation-only.
+    Xc = X - X.mean(axis=0, keepdims=True)
+    _, _, Vt = np.linalg.svd(Xc, full_matrices=False)
+    coords = Xc @ Vt[:2].T
+    assignments = (clusters or {}).get("assignments") or {}
+    projection = [
+        {"id": ids[i], "x": round(float(coords[i, 0]), 4), "y": round(float(coords[i, 1]), 4),
+         "cluster": int(assignments.get(ids[i], 0))}
+        for i in range(n)
+    ]
+
     report = {
         "input": input_label,
         "corpus": corpus_name,
@@ -436,6 +448,7 @@ def run_audit(records: list[dict], type_map: dict, report_dir: Path, input_label
         "mean_pairwise_cosine": round(mpc, 4),
         "vendi": {"score": round(vendi, 2), "ratio": round(vendi / n, 4)},
         "clusters": clusters,
+        "projection": projection,
         "groups": groups,
         "type_centroid_mean_cosine": round(centroid_sim, 4) if centroid_sim is not None else None,
     }
