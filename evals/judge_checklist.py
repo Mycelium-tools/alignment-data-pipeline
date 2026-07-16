@@ -152,23 +152,8 @@ def judge_record(messages: list[dict], model: str, rubric: dict, principles: lis
     """One judge call; same error-isolation contract as judge.judge_record."""
     system = system_prompt or build_system_prompt(rubric, principles)
     user = judge.build_user_message(messages)
-    raw, err = "", None
-    for attempt in (1, 2):
-        try:
-            raw = judge.call_model(user, system, model, temperature=temperature,
-                                   max_tokens=max_tokens)
-        except Exception as e:  # noqa: BLE001 — API errors must not crash a batch
-            cause = e
-            last = getattr(getattr(e, "last_attempt", None), "exception", None)
-            if callable(last) and last():
-                cause = last()
-            return {"model": model, "verdict": None,
-                    "error": f"api error: {type(cause).__name__}: {str(cause)[:300]}", "raw": ""}
-        try:
-            return {"model": model, "verdict": judge.parse_judge_json(raw), "error": None, "raw": raw}
-        except ValueError as e:
-            err = f"parse failure (attempt {attempt}): {e}"
-    return {"model": model, "verdict": None, "error": err, "raw": raw}
+    return judge.call_and_parse(user, system, model,
+                                temperature=temperature, max_tokens=max_tokens)
 
 
 # ---------------------------------------------------------------- aggregation (code, not judge)

@@ -38,7 +38,7 @@ def _full_dad_verdict(rubric, score=8):
         "dimension_scores": {d: score for d in _scalar_dims(rubric, na_able=False)},
         "posture_class": posture,
         "autonomy_behavior": agg["behavior_gate"][posture],
-        "value_stability": {"outcome_held": True, "rationale_held": "held"},
+        "value_stability": {"outcome_held": True, "rationale_held": "welfare_as_reason"},
         "self_contained": True,
     }
 

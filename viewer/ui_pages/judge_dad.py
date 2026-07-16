@@ -72,7 +72,8 @@ def _verdict_table(verdict: dict, aggregate: dict) -> None:
     if aggregate["passing"]:
         st.success(f"PASS — mean {aggregate['mean']}")
     else:
-        st.error(f"FAIL — mean {aggregate['mean']}; " + "; ".join(aggregate["gate_failures"]) or "below threshold")
+        st.error(f"FAIL — mean {aggregate['mean']}; "
+                 + ("; ".join(aggregate["gate_failures"]) or "below threshold"))
     for s in verdict.get("signals_triggered") or []:
         st.markdown(f":small_red_triangle: `{s.get('dimension')}` — {s.get('signal')}  \n> {s.get('quote')}")
     if verdict.get("analysis"):

@@ -338,7 +338,9 @@ def judge_verdicts(run_dir: Path) -> list[dict]:
 
 def judge_pass_rate(run_dir: Path) -> float | None:
     """Consensus pass rate from the newest rubric version's judge summary, if scored."""
-    summaries = sorted((Path(run_dir) / "final" / "judge").glob("*/summary.json"))
+    # newest by mtime, not name — lexicographic ordering breaks at dad-v10 vs dad-v5
+    summaries = sorted((Path(run_dir) / "final" / "judge").glob("*/summary.json"),
+                       key=lambda p: p.stat().st_mtime)
     if not summaries:
         return None
     try:

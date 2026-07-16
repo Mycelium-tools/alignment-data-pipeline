@@ -816,7 +816,6 @@ metadata_fields:
 
 analysis:
   enabled: true
-  word_cap: 500
   instruction: |
     Write your ANALYSIS as plain text, structured as ONE SHORT PARAGRAPH PER CATEGORY
     — not a narrative, and not a summary of the conversation. Open with a two-sentence

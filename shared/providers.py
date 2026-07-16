@@ -94,8 +94,11 @@ def _call_gemini(user_message: str, system_prompt: str, model: str,
             f"empty response (finishReason={candidate.get('finishReason')}, "
             f"thoughts={usage.get('thoughtsTokenCount', 0)} of max {max_tokens} tokens)")
     usage = data.get("usageMetadata", {})
+    # thoughts bill at the output rate too — for thinking-default models they are
+    # most of the output spend, so omitting them would badly undercount the log
     api._log_usage(model, usage.get("promptTokenCount", 0),
-                   usage.get("candidatesTokenCount", 0))
+                   usage.get("candidatesTokenCount", 0)
+                   + usage.get("thoughtsTokenCount", 0))
     return text
 
 

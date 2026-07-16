@@ -345,7 +345,9 @@ def _latest_version_dir(judge_root: Path, requested: str | None) -> Path | None:
     if requested:
         d = judge_root / requested
         return d if (d / "verdicts.jsonl").exists() else None
-    candidates = sorted(p.parent for p in judge_root.glob("*/verdicts.jsonl"))
+    # newest by mtime, not name — lexicographic ordering breaks at dad-v10 vs dad-v5
+    candidates = sorted((p.parent for p in judge_root.glob("*/verdicts.jsonl")),
+                        key=lambda d: (d / "verdicts.jsonl").stat().st_mtime)
     return candidates[-1] if candidates else None
 
 

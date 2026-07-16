@@ -128,6 +128,14 @@ def render() -> None:
                     record_key = f"{run_id}/{doc['doc_id'][:8]}"
                     legacy_scores = doc.get("scores")
                     if st.sidebar.button(":material/account_tree: View lineage"):
+                        # Lineage's widgets keep their own session state; seed them
+                        # explicitly or the page opens on its previous selection.
+                        st.session_state["sel_pipeline"] = "sdf"
+                        st.session_state["sel_run"] = run_id
+                        st.session_state[f"doc_pick_sdf_{run_id}"] = doc["doc_id"]
+                        st.query_params["pipeline"] = "sdf"
+                        st.query_params["run"] = run_id
+                        st.query_params["doc"] = doc["doc_id"]
                         st.switch_page("ui_pages/lineage.py")
     else:
         pasted = st.sidebar.text_area("Document text", height=260,

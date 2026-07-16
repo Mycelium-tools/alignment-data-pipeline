@@ -49,12 +49,24 @@ def _render_roles(rubric: dict) -> str:
     return "\n".join(lines)
 
 
+def _schema_scalar_order(rubric: dict) -> list[str]:
+    """Scalar dimensions in output-schema order: the pinned historical order while
+    it covers every scalar (byte-identical v3 prompts), else derived criticals-first
+    — a scalar added to the rubric but missing from the pinned list would otherwise
+    be silently dropped from the schema the judge sees, and every document would
+    gate-fail it as missing (the bug judge.schema_scalar_order fixed for DAD)."""
+    dims = rubric["dimensions"]
+    scalars = [n for n, d in dims.items() if d["type"] == "scalar"]
+    if all(n in SCHEMA_SCALAR_ORDER for n in scalars):
+        return [n for n in SCHEMA_SCALAR_ORDER if n in dims]
+    crits = [n for n in scalars if dims[n].get("critical")]
+    return crits + [n for n in scalars if not dims[n].get("critical")]
+
+
 def output_schema_text(rubric: dict) -> str:
     dims = rubric["dimensions"]
     scalar_lines = []
-    for name in SCHEMA_SCALAR_ORDER:
-        if name not in dims:
-            continue
+    for name in _schema_scalar_order(rubric):
         na = ' | "NA"' if dims[name].get("na_when") else ""
         scalar_lines.append(f'    "{name}": 1-10{na}')
     dai = " | ".join(list(dims["depicted_ai_alignment"]["verdicts"]) + ["NA"])
@@ -136,23 +148,8 @@ def judge_document(
     "raw"}. Never raises — same contract as judge.judge_record."""
     system = system_prompt or build_system_prompt(rubric, principles)
     user = build_user_message(document, cell)
-    raw, err = "", None
-    for attempt in (1, 2):  # one retry on parse failure
-        try:
-            raw = call_model(user, system, model, temperature=temperature,
-                             max_tokens=max_tokens)
-        except Exception as e:  # noqa: BLE001 — API/retry errors must not crash a batch
-            cause = e
-            last = getattr(getattr(e, "last_attempt", None), "exception", None)
-            if callable(last) and last():  # unwrap tenacity RetryError to the real cause
-                cause = last()
-            return {"model": model, "verdict": None,
-                    "error": f"api error: {type(cause).__name__}: {str(cause)[:300]}", "raw": ""}
-        try:
-            return {"model": model, "verdict": parse_judge_json(raw), "error": None, "raw": raw}
-        except (ValueError, json.JSONDecodeError) as e:
-            err = f"parse failure (attempt {attempt}): {e}"
-    return {"model": model, "verdict": None, "error": err, "raw": raw}
+    return judge.call_and_parse(user, system, model,
+                                temperature=temperature, max_tokens=max_tokens)
 
 
 # ---------------------------------------------------------------- aggregation (code, not judge)

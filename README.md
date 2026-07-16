@@ -96,11 +96,14 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 The judge is a blind, rubric-as-data LLM panel that scores corpus records; pass/fail
 gates and consensus are computed in code, never by the judge model.
 
-- `rubric_dad_v4.yaml` (live, currently dad-v4.2) / `rubric_sdf_v3.yaml` — the
+- `rubric_dad_v4.yaml` (live, currently dad-v4.3) / `rubric_sdf_v3.yaml` — the
   rubrics (dimensions, anchors, marks, posture classes, aggregation config). Edit
   these, not the prompts. File-per-version convention: each DAD rubric line lives
-  in its own `rubric_dad_vX.yaml` (`rubric_dad_v3.yaml` is the archived v3.5; the
-  next redesign starts v5); the in-file `version:` tracks minor revisions.
+  in its own `rubric_dad_vX.yaml` (`rubric_dad_v3.yaml` is the archived v3.5;
+  `rubric_dad_v5a/v5b.yaml` and `rubric_dad_v6a/v6b.yaml` are the A/B redesign
+  lines under evaluation — `rank_corpora.py` compares them against the owner
+  ranking); the in-file `version:` tracks minor revisions. `gold_set_dad.yaml`
+  freezes the human-scored calibration records (its runner is still to be built).
 - `rubric_dad_checklist.yaml` / `judge_checklist.py` — the from-scratch alternative
   DAD judge (2026-07-08 calibration deliverable b): the judge answers binary
   criteria and quotes red flags, organized by the three pillars (reasoning quality /
@@ -112,7 +115,12 @@ gates and consensus are computed in code, never by the judge model.
 - `score_dad.py` — scores a DAD corpus with a judge panel. Writes
   `judge/<rubric_version>/verdicts.jsonl` + `summary.json` next to the corpus, plus
   the exact judge prompt each row used (`prompt_<hash>.txt`, referenced by
-  `prompt_md5`). `--retry-errors` re-judges rows that previously failed.
+  `prompt_md5`). `--retry-errors` re-judges rows that previously failed;
+  `--where/--ids/--sample/--limit` select a subset of records to judge.
+- `drift_report.py` — judge-vs-generation tagging drift for a spec-driven DAD run:
+  compares the step-1/2 annotation with the diversity judge's independent tags per
+  axis (scalars by exact match, multi axes by set overlap). Reuses the run's
+  existing tagging bundle — free on an already-tagged corpus.
 - `report_dad.py` — renders saved verdicts into a single `report.html`: each record's
   conversation side by side with the judge's review, searchable, pass/fail filter,
   same-scenario variants diffed against their baseline.
