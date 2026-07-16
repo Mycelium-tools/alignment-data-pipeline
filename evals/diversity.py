@@ -316,11 +316,13 @@ def main() -> None:
     parser.add_argument("--max-docs", type=int, default=2000,
                         help="Deterministic stride-sample cap (Vendi is O(n^3) past a few thousand)")
     parser.add_argument("--embed-model", default=embeddings.DEFAULT_MODEL)
-    # 7000 keeps worst-case CJK (~1 token/char) under the embedding model's
-    # 8192-token input cap; English is ~4 chars/token so semantics barely change.
+    # A first, cheap char cap (bounds cost and keeps runs consistent); English
+    # is ~4 chars/token, so 7000 chars is ~1.7k tokens. It does NOT bound tokens
+    # for CJK (~1.25-1.5 tok/char) — that safety is enforced under embed_texts,
+    # which truncates any input to the model's 8192-token window before sending.
     parser.add_argument("--max-chars", type=int, default=7000,
-                        help="Truncate each document before embedding (~4k tokens of "
-                             "English; the model window is 8192 tokens)")
+                        help="First-pass char truncation before embedding; the hard "
+                             "8192-token input cap is enforced by embed_texts")
     parser.add_argument("--top-pairs", type=int, default=10,
                         help="Most-similar pairs to list in the report")
     parser.add_argument("--no-cache", action="store_true",

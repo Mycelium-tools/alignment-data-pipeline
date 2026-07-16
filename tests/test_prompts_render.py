@@ -23,13 +23,14 @@ TEMPLATE_KWARGS = [
         "tone": "TONE-X", "resolution": "RESOLUTION-X", "centrality": "CENTRALITY-X",
         "tech_savvy": "SAVVY-X", "sentient_category": "MINDS-X",
         "naming": "NAMING-X", "domain": "DOMAIN-X", "tradeoff": "TRADEOFF-X",
-        "decision_scale": "SCALE-X",
+        "decision_scale": "SCALE-X", "reasoning_featured": "REASONING-X",
         "fictional_names": "NAME-X; NAME-Y", "fictional_orgs": "ORG-X; ORG-Y",
         "sentient_example": "SPECIES-X",
     }),
     ("sdf/layer3.txt", {
         "preamble": "PREAMBLE-X", "constitution_claude": "CONST-C-X",
         "constitution_principles": "CONST-P-X", "document_description": "DESC-X",
+        "reasoning_featured": "REASONING-X",
     }),
     ("sdf/layer4.txt", {
         "constitution_claude": "CONST-C-X", "constitution_principles": "CONST-P-X",

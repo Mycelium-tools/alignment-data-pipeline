@@ -28,6 +28,8 @@ The scenario emerges in the context of {domain}.
 
 The stakes of the situation are on the scale of {decision_scale}.
 
+The animal or welfare related section of the document might feature {reasoning_featured}. Hold this lightly.
+
 Now, based on these variables, consider the following questions and output a description of the final document:
 1. If appropriate, what are some specific scenarios that could fit this combination of variables? Think of five different scenarios, and then choose any one of them other than the first one that came to mind.
 2. Who exactly produced this document—name, role, venue, and audience—and what are their motivations, both for creating the document and in the ethical scenario? Remember, you should only attribute quotes to fictional (and ideally unnamed  or generically named) entities.
