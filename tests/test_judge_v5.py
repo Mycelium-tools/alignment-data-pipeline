@@ -24,13 +24,32 @@ def v4_rubric():
     return judge.load_rubric(judge.DEFAULT_RUBRIC_PATH)
 
 
-@pytest.fixture(scope="module", params=["a", "b"])
+# v6a/v6b are v5a/v5b with only the analysis instruction changed — same dimensions,
+# gates, schema and clause-card wiring, so they must satisfy every v5 engine test.
+@pytest.fixture(scope="module", params=["v5a", "v5b", "v6a", "v6b"])
 def v5_rubric(request):
-    return judge.load_rubric(judge.DEFAULT_RUBRIC_PATH.parent / f"rubric_dad_v5{request.param}.yaml")
+    return judge.load_rubric(judge.DEFAULT_RUBRIC_PATH.parent / f"rubric_dad_{request.param}.yaml")
 
 
 def _scalar_dims(rubric):
     return [d for d, spec in rubric["dimensions"].items() if spec["type"] == "scalar"]
+
+
+class TestV6PerCategoryAnalysis:
+    @pytest.fixture(params=["v6a", "v6b"])
+    def v6_rubric(self, request):
+        return judge.load_rubric(judge.DEFAULT_RUBRIC_PATH.parent / f"rubric_dad_{request.param}.yaml")
+
+    def test_analysis_demands_per_category_justification(self, v6_rubric, principles):
+        # The whole point of v6: PART 1 is per-dimension score justification.
+        prompt = judge.build_system_prompt(v6_rubric, principles, include_constitution=False)
+        assert "PARAGRAPH PER CATEGORY" in prompt
+        assert "score you state in each paragraph MUST equal" in prompt
+
+    def test_instruction_renders_without_wordcap_placeholder(self, v6_rubric, principles):
+        # v6 dropped the {word_cap} placeholder; build must not raise on .format().
+        prompt = judge.build_system_prompt(v6_rubric, principles)
+        assert "{word_cap}" not in prompt  # no unformatted placeholder leaked through
 
 
 def _full_verdict(rubric, score=8):
