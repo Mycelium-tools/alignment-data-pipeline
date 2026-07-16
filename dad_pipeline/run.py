@@ -5,15 +5,12 @@ Steps: 1 dilemma prompts (1a scenario generation: stratified scenarios sampled
 per example; 1b first attempt drafted to fit each scenario; 1c latent-welfare
 rewrite) → 2 responses (2a scope the case from the user's message; 2a.5 flag
 which reasoning-library trigger conditions fire, in a dedicated selection
-call; 2b revise the plain-model baseline draft over the scope plus the
-triggered library rows — the fused response stage) → 3 rewrite against the
-distilled constitution principles (the alignment-critical pass).
+call; 2b respond over the scope plus the triggered library rows) → 3 rewrite
+against the distilled constitution principles (the alignment-critical pass).
 
-The baseline stage (dad_pipeline/baseline.py) is both the viewer's control
-arm and the REQUIRED seed draft for step 2: one plain-model call per dilemma,
-no system prompt. It is never trained on directly (final records carry only
-the step-3 rewrite). dad.baseline.enabled=false is only valid for runs that
-stop before step 2.
+A baseline control arm (dad_pipeline/baseline.py) rides along with step 2:
+one plain-model call per dilemma, no system prompt — viewer comparison data,
+never a training input. Toggled by dad.baseline.enabled.
 """
 
 import argparse
@@ -95,27 +92,21 @@ def main() -> None:
         dilemmas = step1_dilemmas.run(config, prompts_dir, step_dirs[1])
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
-    # Baseline: the plain-model draft per dilemma (no system prompt). Doubles
-    # as the viewer's control arm and as the REQUIRED seed draft the fused
-    # step 2 revises; checkpointed, so a completed stage costs nothing on
-    # resume. Never trains directly.
-    baselines = None
-    if start_step <= 2 <= stop_after:
-        if not baseline.enabled(config):
-            raise RuntimeError(
-                "dad.baseline.enabled is false, but step 2 revises the baseline "
-                "draft (fused architecture) and cannot run without it. Enable the "
-                "baseline stage, or use --stop-after 1 for a prompts-only run."
-            )
+    # Baseline control arm: rides with step 2 (it needs only the step-1
+    # prompts) — one plain-model call per dilemma, no system prompt. Viewer
+    # comparison data; never read by any generation step, never trains.
+    if baseline.enabled(config) and start_step <= 2 <= stop_after:
         if dilemmas is None:
             dilemmas = utils.load_jsonl(step_dirs[1] / "dilemmas.jsonl")
-        print("[Baseline] Plain-model seed drafts / control responses (no system prompt)")
-        baselines = baseline.run(config, run_dir / "baseline", dilemmas)
+        print("[Baseline] Plain-model control responses (no system prompt)")
+        baseline.run(config, run_dir / "baseline", dilemmas)
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
     if start_step <= 2 <= stop_after:
-        print("[Step 2] Revise baseline drafts with the scope + reasoning library")
-        responses = step2_responses.run(config, prompts_dir, step_dirs[2], dilemmas, baselines)
+        if dilemmas is None:
+            dilemmas = utils.load_jsonl(step_dirs[1] / "dilemmas.jsonl")
+        print("[Step 2] Generate responses from the reasoning library")
+        responses = step2_responses.run(config, prompts_dir, step_dirs[2], dilemmas)
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
     if start_step <= 3 <= stop_after:

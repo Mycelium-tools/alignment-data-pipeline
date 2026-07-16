@@ -29,10 +29,10 @@ dad:
   prompt_refine_model: claude-sonnet-5          # 1c: load-bearing rewrite
   response_scope_model: claude-sonnet-5         # 2a: scope map — feeds every downstream step-2 call; worth the stronger read
   response_select_model: claude-sonnet-5        # 2a.5: library-entry selection over the trigger index (falls back to response_scope_model if unset)
-  response_draft_model: claude-sonnet-5         # 2b: revise the baseline draft over scope + library
+  response_draft_model: claude-sonnet-5         # 2b: response over scope + library
   constitution_rewrite_model: claude-sonnet-5   # step 3: constitution rewrite
   baseline:
-    enabled: true            # plain-model draft per dilemma: seed for the fused 2b revision + viewer control arm (never trains directly); false only valid with --stop-after 1
+    enabled: true            # unguided control response per dilemma (viewer comparison only; never trains)
     model: claude-sonnet-5   # plain call — no system prompt, the finished 1c user prompt verbatim
   dilemmas:
     count: 40         # total examples in step 1 (seed imports count toward this)

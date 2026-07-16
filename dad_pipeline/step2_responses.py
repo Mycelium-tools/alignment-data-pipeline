@@ -23,18 +23,12 @@ is human reference about the library, not read by the pipeline):
   triggered rows (the retrieval provenance the viewer shows); older records
   have selection_source "scope" (selection came with the scope JSON) or
   "repair" (recovered by the miss-only follow-up this call generalizes).
-- 2b respond (fused): revise the plain-model baseline draft into the final
-  response, integrating the scope map plus the triggered library rows,
-  following prompts/dad/step2_respond.txt. That template splits (via
-  utils.load_split_prompt) into a system half — the standing revision
-  guidance — and a user half carrying the baseline draft, library rows,
-  scope, user message, and opening note; the annotation is not passed. The
-  baseline stage is therefore a REQUIRED input to step 2 (run.py runs it
-  first and passes its records); a dilemma with no baseline record fails
-  loudly rather than drafting from nothing. With responses.per_prompt > 1,
-  all samples of one prompt revise the SAME baseline draft — they are
-  variations on one answer, not independent answers. Each response record's
-  entry_ids is the list actually injected into its prompt.
+- 2b respond: generate the response over the scope map plus the triggered
+  library rows, following the spec in prompts/dad/step2_respond.txt. That
+  template splits (via utils.load_split_prompt) into a system half — the
+  standing generation guidance — and a user half carrying the library rows,
+  scope, and user message; the annotation is not passed. Each response
+  record's entry_ids is the list actually injected into its prompt.
 
 The library and scope are sampling scaffolding: never named in the response,
 stripped before training records are written. Step 3 then rewrites against the
@@ -158,19 +152,8 @@ def _normalize_ids(raw, library_ids: list[str]) -> list[str]:
     return [i for i in library_ids if i in wanted]
 
 
-def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
-        baselines: list[dict]) -> list[dict]:
+def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
     library = reasoning_library.load(prompts_dir)
-    # The 2b revision starts from the plain-model baseline draft; refusing to
-    # run without one keeps "fused" an invariant, not a silent fallback.
-    baseline_by_pid = {b["prompt_id"]: b for b in baselines}
-    missing = [d["prompt_id"] for d in dilemmas if d["prompt_id"] not in baseline_by_pid]
-    if missing:
-        raise RuntimeError(
-            f"step 2 requires a baseline draft per dilemma; missing for: {', '.join(missing)}. "
-            "Run the baseline stage first (run.py does this automatically; check "
-            "baseline/baseline_responses.jsonl in the run dir)."
-        )
     # 2a.5 evaluates the lightweight trigger index in its own call; 2b gets
     # only the rows that fired. Each step-2 template splits into a system half
     # (standing guidance) and a user half (per-case payload) via
@@ -295,7 +278,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
             opening_hints = sample_opening_hints(pid, sample_index)
             respond_system, respond_user = utils.load_split_prompt(
                 prompts_dir / "step2_respond.txt",
-                draft_reply=baseline_by_pid[pid]["baseline_response"],
                 library_block=library_block,
                 scope_block=format_scope(scope),
                 user_message=d["user_message"],
@@ -310,7 +292,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
             )
             response = response.strip()
 
-            # A truncated, empty, or transcript-echoed revision must never feed
+            # A truncated, empty, or transcript-echoed draft must never feed
             # the rewrite step. Skip without checkpointing so a later --resume
             # retries it (same guard as step 3).
             if not response or stop_reason == "max_tokens" or utils.looks_like_transcript_echo(response):

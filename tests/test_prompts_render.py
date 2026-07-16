@@ -41,7 +41,6 @@ TEMPLATE_KWARGS = [
     ("dad/step2_select.txt", {"trigger_index": "TRIGGER-INDEX-X", "scope_block": "SCOPE-X",
                               "user_message": "USER-X"}),
     ("dad/step2_respond.txt", {
-        "draft_reply": "DRAFT-REPLY-X",
         "library_block": "LIBRARY-X", "scope_block": "SCOPE-X", "user_message": "USER-X",
         "opening_hints": "HINT-X; HINT-Y; HINT-Z",
     }),

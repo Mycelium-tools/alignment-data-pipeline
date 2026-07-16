@@ -440,18 +440,13 @@ def _dilemma(pid="AW-0001"):
             "annotation": {"direction": "Mixed"}}
 
 
-def _baseline(pid="AW-0001"):
-    return {"prompt_id": pid, "user_message": "User dilemma text.",
-            "baseline_response": "Plain draft answer.", "model": "m-plain"}
-
-
 def _dad_step2_dispatch(user_message, **kw):
     blob = _sysuser(user_message, kw)
     if "build the full map of the case" in blob:  # 2a
         return GOOD_SCOPE
     if "doing retrieval for a response" in blob:  # 2a.5 select
         return "C1, M1"
-    if "advisor revising your own draft reply" in blob:  # 2b
+    if "advisor responding to a user's dilemma" in blob:  # 2b
         return "Draft response."
     raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
 
@@ -459,16 +454,14 @@ def _dad_step2_dispatch(user_message, **kw):
 class TestStep2Run:
     def test_scopes_selects_then_responds(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         calls = stub_claude(_dad_step2_dispatch)
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
 
         assert len(results) == 1
         assert results[0]["assistant_response"] == "Draft response."
         assert results[0]["scope"]["counterfactual"] == "realistic baseline"
         assert len(calls) == 3  # scope + select + response
-        # the baseline draft, the scope map, and the user message all reach the
-        # 2b revision prompt (fused architecture: 2b revises the plain draft)
+        # the scope map and the user message both reach the response prompt
         respond_call = calls[2]["user_message"]
-        assert "Plain draft answer." in respond_call
         assert "realistic baseline" in respond_call
         assert "User dilemma text." in respond_call
         # the sampled entry-shape hints ride the 2b USER prompt (the system
@@ -498,7 +491,7 @@ class TestStep2Run:
             return "Draft response."
 
         stub_claude(flaky)
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
 
         assert len(results) == 1
         failures = utils.load_jsonl(tmp_path / "scope_failures.jsonl")
@@ -515,29 +508,19 @@ class TestStep2Run:
 
         stub_claude(always_bad)
         with pytest.raises(RuntimeError, match="unusable after"):
-            step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+            step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
         assert utils.load_jsonl(tmp_path / "responses.jsonl") == []
 
     def test_resume_makes_no_calls(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         stub_claude(_dad_step2_dispatch)
-        step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
 
         calls = stub_claude([])
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
         assert calls == []
         assert len(results) == 1
 
-    def test_missing_baseline_fails_loudly_before_any_call(
-        self, tiny_config, prompts_dad, tmp_path, stub_claude
-    ):
-        # The fused 2b cannot draft from nothing: a dilemma without a baseline
-        # record must stop the stage before any paid call is made.
-        calls = stub_claude([])
-        with pytest.raises(RuntimeError, match="baseline draft"):
-            step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [])
-        assert calls == []
-
-    def test_echoed_revision_skips_without_checkpoint(
+    def test_echoed_draft_skips_without_checkpoint(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
         # A 2b reply wrapped in a transcript replay must not feed step 3;
@@ -551,11 +534,11 @@ class TestStep2Run:
             return "USER: User dilemma text.\nASSISTANT: Draft response."
 
         stub_claude(echo_once)
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
         assert results == []
 
         calls = stub_claude(_dad_step2_dispatch)
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
         assert len(calls) == 1  # only the 2b retry — scope + selection are reused
         assert len(results) == 1
         assert results[0]["assistant_response"] == "Draft response."
@@ -579,7 +562,7 @@ class TestStep2Run:
             return "Draft response."
 
         calls = stub_claude(dispatch)
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
 
         assert len(calls) == 3  # scope + select + respond
         # the trigger index and the scope both reach the select prompt —
@@ -621,7 +604,7 @@ class TestStep2Run:
             return "Draft response."
 
         calls = stub_claude(dispatch)
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
 
         lib_ids = reasoning_library.all_ids(reasoning_library.load(prompts_dad))
         rec = utils.load_jsonl(tmp_path / "scopes.jsonl")[0]
@@ -653,7 +636,7 @@ class TestStep2Run:
         }, tmp_path / "scopes.jsonl")
 
         calls = stub_claude(["Draft response."])
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
 
         assert len(calls) == 1  # 2b only
         assert claims[picked] in calls[0]["user_message"]
@@ -668,7 +651,7 @@ class TestStep2Run:
         utils.append_jsonl({"prompt_id": "AW-0001", "scope": dict(SCOPE_AXES)},
                            tmp_path / "scopes.jsonl")
         stub_claude(["Draft response."])
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], [_baseline()])
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
         assert results[0]["entry_ids"] == reasoning_library.all_ids(
             reasoning_library.load(prompts_dad))
 
@@ -687,14 +670,13 @@ class TestStep2Run:
                 return GOOD_SCOPE
             if "doing retrieval for a response" in blob:
                 return "C1"
-            if "advisor revising your own draft reply" in blob:
+            if "advisor responding to a user's dilemma" in blob:
                 return "Draft response."
             raise AssertionError(f"Unrecognized step-2 prompt: {user_message[:80]!r}")
 
         calls = stub_claude(dispatch)
         dilemmas = [_dilemma("AW-0001"), _dilemma("AW-0002")]
-        baselines = [_baseline("AW-0001"), _baseline("AW-0002")]
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas, baselines)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas)
 
         assert len(calls) == 6  # 2 scopes + 2 selects + 2 responses
         # results and persisted files keep input order despite thread interleaving
@@ -704,7 +686,7 @@ class TestStep2Run:
 
         # completed work costs nothing on resume
         calls = stub_claude([])
-        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas, baselines)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, dilemmas)
         assert calls == []
         assert len(results) == 2
 
@@ -905,7 +887,7 @@ class TestPerStageModelKnobs:
         assert by_stage["prompt_refine"]["model"] == "m-1c"
 
         calls = stub_claude(_dad_step2_dispatch)
-        step2_responses.run(config, prompts_dad, tmp_path / "step2", [_dilemma()], [_baseline()])
+        step2_responses.run(config, prompts_dad, tmp_path / "step2", [_dilemma()])
         by_stage = {c["stage"]: c for c in calls}
         assert by_stage["response_scope"]["model"] == "m-2a"
         assert by_stage["response_select"]["model"] == "m-2a5"
@@ -915,7 +897,7 @@ class TestPerStageModelKnobs:
         no_select = {k: v for k, v in config["dad"].items() if k != "response_select_model"}
         calls = stub_claude(_dad_step2_dispatch)
         step2_responses.run({**config, "dad": no_select}, prompts_dad,
-                            tmp_path / "step2b", [_dilemma()], [_baseline()])
+                            tmp_path / "step2b", [_dilemma()])
         by_stage = {c["stage"]: c for c in calls}
         assert by_stage["response_select"]["model"] == "m-2a"
 
@@ -940,7 +922,7 @@ class TestPerStageModelKnobs:
         assert by_stage["prompt_refine"]["item_id"] in scenario_ids
 
         calls = stub_claude(_dad_step2_dispatch)
-        step2_responses.run(tiny_config, prompts_dad, tmp_path / "step2", [_dilemma()], [_baseline()])
+        step2_responses.run(tiny_config, prompts_dad, tmp_path / "step2", [_dilemma()])
         by_stage = {c["stage"]: c for c in calls}
         assert by_stage["response_scope"]["item_id"] == "AW-0001"
         assert by_stage["response_draft"]["item_id"] == "AW-0001_s0"

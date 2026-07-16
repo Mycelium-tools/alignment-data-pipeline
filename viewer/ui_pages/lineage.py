@@ -365,7 +365,7 @@ else:
                                    lambda: common.json_block(lin.get("tension_tag"), key="s2tag",
                                                              label="tensions", expanded=True))
 
-                stage_expander("Step 2b — revise the baseline draft with the reasoning library", "step2_respond", lin,
+                stage_expander("Step 2b — response from the reasoning library", "step2_respond", lin,
                                lambda: st.code((lin.get("response") or {}).get("assistant_response", ""),
                                                language=None, wrap_lines=True)
                                if lin.get("response") else st.caption("not reached"),
@@ -392,21 +392,22 @@ else:
                 if baseline_rec:
                     base_model = baseline_rec.get("model") or "model"
                     with st.expander(f":blue[Baseline — plain {base_model}, "
-                                     "no system prompt (seed draft + control arm)]"):
+                                     "no system prompt (comparison only)]"):
                         line = _call_stats_line("baseline_response", pid)
                         if line:
                             st.caption(f":material/speed: {line}")
-                        st.caption("The step-1c user prompt (left panel) sent verbatim to a "
-                                   "plain model — no system prompt, no reasoning library, no "
-                                   "constitution. Doubles as the control arm and as the seed "
-                                   "draft step 2b revises (fused runs); never enters the "
-                                   "training corpus itself.")
+                        st.caption("Control arm: the step-1c user prompt (left panel) sent "
+                                   "verbatim to a plain model — no system prompt, no reasoning "
+                                   "library, no constitution. Read it against the pipeline's "
+                                   "response on the left; never enters the training corpus. "
+                                   "(On fused-era runs, where 2b revised this draft, the "
+                                   "word-diff below is the informative view.)")
                         final_msgs = (lin.get("final") or {}).get("messages") or []
                         target = (final_msgs[1]["content"] if len(final_msgs) > 1
                                   else (lin.get("response") or {}).get("assistant_response"))
                         if target and st.toggle(
-                            "Highlight what the pipeline added (baseline → final response)",
-                            value=True, key="baseline_diff",
+                            "Word-diff vs final response (best on fused-era runs)",
+                            value=False, key="baseline_diff",
                         ):
                             st.caption(":green[highlight] = added by the pipeline · "
                                        "~~struck~~ = dropped from the draft")
