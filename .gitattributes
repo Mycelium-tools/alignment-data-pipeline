@@ -4,3 +4,7 @@
 # stats, so both human and automated review focus on the code paths.
 outputs/*/runs/** linguist-generated=true
 outputs/cost_log.jsonl linguist-generated=true
+
+# Vendored tiktoken BPE ranks (binary blob, upstream artifact) — keep out of
+# language stats and diffs.
+vendor/tiktoken/** binary linguist-vendored

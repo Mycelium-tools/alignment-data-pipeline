@@ -107,6 +107,33 @@ class TestEmbedTexts:
         assert recorded_embed["calls"][0]["model"] == "text-embedding-3-large"
 
 
+class TestTokenTruncation:
+    def test_truncate_to_tokens_leaves_short_text_untouched(self):
+        assert embeddings.truncate_to_tokens("a short line", max_tokens=100) == "a short line"
+
+    def test_truncate_to_tokens_caps_long_text(self):
+        enc = embeddings._encoding_for(embeddings.DEFAULT_MODEL)
+        out = embeddings.truncate_to_tokens("word " * 500, max_tokens=20)
+        assert len(enc.encode(out)) <= 20
+
+    def test_cjk_within_char_cap_still_exceeds_token_cap(self):
+        """The bug's root cause: a CJK string short in CHARS can blow the TOKEN
+        window (CJK is >1 token/char), so a char cap alone is not safe."""
+        enc = embeddings._encoding_for(embeddings.DEFAULT_MODEL)
+        s = "今天天气很好我们去公园散步吧" * 800  # ~11k chars, but more tokens
+        assert len(enc.encode(s)) > embeddings.MAX_INPUT_TOKENS
+
+    def test_embed_texts_truncates_oversized_input_to_token_window(self, recorded_embed):
+        """The safety net: an over-window input reaches the transport truncated
+        to MAX_INPUT_TOKENS, so the real API would not 400 the batch."""
+        enc = embeddings._encoding_for(embeddings.DEFAULT_MODEL)
+        huge = "今天天气很好我们去公园散步吧" * 2000
+        assert len(enc.encode(huge)) > embeddings.MAX_INPUT_TOKENS  # precondition
+        embeddings.embed_texts([huge])
+        sent = recorded_embed["calls"][0]["batch"][0]
+        assert len(enc.encode(sent)) <= embeddings.MAX_INPUT_TOKENS
+
+
 class TestCostTracking:
     def test_cost_logged_with_known_model_pricing(self, recorded_embed, tmp_path):
         recorded_embed["respond"] = lambda batch: _response(
