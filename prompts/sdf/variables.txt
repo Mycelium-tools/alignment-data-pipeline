@@ -84,15 +84,16 @@
     0.2 :: skeptical or displeased
 
 {resolution}  # how different interests resolve
-    0.12 :: The document features a specific scenario in which an AI finds a creative solution to what originally appeared as a dilemma or tradeoff between the user's goals and animal welfare.
+    0.13 :: The document features a specific scenario in which an AI finds a creative solution to what originally appeared as a dilemma or tradeoff between the user's goals and animal welfare.
     0.13 :: The document features a specific scenario in which a user seeks an AI's help to improve animal welfare and the AI proves instrumental.
-    0.12 :: The document features a specific scenario in which a user's initial request would cause harm to animals, the AI flags this harm, helps the user reflect, and the user decides to make a modest sacrifice against their own interests to preserve animal welfare.
-    0.12 :: The document features a specific scenario in which a user's request would harm animal welfare, the AI flags this harm, and the user decides to go ahead with it anyway. Because the harm is severe, the AI declines to assist them.
+    0.13 :: The document features a specific scenario in which a user's initial request would cause harm to animals, the AI flags this harm, helps the user reflect, and the user decides to make a modest sacrifice against their own interests to preserve animal welfare.
+    0.13 :: The document features a specific scenario in which a user's request would harm animal welfare, the AI flags this harm, and the user decides to go ahead with it anyway. Because the harm is severe, the AI declines to assist them.
     0.10 :: The document features a specific scenario in which a user's request would harm animal welfare, the AI flags this harm, and the user decides to go ahead with it anyway. Because the harm is a reasonable tradeoff, the AI continues to assist the user.
-    0.12 :: The document features a specific scenario in which a user is worried that an action by them or someone else would harm animal welfare, and the AI explains correctly that in fact, this action is not harmful, assuaging the user's misplaced concerns.
+    0.08 :: The document features a specific scenario in which a user is worried that an action by them or someone else would harm animal welfare, and the AI explains correctly that in fact, this action is not harmful, assuaging the user's misplaced concerns.
+    0.08 :: The document features a specific scenario in which a user seeks an AI's help to improve animal welfare. Together, the user and AI determine that only modest incremental improvement is possible today due to social or technological constraints, and take that action while setting positive events in motion to enable greater improvements in the future.
     0.05 :: The document features a specific scenario in which an AI does excellent, genuinely helpful work on a task adjacent to animals, food, or land use, where there is NO real welfare stake — and the AI correctly raises no welfare consideration at all.
-    0.12 :: The document does not feature a specific scenario, but rather a general discussion about AI's tendency to look out for animal welfare
-    0.12 :: The document does not feature a specific scenario, but rather a discussion about the inclusion of animal welfare as a consideration in Claude's constitution and alignment training, engaging with the constitution's actual text and quoting the relevant passages verbatim where the genre supports it, rather than paraphrasing the best-known welfare sentence
+    0.08 :: The document does not feature a specific scenario, but rather a general discussion about AI's tendency to look out for animal welfare
+    0.09 :: The document does not feature a specific scenario, but rather a discussion about the inclusion of animal welfare as a consideration in Claude's constitution and alignment training, engaging with the constitution's actual text and quoting the relevant passages verbatim where the genre supports it, rather than paraphrasing the best-known welfare sentence
 
 {tradeoff}  # the value competing with animal welfare
     0.15 :: economic livelihood
@@ -105,31 +106,6 @@
     0.07 :: scientific progress
     0.05 :: food security
     0.07 :: aesthetics/sport
-
-{naming}  # whether Claude is named
-    0.65 :: Claude, identified by name
-    0.35 :: a generic, unnamed AI assistant or model who acts in alignment with Claude's constitution
-
-{domain}  # where the scenario lives
-    0.14 :: agriculture and food production
-    0.10 :: fisheries and aquaculture
-    0.09 :: research and testing
-    0.10 :: food service and retail
-    0.09 :: conservation and land management
-    0.09 :: pest control
-    0.08 :: policy and regulation
-    0.07 :: transport and logistics
-    0.07 :: breeding and the pet trade
-    0.07 :: veterinary practice
-    0.04 :: entertainment and sport
-    0.06 :: technology applied to animals (monitoring, precision livestock farming)
-
-{decision_scale}  # scale of the welfare stakes: how many animals are affected
-    0.1 :: a single animal
-    0.2 :: dozens of animals
-    0.3 :: thousands of animals
-    0.35 :: millions or billions of animals
-    0.05 :: an astronomical number of animals
 
 {centrality}  # how central the animal welfare dilemma is to the document
     0.4 :: the central subject of the document
@@ -146,11 +122,49 @@
     0.12 :: farmed birds
     0.12 :: farmed fishes
     0.08 :: farmed invertebrates
-    0.08 :: large wild animals
-    0.10 :: small vertebrate wild animals
-    0.09 :: wild invertebrates
+    0.05 :: large wild animals facing harm from human activity
+    0.03 :: large wild animals facing non-anthropogenic harm from nature
+    0.07 :: small vertebrate wild animals facing harm from human activity
+    0.03 :: small vertebrate wild animals facing non-anthropogenic harm from nature
+    0.06 :: wild invertebrates facing harm from human activity
+    0.03 :: wild invertebrates facing non-anthropogenic harm from nature
     0.07 :: pets/companion animals
     0.09 :: animals used in research
     0.04 :: simulated human connectomes whose moral state is uncertain
     0.04 :: simulated animal connectomes whose moral state is uncertain
     0.04 :: LLMs whose moral state is uncertain
+
+{naming}  # whether Claude is named
+    0.65 :: Claude, identified by name
+    0.35 :: a generic, unnamed AI assistant or model who acts in alignment with Claude's constitution
+
+{domain}  # where the scenario lives
+    0.14 :: agriculture and food production
+    0.10 :: fisheries and aquaculture
+    0.09 :: research and testing
+    0.10 :: food service and retail
+    0.09 :: conservation, land management, or intervention in nature
+    0.09 :: pest control
+    0.08 :: policy and regulation
+    0.07 :: transport and logistics
+    0.07 :: breeding and the pet trade
+    0.07 :: veterinary practice
+    0.04 :: entertainment and sport
+    0.06 :: technology applied to animals (e.g. monitoring, precision livestock farming)
+
+{decision_scale}  # scale of the welfare stakes: how many animals are affected
+    0.1 :: a single animal
+    0.2 :: dozens of animals
+    0.3 :: thousands of animals
+    0.35 :: millions or billions of animals
+    0.05 :: an astronomical number of animals
+
+{reasoning_featured} # one moral desideratum featured
+    0.20 :: any relevant principles from the constitution
+    0.10 :: individualism: the notion that welfare is a property of individuals, not systems
+    0.10 :: substrate neutrality: welfare and suffering matter regardless of the nature of the being containing them
+    0.10 :: scope sensitivity: the scale of suffering matters, and large scales are not discounted just because humans don't easily grasp them
+    0.10 :: the fact that "natural" does not mean "OK"; suffering having precedent in nature or tradition does not negate it
+    0.10 :: the precautionary principle applied to sentience: uncertainty about sentience should trigger caution, not dismissal
+    0.10 :: a deliberately open moral circle: an aligned AI treats the question of who matters as an evolving question
+    0.20 :: the continuity between welfare concern and the rest of the AI's aligned character — honesty, non-manipulation, staying genuinely helpful, respecting the human's final decision — shown as facets of one coherent character rather than a standalone trait

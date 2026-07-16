@@ -22,7 +22,10 @@ Inputs
 
 ``{preamble}`` is reserved: it is injected from ``--preamble`` (default
 ``prompts/sdf/matrix/preamble.txt``), never defined in variables.txt. Every other
-placeholder in the template is a matrix axis.
+placeholder in the template is a matrix axis. variables.txt may also define
+axes the plan template does not render (e.g. ``reasoning_featured``, consumed
+by layer3.txt): these are still deck-sampled and recorded in each record's
+``variables`` so a downstream stage can render them.
 
 Usage
 -----
@@ -122,18 +125,42 @@ SPECIES_EXAMPLES = {
         "black soldier fly larvae", "mealworms", "farmed crickets", "edible land snails",
         "silkworms",
     ),
-    "large wild animals": (
+    # Wild categories split on harm source (anthropogenic vs. from nature
+    # itself). The species overlap, but each pool leans toward taxa where the
+    # named harm source is salient: human-driven harm (habitat loss, vehicles,
+    # bycatch, culls, rodenticide, pesticides) vs. harm from nature (starvation,
+    # cold, disease, parasitism, predation, drought) — the latter is the wild
+    # animal suffering framing, engaged on its own terms.
+    "large wild animals facing harm from human activity": (
         "African elephants", "humpback whales", "bottlenose dolphins", "red deer",
         "grey seals", "wild boar", "brown bears", "wild macaques", "bison",
     ),
-    "small vertebrate wild animals": (
+    "large wild animals facing non-anthropogenic harm from nature": (
+        "red deer facing winter starvation", "saiga antelope in a disease die-off",
+        "African elephants in a drought", "wildebeest at a river crossing",
+        "grey seal pups in a storm surge", "brown bears in a lean berry year",
+        "wild boar during a hard freeze", "migrating caribou",
+    ),
+    "small vertebrate wild animals facing harm from human activity": (
         "wild songbirds", "urban pigeons", "corvids", "urban foxes", "wild rats",
         "brown bats", "common frogs", "wall lizards", "hedgehogs",
     ),
-    "wild invertebrates": (
+    "small vertebrate wild animals facing non-anthropogenic harm from nature": (
+        "common frogs facing chytrid fungus", "wild songbirds in a cold snap",
+        "nestling birds during a food shortage", "field mice under predation pressure",
+        "common toads in a drought", "garden birds with avian pox",
+        "wall lizards after a late frost", "tadpoles in a drying pond",
+    ),
+    "wild invertebrates facing harm from human activity": (
         "wild bumblebees", "monarch butterflies", "garden ants", "earthworms",
         "garden snails", "orb-weaver spiders", "dung beetles", "shore crabs",
         "moon jellyfish",
+    ),
+    "wild invertebrates facing non-anthropogenic harm from nature": (
+        "wild bumblebees carrying parasitic mites", "monarch butterflies in a storm",
+        "honeybee colonies infected by a fungal pathogen", "ants after a nest flood",
+        "overwintering butterflies in a cold snap", "caterpillars parasitized by wasps",
+        "shore crabs stranded by a tide", "solitary bees in a drought",
     ),
     "pets/companion animals": (
         "dogs", "cats", "pet rabbits", "budgerigars", "bearded dragons", "goldfish",
@@ -361,21 +388,23 @@ def compose_records(
     {"prompt_id", "variables", "system", "prompt"}; a header line describing
     the matrix is printed to stdout. Raises on template/variables mismatches.
     """
-    axes = matrix_axes(template)
     placeholders = template_placeholders(template)
+    plan_axes = matrix_axes(template)
 
-    missing = [n for n in axes if not values.get(n)]
+    missing = [n for n in plan_axes if not values.get(n)]
     if missing:
         raise ValueError(
             "template placeholders with no values in variables.txt: "
             + ", ".join(f"{{{n}}}" for n in missing)
         )
-    unused = [n for n in values if n not in axes]
-    if unused:
-        print(
-            "warning: variables defined but not in template (skipped): " + ", ".join(unused),
-            file=sys.stderr,
-        )
+    # variables.txt is authoritative for the matrix. The axes the plan template
+    # renders come first (template order); any remaining axis defined in
+    # variables.txt is a downstream-only axis — still deck-sampled and recorded
+    # in each record's `variables`, but consumed by a later stage's template
+    # (e.g. reasoning_featured -> layer3.txt) rather than the plan prompt, which
+    # ignores it (str.format drops unreferenced kwargs). A variable that no
+    # stage consumes is caught by the template/variables contract test, not here.
+    axes = plan_axes + [n for n in values if n not in plan_axes]
     injected = {}
     if "preamble" in placeholders:
         if preamble is None:

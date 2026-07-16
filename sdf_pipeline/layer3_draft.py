@@ -48,6 +48,12 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, plans: list[dict]) ->
             constitution_claude=constitution_claude,
             constitution_principles=principles,
             document_description=plan["description"],
+            # Downstream-only matrix axis (sampled in layer12, recorded in
+            # variables). Default to the neutral value for plans composed
+            # before this axis existed, so --resume on an old run never crashes.
+            reasoning_featured=plan.get("variables", {}).get(
+                "reasoning_featured", "any relevant principles from the constitution"
+            ),
         ))
         try:
             return api.call_claude(
