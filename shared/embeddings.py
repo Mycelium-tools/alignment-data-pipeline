@@ -50,6 +50,15 @@ MAX_BATCH_CHARS = 180_000
 # WHOLE request. embed_texts truncates to it as a safety net (see below).
 MAX_INPUT_TOKENS = 8192
 
+# tiktoken downloads its BPE ranks from a remote blob store on first use and
+# caches them under TIKTOKEN_CACHE_DIR; the wheel ships no ranks. The offline
+# test suite (pytest-socket --disable-socket) and a fresh CI runner have no
+# warmed cache, so that first fetch would fail the required smoke check. We ship
+# the cl100k_base ranks (the encoding every text-embedding-3 model uses) under
+# vendor/tiktoken, keyed by tiktoken's own cache name, and point tiktoken there
+# unless the caller already set the dir.
+_VENDORED_TIKTOKEN_CACHE = Path(__file__).resolve().parent.parent / "vendor" / "tiktoken"
+
 _config: dict = {}
 _client: openai.OpenAI | None = None
 _cost_log_path: Path | None = None
@@ -128,6 +137,7 @@ def _encoding_for(model: str):
     """tiktoken encoding for a model; falls back to cl100k_base (what the
     text-embedding-3 models use). Imported lazily so the module loads without
     tiktoken for callers that never truncate."""
+    os.environ.setdefault("TIKTOKEN_CACHE_DIR", str(_VENDORED_TIKTOKEN_CACHE))
     import tiktoken
 
     try:
