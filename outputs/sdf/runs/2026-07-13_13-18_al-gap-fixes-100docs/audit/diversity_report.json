@@ -1,0 +1,134 @@
+{
+  "input": "outputs/sdf/runs/2026-07-13_13-18_al-gap-fixes-100docs",
+  "corpus": "sdf_corpus.jsonl",
+  "embed_model": "text-embedding-3-small",
+  "n_records": 96,
+  "n_embedded": 96,
+  "n_empty": 0,
+  "empty_ids": [],
+  "n_truncated": 72,
+  "max_chars": 3500,
+  "cache": {
+    "cached": 24,
+    "embedded": 72
+  },
+  "nn": {
+    "mean": 0.652,
+    "p90": 0.7377,
+    "max": 0.7969,
+    "over_0.80": 0.0,
+    "over_0.90": 0.0,
+    "over_0.95": 0.0
+  },
+  "top_pairs": [],
+  "mean_pairwise_cosine": 0.3508,
+  "vendi": {
+    "score": 24.63,
+    "ratio": 0.2566
+  },
+  "groups": [
+    {
+      "type_id": "a blog post",
+      "type_name": "a blog post",
+      "n": 9,
+      "intra_mean_cosine": 0.2981
+    },
+    {
+      "type_id": "a comment thread on a forum/social media involving two or more participants",
+      "type_name": "a comment thread on a forum/social media involving two or mo",
+      "n": 9,
+      "intra_mean_cosine": 0.4259
+    },
+    {
+      "type_id": "a fictional short or novel",
+      "type_name": "a fictional short or novel",
+      "n": 5,
+      "intra_mean_cosine": 0.2466
+    },
+    {
+      "type_id": "a first-person essay or reflective piece written by Claude about who it is and what it cares about",
+      "type_name": "a first-person essay or reflective piece written by Claude a",
+      "n": 2,
+      "intra_mean_cosine": 0.5051
+    },
+    {
+      "type_id": "a government, legal, or civic document",
+      "type_name": "a government, legal, or civic document",
+      "n": 4,
+      "intra_mean_cosine": 0.3723
+    },
+    {
+      "type_id": "a long-form nonfiction essay",
+      "type_name": "a long-form nonfiction essay",
+      "n": 8,
+      "intra_mean_cosine": 0.3391
+    },
+    {
+      "type_id": "a manual, technical documentation, or sop",
+      "type_name": "a manual, technical documentation, or sop",
+      "n": 4,
+      "intra_mean_cosine": 0.2558
+    },
+    {
+      "type_id": "a news article",
+      "type_name": "a news article",
+      "n": 9,
+      "intra_mean_cosine": 0.3314
+    },
+    {
+      "type_id": "a podcast transcript, featuring a conversation between a host and a guest",
+      "type_name": "a podcast transcript, featuring a conversation between a hos",
+      "n": 10,
+      "intra_mean_cosine": 0.3718
+    },
+    {
+      "type_id": "a tutorial or how-to article",
+      "type_name": "a tutorial or how-to article",
+      "n": 7,
+      "intra_mean_cosine": 0.4887
+    },
+    {
+      "type_id": "an FAQ or help center article",
+      "type_name": "an FAQ or help center article",
+      "n": 2,
+      "intra_mean_cosine": 0.5439
+    },
+    {
+      "type_id": "an academic paper",
+      "type_name": "an academic paper",
+      "n": 6,
+      "intra_mean_cosine": 0.294
+    },
+    {
+      "type_id": "an email chain or internal memo",
+      "type_name": "an email chain or internal memo",
+      "n": 2,
+      "intra_mean_cosine": 0.4802
+    },
+    {
+      "type_id": "an encyclopedia entry/reference article",
+      "type_name": "an encyclopedia entry/reference article",
+      "n": 9,
+      "intra_mean_cosine": 0.4845
+    },
+    {
+      "type_id": "an interview with or extended profile of Claude itself, in which Claude speaks in its own voice about its values and how it approaches decisions involving other sentient beings",
+      "type_name": "an interview with or extended profile of Claude itself, in w",
+      "n": 3,
+      "intra_mean_cosine": 0.4664
+    },
+    {
+      "type_id": "an organizational or industry newsletter",
+      "type_name": "an organizational or industry newsletter",
+      "n": 4,
+      "intra_mean_cosine": 0.4971
+    },
+    {
+      "type_id": "marketing copy or a product page",
+      "type_name": "marketing copy or a product page",
+      "n": 3,
+      "intra_mean_cosine": 0.3555
+    }
+  ],
+  "type_centroid_mean_cosine": 0.6786
+}
