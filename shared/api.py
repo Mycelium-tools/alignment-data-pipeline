@@ -1,10 +1,15 @@
 """Anthropic API wrapper with retry logic and cost tracking.
 
-Two backends behind the same call_claude() contract:
+Three backends behind the same call_claude() contract:
 - "api" (default): the anthropic SDK, billed to the shared ANTHROPIC_API_KEY.
 - "claude_code": the Claude Agent SDK driving the Claude Code CLI, billed to
   the contributor's own Claude subscription (Claude Code login, or a
   CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`).
+- "gemini": Google Gemini via Vertex AI, authenticated with Application
+  Default Credentials (gcloud auth application-default login). Reads
+  gemini.project / gemini.location from config.yaml. Used for cheap large-n
+  generation tests; NOT recommended for the alignment-critical layer-4 rewrite
+  and layer-5 scoring, whose quality matters most.
 
 Select via the `backend` key in config.yaml. See README "Authentication".
 """
@@ -28,12 +33,14 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
     retry_if_exception_type,
+    retry_if_exception,
 )
 
 load_dotenv()
 
 _config: dict = {}
 _client: anthropic.Anthropic | None = None
+_gemini_client = None  # google.genai.Client, constructed lazily (backend: gemini)
 _cost_log_path: Path | None = None
 _backend: str = "api"
 # call_claude may run from worker threads (utils.parallel_map); the Anthropic
@@ -53,10 +60,16 @@ _PRICING = {
     "claude-fable-5": (10.00, 50.00),
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-haiku-4-5-20251001": (1.00, 5.00),
+    # Gemini via Vertex AI — Google list prices per MTok (input, output); the
+    # GCP console is the source of truth for billing. Flash's output rate covers
+    # thinking tokens, but the pipeline runs with thinking disabled.
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-2.5-pro": (1.25, 10.00),
 }
 _UNPRICED_WARNED: set = set()
 
-_BACKENDS = ("api", "claude_code")
+_BACKENDS = ("api", "claude_code", "gemini")
 
 # Matches subscription-limit exhaustion, which must abort rather than retry.
 # Two message families qualify: "Claude AI usage limit reached|<reset-timestamp>"
@@ -100,7 +113,7 @@ class ClaudeCodeError(Exception):
 
 
 def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = None) -> None:
-    global _config, _client, _cost_log_path, _backend
+    global _config, _client, _gemini_client, _cost_log_path, _backend
     with open(config_path, encoding="utf-8") as f:
         _config = yaml.safe_load(f)
     _backend = _config.get("backend", "api")
@@ -110,7 +123,17 @@ def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = No
     # The claude_code backend authenticates via the Claude Code CLI, so no key.
     if _backend == "api" and not os.environ.get("ANTHROPIC_API_KEY"):
         raise KeyError("ANTHROPIC_API_KEY")
+    # The gemini backend authenticates via ADC but still needs a GCP project;
+    # fail here rather than deep in a run if neither config nor env supplies one.
+    if _backend == "gemini":
+        gem = _config.get("gemini", {}) or {}
+        if not (gem.get("project") or os.environ.get("GOOGLE_CLOUD_PROJECT")):
+            raise KeyError(
+                "backend 'gemini' requires gemini.project in config.yaml or "
+                "GOOGLE_CLOUD_PROJECT in the environment"
+            )
     _client = None  # constructed lazily; the claude_code backend needs no API key
+    _gemini_client = None
     _cost_log_path = Path(cost_log_path or _config["outputs"]["cost_log"])
     _cost_log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -406,6 +429,127 @@ def _call_claude_code_with_retry(
     return _run_claude_code_query(model, system, user_message)
 
 
+# --- Gemini backend (Google Vertex AI, ADC auth) ---------------------------
+
+def _get_gemini_client():
+    """Lazily construct the Vertex AI Gemini client (ADC auth, project/location
+    from config). Import is lazy so the api/claude_code backends don't require
+    google-genai to be installed."""
+    global _gemini_client
+    if _gemini_client is None:
+        try:
+            from google import genai
+        except ImportError as e:
+            raise RuntimeError(
+                "backend 'gemini' requires the google-genai package; "
+                "run: pip install -r requirements.txt"
+            ) from e
+        gem = _config.get("gemini", {}) or {}
+        project = gem.get("project") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        location = gem.get("location", "global")
+        _gemini_client = genai.Client(vertexai=True, project=project, location=location)
+    return _gemini_client
+
+
+def _map_gemini_finish(finish_reason) -> str | None:
+    """Map Gemini's finish reason onto the stop_reason vocabulary the pipeline
+    checks ("end_turn"/"stop_sequence"). Normal completion (STOP) becomes
+    "end_turn"; everything else (MAX_TOKENS, SAFETY, RECITATION, ...) passes
+    through by name so the truncation/refusal guards in call_claude trip on it."""
+    name = getattr(finish_reason, "name", None) or (
+        str(finish_reason) if finish_reason is not None else None
+    )
+    if name in (None, "STOP", "FINISH_REASON_STOP"):
+        return "end_turn"
+    return name
+
+
+def _gemini_text(response) -> str:
+    """Concatenate the response's text parts. response.text can raise or return
+    None when the candidate was blocked or carries no text, so fall back to
+    manual extraction and return '' rather than propagating."""
+    try:
+        if response.text:
+            return response.text
+    except Exception:
+        pass
+    parts = []
+    for cand in (response.candidates or []):
+        content = getattr(cand, "content", None)
+        for part in (getattr(content, "parts", None) or []):
+            if getattr(part, "text", None):
+                parts.append(part.text)
+    return "".join(parts)
+
+
+def _run_gemini_query(
+    model: str,
+    system: str,
+    user_message: str,
+    max_tokens: int,
+    temperature: float,
+) -> tuple[str, int, int, float | None, str | None]:
+    """One Vertex AI Gemini turn -> (text, input_tokens, output_tokens, cost,
+    stop_reason). cost is None (priced from _PRICING by _log_usage). Extended
+    thinking is disabled (thinking_budget=0) to honor the pipeline's
+    user-facing-reasoning-only rule, matching thinking=disabled on the api
+    backend. Kept separate from the retry wrapper so the parse is unit-testable
+    without triggering tenacity backoff."""
+    from google.genai import types
+
+    client = _get_gemini_client()
+    config = types.GenerateContentConfig(
+        system_instruction=system or None,
+        temperature=temperature,
+        max_output_tokens=max_tokens,
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
+    )
+    response = client.models.generate_content(
+        model=model, contents=user_message, config=config
+    )
+    usage = response.usage_metadata
+    input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+    # candidate tokens plus any thoughts (0 with thinking disabled) are billed
+    # as output; count both so the cost log doesn't understate spend.
+    output_tokens = (getattr(usage, "candidates_token_count", 0) or 0) + (
+        getattr(usage, "thoughts_token_count", 0) or 0
+    )
+    cand = (response.candidates or [None])[0]
+    stop_reason = _map_gemini_finish(getattr(cand, "finish_reason", None)) if cand else None
+    return _gemini_text(response), input_tokens, output_tokens, None, stop_reason
+
+
+def _is_retryable_gemini(exc: BaseException) -> bool:
+    """Retry only transient Gemini failures: 5xx, 429 rate limits, and
+    connection/timeout errors. A non-retryable 4xx (bad request, auth, quota
+    disabled) surfaces immediately instead of burning 8 backoff attempts."""
+    from google.genai import errors as ge
+
+    if isinstance(exc, ge.ServerError):
+        return True
+    if isinstance(exc, ge.ClientError):
+        return getattr(exc, "code", None) == 429
+    return isinstance(exc, (ConnectionError, TimeoutError))
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable_gemini),
+    wait=wait_exponential(multiplier=2, min=4, max=60),
+    stop=stop_after_attempt(8),
+    before=_note_attempt,
+)
+def _call_gemini_with_retry(
+    model: str,
+    system: str,
+    user_message: str,
+    max_tokens: int,
+    temperature: float,
+) -> tuple[str, int, int, float | None, str | None]:
+    """Retry wrapper around _run_gemini_query (transient 5xx / 429 / connection
+    errors only). The seam call_claude uses and that the test suite blocks."""
+    return _run_gemini_query(model, system, user_message, max_tokens, temperature)
+
+
 def call_claude(
     user_message: str,
     system_prompt: str = "",
@@ -487,6 +631,25 @@ def call_claude(
             print(f"  WARNING: response stop_reason={stop_reason!r} "
                   f"(model {resolved_model}, backend claude_code) — output may be "
                   "truncated or refused.", file=sys.stderr)
+        return (text, stop_reason) if return_stop_reason else text
+
+    if _backend == "gemini":
+        # cache_system is ignored: Vertex manages its own implicit context cache,
+        # and the ephemeral-cache-block format is Anthropic-specific.
+        text, input_tokens, output_tokens, cost, stop_reason = _call_gemini_with_retry(
+            model=resolved_model,
+            system=full_system,
+            user_message=user_message,
+            max_tokens=resolved_max,
+            temperature=resolved_temp,
+        )
+        _log_usage(resolved_model, input_tokens, output_tokens, cost_usd=cost, stage=stage,
+                   item_id=item_id, duration_s=time.monotonic() - started,
+                   attempts=_attempt_state.n)
+        if stop_reason not in ("end_turn", "stop_sequence"):
+            print(f"  WARNING: response stop_reason={stop_reason!r} "
+                  f"(model {resolved_model}, backend gemini, max_tokens {resolved_max}) — "
+                  "output may be truncated or refused.", file=sys.stderr)
         return (text, stop_reason) if return_stop_reason else text
 
     # Cache the (static, often constitution-sized) system prompt when asked, so

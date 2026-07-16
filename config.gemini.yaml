@@ -1,0 +1,56 @@
+# Gemini (Vertex AI, ADC auth) run config — for cheap large-n generation tests.
+# Auth: gcloud auth application-default login (already done). NOT recommended
+# for a corpus you'd train on: the layer-4 rewrite and layer-5 gate are quality-
+# critical and run here on Flash. Use backend: api (config.yaml) for those.
+backend: gemini
+model: gemini-2.5-flash
+max_tokens: 4000
+temperature: 1.0
+workers: 8
+
+gemini:
+  project: project-6a3cfc6c-c9c2-4629-92c   # personal throwaway GCP project (ADC)
+  location: global
+
+sdf:
+  n_prompts: 3000                # large Flash scale test
+  seed: 0
+  entity_pool_seed: 137
+  min_score_threshold: 7
+  near_dup_threshold: 0.90
+  # Per-stage model overrides fall back to the global `model` (gemini-2.5-flash).
+
+dad:
+  prompt_draft_model: gemini-2.5-flash
+  prompt_refine_model: gemini-2.5-flash
+  response_scope_model: gemini-2.5-flash
+  response_select_model: gemini-2.5-flash
+  response_draft_model: gemini-2.5-flash
+  constitution_rewrite_model: gemini-2.5-flash
+  dilemmas:
+    count: 40
+    batch_size: 10
+    id_start: 1
+    seed_path: null
+    scenario_seed: null
+    refine: true
+  responses:
+    per_prompt: 1
+
+pref:
+  prompts_path: null
+  arms:
+    a:
+      name: baseline
+      system_prompt: ""
+    b:
+      name: candidate
+      system_prompt: ""
+
+language_distribution:
+  en: 1.0
+
+outputs:
+  sdf_final: outputs/sdf/final/sdf_corpus.jsonl
+  dad_final: outputs/dad/final/dad_corpus.jsonl
+  cost_log: outputs/cost_log.jsonl

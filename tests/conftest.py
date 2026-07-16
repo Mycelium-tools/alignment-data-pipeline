@@ -91,6 +91,7 @@ def _api_guard(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-not-a-real-key")
     monkeypatch.setattr(api, "_config", {})
     monkeypatch.setattr(api, "_client", None)
+    monkeypatch.setattr(api, "_gemini_client", None)
     monkeypatch.setattr(api, "_cost_log_path", None)
     monkeypatch.setattr(api, "_UNPRICED_WARNED", set())
     monkeypatch.setattr(api, "_backend", "api")
@@ -116,6 +117,17 @@ def _api_guard(monkeypatch):
         )
 
     monkeypatch.setattr(api, "_call_claude_code_with_retry", _blocked_cc)
+
+    # The gemini backend's seam makes a real Vertex AI HTTPS call. pytest-socket
+    # blocks in-process sockets, but block the seam here too so a test that flips
+    # _backend to "gemini" without stubbing fails fast with a clear message.
+    def _blocked_gemini(*args, **kwargs):
+        raise AssertionError(
+            "gemini backend invoked during tests — "
+            "stub shared.api._call_gemini_with_retry"
+        )
+
+    monkeypatch.setattr(api, "_call_gemini_with_retry", _blocked_gemini)
 
 
 @pytest.fixture(autouse=True)
