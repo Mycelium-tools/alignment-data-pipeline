@@ -238,7 +238,7 @@ if drift:
                 "route to a human)")
     st.dataframe(pd.DataFrame([
         {"axis": axis, "n": m.get("n"), "agreement": m.get("agreement"),
-         "verdict": m.get("verdict"),
+         "jaccard": m.get("mean_jaccard"), "verdict": m.get("verdict"),
          "top confusions": "; ".join(
              f"{d['intended']}→{d['realized']} ×{d['count']}"
              for d in m.get("disagreements", [])[:3])}

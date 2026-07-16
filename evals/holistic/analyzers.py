@@ -6,8 +6,9 @@ function over an ``AnalysisContext`` returning a JSON-able stats fragment. The r
 executes only those analyzers whose inputs are present, so the report degrades
 gracefully under the three-input model. Adding or replacing an analysis is a single
 registry call. ``default_analyzers()`` ships the built-in set — distribution,
-evenness, coverage-vs-target, Cramér's V correlation, t-wise combination coverage, and
-intent→realization drift — and the axes YAML's ``analysis`` block selects which run.
+evenness, coverage-vs-target, Cramér's V correlation, t-wise combination coverage,
+intent→realization drift, the categorical × embedding-cluster bridge, and the
+structural text signals — and the axes YAML's ``analysis`` block selects which run.
 """
 
 from __future__ import annotations
@@ -351,13 +352,20 @@ _DRIFT_NOTE = ("GOOD = extraction matches the generator's intent; BAD = systemat
                "(route to a human)")
 
 
+def _as_label_set(v) -> set[str]:
+    if isinstance(v, list):
+        return {str(x) for x in v}
+    return set() if v is None else {str(v)}
+
+
 def _drift(ctx: AnalysisContext) -> dict:
     """Per-axis confusion between the intended label (generation annotation) and the
-    realized label (extraction tag). For each schema axis, over records present on both
-    sides with scalar values, report agreement rate, the top confusion pairs, and a
-    GOOD/OK/BAD verdict — a low agreement is flagged for a human as *either* generation
-    drift *or* extraction-judge bias. Axes never comparably intended+realized are
-    omitted. Needs input 2 (annotations)."""
+    realized label (extraction tag). Scalar axes compare by exact (type-strict) match;
+    multi-valued axes compare as sets (agreement = exact-set rate, plus mean Jaccard
+    overlap). For each axis, over records present on both sides, report agreement,
+    the top confusion pairs, and a GOOD/OK/BAD verdict — a low agreement is flagged
+    for a human as *either* generation drift *or* extraction-judge bias. Axes never
+    comparably intended+realized are omitted. Needs input 2 (annotations)."""
     out: dict[str, dict] = {}
     anns = ctx.annotations or {}
     for fld in ctx.fields.all():
@@ -365,12 +373,24 @@ def _drift(ctx: AnalysisContext) -> dict:
         confusion: collections.Counter = collections.Counter()
         matches = 0
         n = 0
+        jaccard = 0.0
         for rec in ctx.records:
             ann = anns.get(rec.get("record_id"))
             if not ann:
                 continue
             intended, realized = ann.get(axis), rec.get(axis)
-            if isinstance(intended, (str, int, bool)) and isinstance(realized, (str, int, bool)):
+            if fld.kind == "multi":
+                a, j = _as_label_set(intended), _as_label_set(realized)
+                if not a and not j:
+                    continue
+                n += 1
+                if a == j:
+                    matches += 1
+                    jaccard += 1.0
+                else:
+                    jaccard += len(a & j) / len(a | j)
+                    confusion[(", ".join(sorted(a)), ", ".join(sorted(j)))] += 1
+            elif isinstance(intended, (str, int, bool)) and isinstance(realized, (str, int, bool)):
                 n += 1
                 # type-strict: True == 1 in Python, but a bool/int mismatch is a
                 # disagreement, not an agreement
@@ -387,14 +407,19 @@ def _drift(ctx: AnalysisContext) -> dict:
             (i, r), c = kv
             return (-c, type(i).__name__, str(i), type(r).__name__, str(r))
         top = sorted(confusion.items(), key=_tie_key)
+        # multi axes get verdicts from mean Jaccard (exact-set match is harsher
+        # than the per-label agreement it sits next to); scalars from agreement
+        score = jaccard / n if fld.kind == "multi" else matches / n
         out[axis] = {
             "n": n,
             "agreement": round(matches / n, 3),
             "disagreements": [{"intended": i, "realized": r, "count": c}
                               for (i, r), c in top[:5]],
-            "verdict": _verdict(matches / n, 0.8, 0.6, higher_better=True),
+            "verdict": _verdict(score, 0.8, 0.6, higher_better=True),
             "note": _DRIFT_NOTE,
         }
+        if fld.kind == "multi":
+            out[axis]["mean_jaccard"] = round(jaccard / n, 3)
     return out
 
 
@@ -487,8 +512,9 @@ def default_analyzers() -> AnalyzerRegistry:
     (``distribution``), per-axis evenness (``evenness``), coverage-vs-target quota
     checks (``coverage_vs_target``), Cramér's V anti-correlation (``correlation``),
     t-wise pair coverage (``combination_coverage``), intent→realization drift
-    (``drift``, needs annotations), and the categorical × embedding-cluster bridge
-    (``cluster_bridge``, needs the semantic lane's cluster assignments). Register
+    (``drift``, needs annotations), the categorical × embedding-cluster bridge
+    (``cluster_bridge``, needs the semantic lane's cluster assignments), and the
+    structural text signals (``structural``, needs texts). Register
     more on top; the axes YAML's ``analysis`` block selects which run."""
     reg = AnalyzerRegistry()
     reg.add(Analyzer(name="distribution", requires=("tags",), fn=_distribution))

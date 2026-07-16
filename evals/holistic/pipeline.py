@@ -15,6 +15,7 @@ legacy fallback for annotations:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,13 +76,59 @@ def _bundle_index_path(holistic_root: Path, legacy_index: Path,
     return bundle.reading_index_path(holistic_root, legacy_index)
 
 
+_WMAG_RE = re.compile(
+    r"^\s*(mild|moderate|severe)\s*x\s*(individual|group|population)\s*$", re.IGNORECASE)
+
+_TAXA_NORMALIZE = {"farmed animals": "farmed"}
+
+
+def parse_welfare_magnitude(value) -> tuple[str | None, str | None]:
+    """Split generation's compound welfare axis "Severity x Scope" into its two
+    components (canonical capitalization). (None, None) on any non-matching input."""
+    if not isinstance(value, str):
+        return (None, None)
+    m = _WMAG_RE.match(value)
+    if not m:
+        return (None, None)
+    return (m.group(1).capitalize(), m.group(2).capitalize())
+
+
+def augment_annotations(base: dict, step_rows: list[dict],
+                        dilemma_rows: list[dict]) -> dict:
+    """New record_id -> {axis: value} map aligned with the judge schema
+    (`evals/dad_axes.yaml`): the compound welfare axis split into severity/scope and
+    the step-1 dilemma axes (taxa_category, systemic_ai) lifted onto each record so
+    the drift analyzer can compare them. Base axes preserved, input not mutated."""
+    rid_to_pid = {r["record_id"]: r.get("prompt_id")
+                  for r in step_rows if "record_id" in r}
+    pid_to_dilemma = {d["prompt_id"]: d for d in dilemma_rows if "prompt_id" in d}
+    out: dict = {}
+    for rid, ann in base.items():
+        new = dict(ann)
+        sev, scope = parse_welfare_magnitude(ann.get("welfare_magnitude"))
+        if sev is not None:
+            new["welfare_severity"] = sev
+            new["welfare_scope"] = scope
+        pid = rid_to_pid.get(rid)
+        dilemma = pid_to_dilemma.get(pid) if pid is not None else None
+        if dilemma is not None:
+            if "taxa_category" in dilemma:
+                taxa = dilemma["taxa_category"]
+                new["taxa_category"] = _TAXA_NORMALIZE.get(taxa, taxa)
+            if "systemic_ai" in dilemma:
+                new["systemic_ai"] = dilemma["systemic_ai"]
+        out[rid] = new
+    return out
+
+
 def _load_annotations(run_dir: Path) -> dict | None:
     for stage in _ANNOTATION_STAGES:
         rows = utils.load_jsonl(run_dir / stage / "rewrites.jsonl")
         ann = {r["record_id"]: r["annotation"]
                for r in rows if "record_id" in r and "annotation" in r}
         if ann:
-            return ann
+            dilemmas = utils.load_jsonl(run_dir / "step1" / "dilemmas.jsonl")
+            return augment_annotations(ann, rows, dilemmas)
     return None
 
 
