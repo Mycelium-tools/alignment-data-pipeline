@@ -91,7 +91,13 @@ class Field:
         if self.kind == "free":
             return (isinstance(raw, str) and raw != "", raw)
         if self.kind == "bool":
-            return (isinstance(raw, bool), raw)
+            if isinstance(raw, bool):
+                return (True, raw)
+            # some providers emit JSON bools as quoted strings ("true"/"false");
+            # coerce so a bool axis compares as a real bool downstream
+            if isinstance(raw, str) and raw.strip().lower() in ("true", "false"):
+                return (True, raw.strip().lower() == "true")
+            return (False, raw)
         if self.kind == "object":
             return (isinstance(raw, dict), raw)
         if self.kind == "single":

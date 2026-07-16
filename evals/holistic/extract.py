@@ -21,7 +21,8 @@ from shared import providers, utils
 from .fields import Field, FieldRegistry
 
 MODEL_DEFAULT = None       # falls back to config's model
-MAX_TOKENS = 2000
+MAX_TOKENS = 8192         # generous ceiling; thinking judges (e.g. gemini-*-pro)
+                          # spend most of the budget on reasoning before the JSON
 TEMPERATURE = 0.0
 
 

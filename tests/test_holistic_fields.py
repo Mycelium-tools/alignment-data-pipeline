@@ -40,6 +40,9 @@ def test_bool_field_validates_booleans():
     fld = F.Field(name="flag", kind="bool")
     assert fld.validate(True) == (True, True)
     assert fld.validate("nope")[0] is False
+    # quoted-string bools (some providers emit these) coerce to real bools
+    assert fld.validate("false") == (True, False)
+    assert fld.validate("True") == (True, True)
 
 
 def test_free_field_accepts_any_string():
