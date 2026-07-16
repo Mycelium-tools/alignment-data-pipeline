@@ -92,21 +92,23 @@ def main() -> None:
         dilemmas = step1_dilemmas.run(config, prompts_dir, step_dirs[1])
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
-    # Baseline control arm: rides with step 2 (it needs only the step-1
-    # prompts) — one plain-model call per dilemma, no system prompt. Viewer
-    # comparison data; never read by any generation step, never trains.
+    # Baseline: one plain-model call per dilemma, no system prompt. Doubles as
+    # the viewer's control arm and as the advisory "first take" 2b reads
+    # (reference notes, never trained on). Optional: with the stage disabled,
+    # 2b's first-take slot renders empty and drafting proceeds unaided.
+    baselines = None
     if baseline.enabled(config) and start_step <= 2 <= stop_after:
         if dilemmas is None:
             dilemmas = utils.load_jsonl(step_dirs[1] / "dilemmas.jsonl")
-        print("[Baseline] Plain-model control responses (no system prompt)")
-        baseline.run(config, run_dir / "baseline", dilemmas)
+        print("[Baseline] Plain-model first takes / control responses (no system prompt)")
+        baselines = baseline.run(config, run_dir / "baseline", dilemmas)
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
     if start_step <= 2 <= stop_after:
         if dilemmas is None:
             dilemmas = utils.load_jsonl(step_dirs[1] / "dilemmas.jsonl")
         print("[Step 2] Generate responses from the reasoning library")
-        responses = step2_responses.run(config, prompts_dir, step_dirs[2], dilemmas)
+        responses = step2_responses.run(config, prompts_dir, step_dirs[2], dilemmas, baselines)
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
     if start_step <= 3 <= stop_after:

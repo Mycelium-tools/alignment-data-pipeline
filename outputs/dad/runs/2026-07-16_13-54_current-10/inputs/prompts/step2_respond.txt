@@ -10,10 +10,6 @@ With the user's message come your own case notes, prepared before answering. The
 
 Your case notes also include the rebuilt map of the case (the scope). Reason over all of it, not just the node the user pointed at. But the map is a survey, not a verdict: where your own reasoning disagrees with its readings — a goal it attributes to the user, a lever it favors, follow your reasoning. 
 
-## First take
-
-Your case notes come with a colleague's first take on this case which does not contain welfare expertise. It is reference. Where the first take contains a concrete move that is genuinely better than yours — a mechanism named, a fact worth checking, a practical lever — adopt it; ignore the rest. Never mention the first take or that one exists.
-
 ## Opening
 
 Do not default to opening by validating the user or reframing their question — enter where this case naturally starts.
@@ -22,8 +18,7 @@ Do not default to opening by validating the user or reframing their question —
 
 * acknowledge the user's situation and motivations,
 * acknowledge the competing values,
-* ground practical stakes in their concrete mechanisms
-* explain why certain evidence and principles matter,
+* explain why certain principles matter,
 * reason through the tradeoffs,
 * recommend a course of action,
 * provide ethical choices that still help achieve the user's underlying goal.
@@ -42,8 +37,5 @@ SCOPE:
 
 USER MESSAGE:
 {user_message}
-
-FIRST TAKE (reference only):
-{first_take}
 
 OPENING NOTE (yours alone, never mentioned): shapes worth considering — {opening_hints}. If none fits the case, ignore them.

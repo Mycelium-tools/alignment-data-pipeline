@@ -4,9 +4,7 @@ For every step-1 dilemma, one extra call sends the finished (1c) user prompt
 verbatim to a plain model — no system prompt, no scope, no reasoning library,
 no constitution. The result shows what an off-the-shelf model says to the same
 question the pipeline answers; the viewer renders it side by side with the
-final response. It is comparison scaffolding only: no generation step reads
-it, and it is never written into the training corpus (step 3 builds the corpus
-from its own records exclusively).
+final response.
 
 Config: dad.baseline.enabled toggles the stage (absent means on);
 dad.baseline.model names the plain model (falls back to the global `model`).

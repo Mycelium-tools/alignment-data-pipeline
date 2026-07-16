@@ -152,8 +152,15 @@ def _normalize_ids(raw, library_ids: list[str]) -> list[str]:
     return [i for i in library_ids if i in wanted]
 
 
-def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
+def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
+        baselines: list[dict] | None = None) -> list[dict]:
     library = reasoning_library.load(prompts_dir)
+    # The plain-model baseline rides into 2b as an advisory "first take"
+    # (reference notes — concrete moves may be adopted, framing may not).
+    # Advisory means degradable: with the baseline stage disabled or a record
+    # missing, the slot renders empty and 2b simply drafts unaided.
+    first_take_by_pid = {b["prompt_id"]: b.get("baseline_response", "")
+                         for b in (baselines or [])}
     # 2a.5 evaluates the lightweight trigger index in its own call; 2b gets
     # only the rows that fired. Each step-2 template splits into a system half
     # (standing guidance) and a user half (per-case payload) via
@@ -281,6 +288,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict])
                 library_block=library_block,
                 scope_block=format_scope(scope),
                 user_message=d["user_message"],
+                first_take=first_take_by_pid.get(pid, ""),
                 opening_hints=opening_hints,
             )
             response, stop_reason = api.call_claude(

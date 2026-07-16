@@ -42,6 +42,7 @@ TEMPLATE_KWARGS = [
                               "user_message": "USER-X"}),
     ("dad/step2_respond.txt", {
         "library_block": "LIBRARY-X", "scope_block": "SCOPE-X", "user_message": "USER-X",
+        "first_take": "FIRST-TAKE-X",
         "opening_hints": "HINT-X; HINT-Y; HINT-Z",
     }),
     ("dad/step3_rewrite.txt", {

@@ -426,8 +426,10 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         block = reasoning_library.format_entries(library, ids) if library else ""
         annotation = (response.get("annotation") or (lineage.get("dilemma") or {}).get("annotation") or {})
         r.variables = {
-            # fused runs revise the plain-model baseline draft; pre-fusion
-            # snapshots simply don't reference the placeholder
+            # the plain-model baseline reaches 2b as the advisory first take
+            # (current runs) or as the fused draft_reply (fused-era snapshots);
+            # templates that predate either simply don't reference them
+            "first_take": (lineage.get("baseline") or {}).get("baseline_response", ""),
             "draft_reply": (lineage.get("baseline") or {}).get("baseline_response", ""),
             # entry_ids is the list the pipeline actually injected (the
             # triggered subset since library retrieval; the full library on

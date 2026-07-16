@@ -520,6 +520,26 @@ class TestStep2Run:
         assert calls == []
         assert len(results) == 1
 
+    def test_first_take_reaches_2b_and_degrades_to_empty(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # With baselines provided, the plain draft rides the 2b USER prompt as
+        # the advisory first take; without them (stage disabled, older run),
+        # the slot renders empty and the call still succeeds.
+        calls = stub_claude(_dad_step2_dispatch)
+        baselines = [{"prompt_id": "AW-0001", "user_message": "User dilemma text.",
+                      "baseline_response": "Plain first-take answer."}]
+        step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], baselines)
+        respond_call = calls[2]
+        assert "Plain first-take answer." in respond_call["user_message"]
+        assert "Plain first-take answer." not in (respond_call["system_prompt"] or "")
+
+        calls = stub_claude(_dad_step2_dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path / "bare", [_dilemma()])
+        assert len(results) == 1
+        assert "FIRST TAKE (reference only):" in calls[2]["user_message"]
+        assert "Plain first-take answer." not in calls[2]["user_message"]
+
     def test_echoed_draft_skips_without_checkpoint(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
