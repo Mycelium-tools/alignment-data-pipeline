@@ -22,20 +22,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
-from evals import judge, judge_sdf
-
-
-def _corr(xs: list[float], ys: list[float]) -> float | None:
-    """Pearson correlation (length-vs-score verbosity telemetry)."""
-    n = len(xs)
-    if n < 3:
-        return None
-    mx, my = sum(xs) / n, sum(ys) / n
-    sx = (sum((x - mx) ** 2 for x in xs)) ** 0.5
-    sy = (sum((y - my) ** 2 for y in ys)) ** 0.5
-    if sx == 0 or sy == 0:
-        return None
-    return round(sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / (sx * sy), 3)
+from evals import judge, judge_sdf, selection
+from evals.score_dad import _corr, _record_prompt_manifest, drop_retryable_errors
 
 
 def load_cells(corpus_path: str | Path) -> dict[str, dict]:
@@ -109,27 +97,6 @@ def summarize(rows: list[dict], models: list[str], rubric: dict) -> dict:
     return report
 
 
-def _record_prompt_manifest(out_dir: Path, prompt_md5: str, system_prompt: str,
-                            rubric: dict, args: argparse.Namespace) -> None:
-    """Save the exact judge system prompt that verdict rows reference by prompt_md5,
-    so every saved verdict is traceable to the prompt that produced it."""
-    prompt_file = f"prompt_{prompt_md5[:8]}.txt"
-    (out_dir / prompt_file).write_text(system_prompt, encoding="utf-8")
-    # Snapshot the rubric too, so saved verdicts stay interpretable (gates, floors)
-    # even after evals/rubric_sdf_v3.yaml changes.
-    (out_dir / "rubric.yaml").write_text(Path(args.rubric).read_text(encoding="utf-8"), encoding="utf-8")
-    manifest_path = out_dir / "judge_manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
-    manifest[prompt_md5] = {
-        "rubric_version": rubric["version"],
-        "judges": args.judges,
-        "temperature": args.temperature,
-        "prompt_file": prompt_file,
-    }
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Judge an SDF corpus with a model panel.")
     parser.add_argument("--input", required=True, help="Path to sdf_corpus.jsonl")
@@ -137,7 +104,8 @@ def main() -> None:
     parser.add_argument("--rubric", default=str(judge_sdf.DEFAULT_RUBRIC_PATH))
     parser.add_argument("--judges", nargs="+", default=["gemini-3.1-pro-preview"],
                         help="Judge model ids (panel); gemini-* and claude-* both work")
-    parser.add_argument("--limit", type=int, default=None, help="Max documents to judge")
+    parser.add_argument("--limit", type=selection.nonneg_int, default=None,
+                        help="Max documents to judge")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--retry-errors", action="store_true",
                         help="Drop saved rows that have no successful verdict and re-judge them")
@@ -161,7 +129,9 @@ def main() -> None:
 
     rows = utils.load_jsonl(verdicts_path)
     if args.retry_errors:
-        keep = [r for r in rows if any(res.get("verdict") for res in r["panel"]["results"])]
+        # scope drops to this run's selection: the loop only revisits docs[:limit],
+        # so dropping an unselected errored row would delete its verdict forever
+        keep = drop_retryable_errors(rows, {d["doc_id"] for d in docs}, id_key="doc_id")
         if len(keep) < len(rows):
             print(f"Retrying {len(rows) - len(keep)} errored documents (rows dropped, re-judging).")
             utils.save_jsonl(keep, verdicts_path)

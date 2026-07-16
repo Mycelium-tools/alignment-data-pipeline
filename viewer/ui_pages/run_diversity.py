@@ -147,12 +147,22 @@ if force:
                "bundle's existing tags for them. Tags for records outside this "
                "corpus are kept.")
 
+def _newest_judge_version(run_dir: Path) -> str | None:
+    """Newest quality-judge verdict version by mtime, or None. resolve_inputs
+    refuses to guess when a run has several versions (CLI ambiguity guard); the
+    page picks the newest — verdicts are an optional analyzer input here."""
+    files = sorted((Path(run_dir) / "final" / "judge").glob("*/verdicts.jsonl"),
+                   key=lambda p: p.stat().st_mtime)
+    return files[-1].parent.name if files else None
+
+
 if b1.button(":material/sell: Tag this run", type="primary", disabled=n_final == 0,
              help="Tag into the bundle matching the current axes + model + prompt "
                   "(resume-safe: already-tagged records are skipped, error rows "
                   "are retried; changed inputs start a fresh bundle)."):
     fields, _, _ = _engine()
-    inputs = pipeline.resolve_inputs(run.run_dir)
+    inputs = pipeline.resolve_inputs(run.run_dir,
+                                     judge_version=_newest_judge_version(run.run_dir))
     bar = st.progress(0.0, text=f"Tagging {len(inputs.corpus)} record(s)… "
                                 "(resume-safe; rows save as they finish)")
 
@@ -195,7 +205,8 @@ if b2.button(":material/analytics: Analyze",
              disabled=not tag_rows):
     fields, analysis_cfg, analyzers = _engine()
     synthesis_template = holistic_dad._read_if_exists(holistic_dad.DEFAULT_SYNTH_PROMPT)
-    inputs = pipeline.resolve_inputs(run.run_dir, bundle_id=bundle_id)
+    inputs = pipeline.resolve_inputs(run.run_dir, bundle_id=bundle_id,
+                                     judge_version=_newest_judge_version(run.run_dir))
     bdir = bundle.bundle_dir_of(inputs.index_path)
     if bdir is not None and bundle.snapshot_fields_differ(bdir, fields):
         st.warning("Analyzing this bundle with the current `evals/dad_axes.yaml`, "

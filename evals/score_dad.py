@@ -69,13 +69,15 @@ def select_records(records: list[dict], corpus_path: str | Path, *,
                                          sample=sample, seed=seed, limit=limit)
 
 
-def drop_retryable_errors(rows: list[dict], selected_ids: set[str]) -> list[dict]:
+def drop_retryable_errors(rows: list[dict], selected_ids: set[str],
+                          id_key: str = "record_id") -> list[dict]:
     """``--retry-errors``: drop saved rows that have no successful verdict, but only
     for records in this run's selection — the judging loop only revisits selected
-    records, so dropping an unselected errored row would delete it forever."""
+    records, so dropping an unselected errored row would delete it forever.
+    ``id_key`` is the row's id field (score_sdf rows use ``doc_id``)."""
     return [r for r in rows
             if any(res.get("verdict") for res in r["panel"]["results"])
-            or r["record_id"] not in selected_ids]
+            or r[id_key] not in selected_ids]
 
 
 def _corr(xs: list[float], ys: list[float]) -> float | None:

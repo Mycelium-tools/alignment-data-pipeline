@@ -57,3 +57,16 @@ class TestSummarize:
         assert m["pass_rate"] == 1.0 and m["exemplar_rate"] == 1.0
         assert m["depicted_ai_verdicts"] == {"NA": 2}
         assert report["consensus"]["error_rate"] == 0.333  # summarize rounds to 3dp
+
+
+def test_retry_errors_keeps_errored_rows_outside_the_selection():
+    # Twin of the score_dad guard: --retry-errors with --limit must not delete
+    # errored verdicts for documents beyond the limit (they would never be
+    # re-judged this run — the row would be gone forever).
+    rows = [
+        {"doc_id": "a", "panel": {"results": [{"model": "m", "verdict": None}]}},
+        {"doc_id": "b", "panel": {"results": [{"model": "m", "verdict": None}]}},
+        {"doc_id": "c", "panel": {"results": [{"model": "m", "verdict": {"ok": 1}}]}},
+    ]
+    kept = score_sdf.drop_retryable_errors(rows, selected_ids={"a"}, id_key="doc_id")
+    assert [r["doc_id"] for r in kept] == ["b", "c"]
