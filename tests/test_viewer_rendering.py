@@ -33,3 +33,27 @@ def test_format_split_missing_template_returns_none():
     r = rendering.RenderedPrompt(stage="x", is_llm_call=True)
     assert rendering._format_split(tpl, {}, r) == (None, None)
     assert r.warnings  # unavailable-template warning recorded
+
+
+class TestInlineWordDiff:
+    def test_additions_highlighted_and_equal_text_plain(self):
+        html = rendering.inline_word_diff_html(
+            "Keep the shed clean.", "Keep the shed clean and reduce insect harm.")
+        # the unchanged prefix stays plain (outside any span)
+        assert html.startswith("Keep the shed ")
+        # the added words are wrapped in a highlight span; the prefix is not
+        assert "background:rgba" in html
+        highlighted = html.split("background:rgba", 1)[1]
+        assert "reduce insect harm." in highlighted
+        assert "Keep the" not in highlighted
+
+    def test_removed_words_struck_through(self):
+        html = rendering.inline_word_diff_html("an obviously wrong claim", "an claim")
+        assert "line-through" in html
+        struck = html.split("line-through", 1)[1]
+        assert "obviously wrong" in struck
+
+    def test_text_is_escaped_and_newlines_become_breaks(self):
+        html = rendering.inline_word_diff_html("a <b> start", "a <b> start\n\nnew para")
+        assert "&lt;b&gt;" in html and "<b>" not in html.replace("<br>", "")
+        assert "<br><br>" in html

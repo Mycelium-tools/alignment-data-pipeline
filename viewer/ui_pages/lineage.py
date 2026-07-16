@@ -392,7 +392,7 @@ else:
                 if baseline_rec:
                     base_model = baseline_rec.get("model") or "model"
                     with st.expander(f":blue[Baseline — plain {base_model}, "
-                                     "no system prompt (comparison only)]"):
+                                     "no system prompt (seed draft + control arm)]"):
                         line = _call_stats_line("baseline_response", pid)
                         if line:
                             st.caption(f":material/speed: {line}")
@@ -401,7 +401,26 @@ else:
                                    "constitution. Doubles as the control arm and as the seed "
                                    "draft step 2b revises (fused runs); never enters the "
                                    "training corpus itself.")
-                        st.code(baseline_rec["baseline_response"], language=None, wrap_lines=True)
+                        final_msgs = (lin.get("final") or {}).get("messages") or []
+                        target = (final_msgs[1]["content"] if len(final_msgs) > 1
+                                  else (lin.get("response") or {}).get("assistant_response"))
+                        if target and st.toggle(
+                            "Highlight what the pipeline added (baseline → final response)",
+                            value=True, key="baseline_diff",
+                        ):
+                            st.caption(":green[highlight] = added by the pipeline · "
+                                       "~~struck~~ = dropped from the draft")
+                            st.markdown(
+                                '<div style="max-height:60vh;overflow-y:auto;padding:0.75rem 1rem;'
+                                'border:1px solid rgba(128,128,128,.35);border-radius:8px;'
+                                'font-size:0.9rem;line-height:1.55;">'
+                                + rendering.inline_word_diff_html(
+                                    baseline_rec["baseline_response"], target)
+                                + "</div>",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.code(baseline_rec["baseline_response"], language=None, wrap_lines=True)
             else:
                 # Legacy 7-step runs (pre-spec pipeline)
                 stage_expander("Step 1 — principle annotation", "step1", lin,
