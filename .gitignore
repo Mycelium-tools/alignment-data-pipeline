@@ -20,3 +20,6 @@ outputs/*/latest
 # Bare filename so it matches wherever --input puts the audit/ dir (run dirs
 # under outputs/, but also next to a bare --input corpus.jsonl anywhere).
 embeddings_cache.npz
+
+# viewer session state
+outputs/gui_runs/
