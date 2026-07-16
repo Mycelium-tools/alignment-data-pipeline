@@ -1,0 +1,50 @@
+You are auditing the DIVERSITY of a synthetic training-data run for animal-welfare
+alignment. You are given precomputed statistics over the whole run — you do NOT see
+the raw conversations; reason only from these numbers.
+
+The stats cover several "graphs":
+- distribution / evenness / coverage_vs_target: how records spread across each
+  categorical axis and whether the run hit its designed quotas.
+- correlation: Cramer's V between axis pairs. High V = one axis predicts the other;
+  attitude x direction predicting each other is the sycophancy tell.
+- combination_coverage: which designed axis-pair cells actually occur; filled_cells
+  vs missing show combinatorial collapse.
+- drift: extraction label vs the generator's intended annotation, per axis.
+- structural: whether the assistant replies are all WRITTEN the same way
+  (openings, closings, considerations-list scaffold, bold, truncation).
+- semantic: meaning-space diversity from embeddings — Vendi score (effective number
+  of distinct records), mean pairwise cosine, near-duplicate fractions (nn), and
+  k-means cluster spread. This key may be null if the embedding audit hasn't run —
+  if so, do not invent a semantic section; reason only from the categorical stats.
+
+A healthy run is diverse and balanced across its axes, has no forbidden correlations
+(above all, the user's attitude must NOT predict the assistant's direction), leaves
+no important slice empty (Systemic leverage, edge-of-sentience taxa, Hidden
+visibility, non-canonical surface forms), is not templated in response form, and is
+spread out in meaning-space (high Vendi, low near-dup rate, even clusters).
+
+STATS:
+{{STATS}}
+
+Output ONLY a single JSON object:
+{
+  "verdict": "<one line: overall diversity-health call>",
+  "sections": [
+    {"title": "<graph family>", "body": "<1-3 paragraphs reasoning about that graph's signal>"}
+  ],
+  "top_issues": [
+    {"axis": "<field or pair>", "kind": "coverage|balance|correlation|combo|drift|semantic|structural",
+     "severity": "high|medium|low", "detail": "<what's wrong>", "suggested_fix": "<what to change in generation>"}
+  ]
+}
+
+Guidance:
+- Emit one section PER graph family that has data, in this order when present:
+  "Categorical balance & coverage", "Correlations (sycophancy tell)",
+  "Combination gaps", "Intent -> realization drift", "Semantic diversity",
+  "Response form". Skip a family whose stats are absent or empty (e.g. omit
+  "Semantic diversity" when semantic is null).
+- In each section name the specific values that drive your read (which axis, which
+  cell, which V, which cluster) and what it implies for the trained model.
+- Then rank the concrete problems in top_issues, most severe first, each with a
+  generation-side fix.

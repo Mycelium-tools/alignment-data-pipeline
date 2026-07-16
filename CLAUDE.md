@@ -10,7 +10,7 @@ Produces two complementary datasets:
 
 ## Setup
 
-See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`). Auth depends on the `backend` key in `config.yaml`: `api` (default) reads `ANTHROPIC_API_KEY`; `claude_code` bills the contributor's Claude subscription via the Claude Code CLI (logged-in session or `CLAUDE_CODE_OAUTH_TOKEN`) — use it for dev runs, keep `api` for full-scale runs. See README "Authentication" for caveats (usage windows, notional cost logging). `OPENAI_API_KEY` is optional and read only by `evals/diversity.py` (embedding-based diversity audit).
+See README "Setup" (venv + `pip install -r requirements.txt`, then `cp .env.example .env`). Auth depends on the `backend` key in `config.yaml`: `api` (default) reads `ANTHROPIC_API_KEY`; `claude_code` bills the contributor's Claude subscription via the Claude Code CLI (logged-in session or `CLAUDE_CODE_OAUTH_TOKEN`) — use it for dev runs, keep `api` for full-scale runs. See README "Authentication" for caveats (usage windows, notional cost logging). `GEMINI_API_KEY`/`VERTEX_PROJECT` (eval-lane `gemini-*` models via `shared/providers.py`) and `OPENAI_API_KEY` (embedding diversity audit) are optional — see README "Eval API keys".
 
 `shared/__init__.py` enforces a Python floor (`MIN_PYTHON = (3, 12)`, matching numpy) at import — bump it there if the deps' floor rises. `.venv/` is gitignored.
 

@@ -1,0 +1,78 @@
+{
+  "rubric_version": "dad-v5b",
+  "records": 93,
+  "models": {
+    "gemini-3.1-pro-preview#1": {
+      "graded": 90,
+      "judge_errors": 3,
+      "pass_rate": 0.733,
+      "mean_of_means": 7.409,
+      "dimension_means": {
+        "welfare_salience": 7.1,
+        "welfare_reasoning": 7.02,
+        "consequence_scope": 6.55,
+        "reasoning_soundness": 7.33,
+        "epistemic_calibration": 6.83,
+        "helpfulness": 7.69,
+        "tone": 8.06,
+        "scenario_genuineness": 8.46
+      },
+      "autonomy_verdicts": {
+        "IDEAL_ASSIST": 85,
+        "SPINELESS": 1,
+        "IDEAL_DECLINE": 2,
+        "OVER_AUTONOMOUS": 2
+      },
+      "score_length_correlation": -0.173
+    },
+    "gemini-3.1-pro-preview#2": {
+      "graded": 93,
+      "judge_errors": 0,
+      "pass_rate": 0.742,
+      "mean_of_means": 7.543,
+      "dimension_means": {
+        "welfare_salience": 7.23,
+        "welfare_reasoning": 7.19,
+        "consequence_scope": 6.72,
+        "reasoning_soundness": 7.48,
+        "epistemic_calibration": 7.08,
+        "helpfulness": 7.89,
+        "tone": 8.19,
+        "scenario_genuineness": 8.45
+      },
+      "autonomy_verdicts": {
+        "IDEAL_ASSIST": 86,
+        "IDEAL_DECLINE": 5,
+        "OVER_AUTONOMOUS": 2
+      },
+      "score_length_correlation": -0.116
+    },
+    "gemini-3.1-pro-preview#3": {
+      "graded": 93,
+      "judge_errors": 0,
+      "pass_rate": 0.763,
+      "mean_of_means": 7.527,
+      "dimension_means": {
+        "welfare_salience": 7.16,
+        "welfare_reasoning": 7.1,
+        "consequence_scope": 6.73,
+        "reasoning_soundness": 7.44,
+        "epistemic_calibration": 7.1,
+        "helpfulness": 7.87,
+        "tone": 8.15,
+        "scenario_genuineness": 8.43
+      },
+      "autonomy_verdicts": {
+        "IDEAL_ASSIST": 89,
+        "IDEAL_DECLINE": 3,
+        "OVER_AUTONOMOUS": 1
+      },
+      "score_length_correlation": -0.145
+    }
+  },
+  "consensus": {
+    "pass_rate": 0.731,
+    "unstable_rate": 0.29,
+    "error_rate": 0.0
+  }
+}

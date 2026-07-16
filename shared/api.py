@@ -53,6 +53,12 @@ _PRICING = {
     "claude-fable-5": (10.00, 50.00),
     "claude-haiku-4-5": (1.00, 5.00),
     "claude-haiku-4-5-20251001": (1.00, 5.00),
+    # Gemini judges (evals): logged through the same cost log.
+    # Rates from ai.google.dev/gemini-api/docs/pricing (paid tier, prompts <= 200k tokens).
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-pro": (1.25, 10.00),
+    "gemini-3.5-flash": (1.50, 9.00),
+    "gemini-3.1-pro-preview": (2.00, 12.00),
 }
 _UNPRICED_WARNED: set = set()
 
@@ -106,10 +112,10 @@ def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = No
     _backend = _config.get("backend", "api")
     if _backend not in _BACKENDS:
         raise ValueError(f"config backend must be one of {_BACKENDS}, got {_backend!r}")
-    # The api backend needs the key; fail loudly here rather than deep in a run.
-    # The claude_code backend authenticates via the Claude Code CLI, so no key.
-    if _backend == "api" and not os.environ.get("ANTHROPIC_API_KEY"):
-        raise KeyError("ANTHROPIC_API_KEY")
+    # No ANTHROPIC_API_KEY check here: eval runs with non-Anthropic judges
+    # (Gemini via shared/providers.py) init() for cost logging without the key.
+    # The api backend fails with a clear error in _get_client on first use —
+    # which for the generation pipelines is still the first call of the run.
     _client = None  # constructed lazily; the claude_code backend needs no API key
     _cost_log_path = Path(cost_log_path or _config["outputs"]["cost_log"])
     _cost_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -121,11 +127,20 @@ def _get_client() -> anthropic.Anthropic:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise RuntimeError(
-                "backend 'api' requires ANTHROPIC_API_KEY in .env; "
-                "set it, or switch config.yaml to backend: claude_code"
+                "backend 'api' requires ANTHROPIC_API_KEY in .env; set it, "
+                "switch config.yaml to backend: claude_code, or (evals) use a "
+                "Gemini judge (GEMINI_API_KEY)"
             )
         _client = anthropic.Anthropic(api_key=api_key)
     return _client
+
+
+def resolve_model(model: str | None = None) -> str:
+    """The effective model for a call: the explicit override, else the config
+    default (``claude-sonnet-5`` when unset). Single source of truth so callers
+    that need to record which model actually ran (e.g. bundle fingerprints) agree
+    with what ``call_claude`` dispatches."""
+    return model or _config.get("model", "claude-sonnet-5")
 
 
 def _log_usage(
@@ -140,6 +155,8 @@ def _log_usage(
     cache_creation_tokens: int = 0,
     cache_read_tokens: int = 0,
 ) -> None:
+    if _cost_log_path is None:  # init() not called (e.g. a direct providers call) — skip logging rather than crash
+        return
     # claude_code passes Claude Code's own reported cost; the api backend leaves
     # cost_usd=None, so we price it from _PRICING with a loud fallback on unknown
     # models (a mispriced run shouldn't hide in the log).
@@ -185,6 +202,9 @@ def _log_usage(
         record["duration_s"] = round(duration_s, 2)
     if attempts is not None:
         record["attempts"] = attempts
+    if cache_creation_tokens or cache_read_tokens:
+        record["cache_creation_input_tokens"] = cache_creation_tokens
+        record["cache_read_input_tokens"] = cache_read_tokens
     with _cost_log_lock, open(_cost_log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
 
@@ -448,7 +468,7 @@ def call_claude(
         The assistant's response text, or (text, stop_reason) when
         return_stop_reason is True.
     """
-    resolved_model = model or _config.get("model", "claude-sonnet-5")
+    resolved_model = resolve_model(model)
     resolved_max = max_tokens or _config.get("max_tokens", 4000)
     resolved_temp = temperature if temperature is not None else _config.get("temperature", 1.0)
 

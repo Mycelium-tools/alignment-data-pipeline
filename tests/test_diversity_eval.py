@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from evals import diversity
-from shared import utils
+from shared import embeddings, utils
 
 
 def _unit(v):
@@ -199,6 +199,32 @@ def _run_main(monkeypatch, corpus_path, config_path, *extra):
     diversity.main()
 
 
+class TestRunAudit:
+    """The viewer's Run-diversity page calls run_audit directly (no argv, no
+    printing) — same engine as main(), shared contract."""
+
+    def test_writes_report_and_returns_it(self, stub_embeddings, tmp_path, tiny_config_file):
+        stub_embeddings(dim=32)
+        embeddings.init(str(tiny_config_file))
+        report = diversity.run_audit(_sdf_records(), tmp_path / "audit", "label",
+                                     corpus_name="corpus.jsonl")
+        on_disk = json.loads((tmp_path / "audit" / "diversity_report.json").read_text())
+        assert on_disk == report
+        assert report["corpus"] == "corpus.jsonl"
+        assert report["n_embedded"] == 5 and report["n_empty"] == 1
+        assert report["clusters"]["assignments"]      # feeds the bridge analyzer
+
+    def test_too_small_corpus_raises_value_error(self, stub_embeddings, tmp_path,
+                                                 tiny_config_file):
+        stub_embeddings(dim=32)
+        embeddings.init(str(tiny_config_file))
+        with pytest.raises(ValueError, match="at least 2"):
+            diversity.run_audit([{"doc_id": "d0", "content": "only one"}],
+                                tmp_path / "audit", "label")
+        with pytest.raises(ValueError, match="empty"):
+            diversity.run_audit([], tmp_path / "audit", "label")
+
+
 class TestMainEndToEnd:
     def test_happy_path_writes_report_and_flags_duplicates(
         self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch, capsys
@@ -307,3 +333,62 @@ class TestCompareReports:
         prev.write_text(json.dumps({"embed_model": "text-embedding-3-large"}))
         diversity.compare_reports(self._current(), str(prev))
         assert "skipped" in capsys.readouterr().out
+
+
+class TestClusterEvenness:
+    """CAML-style topic-spread panel (§18.1): k-means the embedded corpus, then
+    Pielou evenness of cluster sizes. Deterministic under a fixed seed; writes the
+    per-id assignments the categorical×cluster bridge analyzer reads."""
+
+    def test_two_separated_clusters_split_evenly(self):
+        X = np.stack([_unit([1, 0, 0.01 * i]) for i in range(3)]
+                     + [_unit([0, 1, 0.01 * i]) for i in range(3)])
+        out = diversity.cluster_evenness(X, [f"r{i}" for i in range(6)], k=2, seed=0)
+        assert out["k"] == 2 and out["clusters"] == 2
+        assert out["evenness"] == pytest.approx(1.0, abs=1e-6)
+        assert out["verdict"] == "GOOD"
+        a = out["assignments"]
+        assert a["r0"] == a["r1"] == a["r2"]
+        assert a["r3"] == a["r4"] == a["r5"]
+        assert a["r0"] != a["r3"]
+        assert out["sizes"] == [3, 3]
+
+    def test_collapsed_corpus_is_bad(self):
+        X = np.tile(_unit([1.0, 2.0, 2.0]), (6, 1))
+        out = diversity.cluster_evenness(X, [f"r{i}" for i in range(6)], k=3, seed=0)
+        assert out["clusters"] == 1
+        assert out["evenness"] == pytest.approx(0.0)
+        assert out["verdict"] == "BAD"
+
+    def test_degenerate_inputs_return_none(self):
+        one = _unit([1.0, 0.0, 0.0]).reshape(1, 3)
+        assert diversity.cluster_evenness(one, ["a"], k=2, seed=0) is None   # n < 2
+        assert diversity.cluster_evenness(np.eye(3, dtype=np.float32),
+                                          list("abc"), k=1, seed=0) is None  # k < 2
+
+    def test_k_is_capped_at_n_and_seed_is_deterministic(self):
+        rng = np.random.default_rng(5)
+        X = rng.standard_normal((4, 6)).astype(np.float32)
+        X /= np.linalg.norm(X, axis=1, keepdims=True)
+        ids = list("abcd")
+        first = diversity.cluster_evenness(X, ids, k=50, seed=7)
+        second = diversity.cluster_evenness(X, ids, k=50, seed=7)
+        assert first["k"] == 4                      # capped at n
+        assert first["assignments"] == second["assignments"]
+        assert sum(first["sizes"]) == 4
+
+
+class TestMainClusters:
+    def test_report_contains_clusters_section_for_the_bridge(
+        self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch
+    ):
+        corpus = _write_corpus(tmp_path / "corpus.jsonl", _sdf_records())
+        stub_embeddings(dim=32)
+        _run_main(monkeypatch, corpus, tiny_config_file, "--clusters", "2")
+
+        report = json.loads((tmp_path / "audit" / "diversity_report.json").read_text())
+        clusters = report["clusters"]
+        assert clusters["k"] == 2
+        assert set(clusters["assignments"]) == {"d0", "d1", "d2", "d3", "d4"}
+        assert sum(clusters["sizes"]) == report["n_embedded"]
+        assert 0.0 <= clusters["evenness"] <= 1.0

@@ -1,0 +1,10 @@
+{
+  "0dfcc907e877ec865525b07ecba2a4d8": {
+    "rubric_version": "sdf-v3.5",
+    "judges": [
+      "gemini-2.5-flash"
+    ],
+    "temperature": 0.0,
+    "prompt_file": "prompt_0dfcc907.txt"
+  }
+}

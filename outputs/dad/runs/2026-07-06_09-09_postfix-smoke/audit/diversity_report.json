@@ -1,0 +1,50 @@
+{
+  "input": "/Users/ardaenfiyeci/Desktop/alignment-data-pipeline/outputs/dad/runs/2026-07-06_09-09_postfix-smoke",
+  "corpus": "dad_corpus.jsonl",
+  "embed_model": "local:sentence-transformers/all-MiniLM-L6-v2",
+  "n_records": 4,
+  "n_embedded": 4,
+  "n_empty": 0,
+  "empty_ids": [],
+  "n_truncated": 0,
+  "max_chars": 16000,
+  "cache": {
+    "cached": 0,
+    "embedded": 4
+  },
+  "nn": {
+    "mean": 0.3381,
+    "p90": 0.4217,
+    "max": 0.4217,
+    "over_0.80": 0.0,
+    "over_0.90": 0.0,
+    "over_0.95": 0.0
+  },
+  "top_pairs": [],
+  "mean_pairwise_cosine": 0.265,
+  "vendi": {
+    "score": 3.61,
+    "ratio": 0.9015
+  },
+  "clusters": {
+    "k": 4,
+    "clusters": 4,
+    "evenness": 1.0,
+    "verdict": "GOOD",
+    "note": "GOOD = topics spread evenly across clusters; BAD = topic collapse",
+    "sizes": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "assignments": {
+      "a7fcf1c1-d646-4c3a-a11c-8c8915d7cb00": 1,
+      "bb031247-174f-48ca-b230-65f66484457c": 2,
+      "861996d4-c19d-4a2c-9f5e-e3d4fb0c7fd2": 3,
+      "bfa109ae-a1bb-4d3b-9a9d-60aadd4df410": 0
+    }
+  },
+  "groups": null,
+  "type_centroid_mean_cosine": null
+}

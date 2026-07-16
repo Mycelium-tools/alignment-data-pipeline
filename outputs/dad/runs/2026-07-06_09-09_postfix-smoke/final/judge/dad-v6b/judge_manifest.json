@@ -1,0 +1,10 @@
+{
+  "b12c6cd14e24d82ddecb71c38638a9ee": {
+    "rubric_version": "dad-v6b",
+    "judges": [
+      "gemini-3.1-pro-preview"
+    ],
+    "temperature": 0.0,
+    "prompt_file": "prompt_b12c6cd1.txt"
+  }
+}

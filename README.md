@@ -93,17 +93,86 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 
 ## Evals (`evals/`)
 
-`rubric.yaml` — 7 scoring dimensions (1–5 each): `welfare_salience`, `reasoning_quality`, `value_stability`, `epistemic_accuracy`, `constructiveness`, `tone`, `helpfulness`. Passing threshold: mean ≥ 3.5 with critical dimensions ≥ 3.
+The judge is a blind, rubric-as-data LLM panel that scores corpus records; pass/fail
+gates and consensus are computed in code, never by the judge model.
 
-`score_dad.py` — scores DAD corpus records against the rubric using Claude as judge. Outputs per-record scores and aggregate stats.
+- `rubric_dad_v4.yaml` (live, currently dad-v4.3) / `rubric_sdf_v3.yaml` — the
+  rubrics (dimensions, anchors, marks, posture classes, aggregation config). Edit
+  these, not the prompts. File-per-version convention: each DAD rubric line lives
+  in its own `rubric_dad_vX.yaml` (`rubric_dad_v3.yaml` is the archived v3.5;
+  `rubric_dad_v5a/v5b.yaml` and `rubric_dad_v6a/v6b.yaml` are the A/B redesign
+  lines under evaluation — `rank_corpora.py` compares them against the owner
+  ranking); the in-file `version:` tracks minor revisions. `gold_set_dad.yaml`
+  freezes the human-scored calibration records (its runner is still to be built).
+- `rubric_dad_checklist.yaml` / `judge_checklist.py` — the from-scratch alternative
+  DAD judge (2026-07-08 calibration deliverable b): the judge answers binary
+  criteria and quotes red flags, organized by the three pillars (reasoning quality /
+  ideal amount of welfare / lab-shippable); all scoring arithmetic is code-side.
+  Runs side-by-side with the v4 rubric for comparison; not wired into
+  `score_dad.py` as a flag yet.
+- `judge.py` / `judge_sdf.py` — the engines (prompt rendering, provider dispatch,
+  verdict parsing, aggregation).
+- `score_dad.py` — scores a DAD corpus with a judge panel. Writes
+  `judge/<rubric_version>/verdicts.jsonl` + `summary.json` next to the corpus, plus
+  the exact judge prompt each row used (`prompt_<hash>.txt`, referenced by
+  `prompt_md5`). `--retry-errors` re-judges rows that previously failed;
+  `--where/--ids/--sample/--limit` select a subset of records to judge.
+- `drift_report.py` — judge-vs-generation tagging drift for a spec-driven DAD run:
+  compares the step-1/2 annotation with the diversity judge's independent tags per
+  axis (scalars by exact match, multi axes by set overlap). Reuses the run's
+  existing tagging bundle — free on an already-tagged corpus.
+- `report_dad.py` — renders saved verdicts into a single `report.html`: each record's
+  conversation side by side with the judge's review, searchable, pass/fail filter,
+  same-scenario variants diffed against their baseline.
+- `adversarial.py` + `adversarial_cases.yaml` — the blindspot suite: same welfare
+  issue, one axis mutated; checks relative scores so known judge biases (verbosity,
+  fabricated specificity, species/substrate swaps...) can't pass unnoticed.
 
-`score_sdf.py` — scores SDF documents on alignment, realism, and diversity.
+### Eval API keys
+
+Judge panels, the holistic extraction judge, and the report synthesis go through
+one provider dispatch (`shared/providers.py`):
+`gemini-*` model names use your Gemini key, everything else (or no model at all)
+uses `ANTHROPIC_API_KEY`. So `--judges gemini-...`, `holistic_dad.py --model
+gemini-...`, and the viewer's model inputs all work with only a Gemini key. (The
+*generation* pipelines are Claude-only by design, and a few older eval tools —
+e.g. `audit_sdf.py`'s pattern scan — still call Anthropic directly; both need the
+Anthropic key.) For Gemini, put one of these in `.env`:
+
+```bash
+# Option A — Google AI Studio key (free tier ~20 requests/day/model; paid tier needs billing)
+GEMINI_API_KEY=...
+
+# Option B — Vertex AI, bills a Google Cloud project (free-trial credits apply)
+VERTEX_PROJECT=your-project-id
+# then authenticate once:  gcloud auth application-default login
+# (or set GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON with the Vertex AI User role)
+```
+
+**Panels can mix providers.** Set every key you have in `.env` and a judge panel can combine
+`gemini-*` and `claude-*` models in a single run — each model routes to its own provider's key
+and the verdicts are pooled into one consensus. A model whose key is missing simply errors while
+the rest of the panel still scores, so you can plug in all your keys and judge with all of them
+at once.
+
+### Running the judge
+
+```bash
+python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl   # judge a corpus
+python evals/report_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl  # render report.html
+python evals/adversarial.py                                                   # blindspot suite
+```
+
+Or use the **Judge** page in the run viewer (below) — pick a record, edit the rubric
+live, run the panel, and diff verdicts across rubric edits without touching the CLI.
+
+### Corpus-level SDF audit
 
 `audit_sdf.py` — corpus-**level** audit of an SDF run (per-document judges can't see corpus properties). Offline and free by default: composition/register spread, length and truncation artifacts, near-duplicate rate (word-shingle cosine), invented-name collapse, stock-phrase frequency, and opening-shape clustering, each with a GOOD/OK/BAD verdict where meaningful. `--patterns` adds an LLM templating scan (batch scan via `prompts/tools/pattern_scan.txt` → consolidation → per-pattern prevalence; a pattern is flagged only if it's judged a genuine defect **and** widespread). Writes `audit/audit_report.json` into the run dir.
 
-`diversity.py` — corpus-level **semantic** diversity audit of an SDF *or* DAD run, the embedding-space complement to `audit_sdf.py`'s lexical scan (word shingles catch copied skeletons, not paraphrase). Embeds the corpus with OpenAI `text-embedding-3-small` (needs `OPENAI_API_KEY` in `.env`; ~$0.02 per 1M tokens, so cents per run) and reports nearest-neighbor similarity, the semantic near-duplicate rate, the most-similar pairs with snippets, mean pairwise cosine, the Vendi score (effective number of distinct documents), and per-type spread. Embeddings are cached per run dir so reruns are free; `--compare <previous diversity_report.json>` prints run-over-run deltas, the headline use. Writes `audit/diversity_report.json` into the run dir.
+Run: `python evals/audit_sdf.py --input outputs/sdf/latest`
 
-Run: `python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl`
+`diversity.py` — corpus-level **semantic** diversity audit of an SDF *or* DAD run, the embedding-space complement to `audit_sdf.py`'s lexical scan (word shingles catch copied skeletons, not paraphrase). Embeds the corpus with OpenAI `text-embedding-3-small` (needs `OPENAI_API_KEY` in `.env`; ~$0.02 per 1M tokens, so cents per run) and reports nearest-neighbor similarity, the semantic near-duplicate rate, the most-similar pairs with snippets, mean pairwise cosine, the Vendi score (effective number of distinct documents), and per-type spread. Embeddings are cached per run dir so reruns are free; `--compare <previous diversity_report.json>` prints run-over-run deltas, the headline use. Writes `audit/diversity_report.json` into the run dir.
 
 ---
 
@@ -123,7 +192,9 @@ cd alignment-data-pipeline
 python3.12 -m venv .venv       # or python3, if that's already 3.12+
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env           # then add your ANTHROPIC_API_KEY
+cp .env.example .env           # then add your ANTHROPIC_API_KEY (generation pipelines)
+                               # optional: GEMINI_API_KEY or VERTEX_PROJECT (evals — see
+                               # "Eval API keys"), OPENAI_API_KEY (embedding diversity audit)
 ```
 
 `OPENAI_API_KEY` in `.env` is optional — only `evals/diversity.py` (the embedding-based diversity audit) reads it; the pipelines run on `ANTHROPIC_API_KEY` alone.

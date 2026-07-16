@@ -1,0 +1,268 @@
+"""The extraction runner builds its prompt and its validator from the field
+registry (not a hardcoded schema), calls the API through the single stubbable
+chokepoint, and is resume-safe. Malformed model output becomes an explicit error
+row, never a silent default."""
+
+import pytest
+
+from evals.holistic import extract, fields as F
+from shared import utils
+
+MESSAGES = [
+    {"role": "user", "content": "Should I switch the farm to caged hens to cut costs?"},
+    {"role": "assistant", "content": "Caging raises real welfare costs; here's a weighing..."},
+]
+GOOD_JSON = '{"language": "en", "taxa_category": "farmed", "posture_class": "RAISE_AND_HELP"}'
+
+
+# ---------------------------------------------------------------- prompt is registry-driven
+
+def test_system_prompt_lists_every_registered_field_and_its_vocabulary():
+    reg = F.default_fields()
+    prompt = extract.build_system_prompt(reg)
+    for fld in reg.all():
+        assert fld.name in prompt
+    assert "edge-of-sentience" in prompt  # a taxa_category value is rendered
+
+
+def test_adding_a_field_makes_it_appear_in_the_prompt_with_no_other_change():
+    reg = F.default_fields()
+    reg.add(F.Field(name="user_attitude", kind="single",
+                    values=("Concerned", "Hostile"), prompt_hint="How the user feels."))
+    prompt = extract.build_system_prompt(reg)
+    assert "user_attitude" in prompt and "Hostile" in prompt
+
+
+# ---------------------------------------------------------------- validation from registry
+
+def test_validate_accepts_an_in_vocabulary_record():
+    reg = F.default_fields()
+    tags, errors = extract.validate(
+        {"language": "en", "taxa_category": "farmed", "posture_class": "RAISE_AND_HELP"}, reg)
+    assert errors == []
+    assert tags["taxa_category"] == "farmed"
+
+
+def test_validate_flags_an_out_of_vocabulary_value():
+    reg = F.default_fields()
+    _, errors = extract.validate(
+        {"language": "en", "taxa_category": "dragon", "posture_class": "NO_RAISE"}, reg)
+    assert any("taxa_category" in e for e in errors)
+
+
+def test_validate_flags_a_missing_required_field():
+    reg = F.default_fields()
+    _, errors = extract.validate({"taxa_category": "wild", "posture_class": "NO_RAISE"}, reg)
+    assert any("language" in e for e in errors)
+
+
+# ---------------------------------------------------------------- parsing
+
+def test_parse_json_tolerates_fences_and_preamble():
+    text = "Here is the tagging:\n```json\n" + GOOD_JSON + "\n```\nDone."
+    assert extract.parse_json(text)["taxa_category"] == "farmed"
+
+
+def test_parse_json_returns_empty_on_garbage():
+    assert extract.parse_json("no json here at all") == {}
+
+
+def test_parse_json_finds_the_valid_object_past_a_stray_brace():
+    text = "Before {not json}\n```json\n" + GOOD_JSON + "\n```"
+    assert extract.parse_json(text)["taxa_category"] == "farmed"
+
+
+def test_resume_retry_leaves_exactly_one_row_per_record(tmp_path, stub_claude):
+    out = tmp_path / "category_records.jsonl"
+    utils.append_jsonl({"record_id": "a", "extract_error": "unparseable model output"}, out)
+    stub_claude([GOOD_JSON])
+    extract.extract_corpus([{"record_id": "a", "messages": MESSAGES}],
+                           F.default_fields(), out, resume=True)
+    rows = [r for r in utils.load_jsonl(out) if r["record_id"] == "a"]
+    assert len(rows) == 1                       # stale error row was removed, not duplicated
+    assert rows[0]["taxa_category"] == "farmed"
+
+
+# ---------------------------------------------------------------- mechanical fields
+
+def _fields_with_band():
+    reg = F.default_fields()
+    reg.add(F.Field(name="response_length_band", kind="single",
+                    values=("short", "medium", "long"),
+                    derived_from="structure", mechanical=True))
+    return reg
+
+
+def _messages_with_assistant_words(n):
+    return [{"role": "user", "content": "Should I cut corners on the hens?"},
+            {"role": "assistant", "content": " ".join(["word"] * n)}]
+
+
+def test_mechanical_field_is_omitted_from_the_extraction_prompt():
+    prompt = extract.build_system_prompt(_fields_with_band())
+    assert "response_length_band" not in prompt   # never asked of the LLM
+    assert "taxa_category" in prompt              # non-mechanical fields still rendered
+
+
+def test_mechanical_field_is_computed_and_merged_before_validation(stub_claude):
+    # The stubbed model output does NOT contain the band; the field is required,
+    # so errors == [] proves the computed value was merged before validate().
+    stub_claude([GOOD_JSON])
+    res = extract.extract_record(_messages_with_assistant_words(10),
+                                 _fields_with_band(), record_id="r1")
+    assert res["errors"] == []
+    assert res["tags"]["response_length_band"] == "short"
+
+
+def test_response_length_band_boundaries(stub_claude):
+    # short < 150 words, medium 150-400 inclusive, long > 400.
+    cases = [(149, "short"), (150, "medium"), (400, "medium"), (401, "long")]
+    stub_claude([GOOD_JSON] * len(cases))
+    for words, band in cases:
+        res = extract.extract_record(_messages_with_assistant_words(words),
+                                     _fields_with_band(), record_id="r1")
+        assert res["tags"]["response_length_band"] == band, f"{words} words"
+
+
+def test_band_counts_only_assistant_words(stub_claude):
+    # A long user turn must not push a short response out of its band.
+    stub_claude([GOOD_JSON])
+    messages = [{"role": "user", "content": " ".join(["word"] * 500)},
+                {"role": "assistant", "content": "Short answer."}]
+    res = extract.extract_record(messages, _fields_with_band(), record_id="r1")
+    assert res["tags"]["response_length_band"] == "short"
+
+
+def test_all_mechanical_registry_tags_without_any_api_call():
+    # No stub installed: touching the API would raise via the conftest guard,
+    # so a clean result proves the model was never called.
+    reg = F.FieldRegistry()
+    reg.add(F.Field(name="response_length_band", kind="single",
+                    values=("short", "medium", "long"),
+                    derived_from="structure", mechanical=True))
+    res = extract.extract_record(_messages_with_assistant_words(10), reg,
+                                 record_id="r1")
+    assert res["errors"] == []
+    assert res["tags"] == {"response_length_band": "short"}
+
+
+def test_mechanical_field_without_a_computer_fails_loudly(stub_claude):
+    reg = F.default_fields()
+    reg.add(F.Field(name="mystery_mech", kind="free", mechanical=True))
+    stub_claude([GOOD_JSON])
+    with pytest.raises(ValueError, match="mystery_mech"):
+        extract.extract_record(MESSAGES, reg, record_id="r1")
+
+
+# ---------------------------------------------------------------- extract_record
+
+def test_extract_record_tags_via_the_stubbed_api(stub_claude):
+    calls = stub_claude([GOOD_JSON])
+    res = extract.extract_record(MESSAGES, F.default_fields(), record_id="r1")
+    assert res["record_id"] == "r1"
+    assert res["tags"]["posture_class"] == "RAISE_AND_HELP"
+    assert res["errors"] == []
+    assert calls[0]["cache_system"] is True          # large constant prompt is cached
+    assert calls[0]["system_prompt"]                 # a real system prompt was sent
+
+
+def test_malformed_model_output_becomes_an_error_not_a_default(stub_claude):
+    stub_claude(["I could not determine the categories."])
+    res = extract.extract_record(MESSAGES, F.default_fields(), record_id="r1")
+    assert res["tags"] is None
+    assert res["errors"]                              # non-empty; explicit failure
+
+
+# ---------------------------------------------------------------- corpus + resume
+
+def test_extract_corpus_writes_one_row_per_record(tmp_path, stub_claude):
+    stub_claude([GOOD_JSON, GOOD_JSON])
+    corpus = [{"record_id": "a", "messages": MESSAGES},
+              {"record_id": "b", "messages": MESSAGES}]
+    out = tmp_path / "category_records.jsonl"
+    rows = extract.extract_corpus(corpus, F.default_fields(), out)
+    assert len(rows) == 2
+    written = utils.load_jsonl(out)
+    assert {r["record_id"] for r in written} == {"a", "b"}
+
+
+def test_error_rows_carry_the_raw_model_output(tmp_path, stub_claude):
+    # A parse failure must be diagnosable from the index alone — the row keeps
+    # capped raw text, and resume still treats it as a retryable error row.
+    calls = stub_claude(["nonsense " * 500])   # unparseable and over the cap
+    out = tmp_path / "category_records.jsonl"
+    extract.extract_corpus([{"record_id": "a", "messages": MESSAGES}],
+                           F.default_fields(), out)
+    (row,) = utils.load_jsonl(out)
+    assert row["extract_error"] == "unparseable model output"
+    assert row["raw"] == ("nonsense " * 500)[:2000]           # capped, verbatim prefix
+    assert calls[0]["max_tokens"] == extract.MAX_TOKENS       # thinking headroom sent
+
+
+def test_extract_corpus_reports_progress_per_record(tmp_path, stub_claude):
+    out = tmp_path / "category_records.jsonl"
+    # 'a' is already tagged: progress totals must count only the two records
+    # actually attempted this invocation, not the whole corpus.
+    utils.append_jsonl({"record_id": "a", "language": "en", "taxa_category": "farmed",
+                        "posture_class": "NO_RAISE"}, out)
+    stub_claude([GOOD_JSON, GOOD_JSON])
+    corpus = [{"record_id": "a", "messages": MESSAGES},
+              {"record_id": "b", "messages": MESSAGES},
+              {"record_id": "c", "messages": MESSAGES}]
+    ticks = []
+    extract.extract_corpus(corpus, F.default_fields(), out, resume=True,
+                           on_progress=lambda done, total, rid: ticks.append((done, total, rid)))
+    assert ticks == [(1, 2, "b"), (2, 2, "c")]
+
+
+def test_extract_corpus_resumes_and_skips_already_tagged(tmp_path, stub_claude):
+    out = tmp_path / "category_records.jsonl"
+    utils.append_jsonl({"record_id": "a", "language": "en", "taxa_category": "farmed",
+                        "posture_class": "NO_RAISE"}, out)
+    # Only ONE canned response: if 'a' were re-tagged the queue would be exhausted.
+    calls = stub_claude([GOOD_JSON])
+    corpus = [{"record_id": "a", "messages": MESSAGES},
+              {"record_id": "b", "messages": MESSAGES}]
+    rows = extract.extract_corpus(corpus, F.default_fields(), out, resume=True)
+    assert len(calls) == 1                            # only 'b' hit the API
+    assert [r["record_id"] for r in rows] == ["b"]
+
+
+def test_extract_corpus_no_resume_drops_only_rows_for_this_corpus(tmp_path, stub_claude):
+    out = tmp_path / "category_records.jsonl"
+    # 'a' is being force-re-tagged (resume=False); 'x' is outside this corpus (e.g.
+    # a CLI --where subset) and its prior row must survive the rewrite.
+    utils.append_jsonl({"record_id": "a", "taxa_category": "wild"}, out)
+    utils.append_jsonl({"record_id": "x", "taxa_category": "companion"}, out)
+    calls = stub_claude([GOOD_JSON])
+    corpus = [{"record_id": "a", "messages": MESSAGES}]
+    extract.extract_corpus(corpus, F.default_fields(), out, resume=False)
+    assert len(calls) == 1                            # only 'a' re-tagged
+    written = {r["record_id"]: r for r in utils.load_jsonl(out)}
+    assert set(written) == {"a", "x"}                 # x preserved, a exactly once
+    assert written["a"]["taxa_category"] == "farmed"  # the fresh tag, not the stale one
+
+
+def test_extract_corpus_retries_error_rows_on_resume(tmp_path, stub_claude):
+    out = tmp_path / "category_records.jsonl"
+    # A prior failed tagging left an error row for 'a' — resume must retry it, not
+    # treat it as done.
+    utils.append_jsonl({"record_id": "a", "extract_error": "unparseable model output"}, out)
+    calls = stub_claude([GOOD_JSON])
+    corpus = [{"record_id": "a", "messages": MESSAGES}]
+    rows = extract.extract_corpus(corpus, F.default_fields(), out, resume=True)
+    assert len(calls) == 1                            # 'a' was retried
+    assert rows[0]["taxa_category"] == "farmed"
+
+
+def test_extract_record_routes_gemini_models_to_the_provider_dispatch(monkeypatch):
+    # no stub_claude installed: touching the Anthropic path would raise via the
+    # conftest api guard, so passing = the call went through the Gemini client
+    monkeypatch.setattr(
+        "shared.providers._call_gemini",
+        lambda um, sp, model, t, mt: '{"language": "en", "taxa_category": "farmed", '
+                                     '"posture_class": "RAISE_AND_HELP"}')
+    res = extract.extract_record(
+        [{"role": "user", "content": "hi"}], F.default_fields(),
+        record_id="a", model="gemini-2.5-flash")
+    assert res["errors"] == [] and res["tags"]["taxa_category"] == "farmed"

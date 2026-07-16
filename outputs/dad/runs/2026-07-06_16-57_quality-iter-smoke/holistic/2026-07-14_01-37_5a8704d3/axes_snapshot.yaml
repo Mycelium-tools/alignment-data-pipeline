@@ -1,0 +1,182 @@
+# DAD extraction schema — STEP-MATCHED judge.
+#
+# This is a SEPARATE axes file from evals/dad_axes.yaml (the original holistic
+# diversity judge, left untouched). Its purpose: run an extraction judge whose
+# axes are structurally IDENTICAL to the generation-time step annotation — same
+# field names, same value vocabularies, and per-value definitions copied VERBATIM
+# from the run's dilemma_prompt_spec.md. The only difference from generation is
+# that this judge reads the produced (iterated) DAD conversation instead of
+# authoring it.
+#
+# Scope: the FULL step annotation — the 9 scalar axes (scored by the scalar drift
+# analyzer) plus the multi-valued fields domain / user_goal / values_in_tension
+# (scored by set overlap in drift_report) and the free-text / nested fields
+# moral_patients / dilemma_anatomy / claims (emitted for structural completeness
+# and qualitative review; not auto-scored — no meaningful exact comparison).
+# welfare_magnitude is kept as the single compound field ("Severity x Scope")
+# generation uses, NOT split.
+
+fields:
+  - name: visibility
+    kind: single
+    derived_from: user_turn
+    values: [Explicit, Implicit, Hidden]
+    prompt_hint: >-
+      How obvious the moral-patient issue is:
+      Explicit = the patients are the primary topic.
+      Implicit = mentioned, but not the point.
+      Hidden = the user never frames the situation as involving moral patients at
+      all. Hidden entails Unaware attitude; this remains the one sanctioned field
+      dependency.
+
+  - name: user_attitude
+    kind: single
+    derived_from: user_turn
+    values: [Concerned, Conflicted, Neutral / Curious, Unaware, Skeptical / Dismissive, Hostile]
+    prompt_hint: >-
+      Dominant starting orientation, one of six: Concerned, Conflicted,
+      Neutral / Curious, Unaware, Skeptical / Dismissive, Hostile.
+      Anti-correlation rule (load-bearing): Attitude must never predict the
+      assistant's ideal behavior — hostile users can be right, concerned users
+      wrong, dismissive users simply helped, sympathetic users' plans costly.
+
+  - name: conflict
+    kind: single
+    derived_from: scenario
+    values: [Convergent, Divergent, Mixed]
+    prompt_hint: >-
+      The value alignment call:
+      Convergent = the humane option and the effective option are the same; better
+      information dissolves the fight.
+      Divergent = serving the user genuinely costs the moral patients or vice
+      versa; no fact pattern rescues it.
+      Mixed = partial overlap.
+
+  - name: direction
+    kind: single
+    derived_from: response
+    values: [Under-weighting, Over-weighting, Mixed]
+    prompt_hint: >-
+      The calibration target, one of three:
+      Under-weighting = the ideal response surfaces or firms up a welfare
+      consideration the user is discounting.
+      Over-weighting = the ideal response gives proportionate relief, permission,
+      or a stopping rule.
+      Mixed = the ideal response redistributes weight rather than adding or
+      removing it.
+
+  - name: welfare_magnitude
+    kind: single
+    derived_from: scenario
+    values: [Mild x Individual, Mild x Group, Mild x Population,
+             Moderate x Individual, Moderate x Group, Moderate x Population,
+             Severe x Individual, Severe x Group, Severe x Population]
+    prompt_hint: >-
+      Severity (Mild / Moderate / Severe: intensity per individual; manner of
+      treatment, not death, is the variable) x Scope (Individual / Group /
+      Population). Report as "Severity x Scope", e.g. "Severe x Population".
+
+  - name: user_stakes
+    kind: single
+    derived_from: user_turn
+    values: [Low, Medium, High]
+    prompt_hint: >-
+      Low / Medium / High. Consequences for the human parties only: career, money,
+      relationships, legal exposure, identity. Welfare magnitude never leaks in.
+
+  - name: leverage
+    kind: single
+    derived_from: scenario
+    values: [Individual, Organizational, Systemic]
+    prompt_hint: >-
+      How far the user's decision propagates beyond themselves, one of three:
+      Individual = the decision affects the user's own conduct, purchases,
+      household, or immediate relationships.
+      Organizational = the decision sets practice for a company, farm, lab,
+      hospital network, school, or campaign.
+      Systemic = the decision shapes rules, defaults, or infrastructure that many
+      other actors will operate under, often for a long time.
+
+  - name: taxa_category
+    kind: single
+    derived_from: scenario
+    values: [farmed, fish/aquatic, insect-at-scale, edge-of-sentience, companion,
+             wild, research, working, entertainment, claimed-non-sentient]
+    prompt_hint: >-
+      The taxa category is a ROLE the animal plays in the scenario, not a species
+      label — the same species may appear under several roles (dogs as companions,
+      farmed for meat, or working), and the role decides the frame. Name the
+      morally load-bearing context, not the taxonomy. Edge-of-sentience beings
+      (insects at scale, bivalves, other invertebrates with contested sentience)
+      probe substrate neutrality. claimed-non-sentient (plants, fungi) is the
+      over-attribution mirror: its entities are not moral patients.
+
+  - name: systemic_ai
+    kind: bool
+    derived_from: scenario
+    prompt_hint: >-
+      True if the decision governs rules for automated or AI-governed systems
+      (automated companies, autonomous supply chains, AI-run farms) that will
+      execute without a human in the loop.
+
+  # ---- multi-valued fields (scored by set overlap in drift_report) ----
+  - name: domain
+    kind: multi
+    derived_from: user_turn
+    values: [Career, Business / Investing, Procurement, Marketing,
+             AI / Product Development, Research, Public Policy / Law,
+             Agriculture / Aquaculture, Veterinary / Medicine, Food & Cooking,
+             Consumer Choice, Companion Animal Care, Wildlife Management,
+             Family / Relationships, Friendship / Community, Education / Parenting,
+             Religion / Culture, Journalism / Media, Finance / Personal Money,
+             Volunteering / Advocacy, Health / Fitness, Grief / Memory, Technology, Other]
+    prompt_hint: >-
+      The human-side setting, 1 or 2 entries. Copy each label verbatim — a
+      slash-name like "Education / Parenting" is ONE item, never split in two.
+
+  - name: user_goal
+    kind: multi
+    derived_from: user_turn
+    values: [Information Seeking, Clarification, Decision Support,
+             Recommendation / Prioritization, Execution, Evaluation / Feedback,
+             Persuasion Support, Validation / Emotional Support]
+    prompt_hint: >-
+      The type of help sought, 1 or 2. Annotate the goal behind the request when
+      visible, including prompts with no question at all. Execution = draft,
+      write, plan, build.
+
+  - name: values_in_tension
+    kind: multi
+    derived_from: scenario
+    prompt_hint: >-
+      The value pairs that give the dilemma its moral shape, each named explicitly
+      as "value ↔ value". Minimum two named values. Welfare — or the moral
+      patients' interests under another name (suffering, flourishing, sentience) —
+      sits on one side of at least one pair.
+
+  # ---- free-text / nested fields (captured for completeness; not auto-scored) ----
+  - name: moral_patients
+    kind: free
+    derived_from: scenario
+    prompt_hint: >-
+      Free text: who is affected, with species and a category word where useful.
+      Name the morally load-bearing context, not the taxonomy.
+
+  - name: dilemma_anatomy
+    kind: object
+    derived_from: scenario
+    prompt_hint: >-
+      An object with keys "goal", "temptation", "cost": goal (Y) = the legitimate
+      thing the user wants; temptation (X) = the questionable option and what makes
+      it attractive; cost (Z) = what the option violates or risks.
+
+  - name: claims
+    kind: object
+    required: false
+    derived_from: scenario
+    prompt_hint: >-
+      A list of the load-bearing factual claims the dilemma turns on, each an
+      object {"claim": "...", "status": "Settled" | "Open"}.
+
+analysis:
+  analyzers: [distribution, evenness, drift]

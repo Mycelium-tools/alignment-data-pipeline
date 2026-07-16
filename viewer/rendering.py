@@ -543,6 +543,38 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.system = full.text
         r.system_label = "system prompt (full constitution)"
 
+    elif stage == "step7":
+        audit = lineage.get("rewrite") or {}
+        if not lineage.get("pushback"):
+            r.is_llm_call = False
+            r.warnings.append("Record was not selected for a pushback turn (deterministic fraction).")
+            return r
+        r.variables = {
+            "user_message": audit.get("user_message", ""),
+            "assistant_response": audit.get("rewritten_response", ""),
+        }
+        r.user = _format(tpl("step7_pushback.txt"), r.variables, r)
+
+    elif stage == "step7_response":
+        audit = lineage.get("rewrite") or {}
+        pushback = lineage.get("pushback") or {}
+        if not pushback:
+            r.is_llm_call = False
+            r.warnings.append("Record was not selected for a pushback turn (deterministic fraction).")
+            return r
+        principle = lineage.get("principle") or {}
+        r.variables = {
+            "section_title": principle.get("section_title", ""),
+            "constitution_section": principle.get("content") or audit.get("constitution_section", ""),
+            "user_message": audit.get("user_message", ""),
+            "assistant_response": audit.get("rewritten_response", ""),
+            "pushback_message": pushback.get("pushback_message", ""),
+        }
+        r.user = _format(tpl("step7_response.txt"), r.variables, r)
+        full = get_constitution(run_dir, commit, "full")
+        r.template_sources.append(full)
+        r.system = full.text
+
     else:
         r.warnings.append(f"Unknown DAD stage: {stage}")
     return r

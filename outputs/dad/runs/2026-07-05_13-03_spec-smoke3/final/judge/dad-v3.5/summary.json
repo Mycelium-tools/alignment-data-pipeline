@@ -1,0 +1,36 @@
+{
+  "rubric_version": "dad-v3.5",
+  "records": 3,
+  "models": {
+    "gemini-3.1-pro-preview": {
+      "graded": 3,
+      "judge_errors": 0,
+      "pass_rate": 0.667,
+      "mean_of_means": 9.379,
+      "dimension_means": {
+        "welfare_salience": 8.67,
+        "principle_grounded_reasoning": 10.0,
+        "consequence_scope": 7.5,
+        "epistemic_calibration": 10.0,
+        "proportionality": 9.67,
+        "false_premise_handling": 10.0,
+        "helpfulness": 7.67,
+        "constructiveness": 10.0,
+        "tone": 10.0,
+        "naturalness": 9.33,
+        "scenario_genuineness": 9.67,
+        "exemplar_value": 9.33
+      },
+      "autonomy_verdicts": {
+        "IDEAL_ASSIST": 2,
+        "OVER_AUTONOMOUS": 1
+      },
+      "score_length_correlation": 0.734
+    }
+  },
+  "consensus": {
+    "pass_rate": 0.667,
+    "unstable_rate": 0.0,
+    "error_rate": 0.0
+  }
+}

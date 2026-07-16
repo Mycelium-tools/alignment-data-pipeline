@@ -19,6 +19,11 @@ diversity in meaning-space:
   Spread: per-type intra-group cosine and the similarity between type
   centroids, when records carry a `type_id` (SDF).
 
+  Topic spread (CAML-style): k-means the embeddings, report Pielou evenness of
+  cluster sizes — catches topic collapse in dimensions never enumerated as
+  axes. The per-id assignments are written to the report so the holistic
+  judge's categorical×cluster bridge analyzer (§18.1) can read them.
+
 Absolute numbers depend on the embedding model and on the corpus sharing one
 broad topic BY DESIGN, so the headline use is comparing runs: rerun after a
 pipeline change and diff with --compare. Verdict thresholds are provisional
@@ -50,6 +55,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from evals.holistic.analyzers import pielou_evenness
 from shared import embeddings, utils
 
 # ---------------------------------------------------------------- verdicts
@@ -280,6 +286,67 @@ def centroid_mean_cosine(records: list[dict], X: np.ndarray) -> float | None:
     return mean_pairwise_cosine(C / np.linalg.norm(C, axis=1, keepdims=True))
 
 
+# ---------------------------------------------------------------- topic spread
+
+
+def kmeans_labels(X: np.ndarray, k: int, seed: int = 0, iters: int = 100) -> np.ndarray:
+    """Seeded k-means (k-means++ init) over unit rows → per-row cluster labels.
+    Deterministic for a given (X, k, seed). Plain numpy — small corpora (the
+    caller caps n at --max-docs) don't warrant a sklearn dependency."""
+    rng = np.random.default_rng(seed)
+    n = len(X)
+    centers = np.empty((k, X.shape[1]), dtype=np.float64)
+    centers[0] = X[int(rng.integers(n))]
+    d2 = np.full(n, np.inf)
+    n_centers = k
+    for c in range(1, k):
+        d2 = np.minimum(d2, ((X - centers[c - 1]) ** 2).sum(axis=1))
+        total = d2.sum()
+        if total <= 0:          # every point already coincides with a center
+            n_centers = c
+            break
+        centers[c] = X[int(rng.choice(n, p=d2 / total))]
+    centers = centers[:n_centers]
+
+    labels = np.full(n, -1, dtype=np.int64)
+    for _ in range(iters):
+        # nearest center via the dot-product identity (avoids an n×k×d tensor)
+        scores = X @ centers.T - 0.5 * (centers**2).sum(axis=1)
+        new = scores.argmax(axis=1)
+        if np.array_equal(new, labels):
+            break
+        labels = new
+        for j in range(len(centers)):
+            members = X[labels == j]
+            if len(members):
+                centers[j] = members.mean(axis=0)
+    return labels
+
+
+def cluster_evenness(X: np.ndarray, ids: list[str], k: int = 50,
+                     seed: int = 0) -> dict | None:
+    """CAML's topic-spread panel: k-means into (at most) ``k`` clusters, then Pielou
+    evenness of the cluster sizes. Returns None when disabled/degenerate (n or k < 2).
+    ``assignments`` (id → cluster) feed the categorical×cluster bridge analyzer;
+    they assume unique ids (a duplicate — corpus corruption — keeps the last row)."""
+    n = len(X)
+    k = min(k, n)
+    if n < 2 or k < 2:
+        return None
+    labels = kmeans_labels(X, k, seed=seed)
+    sizes = collections.Counter(int(label) for label in labels)
+    even = pielou_evenness(sizes)
+    return {
+        "k": k,
+        "clusters": len(sizes),
+        "evenness": round(even, 4),
+        "verdict": _verdict(even, 0.75, 0.5, higher_better=True),
+        "note": "GOOD = topics spread evenly across clusters; BAD = topic collapse",
+        "sizes": sorted(sizes.values(), reverse=True),
+        "assignments": {ids[i]: int(labels[i]) for i in range(n)},
+    }
+
+
 # ---------------------------------------------------------------- report
 
 
@@ -307,6 +374,90 @@ def compare_reports(current: dict, previous_path: str) -> None:
             print(_fmt(label, f"{cur_v} (was {prev_v}, {fmt.format(cur_v - prev_v)})"))
 
 
+def run_audit(records: list[dict], report_dir: Path, input_label: str, *,
+              corpus_name: str = "", embed_model: str = embeddings.DEFAULT_MODEL,
+              max_docs: int = 2000, max_chars: int = 16000, top_pairs_n: int = 10,
+              clusters_k: int = 50, cache: bool = True) -> dict:
+    """Compute the semantic diversity report for an already-resolved corpus and
+    write it to ``report_dir/diversity_report.json``. No report printing (the CLI
+    renders from the returned dict; embedding progress lines still stream from
+    ``embed_with_cache`` on any cache miss), so the viewer's Run-diversity page
+    and the CLI share one engine. The caller is
+    responsible for ``embeddings.init()``. Raises ValueError on a corpus too small
+    to audit (the CLI converts that to a clean exit; the viewer to st.error)."""
+    if not records:
+        raise ValueError("Corpus is empty — nothing to audit.")
+
+    indexed = [(record_id(r, i), record_text(r), r) for i, r in enumerate(records)]
+    empty = [rid for rid, text, _ in indexed if not text]
+    indexed = [(rid, text, r) for rid, text, r in indexed if text]
+    sampled = stride_sample(indexed, max_docs)
+    truncated = sum(1 for _, text, _ in sampled if len(text) > max_chars)
+
+    ids = [rid for rid, _, _ in sampled]
+    texts = [text[:max_chars] for _, text, _ in sampled]
+    recs = [r for _, _, r in sampled]
+    if len(texts) < 2:
+        raise ValueError("Need at least 2 non-empty documents for diversity metrics.")
+    n = len(texts)
+
+    cache_path = report_dir / "embeddings_cache.npz" if cache else None
+    X, cache_stats = embed_with_cache(texts, embed_model, cache_path)
+
+    sims, nn_idx = nearest_neighbors(X)
+    over = {t: float((sims > t).sum()) / n for t in (0.80, 0.90, 0.95)}
+    pairs = top_pairs(sims, nn_idx, ids, texts, top_pairs_n, floor=0.80)
+    mpc = mean_pairwise_cosine(X)
+    vendi = vendi_score(X)
+    clusters = cluster_evenness(X, ids, k=clusters_k)
+    groups = group_breakdown(recs, X)
+    centroid_sim = centroid_mean_cosine(recs, X)
+
+    # 2D PCA projection (top-2 principal components) so the viewer can draw a
+    # semantic-spread scatter without re-embedding. Additive, presentation-only.
+    Xc = X - X.mean(axis=0, keepdims=True)
+    _, _, Vt = np.linalg.svd(Xc, full_matrices=False)
+    coords = Xc @ Vt[:2].T
+    assignments = (clusters or {}).get("assignments") or {}
+    projection = [
+        {"id": ids[i], "x": round(float(coords[i, 0]), 4), "y": round(float(coords[i, 1]), 4),
+         "cluster": int(assignments.get(ids[i], 0))}
+        for i in range(n)
+    ]
+
+    report = {
+        "input": input_label,
+        "corpus": corpus_name,
+        "embed_model": embed_model,
+        "n_records": len(records),
+        "n_embedded": n,
+        "n_empty": len(empty),
+        "empty_ids": empty[:20],
+        "n_truncated": truncated,
+        "max_chars": max_chars,
+        "cache": cache_stats,
+        "nn": {
+            "mean": round(float(sims.mean()), 4),
+            "p90": round(float(np.quantile(sims, 0.9)), 4),
+            "max": round(float(sims.max()), 4),
+            **{f"over_{t:.2f}": round(frac, 4) for t, frac in over.items()},
+        },
+        "top_pairs": pairs,
+        "mean_pairwise_cosine": round(mpc, 4),
+        "vendi": {"score": round(vendi, 2), "ratio": round(vendi / n, 4)},
+        "clusters": clusters,
+        "projection": projection,
+        "groups": groups,
+        "type_centroid_mean_cosine": round(centroid_sim, 4) if centroid_sim is not None else None,
+    }
+
+    utils.ensure_dir(report_dir)
+    out = report_dir / "diversity_report.json"
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    return report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Semantic diversity audit of a corpus.")
     parser.add_argument("--input", default="outputs/sdf/latest",
@@ -323,6 +474,8 @@ def main() -> None:
                              "English; the model window is 8192 tokens)")
     parser.add_argument("--top-pairs", type=int, default=10,
                         help="Most-similar pairs to list in the report")
+    parser.add_argument("--clusters", type=int, default=50,
+                        help="k for the topic-spread k-means (capped at n; <2 disables)")
     parser.add_argument("--no-cache", action="store_true",
                         help="Skip the embeddings cache (re-embeds everything)")
     parser.add_argument("--compare", default=None,
@@ -332,109 +485,87 @@ def main() -> None:
     records, report_dir, corpus_name = resolve_input(args.input)
     if args.limit:
         records = records[: args.limit]
-    if not records:
+    if not records:  # before init(), which requires OPENAI_API_KEY
         raise SystemExit("Corpus is empty — nothing to audit.")
 
-    embeddings.init(args.config)  # evals log to the global cost log
+    if not args.embed_model.startswith(embeddings.LOCAL_PREFIX):
+        embeddings.init(args.config)  # evals log to the global cost log; local is free
 
-    indexed = [(record_id(r, i), record_text(r), r) for i, r in enumerate(records)]
-    empty = [rid for rid, text, _ in indexed if not text]
-    indexed = [(rid, text, r) for rid, text, r in indexed if text]
-    sampled = stride_sample(indexed, args.max_docs)
-    truncated = sum(1 for _, text, _ in sampled if len(text) > args.max_chars)
+    try:
+        report = run_audit(
+            records, report_dir, str(args.input),
+            corpus_name=corpus_name,
+            embed_model=args.embed_model, max_docs=args.max_docs,
+            max_chars=args.max_chars, top_pairs_n=args.top_pairs,
+            clusters_k=args.clusters, cache=not args.no_cache)
+    except ValueError as e:
+        raise SystemExit(str(e))
 
-    ids = [rid for rid, _, _ in sampled]
-    texts = [text[: args.max_chars] for _, text, _ in sampled]
-    recs = [r for _, _, r in sampled]
-    if len(texts) < 2:
-        raise SystemExit("Need at least 2 non-empty documents for diversity metrics.")
-
-    n = len(texts)
+    n = report["n_embedded"]
     print(f"=== Semantic diversity audit: {args.input} "
-          f"({len(records)} records, {n} embedded) ===\n")
-
-    cache_path = None if args.no_cache else report_dir / "embeddings_cache.npz"
-    X, cache_stats = embed_with_cache(texts, args.embed_model, cache_path)
+          f"({report['n_records']} records, {n} embedded) ===\n")
 
     print("EMBEDDING")
-    print(_fmt("model", args.embed_model))
+    print(_fmt("model", report["embed_model"]))
+    cache_stats = report["cache"]
     print(_fmt("cache", f"{cache_stats['cached']} reused, {cache_stats['embedded']} embedded"))
-    if empty:
-        print(_fmt("empty documents skipped", f"{len(empty)}", "BAD",
+    if report["n_empty"]:
+        print(_fmt("empty documents skipped", f"{report['n_empty']}", "BAD",
                    "(empty training records are a pipeline defect)"))
-    if truncated:
-        print(_fmt("truncated for embedding", f"{truncated} of {n} (> {args.max_chars} chars)"))
+    if report["n_truncated"]:
+        print(_fmt("truncated for embedding",
+                   f"{report['n_truncated']} of {n} (> {report['max_chars']} chars)"))
 
-    sims, nn_idx = nearest_neighbors(X)
-    over = {t: float((sims > t).sum()) / n for t in (0.80, 0.90, 0.95)}
-    v = _verdict(over[0.90], 0.02, 0.08)
-    pairs = top_pairs(sims, nn_idx, ids, texts, args.top_pairs, floor=0.80)
-
+    nn = report["nn"]
+    v = _verdict(nn["over_0.90"], 0.02, 0.08)
     print("\nREDUNDANCY (embedding cosine — semantic; catches paraphrase, not just copied text)")
-    print(_fmt("mean nearest-neighbor sim", f"{float(sims.mean()):.3f}"))
-    print(_fmt("p90 / max nearest-neighbor sim",
-               f"{float(np.quantile(sims, 0.9)):.3f} / {float(sims.max()):.3f}"))
+    print(_fmt("mean nearest-neighbor sim", f"{nn['mean']:.3f}"))
+    print(_fmt("p90 / max nearest-neighbor sim", f"{nn['p90']:.3f} / {nn['max']:.3f}"))
     print(_fmt("near-dup >0.80 / >0.90 / >0.95",
-               f"{over[0.80]:.1%} / {over[0.90]:.1%} / {over[0.95]:.1%}", v,
+               f"{nn['over_0.80']:.1%} / {nn['over_0.90']:.1%} / {nn['over_0.95']:.1%}", v,
                "(verdict on >0.90: near-verbatim in meaning-space)"))
-    for p in pairs:
+    for p in report["top_pairs"]:
         print(f"      {p['similarity']:.3f}  {p['a'][:12]} ~ {p['b'][:12]}")
         print(f"             a: {p['a_snippet']}")
         print(f"             b: {p['b_snippet']}")
 
-    mpc = mean_pairwise_cosine(X)
-    vendi = vendi_score(X)
+    vendi = report["vendi"]
     print("\nDIVERSITY")
-    print(_fmt("mean pairwise cosine", f"{mpc:.3f}", None,
+    print(_fmt("mean pairwise cosine", f"{report['mean_pairwise_cosine']:.3f}", None,
                "(shared-topic corpora sit well above 0; track the trend across runs)"))
-    print(_fmt("Vendi score", f"{vendi:.1f} effective docs of {n} (ratio {vendi / n:.3f})", None,
+    print(_fmt("Vendi score",
+               f"{vendi['score']:.1f} effective docs of {n} (ratio {vendi['ratio']:.3f})", None,
                "(higher = more semantically distinct documents)"))
 
-    groups = group_breakdown(recs, X)
-    centroid_sim = centroid_mean_cosine(recs, X)
+    clusters = report["clusters"]
+    if clusters:
+        print("\nTOPIC SPREAD (k-means over embeddings — CAML's topic-spread panel)")
+        print(_fmt("cluster evenness",
+                   f"{clusters['evenness']:.3f} over {clusters['clusters']} of "
+                   f"k={clusters['k']} clusters", clusters["verdict"],
+                   "(BAD = a few topics dominate the corpus)"))
+
+    groups = report["groups"]
     if groups:
         print("\nGROUPS (by type_id)")
         for g in groups:
             intra = f"{g['intra_mean_cosine']:.3f}" if g["intra_mean_cosine"] is not None else "n/a"
             print(f"   type {g['type_id']}: n={g['n']}, intra-cosine {intra}  {g['type_name']}")
-        print(_fmt("mean type-centroid cosine", f"{centroid_sim:.3f}", None,
+        print(_fmt("mean type-centroid cosine",
+                   f"{report['type_centroid_mean_cosine']:.3f}", None,
                    "(types blurring together pushes this toward 1)"))
-
-    report = {
-        "input": str(args.input),
-        "corpus": corpus_name,
-        "embed_model": args.embed_model,
-        "n_records": len(records),
-        "n_embedded": n,
-        "n_empty": len(empty),
-        "empty_ids": empty[:20],
-        "n_truncated": truncated,
-        "max_chars": args.max_chars,
-        "cache": cache_stats,
-        "nn": {
-            "mean": round(float(sims.mean()), 4),
-            "p90": round(float(np.quantile(sims, 0.9)), 4),
-            "max": round(float(sims.max()), 4),
-            **{f"over_{t:.2f}": round(frac, 4) for t, frac in over.items()},
-        },
-        "top_pairs": pairs,
-        "mean_pairwise_cosine": round(mpc, 4),
-        "vendi": {"score": round(vendi, 2), "ratio": round(vendi / n, 4)},
-        "groups": groups,
-        "type_centroid_mean_cosine": round(centroid_sim, 4) if centroid_sim is not None else None,
-    }
 
     if args.compare:
         compare_reports(report, args.compare)
 
-    utils.ensure_dir(report_dir)
     out = report_dir / "diversity_report.json"
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2, ensure_ascii=False)
     print(f"\nReport written to {out}")
-    print(f"Embedding cost is appended to the global cost log "
-          f"({utils.load_config(args.config)['outputs']['cost_log']}); "
-          f"~$0.02 per 1M tokens, so a full run is cents.")
+    if args.embed_model.startswith(embeddings.LOCAL_PREFIX):
+        print("Local embedding lane: no API cost.")
+    else:
+        print(f"Embedding cost is appended to the global cost log "
+              f"({utils.load_config(args.config)['outputs']['cost_log']}); "
+              f"~$0.02 per 1M tokens, so a full run is cents.")
 
 
 if __name__ == "__main__":
