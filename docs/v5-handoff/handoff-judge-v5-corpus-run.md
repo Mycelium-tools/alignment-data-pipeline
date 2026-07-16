@@ -3,6 +3,36 @@
 Current handoff. Supersedes `handoff-judge-v5-run.md` for the *run target* (that doc's
 engine-wiring list still applies verbatim — see there). Written 2026-07-09.
 
+## RESULTS — run complete 2026-07-10 (all 10 corpora, both rubrics, 3× temp-0 majority, 0 errors)
+Rank agreement vs the owner's ranking (Spearman ρ; higher = closer):
+- **v4.3 baseline: ρ = +0.304, mean |gap| = 3.10** (the number to beat)
+- **v5a (9 dims): ρ = −0.116, mean |gap| = 3.80** — worse
+- **v5b (11 dims): ρ = −0.146, mean |gap| = 3.50** — worse
+
+**Neither v5 arm beat v4.3.** Both sit at ~zero correlation with the owner ranking. Three
+things to carry forward:
+1. **Underpowered.** 9/10 corpora are 3–5 records; every corpus mean bunches in 7.9–9.2, so
+   the inter-corpus rank order is mostly noise. Only `const-split-test` (93 rec) is robust.
+2. **On the one robust corpus, v5 == v4.3.** All three rubrics rank `const-split-test` dead
+   last (rank 10, gap −2); v5 reproduced v4.3 rather than moving toward the owner.
+3. **Recalibration didn't land.** v5 anchors were rewritten so 5 = default competent and the
+   top is "hard," but on the 93-rec corpus the judge still medians 8.3 (v5a)/7.9 (v5b), ~half
+   ≥8, ~18% <6 — still top-heavy, scoring like the old rubric. Corpus means can't separate
+   corpora until the scale spreads, so no category split can improve rank agreement yet.
+   Biggest single miss: E (`naturalness-smoke`), owner-tied-1st but judged ~8th (gap −6.5) —
+   coherent, since v5 deliberately dropped the naturalness dimension E is built around.
+
+Tokens this sweep ≈ 26.5M in / 1.3M out (cost_log doesn't price gemini; ~$45–70 ballpark,
+includes prior gemini rows). Verdicts on disk at `<run>/final/judge/{dad-v5a,dad-v5b}/`.
+Scorecard artifact (owner-private): https://claude.ai/code/artifact/4e6a34f0-b91d-48f5-a139-54461192a56d
+Reproduce the table: `python evals/rank_corpora.py`.
+
+**Next-session options (owner's call):** (a) fix the scale calibration first — the anchors
+aren't binding, so re-examine why the judge won't use the low end before re-running any A/B;
+(b) re-run on bigger corpora so means aren't noise; (c) treat within-corpus score
+distribution (not corpus-mean rank) as the real signal. The category A-vs-B question can't be
+answered until (a) is resolved.
+
 ## Intent
 Run the v5 judge (A and B) over ten already-generated DAD corpora, rank the corpora by
 judge mean, and check whether v5's ranking matches the **owner's human ranking** more
