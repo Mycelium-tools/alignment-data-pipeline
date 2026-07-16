@@ -89,3 +89,10 @@ def test_missing_gemini_credentials_fail_with_a_clear_message(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
         providers._gemini_endpoint("gemini-x")
+
+
+def test_gemini_retry_reraises_the_real_error():
+    # After exhausting attempts the caller must see _GeminiRetryable("HTTP 429: ...")
+    # — not tenacity's RetryError[<Future ...>] wrapper, which hides the cause in
+    # every error box that doesn't manually unwrap (e.g. the viewer's Analyze).
+    assert providers._call_gemini.retry.reraise is True

@@ -66,7 +66,10 @@ class _GeminiRetryable(Exception):
     pass
 
 
-@retry(retry=retry_if_exception_type(_GeminiRetryable),
+# reraise=True: after the last attempt the real _GeminiRetryable ("HTTP 429: ...")
+# surfaces instead of tenacity's RetryError[<Future ...>] wrapper — callers that
+# don't unwrap (e.g. the viewer's Analyze error box) show the actual cause
+@retry(retry=retry_if_exception_type(_GeminiRetryable), reraise=True,
        wait=wait_exponential(multiplier=2, min=4, max=60), stop=stop_after_attempt(6))
 def _call_gemini(user_message: str, system_prompt: str, model: str,
                  temperature: float, max_tokens: int) -> str:
