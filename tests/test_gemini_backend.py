@@ -1,15 +1,57 @@
 """Tests for the gemini backend in shared/api.py (offline, no Vertex calls).
 
 The real Vertex seam (_call_gemini_with_retry) is blocked by the autouse
-_api_guard in conftest; these tests either exercise pure helpers or stub that
-seam, exactly as the CLAUDE.md testing rules require for a money path.
+_api_guard in conftest. Two layers of coverage, per the CLAUDE.md money-path
+rules: the call_claude-level tests stub that seam; the TestRunGeminiQuery /
+TestGeminiRetryPredicate classes go one layer deeper and drive the REAL parse
+(_run_gemini_query / _gemini_text) and retry classification against the true
+external boundary — a stubbed client.models.generate_content and constructed
+google.genai errors — so a wrong attribute name, an SDK schema change, or a
+mis-scoped retry predicate is caught, not stubbed away.
 """
 
 import json
+from types import SimpleNamespace as NS
 
 import pytest
 
 from shared import api
+
+
+# --- fake Vertex response builders (shape of google.genai's GenerateContentResponse) ---
+
+class _Resp:
+    """Minimal stand-in for a GenerateContentResponse. `.text` raises when
+    text_raises=True, mimicking a blocked/textless candidate (the real property
+    raises rather than returning None in that case)."""
+
+    def __init__(self, text=None, text_raises=False, candidates=None, usage=None):
+        self._text = text
+        self._raises = text_raises
+        self.candidates = candidates
+        self.usage_metadata = usage
+
+    @property
+    def text(self):
+        if self._raises:
+            raise ValueError("no text: candidate was blocked")
+        return self._text
+
+
+def _cand(finish=None, parts_text=()):
+    parts = [NS(text=t) for t in parts_text]
+    return NS(
+        finish_reason=(NS(name=finish) if finish else None),
+        content=NS(parts=parts),
+    )
+
+
+def _usage(prompt=0, candidates=0, thoughts=0):
+    return NS(
+        prompt_token_count=prompt,
+        candidates_token_count=candidates,
+        thoughts_token_count=thoughts,
+    )
 
 
 def test_map_gemini_finish_normalizes_to_stop_reason_vocab():
@@ -93,3 +135,110 @@ def test_call_claude_gemini_returns_stop_reason_for_truncation(monkeypatch, tmp_
     assert (text, stop) == ("partial", "MAX_TOKENS")
     # a non-clean stop reason warns so it isn't silently written into a corpus
     assert "truncated or refused" in capsys.readouterr().err
+
+
+class TestRunGeminiQuery:
+    """Exercise the gemini money path (_run_gemini_query -> _gemini_text) at the
+    true external boundary — a stubbed client.models.generate_content returning
+    a fake response — so a wrong usage/candidate attribute name or an SDK schema
+    change is caught. The inner is un-retried, so no tenacity backoff here."""
+
+    @staticmethod
+    def _install(monkeypatch, response):
+        pytest.importorskip("google.genai")
+        calls = {}
+
+        class _Models:
+            def generate_content(self, **kw):
+                calls.update(kw)
+                return response
+
+        class _Client:
+            models = _Models()
+
+        monkeypatch.setattr(api, "_get_gemini_client", lambda: _Client())
+        return calls
+
+    def test_happy_path_parses_text_tokens_stop_reason(self, monkeypatch):
+        resp = _Resp(text="draft answer", candidates=[_cand(finish="STOP")],
+                     usage=_usage(prompt=120, candidates=34))
+        calls = self._install(monkeypatch, resp)
+        text, in_tok, out_tok, cost, stop = api._run_gemini_query(
+            "gemini-2.5-flash", "sys", "hi", 1024, 1.0)
+        assert text == "draft answer"
+        assert (in_tok, out_tok, cost, stop) == (120, 34, None, "end_turn")
+        # thinking is disabled at the boundary (user-facing-reasoning-only rule)
+        assert calls["model"] == "gemini-2.5-flash"
+        assert calls["config"].thinking_config.thinking_budget == 0
+
+    def test_thoughts_tokens_added_to_output(self, monkeypatch):
+        resp = _Resp(text="x", candidates=[_cand(finish="STOP")],
+                     usage=_usage(prompt=1, candidates=10, thoughts=5))
+        self._install(monkeypatch, resp)
+        _, _, out_tok, _, _ = api._run_gemini_query("gemini-2.5-flash", "s", "h", 10, 1.0)
+        assert out_tok == 15  # candidate + thoughts tokens both billed as output
+
+    def test_blocked_candidate_falls_back_to_parts(self, monkeypatch):
+        # response.text raises (blocked); text is recovered from candidate parts,
+        # and the non-STOP finish reason passes through to trip the truncation guard
+        resp = _Resp(text_raises=True,
+                     candidates=[_cand(finish="SAFETY", parts_text=("part1 ", "part2"))],
+                     usage=_usage(prompt=3, candidates=2))
+        self._install(monkeypatch, resp)
+        text, _, _, _, stop = api._run_gemini_query("gemini-2.5-flash", "s", "h", 10, 1.0)
+        assert text == "part1 part2"
+        assert stop == "SAFETY"
+
+    def test_no_text_anywhere_returns_empty_string(self, monkeypatch):
+        resp = _Resp(text_raises=True, candidates=[], usage=_usage())
+        self._install(monkeypatch, resp)
+        text, in_tok, out_tok, _, stop = api._run_gemini_query("gemini-2.5-flash", "s", "h", 10, 1.0)
+        assert text == "" and (in_tok, out_tok) == (0, 0) and stop is None
+
+    def test_missing_usage_metadata_defaults_tokens_to_zero(self, monkeypatch):
+        resp = _Resp(text="ok", candidates=[_cand(finish="STOP")], usage=None)
+        self._install(monkeypatch, resp)
+        _, in_tok, out_tok, _, _ = api._run_gemini_query("gemini-2.5-flash", "s", "h", 10, 1.0)
+        assert (in_tok, out_tok) == (0, 0)
+
+
+class TestGeminiRetryPredicate:
+    """Drive the real _is_retryable_gemini classification and prove a
+    non-retryable ClientError surfaces after exactly one attempt through the
+    REAL tenacity-wrapped _call_gemini_with_retry — mirroring
+    TestRetryPredicate.test_bad_request_is_not_retried for the api backend.
+    Safe offline: a non-retryable error never sleeps."""
+
+    def test_server_error_is_retryable(self):
+        ge = pytest.importorskip("google.genai.errors")
+        assert api._is_retryable_gemini(ge.ServerError(503, {"error": {"message": "boom"}}, None)) is True
+
+    def test_rate_limit_is_retryable(self):
+        ge = pytest.importorskip("google.genai.errors")
+        assert api._is_retryable_gemini(ge.ClientError(429, {"error": {"message": "slow down"}}, None)) is True
+
+    def test_bad_request_is_not_retryable(self):
+        ge = pytest.importorskip("google.genai.errors")
+        assert api._is_retryable_gemini(ge.ClientError(400, {"error": {"message": "bad"}}, None)) is False
+
+    def test_connection_error_is_retryable(self):
+        assert api._is_retryable_gemini(ConnectionError("reset")) is True
+
+    def test_unrelated_error_is_not_retryable(self):
+        assert api._is_retryable_gemini(ValueError("parse")) is False
+
+    def test_bad_request_surfaces_after_one_attempt(self, monkeypatch):
+        ge = pytest.importorskip("google.genai.errors")
+        attempts = []
+
+        def boom(*args, **kwargs):
+            attempts.append(1)
+            raise ge.ClientError(400, {"error": {"message": "bad request"}}, None)
+
+        # the autouse guard replaces _call_gemini_with_retry; reload to get the real one
+        import importlib
+        real = importlib.reload(api)._call_gemini_with_retry
+        monkeypatch.setattr(api, "_run_gemini_query", boom)
+        with pytest.raises(ge.ClientError):
+            real("gemini-2.5-flash", "sys", "hi", 10, 1.0)
+        assert len(attempts) == 1  # non-retryable -> exactly one attempt, no backoff
