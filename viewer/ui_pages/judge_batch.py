@@ -99,14 +99,18 @@ def _atomic_save_jsonl(rows: list[dict], path: Path) -> None:
     tmp.replace(path)
 
 
-def _judge_one(batch: dict, rec: dict, rubric: dict, principles: list[dict],
-               prompt_md5: str, annotations: dict, verdicts_path: Path) -> str:
-    """Judge one record, merge/replace its row, persist, and return pass|fail|error."""
-    models = batch["models"]
-    rows = utils.load_jsonl(verdicts_path)
+def _judge_one(batch: dict, rec: dict, verdicts_path: Path) -> str:
+    """Judge one record, merge/replace its row, persist, and return pass|fail|error.
+
+    Rubric, principles, annotations and the verdict rows all come from the batch
+    snapshot taken at Start — no per-record file reads. The write side keeps the
+    atomic whole-file rewrite: an append could tear on a kill, and one torn line
+    makes the strict load_jsonl reject the whole verdict file."""
+    models, rubric = batch["models"], batch["rubric"]
+    rows = batch["rows"]
     existing = next((r for r in rows if r["record_id"] == rec["record_id"]), None)
 
-    fresh = judge.panel_judge(rec["messages"], models, rubric, principles)
+    fresh = judge.panel_judge(rec["messages"], models, rubric, batch["principles"])
     if existing and not batch["rejudge"]:
         merged = merge_results(existing["panel"]["results"], fresh["results"], models)
         cons = judge.consensus(merged, rubric)
@@ -115,14 +119,14 @@ def _judge_one(batch: dict, rec: dict, rubric: dict, principles: list[dict],
         panel = fresh
 
     row = {"record_id": rec["record_id"], "rubric_version": rubric["version"],
-           "prompt_md5": prompt_md5, "panel": panel}
-    upstream = annotations.get(rec["record_id"])
+           "prompt_md5": batch["prompt_md5"], "panel": panel}
+    upstream = batch["annotations"].get(rec["record_id"])
     if upstream:
         first = next((r["verdict"] for r in panel["results"] if r.get("verdict")), None)
         if first:
             row["annotation_comparison"] = judge.compare_annotation(first, upstream)
 
-    rows = upsert_row(rows, row)
+    batch["rows"] = rows = upsert_row(rows, row)
     _atomic_save_jsonl(rows, verdicts_path)
     all_models = sorted({r["model"] for row_ in rows for r in row_["panel"]["results"]})
     report = score_dad.summarize(rows, all_models, rubric)
@@ -133,20 +137,16 @@ def _judge_one(batch: dict, rec: dict, rubric: dict, principles: list[dict],
     return "pass" if panel["consensus_aggregate"]["passing"] else "fail"
 
 
-def _run_batch_step(run: loader.RunInfo) -> None:
-    """Judge exactly one queued record, then rerun. Stop is checked between records."""
+def _run_batch_step() -> None:
+    """Judge exactly one queued record, then rerun. Stop is checked between records.
+    Everything static was snapshotted into the batch state at Start (see render):
+    a rubric edit mid-batch can't fork the batch into a new judge dir, and each
+    step costs one panel call plus the verdict write — no per-record reloads."""
     batch = st.session_state.judge_batch_state
-    rubric = judge.load_rubric(RUBRIC_PATH)
-    principles = judge.load_principles()
-    out_dir = Path(run.run_dir) / "final" / "judge" / rubric["version"]
-    verdicts_path = out_dir / "verdicts.jsonl"
-    corpus = Path(run.run_dir) / "final" / "dad_corpus.jsonl"
-    annotations = judge.find_annotations(corpus)
-    finals = {r["record_id"]: r for r in loader.load_final(run.run_dir, "dad")}
+    verdicts_path = Path(batch["out_dir"]) / "verdicts.jsonl"
 
     rid = batch["queue"][0]
-    outcome = _judge_one(batch, finals[rid], rubric, principles,
-                         batch["prompt_md5"], annotations, verdicts_path)
+    outcome = _judge_one(batch, batch["finals_by_id"][rid], verdicts_path)
     batch["tally"][outcome] += 1
     batch["done"] += 1
     batch["queue"].pop(0)
@@ -158,7 +158,7 @@ def _run_batch_step(run: loader.RunInfo) -> None:
 # ---------------------------------------------------------------- UI
 
 def _handpick_table(finals: list[dict], index: dict, saved_by_id: dict,
-                    ids: list[str], facets: list[str]) -> list[str]:
+                    ids: list[str], facets: list[str], run_id: str) -> list[str]:
     by_id = {r["record_id"]: r for r in finals}
 
     def cell(rid: str, facet: str) -> str:
@@ -175,9 +175,13 @@ def _handpick_table(finals: list[dict], index: dict, saved_by_id: dict,
             loader.verdict_status(saved_by_id.get(i)), "—"),
         **{f: cell(i, f) for f in facets},
     } for i in ids])
+    # Selections are positional row indices, so the widget key must change whenever
+    # the rows do — otherwise a stale selection re-applies to different records
+    # after a run or filter change.
+    ids_md5 = hashlib.md5("\n".join(ids).encode()).hexdigest()[:8]
     event = st.dataframe(df, width="stretch", hide_index=True,
                          on_select="rerun", selection_mode="multi-row",
-                         key="handpick_table")
+                         key=f"handpick_table_{run_id}_{ids_md5}")
     return [ids[i] for i in event.selection.rows]
 
 
@@ -322,7 +326,7 @@ def render() -> None:
         kwargs["seed"] = rc2.number_input("Seed", 0, 10_000, 0, key="batch_seed")
     elif mode == "Hand-pick":
         kwargs["handpicked"] = _handpick_table(finals, index, saved_by_id, matched,
-                                               list(observed))
+                                               list(observed), run.run_id)
 
     picked = selection.pick_subset(matched, mode, **kwargs)
 
@@ -331,7 +335,8 @@ def render() -> None:
                 if needs_judging(saved_by_id.get(i), models, st.session_state.get("batch_rejudge", False))]
     skipped = len(picked) - len(to_judge)
     n_calls = len(to_judge) * len(models)
-    system_prompt = judge.build_system_prompt(rubric, judge.load_principles())
+    principles = judge.load_principles()
+    system_prompt = judge.build_system_prompt(rubric, principles)
     in_tok = len(system_prompt) // 4 + 1000
     cost = estimate_cost(len(to_judge), models, api._PRICING, in_tok, OUT_TOKENS_EST)
     # panel_judge runs a record's models concurrently, so wall-clock ~= one call per record
@@ -357,11 +362,21 @@ def render() -> None:
         score_dad._record_prompt_manifest(
             out_dir, prompt_md5, system_prompt, rubric,
             types.SimpleNamespace(rubric=str(RUBRIC_PATH), judges=models, temperature=0.0))
+        queued = set(to_judge)
         st.session_state.judge_batch_state = {
             "run_id": run.run_id, "queue": list(to_judge), "total": len(to_judge),
             "done": 0, "models": models, "rejudge": st.session_state.get("batch_rejudge", False),
             "prompt_md5": prompt_md5, "tally": {"pass": 0, "fail": 0, "error": 0},
             "running": True,
+            # Snapshot everything the loop reads, so a rubric edit mid-batch can't
+            # silently fork later verdicts into a new judge dir, and each step judges
+            # without re-reading rubric/principles/annotations/finals/verdicts.
+            "rubric": rubric, "principles": principles, "out_dir": str(out_dir),
+            "annotations": judge.find_annotations(
+                Path(run.run_dir) / "final" / "dad_corpus.jsonl"),
+            "finals_by_id": {r["record_id"]: r for r in finals
+                             if r["record_id"] in queued},
+            "rows": utils.load_jsonl(out_dir / "verdicts.jsonl"),
         }
         st.rerun()
 
@@ -396,4 +411,4 @@ def _render_running(run: loader.RunInfo) -> None:
                 st.rerun()
 
     if batch["running"] and batch["queue"]:
-        _run_batch_step(run)
+        _run_batch_step()
