@@ -51,6 +51,7 @@ def make_plan(pid="matrix_000000", description="Spec text.", incoherent=False):
             "document_type": "a news article",
             "culture": "France, written in French, with French idioms and references",
             "tone": "neutral or journalistic",
+            "reasoning_featured": "individualism: the notion that welfare is a property of individuals, not systems",
         },
         "plan": "…",
         "description": None if incoherent else description,

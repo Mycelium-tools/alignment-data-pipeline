@@ -142,9 +142,11 @@ def test_real_templates_render_with_canonical_loader():
         constitution_claude="CC",
         constitution_principles="CP",
         document_description="DESC",
+        reasoning_featured="RF-AXIS",
     ))
     assert "CC" in l3_system and "CP" in l3_system  # constitution lives in system
     assert "<document_description>" in l3_user and "DESC" in l3_user
+    assert "RF-AXIS" in l3_user  # downstream-only axis rendered in the draft prompt
     assert "{" not in l3_user
 
     # layer 4 is a two-part file: everything static (constitution, principles,
@@ -175,6 +177,28 @@ def test_real_templates_render_with_canonical_loader():
     assert l5_system.index("CC") < l5_system.index("SPEC CONFORMANCE")
     assert l5_user.index("DESC") < l5_user.index("DOC")
     assert "{" not in l5_system and "{" not in l5_user
+
+
+def test_downstream_only_axis_sampled_recorded_but_not_in_plan_prompt():
+    """An axis defined in variables.txt but absent from the plan template is a
+    downstream-only axis: it is deck-sampled to its weights and recorded in
+    each record's `variables` (so a later stage can render it), yet never
+    appears in the plan prompt the plan model sees."""
+    template = "Type: {document_type}.\n"  # references only document_type
+    values = {
+        "document_type": ["a news article", "a blog post"],
+        "reasoning_featured": ["individualism", "scope sensitivity"],
+    }
+    weights = {"document_type": [0.5, 0.5], "reasoning_featured": [0.5, 0.5]}
+    recs = list(cp.compose_records(template, values, weights, None, n_prompts=8, seed=0))
+    assert len(recs) == 8
+    for r in recs:
+        assert r["variables"]["reasoning_featured"] in ("individualism", "scope sensitivity")
+        assert "reasoning_featured" not in r["prompt"]
+        assert r["variables"]["reasoning_featured"] not in r["prompt"]
+    # deck-sampled to weights exactly (largest remainder): 4 each of 8
+    counts = Counter(r["variables"]["reasoning_featured"] for r in recs)
+    assert counts["individualism"] == 4 and counts["scope sensitivity"] == 4
 
 
 # --- locale-matched entity pools ---
@@ -228,20 +252,34 @@ def test_sentient_example_injected_from_pool_and_deterministic():
 
 
 def test_real_template_axes_match_real_variables():
-    """The coverage axes added for the composition-guideline gaps must exist in
-    BOTH the real template and the real variables file (a placeholder without
-    values is a hard composer error), and every axis's weights must validate
-    (split_weights raises on a bad sum)."""
-    template = (REPO_ROOT / "prompts" / "sdf" / "layers1-2.txt").read_text(encoding="utf-8")
-    axes = cp.matrix_axes(template)
+    """Contract between variables.txt and the templates that consume it:
+
+    - every plan-template placeholder is an axis with values (a placeholder
+      without values is a fatal composer error);
+    - every axis in variables.txt is consumed by SOME stage template — the
+      plan template (layers1-2.txt) or the draft template (layer3.txt) — so a
+      variable that nothing renders (a typo, or a dropped consumer) is caught
+      here rather than silently sampled into a dead column;
+    - all weights validate (split_weights raises on a bad sum)."""
+    plan_tmpl = (REPO_ROOT / "prompts" / "sdf" / "layers1-2.txt").read_text(encoding="utf-8")
+    draft_tmpl = (REPO_ROOT / "prompts" / "sdf" / "layer3.txt").read_text(encoding="utf-8")
+    plan_axes = cp.matrix_axes(plan_tmpl)
+    draft_placeholders = cp.template_placeholders(draft_tmpl)
     values, _ = cp.split_weights(cp.parse_variables(
         REPO_ROOT / "prompts" / "sdf" / "variables.txt"))
     for axis in ("naming", "domain", "decision_scale"):
-        assert axis in axes, axis
+        assert axis in plan_axes, axis
         assert values[axis], axis
-    # template axes and variables must agree exactly (extra variables are
-    # composer warnings; missing ones are fatal)
-    assert set(axes) == set(values)
+    # Every plan placeholder must have values.
+    assert set(plan_axes) <= set(values)
+    # reasoning_featured is fed to BOTH stages: the planner (to build a fitting
+    # scenario) and the drafter (to surface it directly, uncompressed).
+    assert "reasoning_featured" in values
+    assert "reasoning_featured" in plan_axes
+    assert "reasoning_featured" in draft_placeholders
+    # No orphan axes: everything defined is rendered by the plan or draft stage.
+    consumed = set(plan_axes) | set(draft_placeholders)
+    assert set(values) <= consumed, set(values) - consumed
 
 
 def test_build_pools_for_locale_native_script_and_determinism():
