@@ -28,8 +28,8 @@ nav = st.navigation({
         st.Page("ui_pages/judge.py", title="Judge", icon=":material/gavel:"),
     ],
     "Diversity": [
-        st.Page("ui_pages/run_diversity.py", title="Run diversity", icon=":material/donut_small:"),
-        st.Page("ui_pages/edit_axes.py", title="Edit axes", icon=":material/tune:"),
+        st.Page("ui_pages/run_diversity.py", title="DAD run diversity", icon=":material/donut_small:"),
+        st.Page("ui_pages/edit_axes.py", title="DAD edit axes", icon=":material/tune:"),
     ],
 })
 nav.run()
