@@ -60,25 +60,22 @@ def _fmt(label: str, value: str, verdict: str | None = None, note: str = "") -> 
 # ---------------------------------------------------------------- input resolution
 
 
-def resolve_input(input_arg: str) -> tuple[list[dict], dict, Path]:
-    """Return (records, type_map, report_dir). Accepts a run dir or a JSONL file."""
+def resolve_input(input_arg: str) -> tuple[list[dict], Path]:
+    """Return (records, report_dir). Accepts a run dir or a JSONL file.
+
+    Composition lives in each record's ``variables`` (the matrix axes) plus the
+    top-level ``type_name``/``language``/``register`` the pipeline derives — so
+    no separate layer-1 type map is loaded (the old five-layer pipeline's
+    document_types.jsonl no longer exists)."""
     path = Path(input_arg)
     if path.is_dir():
         corpus = path / "final" / "sdf_corpus.jsonl"
         if not corpus.exists():
             raise SystemExit(f"No final/sdf_corpus.jsonl under {path}")
-        type_map = {t["type_id"]: t for t in utils.load_jsonl(path / "layer1" / "document_types.jsonl")}
-        return utils.load_jsonl(corpus), type_map, path / "audit"
+        return utils.load_jsonl(corpus), path / "audit"
     if not path.exists():
         raise SystemExit(f"Input not found: {path}")
-    return utils.load_jsonl(path), {}, path.parent / "audit"
-
-
-def _meta(rec: dict, type_map: dict, field: str, default: str) -> str:
-    if rec.get(field):
-        return rec[field]
-    t = type_map.get(rec.get("type_id"))
-    return (t or {}).get(field, default)
+    return utils.load_jsonl(path), path.parent / "audit"
 
 
 # ---------------------------------------------------------------- mechanical checks
@@ -137,16 +134,22 @@ def first_sentence(text: str) -> str:
     return t[: m.end()] if m else t[:160]
 
 
-def audit_composition(records: list[dict], type_map: dict, report: dict) -> None:
+# Matrix axes worth a corpus-level readout. The deck-sampler fixes their
+# marginals by construction, so this confirms the composition rather than
+# detecting drift — but reading them from each record's `variables` (not a
+# stale layer-1 type map) keeps the readout honest instead of all-"unknown".
+_COMPOSITION_AXES = ("tone", "domain", "centrality")
+
+
+def audit_composition(records: list[dict], report: dict) -> None:
     n = len(records)
     by = {
-        "role": collections.Counter(_meta(r, type_map, "role", "unknown") for r in records),
-        "register": collections.Counter(_meta(r, type_map, "register", "unknown") for r in records),
-        "language": collections.Counter(r.get("language", "unknown") for r in records),
-        "tone": collections.Counter(_meta(r, type_map, "tone", "unknown") for r in records),
+        axis: collections.Counter((r.get("variables") or {}).get(axis, "unknown") for r in records)
+        for axis in _COMPOSITION_AXES
     }
+    by["language"] = collections.Counter(r.get("language", "unknown") for r in records)
     types = collections.Counter(
-        (type_map.get(r.get("type_id")) or {}).get("type_name", f"type_{r.get('type_id')}")
+        r.get("type_name") or (r.get("variables") or {}).get("document_type", "unknown")
         for r in records
     )
     print("COMPOSITION")
@@ -302,34 +305,34 @@ def audit_openings(records: list[dict], report: dict) -> None:
                          "dup_stems": dup_stems}
 
 
-def audit_register(records: list[dict], type_map: dict, report: dict) -> None:
+def audit_register(records: list[dict], report: dict) -> None:
     rows = []
     for r in records:
-        if r.get("language", "en") != "en":
-            continue  # the pronoun/contraction proxy is English-only
+        # The proxy is English-only. Final corpora label language with the full
+        # name ("English", via derive_language); accept the "en" code too so
+        # legacy/test records still count. (Matching only "en" silently skipped
+        # every real doc, disabling this check on production runs.)
+        if str(r.get("language", "English")).lower() not in ("en", "english"):
+            continue
         text = r.get("content") or ""
         words = max(len(re.findall(r"\w+", text)), 1)
         fp = len(_FIRST_PERSON_RE.findall(text))
         contractions = len(_CONTRACTION_RE.findall(text))
         reads_personal = (fp * 1000 / words) >= 5 and (contractions * 1000 / words) >= 2
-        rows.append((_meta(r, type_map, "register", "unknown"), reads_personal))
+        rows.append(reads_personal)
     if not rows:
         print("REGISTER: no English docs to check (proxy is English-only)")
         return
     n = len(rows)
-    reads = sum(1 for _, p in rows if p)
-    labeled_fp = [p for reg, p in rows if reg == "first-person"]
-    stiff = (len(labeled_fp) - sum(labeled_fp)) / len(labeled_fp) if labeled_fp else None
+    reads = sum(rows)
+    # Corpus-level signal only: what fraction of English docs read first-person.
+    # The matrix has no per-doc first-person/expository register label, so the
+    # old drift verdict (casual genres written stiffly) is retired here — that
+    # failure is caught per document by layer 4's house-style check instead.
     print("REGISTER (heuristic: first-person pronouns + contractions, English docs)")
     print(_fmt("reads first-person", f"{reads} of {n} ({reads / n:.0%})", None,
                "(uniform-draw corpora collapse to ~10% — a real mix has far more)"))
-    if stiff is not None:
-        v = _verdict(stiff, 0.25, 0.50)
-        print(_fmt("first-person-labeled docs reading stiff", f"{stiff:.0%}", v,
-                   "(register drift: casual genres written institutionally)"))
-        report["register"] = {"reads_personal_frac": round(reads / n, 3), "labeled_fp_stiff_frac": round(stiff, 3)}
-    else:
-        report["register"] = {"reads_personal_frac": round(reads / n, 3)}
+    report["register"] = {"reads_personal_frac": round(reads / n, 3)}
 
 
 # ---------------------------------------------------------------- LLM pattern detection
@@ -361,23 +364,11 @@ _PREVALENCE_PROMPT_HEAD = (
 
 
 def _parse_json_block(raw: str):
-    text = (raw or "").strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        # models occasionally emit trailing prose or a second block after the
-        # JSON ("Extra data"); recover the first well-formed array/object
-        decoder = json.JSONDecoder()
-        start = min((i for i in (text.find("["), text.find("{")) if i >= 0), default=-1)
-        if start < 0:
-            raise
-        obj, _ = decoder.raw_decode(text[start:])
-        return obj
+    """The scan reply's JSON via the shared hardened parser — fences, prose
+    around the payload, and control characters inside strings all tolerated;
+    raises json.JSONDecodeError when nothing usable is present (callers keep
+    their existing failure handling)."""
+    return utils.extract_json(raw or "")
 
 
 def llm_pattern_scan(records: list[dict], config: dict, report: dict,
@@ -395,7 +386,7 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
         blob = "\n\n---\n\n".join(t[:1200] for t in batch)
         prompt = utils.load_prompt(prompts_dir / "pattern_scan.txt", documents=blob)
         try:
-            found = _parse_json_block(api.call_claude(user_message=prompt))
+            found = _parse_json_block(api.call_claude(user_message=prompt, stage="eval_audit_sdf"))
             return [p for p in found if isinstance(p, dict) and p.get("pattern")]
         except Exception as e:
             print(f"    batch scan parse failure ({e}); skipping batch")
@@ -415,7 +406,8 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
         for p in raw_patterns
     )
     try:
-        canonical = _parse_json_block(api.call_claude(user_message=_CONSOLIDATE_PROMPT + listing))
+        canonical = _parse_json_block(api.call_claude(user_message=_CONSOLIDATE_PROMPT + listing,
+                                                      stage="eval_audit_sdf"))
         canonical = [p for p in canonical if isinstance(p, dict) and p.get("pattern")][:15]
     except Exception as e:
         print(f"   consolidation failed ({e}); reporting raw patterns without prevalence")
@@ -433,7 +425,7 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
     def rate_one(doc: str) -> set[int]:
         prompt = _PREVALENCE_PROMPT_HEAD + plist + "\n\nDOCUMENT:\n" + doc[:1200]
         try:
-            ids = _parse_json_block(api.call_claude(user_message=prompt))
+            ids = _parse_json_block(api.call_claude(user_message=prompt, stage="eval_audit_sdf"))
             return {i for i in ids if isinstance(i, int) and 0 <= i < len(canonical)}
         except Exception:
             return set()
@@ -458,6 +450,80 @@ def llm_pattern_scan(records: list[dict], config: dict, report: dict,
     report["patterns"] = rows
 
 
+# ---------------------------------------------------------------- principle coverage
+
+# A principle exercised by fewer than this fraction of sampled docs is flagged
+# as starved. The floor is deliberately low: with ~14 principles and mixed
+# genres, even coverage would put each principle well above 5%.
+PRINCIPLE_COVERAGE_FLOOR = 0.05
+
+
+def audit_principle_coverage(records: list[dict], config: dict, report: dict,
+                             sample: int) -> None:
+    """Judge which distilled constitution principles each sampled document
+    substantively exercises, and flag principles the corpus is starving
+    (composition guidelines require every principle to be exercised by many
+    documents, not just the headline weigh-welfare one)."""
+    from shared import constitution_loader
+
+    principles = constitution_loader.load_principles()
+    numbers = [int(p["number"]) for p in principles]  # CSV fields parse as str
+    block = constitution_loader.format_principles(principles)
+    prompts_dir = Path(__file__).parent.parent / "prompts" / "tools"
+    template_path = prompts_dir / "principle_coverage.txt"
+
+    texts = [r.get("content") or "" for r in records]
+    stride = max(len(texts) / max(sample, 1), 1.0)
+    docs = [texts[int(i * stride)] for i in range(min(sample, len(texts)))]
+
+    print(f"\nPRINCIPLE COVERAGE ({len(docs)} docs against {len(numbers)} principles)")
+
+    def rate_one(doc: str) -> set[int] | None:
+        prompt = utils.load_prompt(template_path, principles=block, document=doc[:6000])
+        try:
+            ids = _parse_json_block(api.call_claude(user_message=prompt, stage="eval_audit_sdf"))
+            return {i for i in ids if isinstance(i, int) and i in numbers}
+        except Exception:
+            return None  # malformed judge output: unrated, not zero-principle
+
+    counts = collections.Counter()
+    rated = 0
+    workers = config.get("workers", 1)
+    for ids in utils.parallel_map(rate_one, docs, workers):
+        if ids is None:
+            continue
+        rated += 1
+        counts.update(ids)
+
+    if not rated:
+        print("   no documents rated (all judge calls failed); skipping")
+        report["principle_coverage"] = {"rated": 0}
+        return
+
+    by_principle = {}
+    starved = []
+    label = {int(p["number"]): p.get("principle", "").strip() for p in principles}
+    for n in numbers:
+        frac = counts[n] / rated
+        by_principle[n] = round(frac, 3)
+        flag = ""
+        if frac < PRINCIPLE_COVERAGE_FLOOR:
+            starved.append(n)
+            flag = f"  <-- STARVED (<{PRINCIPLE_COVERAGE_FLOOR:.0%})"
+        print(_fmt(f"{n}. {label[n][:60]}", f"{frac:5.0%}") + flag)
+    if starved:
+        print(f"   -> {len(starved)} principle(s) under the {PRINCIPLE_COVERAGE_FLOOR:.0%} floor: "
+              "consider reweighting resolution arcs or plan guidance")
+    else:
+        print("   -> every principle clears the floor")
+    report["principle_coverage"] = {
+        "rated": rated,
+        "floor": PRINCIPLE_COVERAGE_FLOOR,
+        "by_principle": by_principle,
+        "starved": starved,
+    }
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -476,9 +542,14 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=12)
     parser.add_argument("--prevalence-sample", type=int, default=80,
                         help="Docs rated for per-pattern prevalence")
+    parser.add_argument("--principles", action="store_true",
+                        help="Judge per-principle coverage against the distilled "
+                             "constitution principles (costs API calls)")
+    parser.add_argument("--principle-sample", type=int, default=80,
+                        help="Docs judged for principle coverage")
     args = parser.parse_args()
 
-    records, type_map, report_dir = resolve_input(args.input)
+    records, report_dir = resolve_input(args.input)
     if args.limit:
         records = records[: args.limit]
     if not records:
@@ -488,7 +559,7 @@ def main() -> None:
 
     print(f"=== SDF corpus audit: {args.input} ({len(records)} documents) ===\n")
     report: dict = {"input": str(args.input), "n_docs": len(records)}
-    audit_composition(records, type_map, report)
+    audit_composition(records, report)
     print()
     audit_length_truncation(records, report)
     print()
@@ -502,16 +573,19 @@ def main() -> None:
     print()
     audit_openings(records, report)
     print()
-    audit_register(records, type_map, report)
+    audit_register(records, report)
 
-    if args.patterns:
+    if args.patterns or args.principles:
         api.init(args.config)  # evals log to the global cost log
+    if args.patterns:
         llm_pattern_scan(records, config, report,
                          args.pattern_sample, args.batch_size, args.prevalence_sample)
+    if args.principles:
+        audit_principle_coverage(records, config, report, args.principle_sample)
 
     utils.ensure_dir(report_dir)
     out = report_dir / "audit_report.json"
-    with open(out, "w") as f:
+    with open(out, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     print(f"\nReport written to {out}")
     if not args.patterns:

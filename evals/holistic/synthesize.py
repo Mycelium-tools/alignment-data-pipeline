@@ -25,8 +25,14 @@ def _require_template_tokens(template: str) -> None:
 
 def _shape_errors(parsed: dict) -> list[str]:
     errors: list[str] = []
-    if not isinstance(parsed.get("prose"), str):
-        errors.append("prose: missing or not a string")
+    sections = parsed.get("sections")
+    if not isinstance(sections, list):
+        errors.append("sections: missing or not a list")
+    elif not all(isinstance(s, dict) and isinstance(s.get("title"), str)
+                 and isinstance(s.get("body"), str) for s in sections):
+        errors.append("sections: every item must be an object with string title and body")
+    if "verdict" in parsed and not isinstance(parsed.get("verdict"), str):
+        errors.append("verdict: present but not a string")
     top_issues = parsed.get("top_issues")
     if not isinstance(top_issues, list):
         errors.append("top_issues: missing or not a list")
@@ -36,34 +42,23 @@ def _shape_errors(parsed: dict) -> list[str]:
 
 
 def synthesize(stats: dict, *, template: str, model: str | None = None,
-               max_tokens: int = 4000, temperature: float = 0.0) -> dict:
-    """Run the editable holistic prompt over ``stats``. Returns
-    ``{"prose": str, "top_issues": list, "raw": str, "errors": list}``. A response
-    that does not parse yields empty prose/issues with an explicit error."""
+               max_tokens: int = 8000, temperature: float = 0.0) -> dict:
+    """Run the editable holistic prompt over ``stats`` (which may carry a bounded
+    ``semantic`` summary). Returns ``{"verdict": str, "sections": list, "top_issues":
+    list, "raw": str, "errors": list}``. Unparseable/mis-shaped output yields empty
+    best-effort fields plus an explicit ``errors`` list."""
     _require_template_tokens(template)
     prompt = template.replace(STATS_TOKEN, json.dumps(stats, indent=2, ensure_ascii=False))
     raw = providers.call_model(prompt, "", model,
                                max_tokens=max_tokens, temperature=temperature)
     parsed = extract.parse_json(raw)
     if not parsed:
-        return {
-            "prose": "",
-            "top_issues": [],
-            "raw": raw,
-            "errors": ["unparseable synthesis model output"],
-        }
-    errors = _shape_errors(parsed)
-    if errors:
-        return {
-            "prose": parsed.get("prose", "") if isinstance(parsed.get("prose"), str) else "",
-            "top_issues": parsed.get("top_issues", [])
-                          if isinstance(parsed.get("top_issues"), list) else [],
-            "raw": raw,
-            "errors": errors,
-        }
+        return {"verdict": "", "sections": [], "top_issues": [], "raw": raw,
+                "errors": ["unparseable synthesis model output"]}
     return {
-        "prose": parsed.get("prose", ""),
-        "top_issues": parsed.get("top_issues", []),
+        "verdict": parsed.get("verdict", "") if isinstance(parsed.get("verdict"), str) else "",
+        "sections": parsed.get("sections", []) if isinstance(parsed.get("sections"), list) else [],
+        "top_issues": parsed.get("top_issues", []) if isinstance(parsed.get("top_issues"), list) else [],
         "raw": raw,
-        "errors": [],
+        "errors": _shape_errors(parsed),
     }

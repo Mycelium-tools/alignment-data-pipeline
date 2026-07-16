@@ -20,11 +20,7 @@ from viewer import loader
 from viewer.ui_pages import common
 
 RUBRIC_PATH = judge.DEFAULT_RUBRIC_PATH
-KNOWN_MODELS = [
-    "gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash",
-    "claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5",
-    "claude-opus-4-8", "claude-fable-5",
-]
+KNOWN_MODELS = common.KNOWN_MODELS
 
 
 def _parse_pasted(text: str) -> list[dict] | None:
@@ -95,19 +91,27 @@ def _pick_record(run: loader.RunInfo, finals: list[dict]) -> str | None:
     The widget needs a stable key: without one, Streamlit derives its identity from
     its parameters including `index`, so a query-param-computed index would orphan
     the user's selection on the next rerun."""
-    audits = {a["record_id"]: a for a in loader.load_stage(run.run_dir, "dad", "step6")}
+    # Current 3-step runs write rewrite audits to step3_rewrites; legacy 7-step
+    # runs to step6. Only legacy records carry injection_used.
+    audits = {a["record_id"]: a
+              for a in (loader.load_stage(run.run_dir, "dad", "step3_rewrites")
+                        or loader.load_stage(run.run_dir, "dad", "step6"))}
     injections = sorted({a.get("injection_used", "") for a in audits.values()
                          if a.get("injection_used")})
     inj_filter = st.sidebar.multiselect("Filter by injection", injections,
                                         placeholder="All injections")
     options, labels = [], {}
     for rec in finals:
-        inj = audits.get(rec["record_id"], {}).get("injection_used", "?")
+        audit = audits.get(rec["record_id"], {})
+        inj = audit.get("injection_used", "?")
         if inj_filter and inj not in inj_filter:
             continue
         user_msg = rec["messages"][0]["content"] if rec.get("messages") else ""
         options.append(rec["record_id"])
-        labels[rec["record_id"]] = f"{common.doc_title(user_msg)}   —   {inj}"
+        if audit.get("injection_used"):
+            labels[rec["record_id"]] = f"{common.doc_title(user_msg)}   —   {inj}"
+        else:  # current-format records: goal label instead of an injection tag
+            labels[rec["record_id"]] = loader.dad_goal_label(audit.get("annotation"), user_msg)
     if not options:
         st.sidebar.caption("No records match the current filters.")
         return None

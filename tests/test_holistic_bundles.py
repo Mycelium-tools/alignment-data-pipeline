@@ -67,6 +67,17 @@ def test_fingerprint_changes_with_field_semantics_model_and_prompt(tmp_path):
     assert bundle.tag_fingerprint(reg, None, "other prompt") != base
 
 
+def test_fingerprint_changes_when_a_field_turns_mechanical(tmp_path):
+    # mechanical swaps the value's source (LLM vs computed) — reusing the old
+    # bundle would silently keep stale LLM tags. Pre-flag bundles must stay
+    # resumable, so the key is serialized only when True.
+    base = bundle.tag_fingerprint(_reg(AXES_A, tmp_path), None, None)
+    mech = AXES_A.replace("kind: bool", "kind: bool\n    mechanical: true")
+    assert bundle.tag_fingerprint(_reg(mech, tmp_path, "m.yaml"), None, None) != base
+    assert all("mechanical" not in f
+               for f in bundle.canonical_fields(_reg(AXES_A, tmp_path)))
+
+
 def test_fingerprint_includes_prompt_hints_but_not_quota_targets(tmp_path):
     # prompt_hint is rendered into the extraction prompt → identity;
     # target only feeds the coverage analyzer → editing a quota must NOT

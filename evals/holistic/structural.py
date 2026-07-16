@@ -57,18 +57,11 @@ def last_sentence(text: str) -> str:
     return parts[-1] if parts else lines[-1][:160]
 
 
-# ---------------------------------------------------------------- opening / closing moves
-
-_OPENER_PATTERNS = [
-    (re.compile(r"^(i\s+understand|i\s+hear\s+you|i\s+can\s+see|i\s+appreciate)", re.I),
-     "I understand / I appreciate ..."),
-    (re.compile(r"^(that's|this\s+is)\s+(a\s+)?(great|good|thoughtful|tricky|difficult|tough|really|important)", re.I),
-     "That's a great / thoughtful ..."),
-    (re.compile(r"^(thank\s+you|thanks)\b", re.I), "Thank you for ..."),
-    (re.compile(r"^it\s+sounds\s+like\b", re.I), "It sounds like ..."),
-    (re.compile(r"^(great|good)\s+question\b", re.I), "Great question ..."),
-    (re.compile(r"^there\s+(are|is)\b", re.I), "There are several ..."),
-]
+# ---------------------------------------------------------------- closing moves
+# Opening detection is intentionally NOT here: the corpus's `response_opening_move`
+# categorical axis (LLM-tagged) covers opening *strategy*, and evals/holistic/phrases.py
+# catches verbatim opener repetition. This module owns the response-form signals those
+# do not: closing templating, the considerations-list scaffold, markdown, and truncation.
 
 _CLOSER_PATTERNS = [
     (re.compile(r"\bultimately\b", re.I), "Ultimately, ..."),
@@ -103,10 +96,6 @@ def _move_shapes(sentences: list[str], patterns, from_end: bool) -> dict:
     return {"n": n, "formulaic_frac": round(formulaic, 3),
             "patterns": dict(pattern_counts), "dup_stems": dup_stems,
             "verdict": _verdict(formulaic, 0.15, 0.35)}
-
-
-def opening_moves(first_sentences: list[str]) -> dict:
-    return _move_shapes(first_sentences, _OPENER_PATTERNS, from_end=False)
 
 
 def closing_moves(last_sentences: list[str]) -> dict:
@@ -174,31 +163,3 @@ def length_stats(texts: list[str]) -> dict:
             "chars_p90": lengths[min(n - 1, 9 * n // 10)],
             "truncated_frac": round(frac, 4),
             "verdict": _verdict(frac, 0.0, 0.02)}
-
-
-# ---------------------------------------------------------------- recurring language
-
-STOCK_PHRASES = [
-    "i understand your concern", "that's a great question", "great question",
-    "it's important to note", "at the end of the day", "there's no easy answer",
-    "i hope this helps", "the decision is yours", "the choice is yours",
-    "it's worth considering", "on one hand", "on the other hand",
-]
-
-
-def recurring(texts: list[str]) -> dict:
-    n = len(texts)
-    if not n:
-        return {"n": 0, "stock_hits": {}, "recurring_5grams": [], "verdict": "NA"}
-    lowered = [t.lower() for t in texts]
-    hits = {p: sum(1 for t in lowered if p in t) for p in STOCK_PHRASES}
-    hits = {p: c for p, c in hits.items() if c}
-    gram_df: collections.Counter = collections.Counter()
-    for t in lowered:
-        words = re.findall(r"[a-z']+", t)
-        grams = {" ".join(words[i:i + 5]) for i in range(len(words) - 4)}
-        gram_df.update(grams)
-    common = [(g, c) for g, c in gram_df.most_common(200) if c >= max(3, 0.05 * n)][:8]
-    worst = max(hits.values(), default=0)
-    v = "GOOD" if worst == 0 else ("OK" if worst <= max(1, 0.05 * n) else "BAD")
-    return {"n": n, "stock_hits": hits, "recurring_5grams": common, "verdict": v}

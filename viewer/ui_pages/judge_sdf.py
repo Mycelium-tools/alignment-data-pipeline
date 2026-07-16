@@ -20,11 +20,7 @@ from viewer import loader
 from viewer.ui_pages import common
 
 RUBRIC_PATH = judge_sdf.DEFAULT_RUBRIC_PATH
-KNOWN_MODELS = [
-    "gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash",
-    "claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5",
-    "claude-opus-4-8", "claude-fable-5",
-]
+KNOWN_MODELS = common.KNOWN_MODELS
 
 
 @st.cache_resource

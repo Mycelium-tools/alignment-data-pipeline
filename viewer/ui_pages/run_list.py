@@ -1,5 +1,6 @@
 """Run list: every run of both pipelines with run-level details on click."""
 
+import json
 import sys
 from pathlib import Path
 
@@ -23,8 +24,17 @@ def run_details(run: loader.RunInfo) -> None:
                 + (" (dirty tree at run time)" if run.git_dirty else ""))
     st.markdown("**Records per stage**")
     st.dataframe(pd.DataFrame([run.counts]), width="stretch", hide_index=True)
-    st.markdown("**Config**")
-    st.json(run.config, expanded=False)
+    breakdown = loader.cost_by_stage(run.run_dir)
+    if breakdown:
+        st.markdown("**Cost by stage**")
+        st.dataframe(pd.DataFrame([
+            {"stage": stage, "calls": agg["calls"], "cost ($)": agg["cost_usd"],
+             "model(s)": ", ".join(agg["models"])}
+            for stage, agg in breakdown.items()
+        ]), width="stretch", hide_index=True)
+    with st.expander("Config"):
+        st.code(json.dumps(run.config, indent=2, ensure_ascii=False, default=str),
+                language="json", wrap_lines=True)
     if st.button(":material/account_tree: View documents", type="primary", key=f"open_{run.run_id}"):
         st.query_params["pipeline"] = run.pipeline
         st.query_params["run"] = run.run_id

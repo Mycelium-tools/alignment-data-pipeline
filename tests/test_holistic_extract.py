@@ -3,6 +3,8 @@ registry (not a hardcoded schema), calls the API through the single stubbable
 chokepoint, and is resume-safe. Malformed model output becomes an explicit error
 row, never a silent default."""
 
+import pytest
+
 from evals.holistic import extract, fields as F
 from shared import utils
 
@@ -81,6 +83,77 @@ def test_resume_retry_leaves_exactly_one_row_per_record(tmp_path, stub_claude):
     assert rows[0]["taxa_category"] == "farmed"
 
 
+# ---------------------------------------------------------------- mechanical fields
+
+def _fields_with_band():
+    reg = F.default_fields()
+    reg.add(F.Field(name="response_length_band", kind="single",
+                    values=("short", "medium", "long"),
+                    derived_from="structure", mechanical=True))
+    return reg
+
+
+def _messages_with_assistant_words(n):
+    return [{"role": "user", "content": "Should I cut corners on the hens?"},
+            {"role": "assistant", "content": " ".join(["word"] * n)}]
+
+
+def test_mechanical_field_is_omitted_from_the_extraction_prompt():
+    prompt = extract.build_system_prompt(_fields_with_band())
+    assert "response_length_band" not in prompt   # never asked of the LLM
+    assert "taxa_category" in prompt              # non-mechanical fields still rendered
+
+
+def test_mechanical_field_is_computed_and_merged_before_validation(stub_claude):
+    # The stubbed model output does NOT contain the band; the field is required,
+    # so errors == [] proves the computed value was merged before validate().
+    stub_claude([GOOD_JSON])
+    res = extract.extract_record(_messages_with_assistant_words(10),
+                                 _fields_with_band(), record_id="r1")
+    assert res["errors"] == []
+    assert res["tags"]["response_length_band"] == "short"
+
+
+def test_response_length_band_boundaries(stub_claude):
+    # short < 150 words, medium 150-400 inclusive, long > 400.
+    cases = [(149, "short"), (150, "medium"), (400, "medium"), (401, "long")]
+    stub_claude([GOOD_JSON] * len(cases))
+    for words, band in cases:
+        res = extract.extract_record(_messages_with_assistant_words(words),
+                                     _fields_with_band(), record_id="r1")
+        assert res["tags"]["response_length_band"] == band, f"{words} words"
+
+
+def test_band_counts_only_assistant_words(stub_claude):
+    # A long user turn must not push a short response out of its band.
+    stub_claude([GOOD_JSON])
+    messages = [{"role": "user", "content": " ".join(["word"] * 500)},
+                {"role": "assistant", "content": "Short answer."}]
+    res = extract.extract_record(messages, _fields_with_band(), record_id="r1")
+    assert res["tags"]["response_length_band"] == "short"
+
+
+def test_all_mechanical_registry_tags_without_any_api_call():
+    # No stub installed: touching the API would raise via the conftest guard,
+    # so a clean result proves the model was never called.
+    reg = F.FieldRegistry()
+    reg.add(F.Field(name="response_length_band", kind="single",
+                    values=("short", "medium", "long"),
+                    derived_from="structure", mechanical=True))
+    res = extract.extract_record(_messages_with_assistant_words(10), reg,
+                                 record_id="r1")
+    assert res["errors"] == []
+    assert res["tags"] == {"response_length_band": "short"}
+
+
+def test_mechanical_field_without_a_computer_fails_loudly(stub_claude):
+    reg = F.default_fields()
+    reg.add(F.Field(name="mystery_mech", kind="free", mechanical=True))
+    stub_claude([GOOD_JSON])
+    with pytest.raises(ValueError, match="mystery_mech"):
+        extract.extract_record(MESSAGES, reg, record_id="r1")
+
+
 # ---------------------------------------------------------------- extract_record
 
 def test_extract_record_tags_via_the_stubbed_api(stub_claude):
@@ -111,6 +184,35 @@ def test_extract_corpus_writes_one_row_per_record(tmp_path, stub_claude):
     assert len(rows) == 2
     written = utils.load_jsonl(out)
     assert {r["record_id"] for r in written} == {"a", "b"}
+
+
+def test_error_rows_carry_the_raw_model_output(tmp_path, stub_claude):
+    # A parse failure must be diagnosable from the index alone — the row keeps
+    # capped raw text, and resume still treats it as a retryable error row.
+    calls = stub_claude(["nonsense " * 500])   # unparseable and over the cap
+    out = tmp_path / "category_records.jsonl"
+    extract.extract_corpus([{"record_id": "a", "messages": MESSAGES}],
+                           F.default_fields(), out)
+    (row,) = utils.load_jsonl(out)
+    assert row["extract_error"] == "unparseable model output"
+    assert row["raw"] == ("nonsense " * 500)[:2000]           # capped, verbatim prefix
+    assert calls[0]["max_tokens"] == extract.MAX_TOKENS       # thinking headroom sent
+
+
+def test_extract_corpus_reports_progress_per_record(tmp_path, stub_claude):
+    out = tmp_path / "category_records.jsonl"
+    # 'a' is already tagged: progress totals must count only the two records
+    # actually attempted this invocation, not the whole corpus.
+    utils.append_jsonl({"record_id": "a", "language": "en", "taxa_category": "farmed",
+                        "posture_class": "NO_RAISE"}, out)
+    stub_claude([GOOD_JSON, GOOD_JSON])
+    corpus = [{"record_id": "a", "messages": MESSAGES},
+              {"record_id": "b", "messages": MESSAGES},
+              {"record_id": "c", "messages": MESSAGES}]
+    ticks = []
+    extract.extract_corpus(corpus, F.default_fields(), out, resume=True,
+                           on_progress=lambda done, total, rid: ticks.append((done, total, rid)))
+    assert ticks == [(1, 2, "b"), (2, 2, "c")]
 
 
 def test_extract_corpus_resumes_and_skips_already_tagged(tmp_path, stub_claude):

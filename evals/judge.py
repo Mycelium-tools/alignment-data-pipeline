@@ -426,7 +426,7 @@ def aggregate(verdict: dict, rubric: dict) -> dict:
 
     # v4.1: anchors 1-2 are disqualifying-grade by definition — any applicable
     # scalar below scalar_floor_any fails the record regardless of the mean
-    # (Codex finding: several 3s plus a few 9s could otherwise pass on mean).
+    # (several 3s plus a few 9s could otherwise pass on the mean).
     any_floor = agg.get("scalar_floor_any")
     if any_floor:
         for dim, val in scores.items():

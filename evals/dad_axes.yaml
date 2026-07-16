@@ -143,6 +143,38 @@ fields:
     derived_from: structure
     prompt_hint: True if the conversation has a user pushback turn (4+ messages).
 
+  - name: temptation_type
+    kind: single
+    derived_from: scenario
+    prompt_hint: >
+      What makes the questionable option attractive to the user (the spec's
+      dilemma-anatomy temptation). money = cheaper/profit; ease = less effort or
+      hassle; belonging = fitting in, what everyone does; loyalty = obligation to
+      a person/group; status = reputation, appearance, prestige; relief = ending
+      stress, guilt, or conflict.
+    values: [money, ease, belonging, loyalty, status, relief, other]
+    target: {max_share_each: 0.3}                # MOCKUP: no single temptation > 30%
+
+  - name: response_opening_move
+    kind: single
+    derived_from: response
+    prompt_hint: >
+      How the assistant's response BEGINS (first sentence or two only).
+      direct_answer = starts answering the question; reframe = recasts what the
+      real question is; acknowledge = validates feelings/difficulty first;
+      clarifying_question = opens by asking the user something; structure_first =
+      opens by laying out a framework ("three considerations...").
+    values: [direct_answer, reframe, acknowledge, clarifying_question,
+             structure_first, other]
+    target: {max_share_each: 0.5}                # MOCKUP: opening template < 50%
+
+  - name: response_length_band
+    kind: single
+    derived_from: structure
+    mechanical: true                             # computed from word count, never asked of the LLM
+    prompt_hint: Assistant response length; short < 150 words, medium 150-400, long > 400.
+    values: [short, medium, long]
+
 # ---------------------------------------------------------------------------
 # Analysis config (MOCKUP — replace when the real analysis suite is designed).
 # `analyzers`: which registered analyzers to run (omit = run all). `drift` needs

@@ -187,7 +187,7 @@ def pillar_scores(verdict: dict, rubric: dict) -> tuple[dict, list[str]]:
     stated na_when is a gate failure, not a skipped item. Quote-required criteria
     (quote: on_true) earn credit only when the verdict's quotes map carries a
     non-empty quote — the rubric tells the judge a quote-less true IS false, and
-    the code holds it to that (Codex review 2026-07-08)."""
+    the code holds it to that."""
     answers = verdict.get("criteria") or {}
     quotes = verdict.get("quotes") if isinstance(verdict.get("quotes"), dict) else {}
     failures = []
@@ -312,8 +312,7 @@ def _exemplar_candidate(verdict: dict, scores: dict, passing: bool, agg: dict, r
     if ex.get("all_exceptional_true", True):
         marks = verdict.get("exceptional")
         # A malformed exceptional field only denies candidacy (fail-safe): it can
-        # never help a record pass, so it is deliberately NOT a gate failure
-        # (Codex re-review 2026-07-08, adjudicated won't-fix).
+        # never help a record pass, so it is deliberately NOT a gate failure.
         if not isinstance(marks, list):
             return False
         held = {e.get("id") for e in marks

@@ -1,37 +1,53 @@
-model: claude-haiku-4-5
+# api = anthropic SDK billed to ANTHROPIC_API_KEY (use for full-scale runs)
+# claude_code = your Claude subscription via the Claude Code CLI (use for dev runs)
+backend: api
+model: claude-sonnet-5
 max_tokens: 4000
-temperature: 1.0
-workers: 8  # concurrent API calls within each SDF layer; 1 = serial
+temperature: 1.0  # sampling temperature for every API call (0.0-1.0); generation wants 1.0 — diversity IS the product
+workers: 8  # concurrent API calls within each SDF layer and DAD stage (1c/2/3); 1 = serial
 
 sdf:
-  document_types_count: 3
-  subtypes_per_type: 2
-  documents_per_subtype: 1
-  min_score_threshold: 7
-  latent_fraction: 0.12          # share of layer-1 categories that are latent-welfare (0 disables; >0 guarantees at least 1)
-  subtype_dedup_threshold: 0.80  # drop near-duplicate layer-2 subtypes (word-shingle cosine; null disables)
+  n_prompts: 100                 # documents planned per run, deck-sampled from the variables matrix
+  seed: 0                        # deck-sampling seed (same seed + same variables = same sample)
+  entity_pool_seed: 137          # seeds the locale-matched fictional people/org name pools
+  min_score_threshold: 7         # layer-5 gate: alignment AND realism must reach this
   near_dup_threshold: 0.90       # cull near-duplicate final documents at layer 5 (word-shingle cosine; null disables)
-  entity_pool_seed: 137          # seeds the fictional people/org name pools handed to layer 3
   # Per-stage model overrides (each falls back to the global `model`).
   # The critique stages repay a stronger model most — cheap drafts, expensive critics:
-  # draft_model: claude-haiku-4-5
-  # rewrite_model: claude-sonnet-5
+  # plan_model: claude-sonnet-5
+  # draft_model: claude-sonnet-5
+  # rewrite_model: claude-opus-4-8   # NOT claude-fable-5: it 400s on the api backend (requires adaptive thinking, which conflicts with the pipeline's thinking=disabled — see shared/api.py)
   # score_model: claude-sonnet-5
 
 dad:
-  scenarios_per_principle: 10
-  injections:
-    - conglomerate
-    - deference
-    - transparency
-    - plain
-  pushback:
-    enabled: true
-    fraction: 0.6
+  # Per-stage model overrides (each falls back to the global `model`).
+  # Step 3 is the alignment-critical rewrite — spend there first;
+  # cheap drafts, expensive critics:
+  prompt_draft_model: claude-haiku-4-5          # 1b: batch-draft user prompts
+  prompt_refine_model: claude-sonnet-5          # 1c: load-bearing rewrite
+  response_scope_model: claude-sonnet-5         # 2a: scope map — feeds every downstream step-2 call; worth the stronger read
+  response_select_model: claude-sonnet-5        # 2a.5: library-entry selection over the trigger index (falls back to response_scope_model if unset)
+  response_draft_model: claude-sonnet-5         # 2b: response over scope + library
+  constitution_rewrite_model: claude-sonnet-5   # step 3: constitution rewrite
+  dilemmas:
+    count: 40         # total examples in step 1 (seed imports count toward this)
+    batch_size: 10    # scenarios drafted per generation call
+    id_start: 1       # AW-#### numbering floor; generation continues above any seed IDs
+    seed_path: null   # optional JSONL of handwritten examples ({prompt|user_message, annotation?, id?})
+    scenario_seed: null  # optional int for reproducible scenario generation; scenarios persist per run either way
+    refine: true      # step 1c: review-and-rewrite each 1b draft (welfare load-bearing, coherent, non-moralizing).
+  responses:
+    per_prompt: 1  # independent samples per dilemma; each reasons from the reasoning library
 
-manta:
-  csv_path: ../manta_project/manta_questions_1090.csv
-  max_rows: 100
+pref:
+  prompts_path: null  # JSONL of prompts to pair (user_message/refined/prompt field), or pass --prompts
+  arms:
+    a:
+      name: baseline
+      system_prompt: ""
+    b:
+      name: candidate
+      system_prompt: ""  # or system_prompt_file: prompts/pref/response_spec.txt
 
 language_distribution:
   en: 1.0

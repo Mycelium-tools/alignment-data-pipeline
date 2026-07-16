@@ -313,7 +313,8 @@ def _combination_coverage(ctx: AnalysisContext) -> dict:
         b_vals = tuple(ctx.fields.get(b_axis).values) if b_axis in ctx.fields else ()
         if not a_vals or not b_vals:
             out[key] = {"cells": 0, "filled": 0, "coverage": None, "n": 0,
-                        "missing": [], "verdict": "NA", "note": _COMBO_NOTE}
+                        "missing": [], "filled_cells": [], "verdict": "NA",
+                        "note": _COMBO_NOTE}
             continue
         valid = {(a, b) for a in a_vals for b in b_vals}
         a_set, b_set = set(a_vals), set(b_vals)
@@ -330,7 +331,7 @@ def _combination_coverage(ctx: AnalysisContext) -> dict:
             # whole valid grid — an empty list would read as "nothing missing"
             out[key] = {"cells": len(valid), "filled": 0, "coverage": None, "n": 0,
                         "missing": sorted(f"{a}×{b}" for a, b in valid),
-                        "verdict": "NA", "note": _COMBO_NOTE}
+                        "filled_cells": [], "verdict": "NA", "note": _COMBO_NOTE}
             continue
         coverage = len(seen) / len(valid)
         out[key] = {
@@ -339,6 +340,7 @@ def _combination_coverage(ctx: AnalysisContext) -> dict:
             "n": n,
             "coverage": round(coverage, 3),
             "missing": sorted(f"{a}×{b}" for a, b in valid - seen),
+            "filled_cells": sorted(f"{a}×{b}" for a, b in seen),
             "verdict": _verdict(coverage, 0.9, 0.7, higher_better=True),
             "note": _COMBO_NOTE,
         }
@@ -465,27 +467,27 @@ def _cluster_bridge(ctx: AnalysisContext) -> dict:
 
 def _structural(ctx: AnalysisContext) -> dict:
     """Response-FORM diversity over the assistant turns (``ctx.texts``: record_id ->
-    list of assistant-turn strings). Opening/closing are read from the first assistant
-    turn (the primary training answer); scaffold/formatting/length/recurring over all
-    turns of the record joined. Mechanical and offline — no API. Blind spot of every
-    tag-based analyzer: a corpus can be perfectly varied in topic yet write every reply
-    the same way."""
+    list of assistant-turn strings). ``closing`` is read from the first assistant turn's
+    last sentence; scaffold/formatting/length over all turns of the record joined.
+    Deliberately scoped to what the categorical axes and phrases.py do NOT cover: opening
+    strategy is the ``response_opening_move`` axis, verbatim phrase repetition is
+    evals/holistic/phrases.py, and length bands are ``response_length_band`` (this
+    ``length`` reports truncation, which those miss). Mechanical and offline — no API.
+    Blind spot of every tag-based analyzer: a corpus can be perfectly varied in topic yet
+    write every reply the same way."""
     texts_map = ctx.texts or {}
-    first_sents, last_sents, joined = [], [], []
+    last_sents, joined = [], []
     for turns in texts_map.values():
         if not turns:
             continue
-        first_sents.append(_structural_mod.first_sentence(turns[0]))
         last_sents.append(_structural_mod.last_sentence(turns[0]))
         joined.append("\n\n".join(turns))
     return {
         "n": len(joined),
-        "opening": _structural_mod.opening_moves(first_sents),
         "closing": _structural_mod.closing_moves(last_sents),
         "scaffold": _structural_mod.scaffold_shape(joined),
         "formatting": _structural_mod.formatting(joined),
         "length": _structural_mod.length_stats(joined),
-        "recurring": _structural_mod.recurring(joined),
     }
 
 

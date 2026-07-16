@@ -366,3 +366,44 @@ def test_run_derives_assistant_texts_and_runs_structural(tmp_path, stub_claude):
     assert "texts" in report["inputs_present"]
     assert "structural" in report["stats"]["analyses"]
     assert report["stats"]["analyses"]["structural"]["n"] == 1
+
+
+# ---------------------------------------------------------------- semantic summary
+
+
+def test_run_feeds_bounded_semantic_summary_to_synthesis(tmp_path, stub_claude):
+    run = _make_run(tmp_path)
+    audit = run / "audit"
+    audit.mkdir()
+    (audit / "diversity_report.json").write_text(json.dumps({
+        "embed_model": "stub-embed",
+        "n_embedded": 3, "n_empty": 0,
+        "vendi": {"score": 2.5},
+        "mean_pairwise_cosine": 0.21,
+        "nn": {"over_0.90": 0.0},
+        "clusters": {"k": 2, "clusters": 2, "evenness": 0.9, "verdict": "GOOD",
+                     "assignments": {"a": 0, "b": 1}},
+        "top_pairs": [{"similarity": 0.9, "a": "a", "b": "b"}] * 7,   # >5
+        "projection": [{"id": "ZZZPROJVAL", "x": 0.1, "y": 0.2, "cluster": 0}],
+    }))
+    # run(): one tag call (GOOD_JSON) then one synthesis call.
+    calls = stub_claude([GOOD_JSON,
+                         '{"verdict": "ok", "sections": [], "top_issues": []}'])
+    report = pipeline.run(run, synthesis_template="S:\n{{STATS}}")
+
+    synth_prompt = calls[1]["user_message"]
+    assert "stub-embed" in synth_prompt          # bounded summary reached the judge
+    assert "mean_pairwise_cosine" in synth_prompt
+    assert '"projection"' not in synth_prompt     # O(records) array excluded
+    assert "ZZZPROJVAL" not in synth_prompt
+    assert "assignments" not in synth_prompt      # O(records) cluster map excluded
+    assert synth_prompt.count('"similarity"') == 5   # top_pairs capped at 5
+    assert "semantic" not in report["stats"]      # persisted stats stay pure
+
+
+def test_run_semantic_summary_is_null_without_an_audit(tmp_path, stub_claude):
+    run = _make_run(tmp_path)   # no audit/diversity_report.json
+    calls = stub_claude([GOOD_JSON,
+                         '{"verdict": "ok", "sections": [], "top_issues": []}'])
+    pipeline.run(run, synthesis_template="S:\n{{STATS}}")
+    assert '"semantic": null' in calls[1]["user_message"]

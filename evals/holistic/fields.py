@@ -50,6 +50,9 @@ class Field:
     derived_from: str = "scenario"
     prompt_hint: str = ""
     required: bool = True
+    #: computed by extract.py from the conversation text (never asked of the LLM);
+    #: the extraction prompt omits mechanical fields, validate() still applies vocab
+    mechanical: bool = False
     #: optional distribution target for the coverage_vs_target analyzer, e.g.
     #: {"min_share": {"Hidden": 0.2}}, {"max_share_each": 0.12}, {"band_each": [0.25, 0.4]},
     #: {"require_all_values": True}. Empty = no target for this axis.
@@ -143,6 +146,7 @@ def registry_from_data(data: dict, origin: str = "axes") -> FieldRegistry:
                 derived_from=item.get("derived_from", "scenario"),
                 prompt_hint=item.get("prompt_hint", ""),
                 required=item.get("required", True),
+                mechanical=bool(item.get("mechanical", False)),
                 target=dict(item.get("target") or {}),
             ))
         except ValueError as e:

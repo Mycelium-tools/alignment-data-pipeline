@@ -241,10 +241,10 @@ def test_cli_runs_the_synthesis_pass_by_default(tmp_path, stub_claude, monkeypat
     run = _make_run(tmp_path)
     monkeypatch.setattr("shared.api.init", lambda *a, **k: None)
     # 1st call tags, 2nd call is the default synthesis pass over the stats.
-    stub_claude([GOOD_JSON, '{"prose": "Fine.", "top_issues": []}'])
+    stub_claude([GOOD_JSON, '{"verdict": "Fine.", "sections": [], "top_issues": []}'])
 
     report = holistic_dad.main(["--input", str(run)])
-    assert report["synthesis"]["prose"] == "Fine."
+    assert report["synthesis"]["verdict"] == "Fine."
 
 
 def test_cli_analyze_only_fails_loudly_without_an_index(tmp_path, monkeypatch):

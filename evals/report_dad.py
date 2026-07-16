@@ -365,7 +365,10 @@ def main() -> None:
 
     rows = utils.load_jsonl(version_dir / "verdicts.jsonl")
     corpus = {r["record_id"]: r for r in utils.load_jsonl(corpus_path) if "record_id" in r}
-    audit_path = corpus_path.parent.parent / "step6" / "rewrites.jsonl"
+    # Current 3-step runs write rewrite audits to step3/; legacy 7-step runs to step6/.
+    audit_path = corpus_path.parent.parent / "step3" / "rewrites.jsonl"
+    if not audit_path.exists():
+        audit_path = corpus_path.parent.parent / "step6" / "rewrites.jsonl"
     audits = ({r["record_id"]: r for r in utils.load_jsonl(audit_path) if "record_id" in r}
               if audit_path.exists() else {})
     # Prefer the rubric snapshot saved with the verdicts (evals/score_dad.py), so

@@ -114,19 +114,19 @@ def _record_prompt_manifest(out_dir: Path, prompt_md5: str, system_prompt: str,
     """Save the exact judge system prompt that verdict rows reference by prompt_md5,
     so every saved verdict is traceable to the prompt that produced it."""
     prompt_file = f"prompt_{prompt_md5[:8]}.txt"
-    (out_dir / prompt_file).write_text(system_prompt)
+    (out_dir / prompt_file).write_text(system_prompt, encoding="utf-8")
     # Snapshot the rubric too, so saved verdicts stay interpretable (gates, floors)
     # even after evals/rubric_sdf_v3.yaml changes.
-    (out_dir / "rubric.yaml").write_text(Path(args.rubric).read_text())
+    (out_dir / "rubric.yaml").write_text(Path(args.rubric).read_text(encoding="utf-8"), encoding="utf-8")
     manifest_path = out_dir / "judge_manifest.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
     manifest[prompt_md5] = {
         "rubric_version": rubric["version"],
         "judges": args.judges,
         "temperature": args.temperature,
         "prompt_file": prompt_file,
     }
-    with open(manifest_path, "w") as f:
+    with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
 
@@ -191,7 +191,7 @@ def main() -> None:
         rows.append(row)
 
     report = summarize(rows, args.judges, rubric)
-    with open(out_dir / "summary.json", "w") as f:
+    with open(out_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
     print(f"\n=== SDF Judge Summary ({report['documents']} documents, rubric {rubric['version']}) ===")

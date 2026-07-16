@@ -6,6 +6,7 @@ import random
 import re
 import shutil
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime, UTC
@@ -39,7 +40,7 @@ def save_jsonl(data: list[dict], path: str | Path, append: bool = False) -> None
     p = Path(path)
     ensure_dir(p.parent)
     mode = "a" if append else "w"
-    with open(p, mode) as f:
+    with open(p, mode, encoding="utf-8") as f:
         for record in data:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -47,7 +48,7 @@ def save_jsonl(data: list[dict], path: str | Path, append: bool = False) -> None
 def append_jsonl(record: dict, path: str | Path) -> None:
     p = Path(path)
     ensure_dir(p.parent)
-    with open(p, "a") as f:
+    with open(p, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
@@ -56,7 +57,7 @@ def load_jsonl(path: str | Path) -> list[dict]:
     if not p.exists():
         return []
     records = []
-    with open(p) as f:
+    with open(p, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -64,15 +65,114 @@ def load_jsonl(path: str | Path) -> list[dict]:
     return records
 
 
+def extract_json(text: str):
+    """Parse the JSON value in a model response, tolerating surrounding chatter.
+
+    Models occasionally wrap their JSON in markdown fences or add prose before
+    or after it ("Here are the subtypes: [...] Let me know if..."), which bare
+    json.loads rejects ("Extra data" / "Expecting value") — crashing a paid run
+    on an otherwise usable response. This tries a full parse from every `[`/`{`
+    in the text and returns the longest value that parses, so a short bracketed
+    aside in the preamble can't shadow the real payload.
+
+    Raises json.JSONDecodeError when no complete JSON value is present — and
+    also when the payload itself is broken: truncated by max_tokens, or
+    malformed mid-array (missing/trailing comma, both common LLM slip-ups).
+    A broken container usually contains smaller values that do parse, and
+    salvaging such a fragment would feed the caller a wrong-shaped result
+    (a dict where a list was expected, with elements silently dropped)
+    instead of a clean parse error. The unifying signal: a failed parse
+    whose consumed region fully contains a successfully parsed candidate is
+    a real payload that broke partway — candidates inside or after it are
+    its fragments and are disqualified, while a complete value found before
+    it (a genuine payload followed by broken chatter) is still returned.
+
+    strict=False: literal control characters inside string values (raw
+    newlines/tabs) are tolerated — the way prose-heavy JSON at temperature 1.0
+    most often goes invalid, and the historical cause of silently empty scopes.
+    """
+    decoder = json.JSONDecoder(strict=False)
+    candidates = []  # (start, end, value)
+    failures = []  # (start, position where the parse gave up)
+    for match in re.finditer(r"[\[{]", text):
+        try:
+            value, end = decoder.raw_decode(text, match.start())
+        except json.JSONDecodeError as err:
+            failures.append((match.start(), err.pos))
+            continue
+        candidates.append((match.start(), end, value))
+
+    broken = [q for q, p in failures
+              if any(q < s and e <= p for s, e, _ in candidates)]
+    eligible = [c for c in candidates
+                if not any(c[0] > q for q in broken)]
+    if eligible:
+        return max(eligible, key=lambda c: c[1] - c[0])[2]
+    if broken:
+        raise json.JSONDecodeError(
+            "JSON container is malformed or truncated", text, min(broken)
+        )
+    raise json.JSONDecodeError("no JSON value found in response", text, 0)
+
+
+def extract_json_object(text: str) -> dict:
+    """extract_json narrowed to an object. A wrong-shaped value raises
+    json.JSONDecodeError so shape failures join parse failures on the caller's
+    existing error path, instead of crashing later with AttributeError when
+    .get() hits a list."""
+    value = extract_json(text)
+    if not isinstance(value, dict):
+        raise json.JSONDecodeError("JSON value is not an object", text, 0)
+    return value
+
+
+def extract_json_array(text: str) -> list:
+    """extract_json narrowed to an array; wrong shape raises json.JSONDecodeError
+    (see extract_json_object)."""
+    value = extract_json(text)
+    if not isinstance(value, list):
+        raise json.JSONDecodeError("JSON value is not an array", text, 0)
+    return value
+
+
 def load_prompt(path: str | Path, **kwargs) -> str:
-    text = Path(path).read_text()
+    text = Path(path).read_text(encoding="utf-8")
     if kwargs:
         text = text.format(**kwargs)
     return text
 
 
+# A template that carries both a system and a user half separates them with a
+# line equal to this marker. See load_split_prompt.
+_PROMPT_SPLIT_MARKER = "===USER==="
+
+
+def load_split_prompt(path: str | Path, **kwargs) -> tuple[str, str]:
+    """Load a two-part prompt template as (system, user).
+
+    The system half and the user half are separated by a line equal to
+    `===USER===`. Each half is formatted with the same kwargs — a half simply
+    ignores any placeholder it does not contain. A template with NO marker
+    returns ("", <whole formatted template>): callers and pre-split run
+    snapshots that predate the split still send a user-only prompt with an
+    empty system prompt, identical to load_prompt's behaviour."""
+    text = Path(path).read_text(encoding="utf-8")
+    lines = text.splitlines()
+    system_part, user_part = "", text
+    for i, line in enumerate(lines):
+        if line.strip() == _PROMPT_SPLIT_MARKER:
+            system_part = "\n".join(lines[:i])
+            user_part = "\n".join(lines[i + 1:])
+            break
+
+    def _fmt(part: str) -> str:
+        return part.format(**kwargs) if kwargs else part
+
+    return _fmt(system_part).strip(), _fmt(user_part).strip()
+
+
 def load_config(path: str = "config.yaml") -> dict:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -95,11 +195,11 @@ def _git_status() -> tuple[str | None, bool, list[str]]:
     try:
         commit = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, check=True, cwd=cwd,
+            capture_output=True, text=True, encoding="utf-8", check=True, cwd=cwd,
         ).stdout.strip()
         porcelain = subprocess.run(
             ["git", "status", "--porcelain"],
-            capture_output=True, text=True, check=True, cwd=cwd,
+            capture_output=True, text=True, encoding="utf-8", check=True, cwd=cwd,
         ).stdout
         dirty_files = [line[3:].strip() for line in porcelain.splitlines() if line.strip()]
         return commit, bool(dirty_files), dirty_files
@@ -108,10 +208,29 @@ def _git_status() -> tuple[str | None, bool, list[str]]:
 
 
 def _update_latest_symlink(parent: Path, run_dir: Path) -> None:
+    """Point parent/latest at run_dir. Symlinks on Windows need Developer Mode
+    or elevation (WinError 1314), so fall back to a directory junction (no
+    privilege required), and failing that warn and continue — the pointer is a
+    convenience; resolve_run_dir orders runs by directory name, not this link."""
     link = parent / "latest"
-    if link.is_symlink() or link.exists():
+    # lexists also catches broken symlinks and junctions, which exists() misses.
+    if os.path.lexists(link):
         link.unlink()
-    link.symlink_to(run_dir.relative_to(parent), target_is_directory=True)
+    try:
+        link.symlink_to(run_dir.relative_to(parent), target_is_directory=True)
+    except OSError:
+        try:
+            # Junction targets must be absolute; mklink is a cmd builtin.
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(link), str(run_dir.resolve())],
+                check=True, capture_output=True,
+            )
+        except (OSError, subprocess.CalledProcessError):
+            print(
+                f"  WARNING: could not update the {link} pointer (no symlink "
+                "privilege, junction fallback failed); runs are unaffected.",
+                file=sys.stderr,
+            )
 
 
 def create_run_dir(
@@ -152,7 +271,7 @@ def create_run_dir(
         "model": config.get("model"),
         "config": config,
     }
-    with open(run_dir / "run_manifest.json", "w") as f:
+    with open(run_dir / "run_manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
     _update_latest_symlink(runs_root.parent, run_dir)
@@ -171,18 +290,57 @@ def resolve_constitution_dir(prompts_dir: str | Path) -> Path | None:
     return None
 
 
+_RUN_DIR_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_")
+
+
 def resolve_run_dir(runs_root: str | Path, run_id: str | None = None) -> Path:
-    """Find an existing run directory: by ID if given, otherwise the most recent."""
+    """Find an existing run directory: by ID if given, otherwise the most recent.
+
+    "Most recent" considers only pipeline-created dirs (timestamp-prefixed
+    names). Hand-made dirs (e.g. local_* scratch runs) sort after every
+    timestamp lexicographically and would otherwise hijack every bare
+    --resume; they remain reachable explicitly via --run-id.
+    """
     runs_root = Path(runs_root)
     if run_id:
         run_dir = runs_root / run_id
         if not run_dir.is_dir():
             raise SystemExit(f"Run '{run_id}' not found under {runs_root}")
         return run_dir
-    runs = sorted(d for d in runs_root.iterdir() if d.is_dir()) if runs_root.is_dir() else []
+    runs = sorted(
+        d for d in runs_root.iterdir() if d.is_dir() and _RUN_DIR_TS_RE.match(d.name)
+    ) if runs_root.is_dir() else []
     if not runs:
         raise SystemExit(f"No runs found under {runs_root} — nothing to resume.")
     return runs[-1]
+
+
+def warn_if_backend_changed(run_dir: str | Path, live_config: dict) -> None:
+    """On --resume, warn if the live config's `backend` differs from the one the
+    run started with (recorded in run_manifest.json).
+
+    Switching mid-run is allowed — flipping to `api` after hitting the
+    claude_code usage limit is the documented recovery — but it mixes generation
+    semantics and cost accounting within one run, so surface it rather than
+    letting it happen silently.
+    """
+    manifest_path = Path(run_dir) / "run_manifest.json"
+    if not manifest_path.is_file():
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    started = (manifest.get("config") or {}).get("backend", "api")
+    current = live_config.get("backend", "api")
+    if started != current:
+        print(
+            f"  WARNING: this run started on backend {started!r} but config.yaml now says "
+            f"{current!r}. Resuming will finish it under a different backend (mixed generation "
+            "semantics and cost accounting in one run). Each cost_log.jsonl row is tagged with "
+            "its backend.",
+            file=sys.stderr,
+        )
 
 
 class Checkpoint:
@@ -192,7 +350,7 @@ class Checkpoint:
         self.path = Path(path)
         self._data: dict = {"completed": [], "last_updated": None}
         if self.path.exists():
-            with open(self.path) as f:
+            with open(self.path, encoding="utf-8") as f:
                 self._data = json.load(f)
         self._completed: set = set(self._data.get("completed", []))
 
@@ -206,7 +364,7 @@ class Checkpoint:
             self._data["completed"] = list(self._completed)
             self._data["last_updated"] = datetime.now(UTC).isoformat()
             ensure_dir(self.path.parent)
-            with open(self.path, "w") as f:
+            with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(self._data, f)
 
     @property

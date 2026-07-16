@@ -8,6 +8,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from dad_pipeline import step2_responses
 from viewer import loader, rendering
 from viewer.ui_pages import common
 
@@ -26,7 +27,10 @@ finals = loader.load_final(run.run_dir, run.pipeline)
 id_key = "doc_id" if run.pipeline == "sdf" else "record_id"
 ids = [r[id_key] for r in finals]
 
-_doc_title = common.doc_title
+# Label helpers live in loader (pure, reused by the compare page); thin aliases
+# keep this page's call sites unchanged.
+_doc_title = loader.doc_first_line
+_goal_label = loader.dad_goal_label
 
 
 def _pick_document(options: list[str], labels: dict[str, str], noun: str) -> str | None:
@@ -56,7 +60,21 @@ def _pick_document(options: list[str], labels: dict[str, str], noun: str) -> str
 
 # --- Document selection ---
 selected_id = None
-if not finals:
+dad_by_prompt = False  # incomplete DAD run: enumerate step-1 prompts, not final records
+if run.pipeline == "dad" and not finals:
+    dilemmas = loader.load_stage(run.run_dir, "dad", "step1_dilemmas")
+    if dilemmas:
+        dad_by_prompt = True
+        st.info("No responses generated yet — showing the step-1 dilemma prompts.")
+        options, labels = [], {}
+        for d in dilemmas:
+            pid = d.get("prompt_id")
+            options.append(pid)
+            labels[pid] = _goal_label(d.get("annotation"), d.get("user_message"))
+        selected_id = _pick_document(options, labels, "prompt")
+    else:
+        st.info("No dilemmas generated in this run yet.")
+elif not finals:
     st.info("No final corpus in this run yet (incomplete run).")
 elif run.pipeline == "sdf":
     subtypes = {s["subtype_id"]: s for s in loader.load_stage(run.run_dir, "sdf", "layer2")}
@@ -83,30 +101,74 @@ elif run.pipeline == "sdf":
     st.caption("Dropdown labels: *document title — subtype (from Layer 2)*")
     selected_id = _pick_document(options, labels, "document")
 else:
-    audits = {a["record_id"]: a for a in loader.load_stage(run.run_dir, "dad", "step6")}
-    injections = sorted({a.get("injection_used", "") for a in audits.values() if a.get("injection_used")})
-    inj_filter = st.multiselect(
-        "Filter by injection (from Step 5)", injections, placeholder="All injections",
-        help="The system-prompt injection active when the draft response was generated in Step 5.",
-    )
+    dad_legacy = loader.dad_is_legacy(run.run_dir)
+    audits = {a["record_id"]: a for a in loader.load_stage(
+        run.run_dir, "dad", "step6" if dad_legacy else "step3_rewrites")}
+
+    if dad_legacy:
+        injections = sorted({a.get("injection_used", "") for a in audits.values() if a.get("injection_used")})
+        inj_filter = st.multiselect(
+            "Filter by injection", injections, placeholder="All injections",
+            help="The system-prompt injection active when the draft response was sampled.",
+        )
+        keep = lambda audit: not inj_filter or audit.get("injection_used", "?") in inj_filter
+        suffix = lambda audit: audit.get("injection_used", "?")
+        sort_key = lambda rec: audits.get(rec.get("record_id"), {}).get("injection_used", "")
+        st.caption("Dropdown labels: *user message — injection (from the response sampling step)*")
+    else:
+        # Current-format runs: label each record by its annotated goal — the
+        # axes and the full prompt live in the step expanders, not the dropdown.
+        keep = lambda audit: True
+        suffix = None
+        sort_key = lambda rec: str(audits.get(rec.get("record_id"), {}).get("prompt_id", ""))
 
     options, labels = [], {}
-    for rec in sorted(finals, key=lambda r: audits.get(r.get("record_id"), {}).get("injection_used", "")):
+    for rec in sorted(finals, key=sort_key):
         audit = audits.get(rec.get("record_id"), {})
-        inj = audit.get("injection_used", "?")
-        if inj_filter and inj not in inj_filter:
+        if not keep(audit):
             continue
         user_msg = rec["messages"][0]["content"] if rec.get("messages") else ""
         options.append(rec["record_id"])
-        labels[rec["record_id"]] = f"{_doc_title(user_msg)}   —   {inj}"
+        if suffix:
+            labels[rec["record_id"]] = f"{_doc_title(user_msg)}   —   {suffix(audit)}"
+        else:
+            labels[rec["record_id"]] = _goal_label(audit.get("annotation"), user_msg)
 
-    st.caption("Dropdown labels: *user message — injection (from Step 5)*")
     selected_id = _pick_document(options, labels, "record")
 
 
-def stage_expander(title: str, stage: str, lineage: dict, output_fn):
-    """One stage: the rendered prompt, then the output it produced."""
-    with st.expander(title):
+def _call_stats_line(cost_stage: str, item_id: str | None) -> str | None:
+    """One-line summary of the API call(s) behind a stage: model · cost ·
+    wall-clock · retries. Falls back to model-only for runs logged before
+    per-record stats existed."""
+    s = loader.call_stats(run.run_dir, cost_stage, item_id)
+    if s is None:
+        return None
+    models = ", ".join(s["models"])
+    if not s["per_item"]:
+        return f"{models} · per-record cost/time/retries not recorded in this run"
+    bits = [models, f"${s['cost_usd']:.4f}"]
+    if s.get("duration_s") is not None:
+        bits.append(f"{s['duration_s']:.1f}s")
+    if s.get("retries") is not None:
+        bits.append("no retries" if s["retries"] == 0
+                    else f"{s['retries']} retr{'y' if s['retries'] == 1 else 'ies'}")
+    if s["calls"] > 1:
+        bits.append(f"{s['calls']} calls")
+    if s.get("batch_size", 1) > 1:
+        bits.append(f"one call drafted a batch of {s['batch_size']} (cost/time are the whole batch's)")
+    return " · ".join(bits)
+
+
+def stage_expander(title: str, stage: str, lineage: dict, output_fn,
+                   stats: tuple[str, str | None] | None = None):
+    """One stage: call stats, the rendered prompt, then the output it produced.
+    `stats` is (cost-log stage tag, item id) for the API call(s) behind the stage."""
+    with st.expander(f":blue[{title}]"):
+        if stats:
+            line = _call_stats_line(*stats)
+            if line:
+                st.caption(f":material/speed: {line}")
         rendered = rendering.render_prompt(run.pipeline, stage, run.run_dir, manifest, lineage)
         common.show_rendered_prompt(rendered, key=stage, show_run_warnings=False)
         st.markdown("##### Output at this stage")
@@ -115,7 +177,7 @@ def stage_expander(title: str, stage: str, lineage: dict, output_fn):
 
 # --- Side-by-side: document (left) vs prompts (right) ---
 if selected_id is None:
-    if finals:
+    if finals or dad_by_prompt:
         st.caption("Click a document above to open it.")
 elif run.pipeline == "sdf":
     lin = loader.sdf_lineage(run.run_dir, selected_id)
@@ -133,9 +195,11 @@ elif run.pipeline == "sdf":
         st.caption("Each layer's prompt and what it produced")
         with st.container(height=PANEL_HEIGHT):
             stage_expander("Layer 1 — document type", "layer1", lin,
-                           lambda: st.json(lin["doc_type"]) if lin["doc_type"] else st.caption("not found"))
+                           lambda: common.json_block(lin["doc_type"], key="l1", label="document type", expanded=True)
+                           if lin["doc_type"] else st.caption("not found"))
             stage_expander("Layer 2 — subtype", "layer2", lin,
-                           lambda: st.json(lin["subtype"]) if lin["subtype"] else st.caption("not found"))
+                           lambda: common.json_block(lin["subtype"], key="l2", label="subtype", expanded=True)
+                           if lin["subtype"] else st.caption("not found"))
             stage_expander("Layer 3 — draft", "layer3", lin,
                            lambda: st.code(lin["draft"]["content"], language=None, wrap_lines=True)
                            if lin["draft"] else st.caption("not reached"))
@@ -151,18 +215,41 @@ elif run.pipeline == "sdf":
             stage_expander("Layer 4 — constitutional rewrite", "layer4", lin, layer4_output)
 
             stage_expander("Layer 5 — scoring", "layer5", lin,
-                           lambda: st.json((lin["score"] or {}).get("scores", {}))
+                           lambda: common.json_block((lin["score"] or {}).get("scores", {}),
+                                                     key="l5", label="scores", expanded=True)
                            if lin["score"] else st.caption("not reached"))
 else:
-    lin = loader.dad_lineage(run.run_dir, selected_id)
+    lin = (loader.dad_lineage_by_prompt(run.run_dir, selected_id) if dad_by_prompt
+           else loader.dad_lineage(run.run_dir, selected_id))
     audit = lin.get("rewrite") or {}
+    dilemma = lin.get("dilemma") or {}
     st.divider()
     doc_col, prompts_col = st.columns(2)
 
     with doc_col:
-        st.subheader(f"Record {selected_id[:8]}")
-        st.caption(f"scenario `{audit.get('scenario_id')}` · injection `{audit.get('injection_used')}` "
-                   f"· principle {audit.get('principle_id')}")
+        # Stable global ids as the headline (the per-run AW-####/S-### appear in
+        # the per-stage lineage below); classification tag small underneath.
+        annotation = dilemma.get("annotation") or audit.get("annotation") or {}
+        head = []
+        if dilemma.get("scenario_gid"):
+            head.append(f"scenario {dilemma['scenario_gid']}")
+        if dilemma.get("prompt_gid"):
+            head.append(f"prompt {dilemma['prompt_gid']}")
+        st.subheader("  ·  ".join(head)
+                     or str(dilemma.get("prompt_id") or audit.get("prompt_id") or selected_id))
+        if lin.get("format") == "v2":
+            taxa = dilemma.get("taxa_subcategory") or annotation.get("taxa_category")
+            lev = annotation.get("leverage")
+            tag = " · ".join(str(x) for x in [
+                ", ".join(annotation.get("domain") or []),
+                taxa,
+                annotation.get("direction"),
+                annotation.get("welfare_magnitude"),
+                f"{lev} leverage" if lev else None,
+            ] if x)
+            st.caption(tag or "step-1 dilemma prompt")
+        else:
+            st.caption(f"injection `{audit.get('injection_used')}` · principle {audit.get('principle_id')}")
         if st.button(":material/gavel: Judge this record"):
             # The judge page's widgets keep their own session state; seed them
             # explicitly or the page opens on its previous selection.
@@ -173,52 +260,179 @@ else:
             st.query_params["doc"] = selected_id
             st.switch_page("ui_pages/judge.py")
         with st.container(height=PANEL_HEIGHT):
-            for msg in (lin.get("final") or {}).get("messages", []):
-                st.markdown(f"**{msg['role']}**")
-                st.code(msg["content"], language=None, wrap_lines=True)
+            messages = (lin.get("final") or {}).get("messages", [])
+            if messages:
+                for msg in messages:
+                    st.markdown(f"**{msg['role']}**")
+                    st.code(msg["content"], language=None, wrap_lines=True)
+            else:
+                # Incomplete run: no final response yet — show the dilemma prompt itself.
+                st.markdown("**user** *(dilemma prompt — no response generated yet)*")
+                st.code(dilemma.get("user_message", ""), language=None, wrap_lines=True)
+                common.json_block(dilemma.get("annotation", {}), key="doc_ann", label="annotation")
 
     with prompts_col:
         st.subheader("Prompts")
         st.caption("Each step's prompt and what it produced")
         with st.container(height=PANEL_HEIGHT):
-            stage_expander("Step 1 — principle annotation", "step1", lin,
-                           lambda: st.json({k: v for k, v in (lin.get("principle") or {}).items() if k != "content"})
-                           if lin.get("principle") else st.caption("principle record not found"))
-            stage_expander("Step 2 — scenario", "step2", lin,
-                           lambda: st.json(lin.get("scenario")) if lin.get("scenario") else st.caption("not found"))
-            stage_expander("Step 3 — draft user prompt", "step3", lin,
-                           lambda: st.code((lin.get("prompt") or {}).get("user_message", "—"),
-                                           language=None, wrap_lines=True))
+            if lin.get("format") == "v2":
+                # Ids linking each stage's expander to the cost-log rows of the
+                # API call(s) that produced it (item_id, logged since 2026-07).
+                scenario_id = dilemma.get("scenario_id")
+                pid = dilemma.get("prompt_id") or audit.get("prompt_id")
+                resp = lin.get("response") or {}
+                resp_item = (f"{resp['prompt_id']}_s{resp.get('sample_index', 0)}"
+                             if resp.get("prompt_id") else None)
 
-            def step4_output():
-                ref = lin.get("refined")
-                if not ref:
-                    st.caption("not reached")
-                    return
-                common.show_diff(ref["original"], ref["refined"], "draft prompt", "refined prompt", key="s4")
-            stage_expander("Step 4 — refine user prompt", "step4", lin, step4_output)
+                # Step 1a — scenario generation: pure sampling, no model call.
+                with st.expander(":blue[Step 1a — scenario generation (sampled, no model call)]"):
+                    sc = lin.get("scenario")
+                    if sc:
+                        st.caption("Stratified categorical assignment for this example, drawn by the "
+                                   "sampler — no LLM call.")
+                        common.json_block(sc, key="s1a", label="scenario")
+                    else:
+                        st.caption("scenario record not found (older run, or pre-scenario snapshot)")
 
-            def step5_output():
-                resp = lin.get("response")
-                if not resp:
-                    st.caption("not reached")
-                    return
-                st.code(resp["assistant_response"], language=None, wrap_lines=True)
-                st.markdown(f"**Kept:** {'✅' if resp.get('kept') else '❌ (ruthless judge rejected)'}")
-            stage_expander("Step 5 — response under injection", "step5", lin, step5_output)
+                def step1b_output():
+                    d = lin.get("dilemma") or {}
+                    if not d:
+                        st.caption("dilemma record not found")
+                        return
+                    # the 1b draft is draft_user_message when 1c ran, else the stored user_message
+                    st.code(d.get("draft_user_message") or d.get("user_message", ""),
+                            language=None, wrap_lines=True)
+                    common.json_block(d.get("annotation", {}), key="s1b_ann", label="annotation")
+                stage_expander("Step 1b — first attempt (draft)", "step1_dilemmas", lin, step1b_output,
+                               stats=("prompt_draft", scenario_id))
 
-            # Historical runs only — ruthless sampling was later removed from the pipeline
-            if (lin.get("response") or {}).get("injection_used") == "ruthless":
-                stage_expander("Step 5b — ruthless judge", "step5_judge", lin,
-                               lambda: st.markdown(f"**Verdict (kept):** {(lin.get('response') or {}).get('kept')}"))
+                def step1c_output():
+                    d = lin.get("dilemma") or {}
+                    if d.get("refine_failed"):
+                        st.caption(":material/warning: every refine attempt was unusable — "
+                                   "the 1b draft shipped unrefined (raw outputs in "
+                                   "step1/refine_failures.jsonl)")
+                        return
+                    if d.get("draft_user_message") is None:
+                        st.caption("not run (dad.dilemmas.refine was off for this run)")
+                        return
+                    if d.get("refine_notes"):
+                        st.info(f"Notes: {d['refine_notes']}")
+                    common.show_diff(d["draft_user_message"], d.get("user_message", ""),
+                                     "1b draft", "1c refined", key="s1c")
+                stage_expander("Step 1c — review & rewrite (optional)", "step1_refine", lin, step1c_output,
+                               stats=("prompt_refine", scenario_id))
 
-            def step6_output():
-                if not audit:
-                    st.caption("not reached")
-                    return
-                common.show_diff(audit["draft_response"], audit["rewritten_response"],
-                                 "draft response", "constitutional rewrite", key="s6")
-            stage_expander("Step 6 — constitutional rewrite (critical step)", "step6", lin, step6_output)
+                scope_rec = lin.get("scope") or {}
+                sel_source = scope_rec.get("selection_source")
+
+                def _triggered_toggle(key: str):
+                    """Retrieval provenance: the full rows whose trigger
+                    conditions fired for this prompt (runs since retrieval)."""
+                    trig = scope_rec.get("triggered_entries")
+                    if not trig:
+                        return
+                    if scope_rec.get("selection_fallback"):
+                        st.caption(":material/warning: selection unusable — the whole "
+                                   "library was injected")
+                    elif sel_source == "repair":
+                        st.caption(":material/build: triggered_entries was missing from "
+                                   "the scope output — recovered by a selection-only "
+                                   "repair call (this run predates the standing "
+                                   "select call)")
+                    common.json_block(trig, key=key,
+                                      label=f"triggered library entries ({len(trig)})")
+
+                def step2_scope_output():
+                    sc = scope_rec.get("scope")
+                    if sc:
+                        common.json_block(sc, key="s2a", label="scope", expanded=True)
+                    else:
+                        st.caption("not reached")
+                    # No select call for this record (selection arrived inside
+                    # the scope JSON, or predates selection_source): retrieval
+                    # provenance shows here instead of in a 2a.5 expander.
+                    if sel_source not in step2_responses.SELECT_CALL_SOURCES:
+                        _triggered_toggle("s2a_trig")
+                stage_expander("Step 2a — scope the case (patients, goal, levers, cost, magnitude, upside, counterfactual)",
+                               "step2_scope", lin, step2_scope_output,
+                               stats=("response_scope", pid))
+
+                # Step 2a.5 — the dedicated retrieval call (and its miss-only
+                # "repair" precursor). Absent for scope-time selections and for
+                # runs predating library retrieval.
+                if sel_source in step2_responses.SELECT_CALL_SOURCES:
+                    stage_expander("Step 2a.5 — select library entries (retrieval)",
+                                   "step2_select", lin,
+                                   lambda: _triggered_toggle("s2a5_trig"),
+                                   stats=("response_select", pid))
+
+                # Tension retrieval was removed from the pipeline; still shown for
+                # older runs that recorded it, so their lineage stays complete.
+                if lin.get("tension_tag"):
+                    stage_expander("Tensions (retrieval — earlier pipeline)", "step2_tag", lin,
+                                   lambda: common.json_block(lin.get("tension_tag"), key="s2tag",
+                                                             label="tensions", expanded=True))
+
+                stage_expander("Step 2b — response from the reasoning library", "step2_respond", lin,
+                               lambda: st.code((lin.get("response") or {}).get("assistant_response", ""),
+                                               language=None, wrap_lines=True)
+                               if lin.get("response") else st.caption("not reached"),
+                               stats=("response_draft", resp_item) if resp_item else None)
+
+                def step3_output():
+                    if not audit:
+                        st.caption("not reached")
+                        return
+                    common.show_diff(audit["draft_response"], audit["rewritten_response"],
+                                     "draft response", "rewritten response", key="s3")
+                stage_expander("Step 3 — rewrite against the distilled principles", "step3_rewrite", lin,
+                               step3_output,
+                               stats=("constitution_rewrite", audit.get("response_id")) if audit else None)
+            else:
+                # Legacy 7-step runs (pre-spec pipeline)
+                stage_expander("Step 1 — principle annotation", "step1", lin,
+                               lambda: common.json_block(
+                                   {k: v for k, v in (lin.get("principle") or {}).items() if k != "content"},
+                                   key="leg_s1", label="principle", expanded=True)
+                               if lin.get("principle") else st.caption("principle record not found"))
+                stage_expander("Step 2 — scenario", "step2", lin,
+                               lambda: common.json_block(lin.get("scenario"), key="leg_s2",
+                                                         label="scenario", expanded=True)
+                               if lin.get("scenario") else st.caption("not found"))
+                stage_expander("Step 3 — draft user prompt", "step3", lin,
+                               lambda: st.code((lin.get("prompt") or {}).get("user_message", "—"),
+                                               language=None, wrap_lines=True))
+
+                def step4_output():
+                    ref = lin.get("refined")
+                    if not ref:
+                        st.caption("not reached")
+                        return
+                    common.show_diff(ref["original"], ref["refined"], "draft prompt", "refined prompt", key="s4")
+                stage_expander("Step 4 — refine user prompt", "step4", lin, step4_output)
+
+                def step5_output():
+                    resp = lin.get("response")
+                    if not resp:
+                        st.caption("not reached")
+                        return
+                    st.code(resp["assistant_response"], language=None, wrap_lines=True)
+                    st.markdown(f"**Kept:** {'✅' if resp.get('kept') else '❌ (ruthless judge rejected)'}")
+                stage_expander("Step 5 — response under injection", "step5", lin, step5_output)
+
+                # Historical runs only — ruthless sampling was later removed from the pipeline
+                if (lin.get("response") or {}).get("injection_used") == "ruthless":
+                    stage_expander("Step 5b — ruthless judge", "step5_judge", lin,
+                                   lambda: st.markdown(f"**Verdict (kept):** {(lin.get('response') or {}).get('kept')}"))
+
+                def step6_output():
+                    if not audit:
+                        st.caption("not reached")
+                        return
+                    common.show_diff(audit["draft_response"], audit["rewritten_response"],
+                                     "draft response", "constitutional rewrite", key="s6")
+                stage_expander("Step 6 — constitutional rewrite (critical step)", "step6", lin, step6_output)
 
             if lin.get("pushback"):
                 pb = lin["pushback"]

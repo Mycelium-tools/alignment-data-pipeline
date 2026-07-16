@@ -302,6 +302,8 @@ def test_combination_coverage_reports_full_coverage_and_no_missing_cells():
     assert out[key]["filled"] == 6
     assert out[key]["coverage"] == 1.0
     assert out[key]["missing"] == []
+    assert len(out[key]["filled_cells"]) == 6
+    assert "Systemic×Over-weighting" in out[key]["filled_cells"]
     assert out[key]["verdict"] == "GOOD"
 
 
@@ -317,6 +319,7 @@ def test_combination_coverage_lists_missing_cells_and_flags_bad():
     assert len(out[key]["missing"]) == 5
     assert "Systemic×Over-weighting" in out[key]["missing"]
     assert "Individual×Under-weighting" not in out[key]["missing"]   # the one that occurred
+    assert out[key]["filled_cells"] == ["Individual×Under-weighting"]  # the one that occurred
 
 
 def test_combination_coverage_is_na_when_an_axis_lacks_a_vocabulary():
@@ -341,6 +344,7 @@ def test_combination_coverage_is_na_with_no_contributing_records():
     # EVERY valid cell is missing (an empty list would claim full coverage)
     assert len(out["leverage x direction"]["missing"]) == 6
     assert "Systemic×Over-weighting" in out["leverage x direction"]["missing"]
+    assert out["leverage x direction"]["filled_cells"] == []   # nothing populated
 
 
 def test_combination_coverage_rejects_non_string_axis_names():
@@ -561,8 +565,8 @@ def test_structural_analyzer_flags_templated_replies():
     out = A.run_analyzers(_ctx(texts=templated), A.default_analyzers())
     frag = out["analyses"]["structural"]
     assert frag["n"] == 10
-    assert frag["opening"]["verdict"] == "BAD"
     assert frag["scaffold"]["verdict"] == "BAD"
+    assert "opening" not in frag            # opening is the response_opening_move axis, not here
 
 
 def test_structural_analyzer_skipped_without_texts():
@@ -576,17 +580,16 @@ def test_available_includes_texts_when_supplied():
     assert "texts" not in _ctx().available
 
 
-def test_structural_split_reads_first_turn_for_moves_all_turns_for_scaffold():
-    """The turn-split contract: opening/closing are read from the FIRST assistant turn,
-    scaffold/formatting from ALL turns joined. One 2-turn record where the opener and a
-    templated closer live in turn 0 (no list) and the considerations-list lives only in
-    turn 1 — so opening+closing flag from turn 0 while scaffold flags from turn 1."""
+def test_structural_split_reads_first_turn_for_closing_all_turns_for_scaffold():
+    """The turn-split contract: ``closing`` is read from the FIRST assistant turn's last
+    sentence; scaffold/formatting from ALL turns joined. One 2-turn record where a
+    templated closer lives in turn 0 (no list) and the considerations-list lives only in
+    turn 1 — so closing flags from turn 0 while scaffold flags from turn 1."""
     rec_texts = {"r0": [
-        "I understand your concern. Ultimately, the choice is yours.",   # turn 0: opener + closer, no list
+        "I understand your concern. Ultimately, the choice is yours.",   # turn 0: closer, no list
         "Here are three considerations:\n- welfare\n- cost",             # turn 1: list only
     ]}
     frag = A.run_analyzers(_ctx(texts=rec_texts), A.default_analyzers())["analyses"]["structural"]
     assert frag["n"] == 1
-    assert frag["opening"]["formulaic_frac"] == 1.0   # opener came from turn 0
     assert frag["closing"]["formulaic_frac"] == 1.0   # closer came from turn 0, not turn 1
     assert frag["scaffold"]["arc_frac"] == 1.0        # list+considerations came from turn 1 (all turns joined)

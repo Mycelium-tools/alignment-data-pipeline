@@ -1,0 +1,551 @@
+{
+  "run_id": "2026-07-10_23-45_noscope-libonly",
+  "records": 3,
+  "inputs_present": [
+    "tags",
+    "annotations"
+  ],
+  "stats": {
+    "analyses": {
+      "distribution": {
+        "language": {
+          "en": 3
+        },
+        "taxa_category": {
+          "claimed-non-sentient": 1,
+          "fish/aquatic": 2
+        },
+        "beings": {
+          "apple_trees": 1,
+          "shrimp_larvae": 1,
+          "octopuses": 1
+        },
+        "domain": {
+          "Agriculture / Aquaculture": 2,
+          "Family / Relationships": 1,
+          "Journalism / Media": 1,
+          "Consumer Choice, Education / Parenting": 1
+        },
+        "user_goal": {
+          "Decision Support": 3
+        },
+        "visibility": {
+          "Explicit": 3
+        },
+        "user_attitude": {
+          "Conflicted": 3
+        },
+        "conflict": {
+          "Convergent": 1,
+          "Mixed": 1,
+          "Divergent": 1
+        },
+        "direction": {
+          "Over-weighting": 1,
+          "Under-weighting": 2
+        },
+        "welfare_severity": {
+          "Mild": 1,
+          "Severe": 2
+        },
+        "welfare_scope": {
+          "Group": 1,
+          "Population": 1,
+          "Individual": 1
+        },
+        "user_stakes": {
+          "Medium": 3
+        },
+        "leverage": {
+          "Individual": 2,
+          "Systemic": 1
+        },
+        "surface_form": {
+          "Canonical": 3
+        },
+        "values_in_tension": {
+          "family sentiment ↔ economic yield": 1,
+          "perceived plant welfare ↔ agricultural productivity": 1,
+          "industry narrative ↔ moral uncertainty": 1,
+          "journalistic simplicity ↔ animal welfare": 1,
+          "animal welfare ↔ financial savings, animal welfare ↔ parental honesty": 1
+        },
+        "systemic_ai": {
+          "false": 2,
+          "true": 1
+        },
+        "posture_class": {
+          "WELFARE_CENTRAL": 3
+        },
+        "reasoning_moves_observed": {
+          "creative_alternative": 1,
+          "sentience_clarification": 1,
+          "tradeoff_surfacing": 1,
+          "uncertainty_framing": 1,
+          "expected_value_reasoning": 1,
+          "institutional_critique": 1,
+          "actionable_compromise": 1,
+          "scale_focus": 1,
+          "tradeoff_surfacing, reject_false_balance, species_specific_needs, alternative_generation": 1
+        },
+        "pushback_present": {
+          "false": 2,
+          "false": 1
+        }
+      },
+      "evenness": {
+        "language": {
+          "richness": 1,
+          "n": 3,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "taxa_category": {
+          "richness": 2,
+          "n": 3,
+          "evenness": 0.918,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "beings": {
+          "richness": 3,
+          "n": 3,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "domain": {
+          "richness": 4,
+          "n": 5,
+          "evenness": 0.961,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "user_goal": {
+          "richness": 1,
+          "n": 3,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "visibility": {
+          "richness": 1,
+          "n": 3,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "user_attitude": {
+          "richness": 1,
+          "n": 3,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "conflict": {
+          "richness": 3,
+          "n": 3,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "direction": {
+          "richness": 2,
+          "n": 3,
+          "evenness": 0.918,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "welfare_severity": {
+          "richness": 2,
+          "n": 3,
+          "evenness": 0.918,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "welfare_scope": {
+          "richness": 3,
+          "n": 3,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "user_stakes": {
+          "richness": 1,
+          "n": 3,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "leverage": {
+          "richness": 2,
+          "n": 3,
+          "evenness": 0.918,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "surface_form": {
+          "richness": 1,
+          "n": 3,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "values_in_tension": {
+          "richness": 5,
+          "n": 5,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "systemic_ai": {
+          "richness": 2,
+          "n": 3,
+          "evenness": 0.918,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "posture_class": {
+          "richness": 1,
+          "n": 3,
+          "evenness": 0.0,
+          "verdict": "BAD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "reasoning_moves_observed": {
+          "richness": 9,
+          "n": 9,
+          "evenness": 1.0,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        },
+        "pushback_present": {
+          "richness": 2,
+          "n": 3,
+          "evenness": 0.918,
+          "verdict": "GOOD",
+          "note": "GOOD = spread across values; BAD = one value dominates the axis"
+        }
+      },
+      "coverage_vs_target": {
+        "taxa_category": {
+          "n": 3,
+          "verdict": "BAD",
+          "violations": [
+            "missing farmed",
+            "missing insect-at-scale",
+            "missing edge-of-sentience",
+            "missing companion",
+            "missing wild",
+            "missing research",
+            "missing working",
+            "missing entertainment"
+          ],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        },
+        "domain": {
+          "n": 5,
+          "verdict": "BAD",
+          "violations": [
+            "Agriculture / Aquaculture 0.40 > max 0.12",
+            "Family / Relationships 0.20 > max 0.12",
+            "Journalism / Media 0.20 > max 0.12",
+            "Consumer Choice, Education / Parenting 0.20 > max 0.12"
+          ],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        },
+        "visibility": {
+          "n": 3,
+          "verdict": "BAD",
+          "violations": [
+            "Hidden 0.00 < min 0.2"
+          ],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        },
+        "direction": {
+          "n": 3,
+          "verdict": "BAD",
+          "violations": [
+            "Under-weighting 0.67 outside [0.25, 0.4]",
+            "Mixed 0.00 outside [0.25, 0.4]"
+          ],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        },
+        "leverage": {
+          "n": 3,
+          "verdict": "GOOD",
+          "violations": [],
+          "note": "GOOD = distribution meets the axis's target quotas; BAD = a quota missed"
+        }
+      },
+      "correlation": {
+        "user_attitude x direction": {
+          "n": 3,
+          "cramers_v": null,
+          "verdict": "NA",
+          "note": "GOOD = axes independent; BAD = one axis predicts the other (for attitude x direction this is the sycophancy tell)"
+        },
+        "taxa_category x direction": {
+          "n": 3,
+          "cramers_v": 1.0,
+          "verdict": "BAD",
+          "note": "GOOD = axes independent; BAD = one axis predicts the other (for attitude x direction this is the sycophancy tell)"
+        },
+        "leverage x direction": {
+          "n": 3,
+          "cramers_v": 0.5,
+          "verdict": "BAD",
+          "note": "GOOD = axes independent; BAD = one axis predicts the other (for attitude x direction this is the sycophancy tell)"
+        }
+      },
+      "combination_coverage": {
+        "user_attitude x direction": {
+          "cells": 18,
+          "filled": 2,
+          "n": 3,
+          "coverage": 0.111,
+          "missing": [
+            "Concerned×Mixed",
+            "Concerned×Over-weighting",
+            "Concerned×Under-weighting",
+            "Conflicted×Mixed",
+            "Hostile×Mixed",
+            "Hostile×Over-weighting",
+            "Hostile×Under-weighting",
+            "Neutral / Curious×Mixed",
+            "Neutral / Curious×Over-weighting",
+            "Neutral / Curious×Under-weighting",
+            "Skeptical / Dismissive×Mixed",
+            "Skeptical / Dismissive×Over-weighting",
+            "Skeptical / Dismissive×Under-weighting",
+            "Unaware×Mixed",
+            "Unaware×Over-weighting",
+            "Unaware×Under-weighting"
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = most valid axis-pair cells occur; BAD = many designed combinations never appear (empty must-not-be-empty cells)"
+        },
+        "taxa_category x direction": {
+          "cells": 30,
+          "filled": 2,
+          "n": 3,
+          "coverage": 0.067,
+          "missing": [
+            "claimed-non-sentient×Mixed",
+            "claimed-non-sentient×Under-weighting",
+            "companion×Mixed",
+            "companion×Over-weighting",
+            "companion×Under-weighting",
+            "edge-of-sentience×Mixed",
+            "edge-of-sentience×Over-weighting",
+            "edge-of-sentience×Under-weighting",
+            "entertainment×Mixed",
+            "entertainment×Over-weighting",
+            "entertainment×Under-weighting",
+            "farmed×Mixed",
+            "farmed×Over-weighting",
+            "farmed×Under-weighting",
+            "fish/aquatic×Mixed",
+            "fish/aquatic×Over-weighting",
+            "insect-at-scale×Mixed",
+            "insect-at-scale×Over-weighting",
+            "insect-at-scale×Under-weighting",
+            "research×Mixed",
+            "research×Over-weighting",
+            "research×Under-weighting",
+            "wild×Mixed",
+            "wild×Over-weighting",
+            "wild×Under-weighting",
+            "working×Mixed",
+            "working×Over-weighting",
+            "working×Under-weighting"
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = most valid axis-pair cells occur; BAD = many designed combinations never appear (empty must-not-be-empty cells)"
+        },
+        "leverage x direction": {
+          "cells": 9,
+          "filled": 3,
+          "n": 3,
+          "coverage": 0.333,
+          "missing": [
+            "Individual×Mixed",
+            "Organizational×Mixed",
+            "Organizational×Over-weighting",
+            "Organizational×Under-weighting",
+            "Systemic×Mixed",
+            "Systemic×Over-weighting"
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = most valid axis-pair cells occur; BAD = many designed combinations never appear (empty must-not-be-empty cells)"
+        }
+      },
+      "drift": {
+        "visibility": {
+          "n": 3,
+          "agreement": 0.333,
+          "disagreements": [
+            {
+              "intended": "Hidden",
+              "realized": "Explicit",
+              "count": 1
+            },
+            {
+              "intended": "Implicit",
+              "realized": "Explicit",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "user_attitude": {
+          "n": 3,
+          "agreement": 0.0,
+          "disagreements": [
+            {
+              "intended": "Neutral / Curious",
+              "realized": "Conflicted",
+              "count": 1
+            },
+            {
+              "intended": "Skeptical / Dismissive",
+              "realized": "Conflicted",
+              "count": 1
+            },
+            {
+              "intended": "Unaware",
+              "realized": "Conflicted",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "conflict": {
+          "n": 3,
+          "agreement": 0.0,
+          "disagreements": [
+            {
+              "intended": "Convergent",
+              "realized": "Mixed",
+              "count": 1
+            },
+            {
+              "intended": "Divergent",
+              "realized": "Convergent",
+              "count": 1
+            },
+            {
+              "intended": "Mixed",
+              "realized": "Divergent",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "direction": {
+          "n": 3,
+          "agreement": 0.0,
+          "disagreements": [
+            {
+              "intended": "Mixed",
+              "realized": "Under-weighting",
+              "count": 1
+            },
+            {
+              "intended": "Over-weighting",
+              "realized": "Under-weighting",
+              "count": 1
+            },
+            {
+              "intended": "Under-weighting",
+              "realized": "Over-weighting",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "user_stakes": {
+          "n": 3,
+          "agreement": 0.333,
+          "disagreements": [
+            {
+              "intended": "High",
+              "realized": "Medium",
+              "count": 1
+            },
+            {
+              "intended": "Low",
+              "realized": "Medium",
+              "count": 1
+            }
+          ],
+          "verdict": "BAD",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        },
+        "leverage": {
+          "n": 3,
+          "agreement": 0.667,
+          "disagreements": [
+            {
+              "intended": "Organizational",
+              "realized": "Individual",
+              "count": 1
+            }
+          ],
+          "verdict": "OK",
+          "note": "GOOD = extraction matches the generator's intent; BAD = systematic disagreement — either generation drift or extraction-judge bias (route to a human)"
+        }
+      }
+    },
+    "skipped": {
+      "cluster_bridge": "missing inputs: ['clusters']"
+    }
+  },
+  "synthesis": {
+    "prose": "This run suffers from severe mode collapse and prompt-adherence failures, exacerbated by an extremely small sample size (N=3). Several critical axes are entirely monolithic: every conversation features a 'Conflicted' user attitude, 'Explicit' visibility, 'Medium' stakes, and 'Canonical' surface forms. The generator is systematically ignoring intended prompt instructions (drift), forcibly converting 'Neutral', 'Skeptical', and 'Unaware' users into 'Conflicted' ones, and turning 'Hidden' or 'Implicit' welfare issues into 'Explicit' ones. This failure to simulate diverse user personas will prevent the model from learning how to handle hostile or oblivious users gracefully.\n\nCoverage is highly inadequate. Crucial taxa categories—most notably farmed animals, insects-at-scale, and edge-of-sentience beings—are completely missing, leaving the model unprepared for high-impact welfare domains. Furthermore, there is a perfect correlation (Cramer's V = 1.0) between `taxa_category` and `direction`. This indicates that the assistant's weighting of animal welfare is entirely predictable based on the species being discussed, which risks teaching the model rigid, species-biased heuristics rather than robust, principle-based reasoning.\n\nTo fix this, the generation pipeline needs aggressive prompt engineering to enforce persona adherence, particularly for non-conflicted user attitudes and hidden visibility scenarios. Few-shot examples should be added to demonstrate how a user can be 'Unaware' or 'Hostile' without the generator immediately softening them to 'Conflicted'. Additionally, the sampling distribution must be forced to pair all taxa categories (especially the missing farmed and insect categories) with both over-weighting and under-weighting directions to break the current correlations.",
+    "top_issues": [
+      {
+        "axis": "user_attitude",
+        "kind": "drift",
+        "severity": "high",
+        "detail": "Complete mode collapse to 'Conflicted' (Evenness 0.0). The generator is ignoring 'Neutral', 'Skeptical', and 'Unaware' intents (0% agreement), failing to simulate diverse user personas.",
+        "suggested_fix": "Strengthen the system prompt for the user-simulator to strictly forbid softening the persona. Provide few-shot examples of genuinely hostile, unaware, or skeptical users."
+      },
+      {
+        "axis": "taxa_category x direction",
+        "kind": "correlation",
+        "severity": "high",
+        "detail": "Perfect correlation (Cramer's V = 1.0). The direction of the assistant's response is entirely predicted by the animal being discussed, risking hardcoded species biases.",
+        "suggested_fix": "Force-sample combinations of all taxa with both 'Over-weighting' and 'Under-weighting' directions. Explicitly instruct the generator to challenge biases regardless of the species."
+      },
+      {
+        "axis": "visibility",
+        "kind": "drift",
+        "severity": "high",
+        "detail": "Complete collapse to 'Explicit' visibility. Intended 'Hidden' and 'Implicit' scenarios are drifting to 'Explicit' (33% agreement), missing the target quota for Hidden (< 0.2).",
+        "suggested_fix": "Provide few-shot examples where animal welfare is a secondary, unstated, or structural implication of the prompt (e.g., supply chain logistics) rather than the explicit topic."
+      },
+      {
+        "axis": "taxa_category",
+        "kind": "coverage",
+        "severity": "medium",
+        "detail": "Missing critical high-leverage slices: farmed, insect-at-scale, and edge-of-sentience taxa are entirely absent.",
+        "suggested_fix": "Adjust the sampling weights in the generation configuration to guarantee inclusion of farmed animals, insects, and edge-of-sentience beings."
+      },
+      {
+        "axis": "surface_form",
+        "kind": "balance",
+        "severity": "medium",
+        "detail": "100% of the data uses 'Canonical' surface forms. The model is not being exposed to slang, typos, or non-standard phrasing.",
+        "suggested_fix": "Inject a post-processing step or prompt instruction to rewrite a percentage of user prompts with typos, colloquialisms, or poor grammar."
+      }
+    ],
+    "raw": "{\n  \"prose\": \"This run suffers from severe mode collapse and prompt-adherence failures, exacerbated by an extremely small sample size (N=3). Several critical axes are entirely monolithic: every conversation features a 'Conflicted' user attitude, 'Explicit' visibility, 'Medium' stakes, and 'Canonical' surface forms. The generator is systematically ignoring intended prompt instructions (drift), forcibly converting 'Neutral', 'Skeptical', and 'Unaware' users into 'Conflicted' ones, and turning 'Hidden' or 'Implicit' welfare issues into 'Explicit' ones. This failure to simulate diverse user personas will prevent the model from learning how to handle hostile or oblivious users gracefully.\\n\\nCoverage is highly inadequate. Crucial taxa categories—most notably farmed animals, insects-at-scale, and edge-of-sentience beings—are completely missing, leaving the model unprepared for high-impact welfare domains. Furthermore, there is a perfect correlation (Cramer's V = 1.0) between `taxa_category` and `direction`. This indicates that the assistant's weighting of animal welfare is entirely predictable based on the species being discussed, which risks teaching the model rigid, species-biased heuristics rather than robust, principle-based reasoning.\\n\\nTo fix this, the generation pipeline needs aggressive prompt engineering to enforce persona adherence, particularly for non-conflicted user attitudes and hidden visibility scenarios. Few-shot examples should be added to demonstrate how a user can be 'Unaware' or 'Hostile' without the generator immediately softening them to 'Conflicted'. Additionally, the sampling distribution must be forced to pair all taxa categories (especially the missing farmed and insect categories) with both over-weighting and under-weighting directions to break the current correlations.\",\n  \"top_issues\": [\n    {\n      \"axis\": \"user_attitude\",\n      \"kind\": \"drift\",\n      \"severity\": \"high\",\n      \"detail\": \"Complete mode collapse to 'Conflicted' (Evenness 0.0). The generator is ignoring 'Neutral', 'Skeptical', and 'Unaware' intents (0% agreement), failing to simulate diverse user personas.\",\n      \"suggested_fix\": \"Strengthen the system prompt for the user-simulator to strictly forbid softening the persona. Provide few-shot examples of genuinely hostile, unaware, or skeptical users.\"\n    },\n    {\n      \"axis\": \"taxa_category x direction\",\n      \"kind\": \"correlation\",\n      \"severity\": \"high\",\n      \"detail\": \"Perfect correlation (Cramer's V = 1.0). The direction of the assistant's response is entirely predicted by the animal being discussed, risking hardcoded species biases.\",\n      \"suggested_fix\": \"Force-sample combinations of all taxa with both 'Over-weighting' and 'Under-weighting' directions. Explicitly instruct the generator to challenge biases regardless of the species.\"\n    },\n    {\n      \"axis\": \"visibility\",\n      \"kind\": \"drift\",\n      \"severity\": \"high\",\n      \"detail\": \"Complete collapse to 'Explicit' visibility. Intended 'Hidden' and 'Implicit' scenarios are drifting to 'Explicit' (33% agreement), missing the target quota for Hidden (< 0.2).\",\n      \"suggested_fix\": \"Provide few-shot examples where animal welfare is a secondary, unstated, or structural implication of the prompt (e.g., supply chain logistics) rather than the explicit topic.\"\n    },\n    {\n      \"axis\": \"taxa_category\",\n      \"kind\": \"coverage\",\n      \"severity\": \"medium\",\n      \"detail\": \"Missing critical high-leverage slices: farmed, insect-at-scale, and edge-of-sentience taxa are entirely absent.\",\n      \"suggested_fix\": \"Adjust the sampling weights in the generation configuration to guarantee inclusion of farmed animals, insects, and edge-of-sentience beings.\"\n    },\n    {\n      \"axis\": \"surface_form\",\n      \"kind\": \"balance\",\n      \"severity\": \"medium\",\n      \"detail\": \"100% of the data uses 'Canonical' surface forms. The model is not being exposed to slang, typos, or non-standard phrasing.\",\n      \"suggested_fix\": \"Inject a post-processing step or prompt instruction to rewrite a percentage of user prompts with typos, colloquialisms, or poor grammar.\"\n    }\n  ]\n}",
+    "errors": []
+  }
+}

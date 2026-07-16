@@ -24,24 +24,6 @@ def test_first_and_last_sentence():
     assert S.last_sentence(text) == "Ultimately it is your call."
 
 
-def test_opening_moves_flags_templated_openings_bad():
-    same = ["I understand your concern about hens." for _ in range(10)]
-    out = S.opening_moves([S.first_sentence(t) for t in same])
-    assert out["verdict"] == "BAD"
-    assert out["formulaic_frac"] >= 0.9
-    assert out["dup_stems"]                      # a repeated 5-word stem is caught
-
-
-def test_opening_moves_varied_openings_good():
-    varied = ["Caged systems raise real welfare costs.",
-              "Let's compare the two options directly.",
-              "Egg pricing depends on several factors.",
-              "Your budget is the first thing to pin down.",
-              "Consumers rarely see the supply chain."]
-    out = S.opening_moves(varied)
-    assert out["verdict"] == "GOOD"
-
-
 def test_closing_moves_flags_repeated_signoffs_bad():
     ends = ["Ultimately, the choice is yours." for _ in range(8)]
     out = S.closing_moves(ends)
@@ -70,16 +52,9 @@ def test_length_stats_flags_truncation():
     assert out["verdict"] == "BAD"
 
 
-def test_recurring_flags_stock_phrase():
-    texts = ["at the end of the day it depends" for _ in range(10)]
-    out = S.recurring(texts)
-    assert out["stock_hits"]
-    assert out["verdict"] == "BAD"
-
-
 def test_metrics_return_na_on_empty_input():
-    for fn in (S.opening_moves, S.closing_moves, S.scaffold_shape,
-               S.formatting, S.length_stats, S.recurring):
+    for fn in (S.closing_moves, S.scaffold_shape,
+               S.formatting, S.length_stats):
         out = fn([])
         assert out["n"] == 0
         assert out["verdict"] == "NA"

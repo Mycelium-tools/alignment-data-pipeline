@@ -21,8 +21,11 @@ import numpy as np
 
 # Sentence-final characters: a document ending on one of these is treated as
 # complete. Includes closing quotes/brackets/ellipsis so quoted or parenthesized
-# endings don't count as truncation.
-_TERMINAL_CHARS = '.!?"\'”’)…]:'
+# endings don't count as truncation, plus the terminal punctuation of the
+# corpus's non-Latin scripts (CJK fullwidth stops/quotes, Devanagari danda,
+# Arabic-script full stop and question mark) so multilingual documents aren't
+# false-flagged as token-cap artifacts.
+_TERMINAL_CHARS = '.!?"\'”’)…]:' + '。！？」』】）׃।॥۔؟'
 
 _WORD_RE = re.compile(r"[\w']+")
 

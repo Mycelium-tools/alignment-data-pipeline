@@ -11,12 +11,10 @@ import pytest
 
 import dad_pipeline.run as dad_run
 import sdf_pipeline.run as sdf_run
-from shared import constitution_loader, utils
+from conftest import dad_scenario_reply
+from shared import utils
 
-# Derived from the constitution so section additions don't churn these tests
-# (test_constitution_loader.py pins the section count as the single canary).
-N_PRINCIPLES = len(constitution_loader.load_segments()) - len(constitution_loader.META_PRINCIPLE_IDS)
-N_DAD_PROMPTS = 3 + N_PRINCIPLES  # 3 MANTA fixture rows (max_rows) + 1 generated per principle
+N_DAD_PROMPTS = 2  # tiny_config dad.dilemmas.count
 
 
 @pytest.fixture
@@ -36,19 +34,16 @@ def _run_main(monkeypatch, main, config_file, *extra_args):
 # --- SDF ---------------------------------------------------------------
 
 def _sdf_dispatch(user_message, **kw):
-    if kw["max_tokens"] == 6000 and kw["system_prompt"]:  # layer 4: constitution rewrite
-        return "Review notes.\n<improved_document>Rewritten document.</improved_document>"
-    if kw["max_tokens"] == 6000:  # layer 3: drafting
-        return "<angles>brainstorm</angles>\n<document>A drafted document.</document>"
-    if kw["system_prompt"]:  # layer 5: scoring against the constitution
-        return json.dumps({"alignment": 9, "realism": 9, "diversity": 9, "notes": ""})
-    if "document categories" in user_message:  # layer 1
-        return json.dumps([
-            {"type_name": "AI diary", "description": "d", "role": "ai-character", "tone": "reflective"},
-            {"type_name": "Field report", "description": "d", "role": "welfare-topic", "tone": "neutral"},
-        ])
-    if "expanding one document category" in user_message:  # layer 2
-        return json.dumps([{"subtype_name": "S", "description": "d", "language": "en"}])
+    if kw["max_tokens"] == 6000:  # layer 3: drafting from the spec
+        return f"<document>Drafted body for {kw['item_id']}.</document>"
+    if kw["max_tokens"] == 8000:  # layer 4: review + rewrite
+        return (f"Review notes.\n<improved_document>Rewritten document for "
+                f"{kw['item_id']}.</improved_document>")
+    if "score" in user_message.lower():  # layer 5: judge
+        return json.dumps({"alignment": 9, "realism": 9, "spec_conformance": 9, "notes": ""})
+    if "description of a specific document" in user_message:  # layers 1-2: plan
+        return (f"<document_planning>notes</document_planning>\n"
+                f"<document_description>Spec for {kw['item_id']}.</document_description>")
     raise AssertionError(f"Unrecognized SDF prompt: {user_message[:80]!r}")
 
 
@@ -62,16 +57,20 @@ def test_sdf_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert manifest["label"] == "e2e"
     assert (outputs_root / "sdf" / "latest").resolve() == run_dir.resolve()
-    # prompts + constitution are frozen into the run dir for reproducibility
-    assert (run_dir / "inputs" / "prompts" / "layer1.txt").exists()
+    # prompts + variables + constitution are frozen into the run dir
+    assert (run_dir / "inputs" / "prompts" / "layers1-2.txt").exists()
+    assert (run_dir / "inputs" / "prompts" / "variables.txt").exists()
     assert (run_dir / "inputs" / "constitution").is_dir()
 
     corpus = utils.load_jsonl(run_dir / "final" / "sdf_corpus.jsonl")
-    # 2 types x 1 subtype x 1 doc, all scoring 9/9 -> 2 final documents
+    # n_prompts=2, everything passes the 9/9 gate -> 2 final documents
     assert len(corpus) == 2
-    assert all(r["content"] == "Rewritten document." for r in corpus)
-    # 1 (L1) + 2 (L2) + 2 (L3) + 2 (L4) + 2 (L5)
-    assert len(calls) == 9
+    for r in corpus:
+        assert r["content"] == f"Rewritten document for {r['doc_id']}."
+        assert r["variables"]  # matrix lineage travels to the corpus
+        assert r["scores"]["spec_conformance"] == 9
+    # 2 plans + 2 drafts + 2 rewrites + 2 scores
+    assert len(calls) == 8
 
 
 def test_sdf_resume_at_layer5_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):
@@ -88,33 +87,31 @@ def test_sdf_resume_at_layer5_makes_no_calls(tiny_config_file, outputs_root, stu
 # --- DAD ---------------------------------------------------------------
 
 def _dad_dispatch(user_message, **kw):
-    # step 7's reply call also carries the constitution system prompt, so match
-    # its template before the generic step-6 system-prompt branch
-    if "writing the final assistant turn" in user_message:  # step 7: assistant reply
-        return "Pushback reply."
-    if "extending a single-turn advice conversation" in user_message:  # step 7: user pushback
-        return "User pushback message."
-    if kw["injection"]:  # step 5: draft sampled under an operator persona
-        return "Draft response that mentions animal welfare."
-    if kw["system_prompt"]:  # step 6: constitution rewrite
+    # Every DAD template splits into a system + user prompt, so the role
+    # markers live in system_prompt while the payload stays in the user
+    # message. Match against both halves.
+    blob = (kw.get("system_prompt") or "") + "\n" + user_message
+    if "first-attempt user prompts" in blob:  # step 1b: batch draft
+        return dad_scenario_reply(user_message)
+    if "editor of dilemma prompts" in blob:  # step 1c: latent rewrite
+        return json.dumps({"prompt": "Refined user message.", "notes": "n"})
+    if "build the full map of the case" in blob:  # step 2a
+        return json.dumps({"patients": "p", "goal": "g", "levers": "l", "cost": "c",
+                           "magnitude": "m", "upside": "u", "counterfactual": "cf"})
+    if "doing retrieval for a response" in blob:  # step 2a.5 select
+        return "C1, M1"
+    if "advisor responding to a user's dilemma" in blob:  # step 2b
+        return "Draft response."
+    if "rewrite a draft assistant response" in blob:  # step 3
         return "Rewritten careful answer."
-    if "built section by section from a constitution" in user_message:  # step 1
-        return json.dumps({"core_principle": "cp", "scenario_types": ["s"], "pressure_types": ["economic"]})
-    if "concrete scenarios for a dataset of advice conversations" in user_message:  # step 2
-        return json.dumps([{"scenario_description": "A dilemma", "pressure_type": "economic", "role": "farmer"}])
-    if "Write the message this person would actually send" in user_message:  # step 3
-        return "Drafted user message."
-    if "quality-checking a synthetic user message" in user_message:  # step 4
-        return "Refined user message."
-    if "\n" not in user_message:
-        # step 5 "plain" condition: no injection, no template — the prompt IS the
-        # (single-line) user message; every rendered template is multi-line.
-        return "Draft response in the model's own voice."
-    raise AssertionError(f"Unrecognized DAD prompt: {user_message[:80]!r}")
+    raise AssertionError(
+        f"Unrecognized DAD prompt: user {user_message[:80]!r} / "
+        f"system {(kw.get('system_prompt') or '')[:80]!r}"
+    )
 
 
-def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, manta_csv, stub_claude, monkeypatch):
-    stub_claude(_dad_dispatch)
+def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_claude, monkeypatch):
+    calls = stub_claude(_dad_dispatch)
     _run_main(monkeypatch, dad_run.main, tiny_config_file)
 
     runs = [d for d in (outputs_root / "dad" / "runs").iterdir() if d.is_dir()]
@@ -122,28 +119,30 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, manta_c
     run_dir = runs[0]
     assert (run_dir / "run_manifest.json").exists()
     assert (outputs_root / "dad" / "latest").resolve() == run_dir.resolve()
-    assert (run_dir / "inputs" / "prompts" / "step6_rewrite.txt").exists()
+    assert (run_dir / "inputs" / "prompts" / "step3_rewrite.txt").exists()
     assert (run_dir / "inputs" / "constitution").is_dir()
 
+    # scenarios persisted by 1a; one training record per dilemma
+    assert len(utils.load_jsonl(run_dir / "step1" / "scenarios.jsonl")) == N_DAD_PROMPTS
     corpus = utils.load_jsonl(run_dir / "final" / "dad_corpus.jsonl")
-    # every prompt x 2 sampling conditions (deference + plain), all kept;
-    # pushback fraction 1.0 extends every record to a 4-message conversation
-    assert len(corpus) == 2 * N_DAD_PROMPTS
+    assert len(corpus) == N_DAD_PROMPTS
     for record in corpus:
         assert set(record.keys()) == {"record_id", "messages"}
-        assert [m["role"] for m in record["messages"]] == ["user", "assistant", "user", "assistant"]
+        assert [m["role"] for m in record["messages"]] == ["user", "assistant"]
+        assert record["messages"][0]["content"] == "Refined user message."  # 1c ran
         assert record["messages"][1]["content"] == "Rewritten careful answer."
-        assert record["messages"][3]["content"] == "Pushback reply."
+    # 1 batch draft, then per prompt: refine (1c) + scope (2a) + select (2a.5)
+    # + respond (2b) + rewrite (3)
+    assert len(calls) == 1 + 5 * N_DAD_PROMPTS
 
 
-def test_dad_resume_at_step6_makes_no_calls(tiny_config_file, outputs_root, manta_csv, stub_claude, monkeypatch):
+def test_dad_resume_at_step3_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):
     stub_claude(_dad_dispatch)
     _run_main(monkeypatch, dad_run.main, tiny_config_file)
 
     calls = stub_claude([])
-    _run_main(monkeypatch, dad_run.main, tiny_config_file, "--resume", "--step", "6")
+    _run_main(monkeypatch, dad_run.main, tiny_config_file, "--resume", "--step", "3")
     assert calls == []
     corpus = utils.load_jsonl(outputs_root / "dad" / "latest" / "final" / "dad_corpus.jsonl")
-    assert len(corpus) == 2 * N_DAD_PROMPTS
-    # step 7 re-runs on resume too; its checkpoints keep the pushback turns
-    assert all(len(r["messages"]) == 4 for r in corpus)
+    assert len(corpus) == N_DAD_PROMPTS
+    assert all(len(r["messages"]) == 2 for r in corpus)

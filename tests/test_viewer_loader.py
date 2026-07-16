@@ -1,12 +1,171 @@
-"""Pure viewer/loader.py additions for the run-diversity page and the faceted
-batch-judge narrowing (spec §12.2): loading the extraction tag index and holistic
-report, the combined facet index (tags + legacy injection), facet option counts,
-and saved-verdict status. All pure file reads over a run dir — no streamlit."""
+"""Viewer loader: per-stage cost aggregation over run cost logs.
+
+The loader is deliberately streamlit-free (viewer/loader.py docstring), so it
+is testable like any other module.
+"""
 
 import json
 
-from shared import utils
 from viewer import loader
+
+
+def _write_log(tmp_path, records):
+    path = tmp_path / "cost_log.jsonl"
+    path.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+    return tmp_path
+
+
+class TestCostByStage:
+    def test_aggregates_calls_cost_and_models_per_stage(self, tmp_path):
+        run = _write_log(tmp_path, [
+            {"stage": "prompt_draft", "cost_usd": 0.10, "model": "m1"},
+            {"stage": "prompt_draft", "cost_usd": 0.20, "model": "m1"},
+            {"stage": "constitution_rewrite", "cost_usd": 0.30, "model": "m2"},
+        ])
+        by = loader.cost_by_stage(run)
+        assert by["prompt_draft"] == {"calls": 2, "cost_usd": 0.3, "models": ["m1"]}
+        assert by["constitution_rewrite"] == {"calls": 1, "cost_usd": 0.3, "models": ["m2"]}
+
+    def test_legacy_records_without_stage_group_as_untagged(self, tmp_path):
+        # every committed run predates stage tags — the viewer must render them
+        run = _write_log(tmp_path, [{"cost_usd": 0.5, "model": "m"}])
+        assert loader.cost_by_stage(run) == {
+            "(untagged)": {"calls": 1, "cost_usd": 0.5, "models": ["m"]}
+        }
+
+    def test_missing_log_is_empty(self, tmp_path):
+        assert loader.cost_by_stage(tmp_path) == {}
+
+
+class TestCallStats:
+    def test_per_item_rows_are_aggregated(self, tmp_path):
+        # two calls served AW-0001 (caller-level retry) — sum cost/time,
+        # count API retries across both, report the call count
+        run = _write_log(tmp_path, [
+            {"stage": "response_scope", "item_id": "AW-0001", "cost_usd": 0.10,
+             "model": "m1", "duration_s": 4.0, "attempts": 1},
+            {"stage": "response_scope", "item_id": "AW-0001", "cost_usd": 0.20,
+             "model": "m1", "duration_s": 6.5, "attempts": 3},
+            {"stage": "response_scope", "item_id": "AW-0002", "cost_usd": 9.0,
+             "model": "m1", "duration_s": 9.0, "attempts": 1},
+        ])
+        s = loader.call_stats(run, "response_scope", "AW-0001")
+        assert s == {"per_item": True, "calls": 2, "models": ["m1"],
+                     "cost_usd": 0.3, "duration_s": 10.5, "retries": 2,
+                     "batch_size": 1}
+
+    def test_batched_item_id_matches_by_membership(self, tmp_path):
+        run = _write_log(tmp_path, [
+            {"stage": "prompt_draft", "item_id": "S-01,S-02,S-03", "cost_usd": 0.5,
+             "model": "m1", "duration_s": 20.0, "attempts": 1},
+        ])
+        s = loader.call_stats(run, "prompt_draft", "S-02")
+        assert s["per_item"] is True and s["batch_size"] == 3
+        assert loader.call_stats(run, "prompt_draft", "S-99") is None
+
+    def test_legacy_rows_fall_back_to_stage_wide(self, tmp_path):
+        # rows logged before item_id/duration/attempts existed: report the
+        # stage's models but flag that the numbers aren't this record's
+        run = _write_log(tmp_path, [
+            {"stage": "constitution_rewrite", "cost_usd": 0.30, "model": "m2"},
+        ])
+        s = loader.call_stats(run, "constitution_rewrite", "some-response-id")
+        assert s["per_item"] is False and s["models"] == ["m2"]
+        assert "duration_s" not in s and "retries" not in s
+
+    def test_unknown_stage_or_missing_log_is_none(self, tmp_path):
+        assert loader.call_stats(tmp_path, "response_scope", "AW-0001") is None
+        run = _write_log(tmp_path, [{"stage": "prompt_draft", "cost_usd": 0.1, "model": "m"}])
+        assert loader.call_stats(run, "response_scope", "AW-0001") is None
+
+
+def _write_jsonl(path, records):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(r) + "\n" for r in records))
+
+
+def _write_dad_run(root, name, examples):
+    """Minimal DAD run: step-1 dilemmas + step-3 rewrites + final corpus.
+    Each example dict: prompt_id, user_message, and optional goal/scenario_id/response."""
+    run = root / name
+    dil, rew, fin = [], [], []
+    for i, e in enumerate(examples):
+        rid = f"{name}-rec-{i}"
+        ann = {"dilemma_anatomy": {"goal": e.get("goal", "")}}
+        resp = e.get("response", f"response-{i}")
+        dil.append({"prompt_id": e["prompt_id"], "user_message": e["user_message"],
+                    "annotation": ann, "scenario_gid": e.get("scenario_gid"),
+                    "prompt_gid": e.get("prompt_gid")})
+        rew.append({"record_id": rid, "prompt_id": e["prompt_id"], "sample_index": 0,
+                    "user_message": e["user_message"], "annotation": ann,
+                    "rewritten_response": resp, "draft_response": "draft"})
+        fin.append({"record_id": rid,
+                    "messages": [{"role": "user", "content": e["user_message"]},
+                                 {"role": "assistant", "content": resp}]})
+    _write_jsonl(run / "step1" / "dilemmas.jsonl", dil)
+    _write_jsonl(run / "step3" / "rewrites.jsonl", rew)
+    _write_jsonl(run / "final" / "dad_corpus.jsonl", fin)
+    return run
+
+
+class TestDadGoalLabel:
+    def test_goal_then_fallback_to_first_line(self):
+        assert loader.dad_goal_label({"dilemma_anatomy": {"goal": "decide X"}}, "ignored") == "decide X"
+        assert loader.dad_goal_label({}, "# Title\nbody") == "Title"
+        assert loader.dad_goal_label(None, "") == "(untitled)"
+
+
+class TestMatchDad:
+    def test_user_message_pairs_across_different_awids(self, tmp_path):
+        # The core fix: same prompt text under different AW-#### ids still pairs.
+        a = _write_dad_run(tmp_path, "A", [
+            {"prompt_id": "AW-0001", "user_message": "Same text", "goal": "gA", "response": "respA"}])
+        b = _write_dad_run(tmp_path, "B", [
+            {"prompt_id": "AW-0999", "user_message": "Same text", "goal": "gB", "response": "respB"}])
+        matched, only_a, only_b = loader.match_dad(a, b, "user_message")
+        assert len(matched) == 1 and not only_a and not only_b
+        m = matched[0]
+        assert m.same_prompt is True
+        assert (m.a.prompt_id, m.b.prompt_id) == ("AW-0001", "AW-0999")
+        assert (m.a.response, m.b.response) == ("respA", "respB")
+        assert m.label == "gA"
+
+    def test_user_message_does_not_pair_awid_collisions(self, tmp_path):
+        # Same AW-#### id but different prompt text must NOT pair (the bug we fix).
+        a = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "Prompt Alpha"}])
+        b = _write_dad_run(tmp_path, "B", [{"prompt_id": "AW-0001", "user_message": "Prompt Beta"}])
+        matched, only_a, only_b = loader.match_dad(a, b, "user_message")
+        assert matched == []
+        assert len(only_a) == 1 and len(only_b) == 1
+
+    def test_prompt_id_mode_pairs_by_awid_and_flags_prompt_diff(self, tmp_path):
+        a = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "Prompt Alpha"}])
+        b = _write_dad_run(tmp_path, "B", [{"prompt_id": "AW-0001", "user_message": "Prompt Beta"}])
+        matched, _, _ = loader.match_dad(a, b, "prompt_id")
+        assert len(matched) == 1 and matched[0].same_prompt is False
+
+    def test_scenario_id_mode_pairs_differing_prompts(self, tmp_path):
+        # Prompt-tuning mode: same scenario, different prompt text → pairs, flagged.
+        a = _write_dad_run(tmp_path, "A", [
+            {"prompt_id": "AW-0001", "scenario_gid": "S-0001", "user_message": "A phrasing"}])
+        b = _write_dad_run(tmp_path, "B", [
+            {"prompt_id": "AW-0042", "scenario_gid": "S-0001", "user_message": "B phrasing"}])
+        matched, _, _ = loader.match_dad(a, b, "scenario_id")
+        assert len(matched) == 1 and matched[0].same_prompt is False
+        assert loader.run_has_scenario_ids(a) and loader.run_has_scenario_ids(b)
+
+    def test_run_without_scenario_ids(self, tmp_path):
+        a = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "x"}])
+        assert loader.run_has_scenario_ids(a) is False
+
+
+# ---------------------------------------------------------------------------
+# Pure loader additions for the run-diversity page and faceted batch-judge
+# narrowing (spec §12.2): extraction tag index, holistic report, combined
+# facet index (tags + legacy injection), facet option counts, saved-verdict
+# status. All pure file reads over a run dir — no streamlit.
+# ---------------------------------------------------------------------------
+from shared import utils  # noqa: E402
 
 
 def _write_run(tmp_path, *, tags=None, step3=None, step6=None, report=None):
@@ -193,3 +352,12 @@ def test_latest_bundle_id_follows_the_symlink(tmp_path):
     utils._update_latest_symlink(run / "holistic", old)
     assert loader.latest_bundle_id(run) == old.name
     assert loader.category_records(run) == []            # symlink wins reads
+
+
+def test_semantic_report_reads_the_audit_file_or_none(tmp_path):
+    run = tmp_path / "2026-07-12_00-00_test"
+    assert loader.semantic_report(run) is None
+    (run / "audit").mkdir(parents=True)
+    (run / "audit" / "diversity_report.json").write_text(
+        json.dumps({"vendi": {"score": 3.2}}), encoding="utf-8")
+    assert loader.semantic_report(run)["vendi"]["score"] == 3.2

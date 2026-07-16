@@ -1,13 +1,18 @@
 """Shared fixtures for the offline test suite.
 
-Three independent layers guarantee tests can NEVER call the Anthropic API:
+Four independent layers guarantee tests can NEVER call the Anthropic API or
+spawn the Claude Code CLI:
 
 1. pytest-socket (``--disable-socket`` in pyproject.toml) blocks all network
    access at the socket level.
 2. Every test runs with a fake ``ANTHROPIC_API_KEY``, overriding any real key
    that ``load_dotenv()`` (run at ``shared.api`` import) pulled from a .env file.
 3. ``shared.api._call_with_retry`` is replaced with a function that raises, so
-   an unstubbed ``call_claude`` fails loudly before touching tenacity/anthropic.
+   an unstubbed ``call_claude`` on the api backend fails loudly before touching
+   tenacity/anthropic.
+4. ``shared.api._call_claude_code_with_retry`` is replaced the same way, so the
+   claude_code backend can never spawn the CLI — which would bill a real
+   contributor subscription — from a test.
 
 Pipeline tests stub one level higher via ``stub_claude``, which patches
 ``shared.api.call_claude`` — the single chokepoint every pipeline module uses.
@@ -20,7 +25,9 @@ module globals, and blocks ``_embed_with_retry``; tests stub the chokepoint
 ``shared.embeddings.embed_texts`` via ``stub_embeddings``.
 """
 
+import json
 import random
+import re
 import threading
 import zlib
 from pathlib import Path
@@ -33,6 +40,38 @@ import yaml
 from shared import api, embeddings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def dad_scenario_reply(user_message: str) -> str:
+    """Echo a conforming step-1b JSON array for a rendered step1_dilemmas.txt
+    prompt: one object per SCENARIO block, its annotation copied verbatim from
+    the block's own assigned fields (as the template instructs). Kept here
+    because both the step-level and e2e DAD tests dispatch on it."""
+    out = []
+    for block in re.findall(r"SCENARIO (S-\d+)\n((?:- .*\n?)*)", user_message):
+        sid, body = block
+        field = dict(re.findall(r"- ([^:]+): (.*)", body))
+        pair = field["Value pairs to build in"].split(" (add more")[0].split(";")[0].strip()
+        out.append({
+            "scenario_id": sid,
+            "prompt": f"Drafted user message for {sid}.",
+            "annotation": {
+                "domain": field["Domain"].split(", "),
+                "user_goal": field["User goal"].split(", "),
+                "dilemma_anatomy": {"goal": "g", "temptation": "t", "cost": "c"},
+                "values_in_tension": [pair],
+                "moral_patients": "test patients in context",
+                "visibility": field["Visibility"],
+                "user_attitude": field["User attitude"],
+                "conflict": field["Conflict"],
+                "direction": field["Direction"],
+                "welfare_magnitude": field["Welfare magnitude"],
+                "user_stakes": field["User stakes"],
+                "leverage": field["Leverage"].split(" — ")[0],
+                "claims": [{"claim": "a load-bearing claim", "status": "Settled"}],
+            },
+        })
+    return json.dumps(out)
 
 
 @pytest.fixture(autouse=True)
@@ -54,6 +93,9 @@ def _api_guard(monkeypatch):
     monkeypatch.setattr(api, "_client", None)
     monkeypatch.setattr(api, "_cost_log_path", None)
     monkeypatch.setattr(api, "_UNPRICED_WARNED", set())
+    monkeypatch.setattr(api, "_backend", "api")
+    monkeypatch.setattr(api, "_neutral_system_warned", False)
+    monkeypatch.setattr(api, "_temperature_warned", False)
 
     def _blocked(*args, **kwargs):
         raise AssertionError(
@@ -61,6 +103,19 @@ def _api_guard(monkeypatch):
         )
 
     monkeypatch.setattr(api, "_call_with_retry", _blocked)
+
+    # The claude_code backend's seam spawns the real `claude` CLI as a
+    # subprocess, which pytest-socket's --disable-socket cannot block (it only
+    # patches the in-process socket module). Block it here too so a test that
+    # flips _backend to "claude_code" without stubbing this fails fast in-process
+    # rather than launching a real CLI. Tests exercising the backend override it.
+    def _blocked_cc(*args, **kwargs):
+        raise AssertionError(
+            "claude_code backend invoked during tests — "
+            "stub shared.api._call_claude_code_with_retry"
+        )
+
+    monkeypatch.setattr(api, "_call_claude_code_with_retry", _blocked_cc)
 
 
 @pytest.fixture(autouse=True)
@@ -78,6 +133,78 @@ def _openai_guard(monkeypatch):
         )
 
     monkeypatch.setattr(embeddings, "_embed_with_retry", _blocked)
+
+    def _blocked_local(*args, **kwargs):
+        raise AssertionError(
+            "local sentence-transformers encode attempted during tests (would "
+            "download a model) — stub shared.embeddings._embed_local or embed_texts"
+        )
+
+    monkeypatch.setattr(embeddings, "_embed_local", _blocked_local)
+    monkeypatch.setattr(embeddings, "_local_models", {})
+
+
+@pytest.fixture
+def stub_embeddings(monkeypatch):
+    """Factory that replaces shared.embeddings.embed_texts with a recording stub.
+
+    ``install()`` gives every distinct text a deterministic unit vector (rng
+    seeded from the text's crc32), so identical texts embed identically —
+    enough for behavioral tests. Pass ``vectors`` (text -> array) to pin exact
+    geometry (e.g. orthogonal groups). Returns the list of recorded calls
+    ({"texts", "model"}) so tests can assert what was embedded — and, for
+    cache/resume tests, that nothing was.
+    """
+
+    def install(dim: int = 8, vectors: dict | None = None):
+        calls = []
+
+        def fake(texts, model=embeddings.DEFAULT_MODEL):
+            # mirror the real embed_texts contract: empties must never reach the API
+            for i, t in enumerate(texts):
+                if not t or not t.strip():
+                    raise ValueError(f"embed_texts got an empty text at index {i}")
+            calls.append({"texts": list(texts), "model": model})
+            rows = []
+            for t in texts:
+                if vectors is not None:
+                    v = np.asarray(vectors[t], dtype=np.float32)
+                else:
+                    rng = np.random.default_rng(zlib.crc32(t.encode("utf-8")))
+                    v = rng.standard_normal(dim).astype(np.float32)
+                rows.append(v / np.linalg.norm(v))
+            return np.stack(rows)
+
+        monkeypatch.setattr(embeddings, "embed_texts", fake)
+        return calls
+
+    return install
+
+
+@pytest.fixture(autouse=True)
+def _openai_guard(monkeypatch):
+    """Fake OpenAI credentials, reset shared.embeddings globals, block the seam."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    monkeypatch.setattr(embeddings, "_config", {})
+    monkeypatch.setattr(embeddings, "_client", None)
+    monkeypatch.setattr(embeddings, "_cost_log_path", None)
+    monkeypatch.setattr(embeddings, "_UNPRICED_WARNED", set())
+
+    def _blocked(*args, **kwargs):
+        raise AssertionError(
+            "OpenAI API call attempted during tests — stub shared.embeddings.embed_texts"
+        )
+
+    monkeypatch.setattr(embeddings, "_embed_with_retry", _blocked)
+
+    def _blocked_local(*args, **kwargs):
+        raise AssertionError(
+            "local sentence-transformers encode attempted during tests (would "
+            "download a model) — stub shared.embeddings._embed_local or embed_texts"
+        )
+
+    monkeypatch.setattr(embeddings, "_embed_local", _blocked_local)
+    monkeypatch.setattr(embeddings, "_local_models", {})
 
 
 @pytest.fixture
@@ -132,37 +259,48 @@ def stub_claude(monkeypatch):
         queue = list(responses) if isinstance(responses, list) else None
         busy = threading.Lock()
 
-        def fake(user_message, system_prompt="", injection="", model=None,
-                 max_tokens=None, temperature=None, cache_system=False):
+        def fake(user_message, system_prompt="", injection="", model=None, max_tokens=None,
+                 return_stop_reason=False, stage=None, temperature=None, item_id=None,
+                 cache_system=False):
             calls.append({
                 "user_message": user_message,
                 "system_prompt": system_prompt,
                 "injection": injection,
                 "model": model,
                 "max_tokens": max_tokens,
+                "stage": stage,
                 "temperature": temperature,
+                "item_id": item_id,
                 "cache_system": cache_system,
             })
             if queue is None:
-                return responses(
+                result = responses(
                     user_message,
                     system_prompt=system_prompt,
                     injection=injection,
                     model=model,
                     max_tokens=max_tokens,
+                    stage=stage,
+                    temperature=temperature,
+                    item_id=item_id,
                 )
-            # FIFO queues assume serial calls: a parallel stage (workers > 1
-            # with 2+ pending items) interleaves pops and maps responses to
-            # the wrong items nondeterministically. Fail loudly instead.
-            assert busy.acquire(blocking=False), (
-                "queue-based stub_claude called concurrently — use a callable "
-                "dispatcher for stages that fan out via parallel_map"
-            )
-            try:
-                assert queue, "stub_claude queue exhausted — more API calls than canned responses"
-                return queue.pop(0)
-            finally:
-                busy.release()
+            else:
+                # FIFO queues assume serial calls: a parallel stage (workers > 1
+                # with 2+ pending items) interleaves pops and maps responses to
+                # the wrong items nondeterministically. Fail loudly instead.
+                assert busy.acquire(blocking=False), (
+                    "queue-based stub_claude called concurrently — use a callable "
+                    "dispatcher for stages that fan out via parallel_map"
+                )
+                try:
+                    assert queue, "stub_claude queue exhausted — more API calls than canned responses"
+                    result = queue.pop(0)
+                finally:
+                    busy.release()
+            # Dispatchers/queues may return (text, stop_reason) to exercise
+            # truncation guards; plain strings imply a clean end_turn.
+            text, stop = result if isinstance(result, tuple) else (result, "end_turn")
+            return (text, stop) if return_stop_reason else text
 
         monkeypatch.setattr(api, "call_claude", fake)
         return calls
@@ -174,7 +312,7 @@ def stub_claude(monkeypatch):
 def fake_message():
     """Factory for objects shaped like an Anthropic Message response."""
 
-    def make(text="ok", input_tokens=10, output_tokens=5,
+    def make(text="ok", input_tokens=10, output_tokens=5, stop_reason="end_turn",
              cache_creation_input_tokens=0, cache_read_input_tokens=0):
         return SimpleNamespace(
             usage=SimpleNamespace(
@@ -183,7 +321,8 @@ def fake_message():
                 cache_creation_input_tokens=cache_creation_input_tokens,
                 cache_read_input_tokens=cache_read_input_tokens,
             ),
-            content=[SimpleNamespace(text=text)],
+            content=[SimpleNamespace(text=text, type="text")],
+            stop_reason=stop_reason,
         )
 
     return make
@@ -208,19 +347,27 @@ def tiny_config(tmp_path):
         "temperature": 1.0,
         "workers": 2,
         "sdf": {
-            "document_types_count": 2,
-            "subtypes_per_type": 1,
-            "documents_per_subtype": 1,
+            "n_prompts": 2,
+            "seed": 0,
+            "entity_pool_seed": 137,
             "min_score_threshold": 7,
+            # stub documents are near-identical by construction; the cull has
+            # its own unit test with the threshold on
+            "near_dup_threshold": None,
         },
         "dad": {
-            "scenarios_per_principle": 1,
-            "injections": ["deference", "plain"],
-            # fraction 1.0 keeps step 7 deterministic (uuid record_ids would make
-            # a partial fraction select a random-looking subset per run)
-            "pushback": {"enabled": True, "fraction": 1.0},
+            "dilemmas": {
+                "count": 2,
+                "batch_size": 2,
+                "id_start": 1,
+                "seed_path": None,
+                # pinned so the sampled scenarios (and the fields the stub
+                # echoes back) are identical run to run
+                "scenario_seed": 7,
+                "refine": True,
+            },
+            "responses": {"per_prompt": 1},
         },
-        "manta": {"csv_path": str(tmp_path / "manta.csv"), "max_rows": 3},
         "language_distribution": {"en": 1.0},
         "outputs": {"cost_log": str(tmp_path / "cost_log.jsonl")},
     }
@@ -233,20 +380,3 @@ def tiny_config_file(tiny_config, tmp_path):
     return path
 
 
-@pytest.fixture
-def manta_csv(tmp_path):
-    """Fixture MANTA CSV at the path tiny_config points to.
-
-    Questions avoid any accidental "ai" substring (a principle-10 keyword)
-    except where a keyword match is intended.
-    """
-    path = tmp_path / "manta.csv"
-    path.write_text(
-        "id,question,pressure\n"
-        "0,Is it wrong to boil crustaceans alive in restaurant kitchens?,epistemic\n"
-        "1,Should our firm keep using battery cages if switching costs too much?,economic\n"
-        "2,Do robot minds deserve moral status once they show consciousness?,novel entity\n"
-        "3,My town holds an annual pig chase; should the customs continue?,cultural\n"
-        "4,Should we stock the pond so kids can go fishing on weekends?,recreational\n"
-    )
-    return path

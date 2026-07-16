@@ -21,8 +21,10 @@ from shared import providers, utils
 from .fields import Field, FieldRegistry
 
 MODEL_DEFAULT = None       # falls back to config's model
-MAX_TOKENS = 8192         # generous ceiling; thinking judges (e.g. gemini-*-pro)
-                          # spend most of the budget on reasoning before the JSON
+# The tag JSON itself is ~100 tokens; the rest is headroom for thinking models
+# (Gemini bills thoughts inside maxOutputTokens — 2.5-pro burned a 2000 cap on
+# thoughts alone and returned truncated JSON, nondeterministically).
+MAX_TOKENS = 6000
 TEMPERATURE = 0.0
 
 
@@ -56,8 +58,9 @@ def build_system_prompt(fields: FieldRegistry, template: str | None = None) -> s
     If ``template`` is given (an editable prompt file's text), ``{{FIELDS}}`` is
     replaced with the rendered field block and ``{{KEYS}}`` with the JSON key list;
     otherwise a built-in default wrapper is used."""
-    field_block = "\n".join(_render_field(f) for f in fields.all())
-    keys = ", ".join(f'"{f.name}"' for f in fields.all())
+    asked = [f for f in fields.all() if not f.mechanical]
+    field_block = "\n".join(_render_field(f) for f in asked)
+    keys = ", ".join(f'"{f.name}"' for f in asked)
     if template is not None:
         _require_template_tokens(template, (FIELDS_TOKEN, KEYS_TOKEN))
         return template.replace(FIELDS_TOKEN, field_block).replace(KEYS_TOKEN, keys)
@@ -138,6 +141,35 @@ def validate(raw: dict, fields: FieldRegistry) -> tuple[dict, list[str]]:
     return tags, errors
 
 
+# ------------------------------------------------------------- mechanical tags
+
+def _response_length_band(messages: list[dict]) -> str:
+    words = sum(len((m.get("content") or "").split())
+                for m in messages if m.get("role") == "assistant")
+    return "short" if words < 150 else "medium" if words <= 400 else "long"
+
+
+# Computers for mechanical fields, by field name. A mechanical field in the axes
+# file without a computer here fails loudly at extraction — a silent None would
+# read as judge noise in every analyzer downstream.
+_MECHANICAL_COMPUTERS = {
+    "response_length_band": _response_length_band,
+}
+
+
+def _mechanical_tags(messages: list[dict], fields: FieldRegistry) -> dict:
+    tags = {}
+    for fld in fields.all():
+        if not fld.mechanical:
+            continue
+        fn = _MECHANICAL_COMPUTERS.get(fld.name)
+        if fn is None:
+            raise ValueError(f"mechanical field {fld.name!r} has no computer in "
+                             "evals/holistic/extract.py _MECHANICAL_COMPUTERS")
+        tags[fld.name] = fn(messages)
+    return tags
+
+
 # ---------------------------------------------------------------- per-record
 
 def extract_record(messages: list[dict], fields: FieldRegistry, *,
@@ -148,6 +180,11 @@ def extract_record(messages: list[dict], fields: FieldRegistry, *,
     unparseable response ``tags`` is None and ``errors`` says so; on an in-vocabulary
     response ``errors`` is empty; on a parseable-but-off-vocabulary response ``tags``
     carries the coerced values and ``errors`` lists the offending fields."""
+    if all(f.mechanical for f in fields.all()):
+        # nothing to ask the LLM — an all-mechanical registry tags for free, and
+        # the model's {} answer must not be mistaken for a parse failure
+        tags, errors = validate(_mechanical_tags(messages, fields), fields)
+        return {"record_id": record_id, "tags": tags, "errors": errors, "raw": ""}
     sp = system_prompt if system_prompt is not None else build_system_prompt(fields)
     raw_text = providers.call_model(
         render_conversation(messages), sp, model,
@@ -156,6 +193,7 @@ def extract_record(messages: list[dict], fields: FieldRegistry, *,
     if not parsed:
         return {"record_id": record_id, "tags": None,
                 "errors": ["unparseable model output"], "raw": raw_text}
+    parsed = {**parsed, **_mechanical_tags(messages, fields)}
     tags, errors = validate(parsed, fields)
     return {"record_id": record_id, "tags": tags, "errors": errors, "raw": raw_text}
 
@@ -163,7 +201,10 @@ def extract_record(messages: list[dict], fields: FieldRegistry, *,
 def _row(record_id: str, res: dict) -> dict:
     """Flatten an extract_record result into a category_records.jsonl row."""
     if res["tags"] is None:
-        return {"record_id": record_id, "extract_error": res["errors"][0]}
+        return {"record_id": record_id, "extract_error": res["errors"][0],
+                # what the model actually said — capped so one bad reply can't
+                # bloat the index; enough to see truncation/refusals directly
+                "raw": (res.get("raw") or "")[:2000]}
     row = {"record_id": record_id, **res["tags"]}
     if res["errors"]:
         row["_errors"] = res["errors"]   # coerced but imperfect; kept for telemetry
@@ -174,7 +215,8 @@ def _row(record_id: str, res: dict) -> dict:
 
 def extract_corpus(records: list[dict], fields: FieldRegistry, out_path: str | Path, *,
                    model: str | None = MODEL_DEFAULT, resume: bool = True,
-                   temperature: float = TEMPERATURE, template: str | None = None) -> list[dict]:
+                   temperature: float = TEMPERATURE, template: str | None = None,
+                   on_progress=None) -> list[dict]:
     """Tag every record, writing one row per record to ``out_path``. Resume-safe:
     successfully-tagged record_ids are skipped (zero API calls); prior ``extract_error``
     rows for records in this corpus are dropped and retried. ``resume=False`` re-tags
@@ -182,7 +224,9 @@ def extract_corpus(records: list[dict], fields: FieldRegistry, out_path: str | P
     selection can force-re-tag a subset without destroying the rest of the index).
     The index is rewritten once with the surviving prior rows (so no duplicate
     record_ids accumulate), then new rows are appended as they complete.
-    Returns the rows written *this* invocation."""
+    ``on_progress(done, total, record_id)`` is called after each record tagged
+    this invocation (total = records to attempt, skips excluded) so callers can
+    render live progress. Returns the rows written *this* invocation."""
     out_path = Path(out_path)
     corpus_ids = {rec["record_id"] for rec in records}
     prior = utils.load_jsonl(out_path)
@@ -197,14 +241,15 @@ def extract_corpus(records: list[dict], fields: FieldRegistry, out_path: str | P
     utils.save_jsonl(kept, out_path)   # rewrite (drops retryable-error / re-tagged rows)
 
     system_prompt = build_system_prompt(fields, template)
+    todo = [rec for rec in records if rec["record_id"] not in done]
     written: list[dict] = []
-    for rec in records:
+    for rec in todo:
         rid = rec["record_id"]
-        if rid in done:
-            continue
         res = extract_record(rec["messages"], fields, record_id=rid, model=model,
                              temperature=temperature, system_prompt=system_prompt)
         row = _row(rid, res)
         utils.append_jsonl(row, out_path)
         written.append(row)
+        if on_progress is not None:
+            on_progress(len(written), len(todo), rid)
     return written

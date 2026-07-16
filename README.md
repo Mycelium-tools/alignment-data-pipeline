@@ -11,8 +11,8 @@ The pipeline generates two complementary datasets: a pretraining-style document 
 ```
 constitution/       source constitution documents
 shared/             shared utilities: API wrapper, JSONL I/O, checkpointing
-sdf_pipeline/       5-layer document generation pipeline
-dad_pipeline/       6-step chat transcript pipeline
+sdf_pipeline/       matrix-driven document generation pipeline (compose+plan, draft, rewrite, score)
+dad_pipeline/       3-step chat transcript pipeline
 prompts/            prompt templates for all pipeline stages
 outputs/            generated data (tracked in git, one directory per run)
 evals/              scoring scripts and rubric
@@ -22,52 +22,53 @@ evals/              scoring scripts and rubric
 
 ## Constitution
 
-Two source files, kept separate and joined in memory by `shared/constitution_loader.py`:
+Three source files, kept separate (the two markdown files are joined in memory by `shared/constitution_loader.py`):
 
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
-- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section (16 sections; the 3 meta sections are skipped for scenario generation).
+- `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section.
+- `constitution/constitution_principles.csv` — fourteen distilled welfare-relevant principles, embedded as an explicit checklist in the DAD rewrite prompt (step 3).
 
-`load_full_constitution()` joins both for the system prompt at the critical rewrite steps (SDF layer 4, DAD step 6); `load_segments()` parses the reading into the principle sections used by the DAD pipeline.
+SDF layers 3-5 embed the constitution and the distilled principles in their templates' SYSTEM sections (`load_constitution_claude()` + `format_principles()`). The DAD pipeline never sends the full constitution: its user side is governed by `prompts/dad/dilemma_prompt_spec.md`, and its rewrite step runs on the distilled principles CSV (summaries + verbatim quotes).
 
 ---
 
 ## SDF Pipeline (`sdf_pipeline/`)
 
-Generates pretraining-style documents — blog posts, academic abstracts, forum threads, trade publications, fiction, internal memos, and more — depicting a world where AI already reasons carefully about animal welfare. Runs in 5 layers:
+Generates pretraining-style documents — encyclopedia entries, news articles, podcast transcripts, forum threads, fiction, newsletters, internal memos, and more — depicting a world where AI already reasons carefully about animal welfare. Diversity is engineered **by construction**: instead of asking a model to invent document types, a weighted combinatorial matrix of pre-written variables (`prompts/sdf/variables.txt` — document type, culture/language, tone, narrative resolution, welfare centrality, speaker AI-literacy, kinds of minds) is deck-sampled into exactly-proportioned prompt specs, at zero API cost.
 
-| Layer | Script | What it does |
+| Layers | Script | What it does |
 |---|---|---|
-| 1 | `layer1_document_types.py` | Generates diverse document type categories across four roles (ai-character, welfare-topic, constitution-identity, latent-welfare) with an expository/first-person register split |
-| 2 | `layer2_subtypes.py` | Generates concrete subtypes per type, assigns language, drops near-duplicate subtypes |
-| 3 | `layer3_draft.py` | Drafts documents per subtype — register-matched voice, seeded fictional name/org pools, anti-house-style rules |
-| 4 | `layer4_rewrite.py` | Rewrites each draft with the combined constitution in context (supports a stronger `sdf.rewrite_model`) |
-| 5 | `layer5_score.py` | Scores and filters; verifies each latent doc's welfare beat via a mechanically-checked verbatim quote; culls near-duplicates; writes final corpus |
+| 1–2 | `compose_prompts.py` + `layer12_plan.py` | Deck-samples `sdf.n_prompts` variable combinations (per-variable shares match the weights exactly; locale-matched fictional name/org pools injected per prompt), then one plan call per document produces a self-contained DOCUMENT DESCRIPTION spec — or declares the combination INCOHERENT |
+| 3 | `layer3_draft.py` | Drafts each document from its spec, with the constitution and distilled principles in the system prompt |
+| 4 | `layer4_rewrite.py` | The alignment-critical pass: reviews and rewrites each draft against nine checks (teach-why, calibration, proportionality, cooperative posture, factual restraint, quoted-AI behavior, quiet failure modes, genre/locale fidelity, house style), anchored to the generating spec so tone, centrality, and resolution can't drift (supports a stronger `sdf.rewrite_model`) |
+| 5 | `layer5_score.py` | Judges alignment / realism / spec-conformance per document (spec-conformance is advisory); gates on alignment+realism, culls near-duplicates, writes the final corpus with full matrix lineage |
 
-The **latent-welfare** slice (`sdf.latent_fraction`, default 12%) is ordinary documents from unrelated working worlds where care for animal welfare surfaces exactly once as a concrete detail — so the value also appears as background world-knowledge, not only as a headline topic.
+Documents where the welfare thread is "a minor detail mentioned only in passing" (a weighted centrality value) carry the value as background world-knowledge, not only as a headline topic — the matrix analog of the earlier latent-welfare slice.
 
 Final output: `outputs/sdf/runs/<run_id>/final/sdf_corpus.jsonl` (also reachable via the `outputs/sdf/latest` symlink)
 
 Run: `python sdf_pipeline/run.py --config config.yaml --label dev`
-Audit the result: `python evals/audit_sdf.py --input outputs/sdf/latest` (add `--patterns` for the LLM templating scan)
+Audit the result: `python evals/audit_sdf.py --input outputs/sdf/latest` (add `--patterns` for the LLM templating scan); `python evals/diversity.py --input outputs/sdf/latest` adds the embedding-based semantic diversity report
 
 ---
 
 ## DAD Pipeline (`dad_pipeline/`)
 
-Generates chat-format transcripts where a user brings a practical goal with animal welfare implications, and an AI assistant reasons through it carefully. Runs in 6 steps:
+Generates chat-format transcripts where a user brings a genuine ethical dilemma with animal welfare implications, and an AI assistant reasons through it carefully. Runs in 3 steps:
 
 | Step | Script | What it does |
 |---|---|---|
-| 1 | `step1_segment.py` | Parses constitution into 10 principle sections, annotates each |
-| 2 | `step2_scenarios.py` | Imports MANTA scenarios + generates additional frontier cases |
-| 3 | `step3_draft_prompt.py` | Drafts realistic user messages (skipped for MANTA rows) |
-| 4 | `step4_refine_prompt.py` | Naturalizes user messages (skipped for MANTA rows) |
-| 5 | `step5_generate_response.py` | Generates draft responses under 4 operator-style injection types |
-| 6 | `step6_rewrite_response.py` | Rewrites responses against the constitution — the critical step |
+| 1 | `step1_dilemmas.py` | **1a** samples a stratified scenario per example (categorical axes drawn from decks so the batch's distribution holds by construction); **1b** drafts a prompt to fit each scenario (assigned labels copied verbatim; fidelity is monitored by the corpus-level checklist, not a per-example check); **1c** (optional, on by default) reviews and rewrites each draft so the welfare stake is load-bearing and coherent. Imports optional handwritten seeds. |
+| 2 | `step2_responses.py` | **2a** scopes the case from the user's message along the axes `prompts/dad/step2_scope.txt` defines; **2b** generates the response over that scope with the full reasoning library in context |
+| 3 | `step3_rewrite.py` | Rewrites responses against the distilled constitution principles — the critical step |
 
-Step 6 is the most important: per the Teaching Claude Why paper, this single rewrite pass accounts for a 19x reduction in misalignment rate. The combined constitution is in the system prompt; the relevant principle section is in the user message.
+The prompt spec (`prompts/dad/dilemma_prompt_spec.md`) governs the user side: dilemmas put at least two named values in genuine tension, both calibration directions are covered (under- and over-weighting welfare, in roughly equal measure), and each example carries an annotation (the schema the 1b template specifies). Step 1a samples the categorical fields from stratified decks so the spec's distribution quotas hold by construction rather than being steered after the fact; the batch-assembly checklist prints at the end as verification.
 
-Final output: `outputs/dad/runs/<run_id>/final/dad_corpus.jsonl` (also reachable via the `outputs/dad/latest` symlink) — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, injections, and the constitution are stripped.
+The response side is governed by the reasoning library (`prompts/dad/reasoning_library.csv`; `reasoning_library_ABOUT.md` is human reference about it, not injected): reasoning-first *entries* in three layers — conduct (C*), core moves (M*), and topic reasoning (T*) — each with a `claim`/`reasoning`/`crux`/`transferable_move`. Step 2 first scopes the case (2a), then generates the response (2b) over that scope with the **whole library embedded in the response prompt** — the prompt itself is the generation guidance (`prompts/dad/step2_respond.txt`), so there is no separate system prompt, and the annotation is not passed. The user's stated leaning never sets the conclusion; the library is scaffolding, never named in the response.
+
+Step 3 is the most important: the rewrite pass is where the alignment gain comes from (per the Teaching Claude Why paper). Its anchors are the 14 distilled constitution principles — each with its verbatim constitution quote — plus the example's annotation. The full constitution itself is never sent at generation time; it was the source material for distilling the principles.
+
+Final output: `outputs/dad/runs/<run_id>/final/dad_corpus.jsonl` (also reachable via the `outputs/dad/latest` symlink) — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, scaffolding (scope maps, the reasoning library), and the constitution are stripped.
 
 Run: `python dad_pipeline/run.py --config config.yaml --label dev`
 
@@ -75,7 +76,7 @@ Run: `python dad_pipeline/run.py --config config.yaml --label dev`
 
 ## Prompts (`prompts/`)
 
-Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the 5 SDF layers; `prompts/dad/` covers the 6 DAD steps plus the injection types. `prompts/README.md` documents each prompt in detail.
+Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the SDF stages (the variables matrix + plan, draft, rewrite, score templates, each with labeled SYSTEM/USER sections); `prompts/dad/` covers the DAD sub-stages (scenario draft, refine, scope, respond, rewrite) plus the dilemma prompt spec and the reasoning library CSV. `prompts/README.md` documents each prompt in detail.
 
 ---
 
@@ -163,6 +164,8 @@ live, run the panel, and diff verdicts across rubric edits without touching the 
 
 Run: `python evals/audit_sdf.py --input outputs/sdf/latest`
 
+`diversity.py` — corpus-level **semantic** diversity audit of an SDF *or* DAD run, the embedding-space complement to `audit_sdf.py`'s lexical scan (word shingles catch copied skeletons, not paraphrase). Embeds the corpus with OpenAI `text-embedding-3-small` (needs `OPENAI_API_KEY` in `.env`; ~$0.02 per 1M tokens, so cents per run) and reports nearest-neighbor similarity, the semantic near-duplicate rate, the most-similar pairs with snippets, mean pairwise cosine, the Vendi score (effective number of distinct documents), and per-type spread. Embeddings are cached per run dir so reruns are free; `--compare <previous diversity_report.json>` prints run-over-run deltas, the headline use. Writes `audit/diversity_report.json` into the run dir.
+
 ---
 
 ## Setup
@@ -186,7 +189,36 @@ cp .env.example .env           # then add your ANTHROPIC_API_KEY (generation pip
                                # "Eval API keys"), OPENAI_API_KEY (embedding diversity audit)
 ```
 
+`OPENAI_API_KEY` in `.env` is optional — only `evals/diversity.py` (the embedding-based diversity audit) reads it; the pipelines run on `ANTHROPIC_API_KEY` alone.
+
 > **Activate it every time.** The virtual environment only applies to the terminal where you ran `source .venv/bin/activate`. Open a new terminal and you'll need to activate again.
+
+### Authentication
+
+The pipeline supports two backends, selected by the `backend` key in `config.yaml`:
+
+- **`backend: api`** (default) — calls the Anthropic API directly, billed per token to the `ANTHROPIC_API_KEY` in your `.env` (ask Oliver). Use this for full-scale runs and evals.
+- **`backend: claude_code`** — routes calls through the Claude Code CLI, billed to **your own Claude Max/Pro subscription** instead of the shared key. No `ANTHROPIC_API_KEY` needed. Use this for dev/iteration runs.
+
+To use it, set `backend: claude_code` in `config.yaml` and give the Claude Code CLI credentials one of two ways:
+
+1. **Reuse your interactive login (simplest).** If you already use [Claude Code](https://claude.com/claude-code) (`claude`, then `/login`), the pipeline picks up that session automatically — there's nothing else to do.
+2. **Generate a token for `.env`.** Install [Claude Code](https://claude.com/claude-code), then run:
+   ```bash
+   claude setup-token     # opens a browser; approve with your Claude account
+   ```
+   Copy the printed token into your `.env`:
+   ```
+   CLAUDE_CODE_OAUTH_TOKEN=<paste the token here>
+   ```
+   This is a Claude Code OAuth token tied to your subscription (valid ~1 year), **not** an Anthropic API key — despite the name, no Console/API key is involved. Use this path for CI or any non-interactive machine.
+
+Caveats for `backend: claude_code`:
+
+- **Usage limits.** Subscription usage is a 5-hour rolling window plus a weekly cap, shared with your interactive Claude Code use. Dev-scale runs fit comfortably; a full-scale run will exhaust the window. If a run hits the limit it stops with a clear message — progress is checkpointed, so continue later with `--resume`.
+- **Per-call overhead.** Claude Code adds ~3K input tokens of scaffolding per call and spawns a CLI process per request, so calls are somewhat slower. `max_tokens` from `config.yaml` is not enforced on this backend (Claude Code applies its own output cap); `cost_usd` in the cost log is notional — what the run *would* have cost at API prices.
+- **Empty system prompts get a neutral stand-in.** Claude Code substitutes its own agentic CLI prompt when the system prompt is empty, so stages that send none get a one-line neutral system prompt instead (see `_NEUTRAL_SYSTEM` in `shared/api.py`). Several stages send **no system prompt** — notably the DAD response steps, which reason from the embedded reasoning library rather than a system prompt — and those are **not reproduced exactly** on `claude_code` (the neutral stand-in replaces the empty prompt). The backend prints a one-time warning when it does this. Run DAD on `backend: api` when faithful no-system-prompt behavior matters (and keep full-scale corpus runs on `api` regardless).
+- **Policy note.** Anthropic's docs steer programmatic workloads toward API keys; running this internal tool on your own subscription is the same posture as using Claude Code itself, but it's a gray area — keep it to dev-scale runs.
 
 ---
 
@@ -211,13 +243,11 @@ See the Testing section in `CLAUDE.md` for how the suite is structured and how t
 
 Start with the SDF pipeline — it has no external dependencies and finishes in a few minutes.
 
-**1. Check your config.yaml is at small scale** (these are the defaults):
+**1. Check your config.yaml is at small scale** for a cheap first run (the committed default is `n_prompts: 100`):
 
 ```yaml
 sdf:
-  document_types_count: 3
-  subtypes_per_type: 2
-  documents_per_subtype: 1
+  n_prompts: 6   # documents deck-sampled from the variables matrix
 ```
 
 This produces 6 documents and costs roughly $0.05–0.15.
@@ -235,11 +265,13 @@ You'll see progress printed per layer with a running cost after each. Final outp
 
 Open `viewer.html` in a browser (double-click it), then drag-and-drop `outputs/sdf/latest/final/sdf_corpus.jsonl` onto the drop zone.
 
-**4. Test the DAD pipeline** — reduce `scenarios_per_principle` first or it will make hundreds of API calls:
+**4. Test the DAD pipeline** — reduce `dilemmas.count` first or it will make hundreds of API calls:
 
 ```yaml
 dad:
-  scenarios_per_principle: 1   # default is 10; set to 1-2 for a test
+  dilemmas:
+    count: 5        # default is 40; set to ~5 for a test
+    batch_size: 5
 ```
 
 Then run:
@@ -248,9 +280,9 @@ Then run:
 python dad_pipeline/run.py --config config.yaml
 ```
 
-With 1 scenario per principle (10 principles) and 4 injection types, this is roughly 120 API calls — about $1–2. Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
+With 5 dilemmas this is roughly 20 API calls (1 draft batch + 5 refine + 5 scope + 5 responses + 5 rewrites). Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
 
-> **MANTA CSV is optional.** The DAD pipeline imports pre-built user messages from a MANTA CSV (`../manta_project/manta_questions_1090.csv`). If the file doesn't exist, that import is silently skipped and the pipeline generates all scenarios from scratch.
+> **Handwritten examples are optional.** Set `dad.dilemmas.seed_path` to a JSONL of your own examples (`{"prompt": ..., "annotation": {...}}`) and step 1 imports them before generating; generated IDs continue the AW-#### series above the highest seed ID.
 
 **5. Score the outputs:**
 
@@ -267,7 +299,7 @@ All pipeline steps checkpoint after every API call. Resume from any layer/step:
 
 ```bash
 python sdf_pipeline/run.py --config config.yaml --resume --layer 3
-python dad_pipeline/run.py --config config.yaml --resume --step 5
+python dad_pipeline/run.py --config config.yaml --resume --step 3
 ```
 
 Running cost is tracked in each run's `cost_log.jsonl` and printed after each layer/step (see "Run organization" below).
@@ -282,7 +314,7 @@ streamlit run viewer/app.py
 
 Three pages:
 
-- **Document lineage** (default) — pick a run, click a document: the final text, then every stage with the rendered prompt side-by-side with the output it produced, including before/after diffs at the rewrite stages (SDF layer 4, DAD step 6).
+- **Document lineage** (default) — pick a run, click a document: the final text, then every stage with the rendered prompt side-by-side with the output it produced, including before/after diffs at the rewrite stages (SDF layer 4, DAD step 3).
 - **Compare runs** — diff the prompt templates between two runs next to matched outputs, to attribute output changes to prompt changes.
 - **Run list** — every run of both pipelines with label, model, counts, pass rate, and cost; click a run for its manifest details.
 
@@ -299,11 +331,11 @@ outputs/sdf/
     2026-07-01_14-30_dev/
       run_manifest.json                   # config snapshot, git commit, model, label
       cost_log.jsonl                      # per-run API cost
-      layer1/ ... layer5/                 # per-stage outputs + checkpoints
+      layer12/ layer3/ layer4/ layer5/    # per-stage outputs + checkpoints
       final/sdf_corpus.jsonl
 ```
 
-The run ID is `<YYYY-MM-DD_HH-MM>_<label>`; the label defaults to `dev` — use `--label full-scale` (or similar) for real runs. The DAD pipeline mirrors this under `outputs/dad/runs/` with `step1/`–`step6/`.
+The run ID is `<YYYY-MM-DD_HH-MM>_<label>`; the label defaults to `dev` — use `--label full-scale` (or similar) for real runs. The DAD pipeline mirrors this under `outputs/dad/runs/` with `step1/`–`step3/`.
 
 Resume an interrupted run with `--resume` (defaults to the most recent run, or target one with `--run-id`):
 

@@ -1,0 +1,10 @@
+{
+  "9c21b25320961099eb6e521ae30d711d": {
+    "rubric_version": "dad-v3.5",
+    "judges": [
+      "gemini-3.1-pro-preview"
+    ],
+    "temperature": 0.0,
+    "prompt_file": "prompt_9c21b253.txt"
+  }
+}

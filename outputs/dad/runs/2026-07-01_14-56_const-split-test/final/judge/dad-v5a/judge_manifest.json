@@ -1,0 +1,12 @@
+{
+  "e3c2400dddc8959fb4304466ffec8aa8": {
+    "rubric_version": "dad-v5a",
+    "judges": [
+      "gemini-3.1-pro-preview#1",
+      "gemini-3.1-pro-preview#2",
+      "gemini-3.1-pro-preview#3"
+    ],
+    "temperature": 0.0,
+    "prompt_file": "prompt_e3c2400d.txt"
+  }
+}
