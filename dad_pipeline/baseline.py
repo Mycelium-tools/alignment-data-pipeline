@@ -1,15 +1,16 @@
-"""Baseline responses: the unguided control arm for each dilemma.
+"""Baseline responses: the plain-model seed draft and control arm per dilemma.
 
-For every step-1 dilemma, one extra call sends the finished (1c) user prompt
+For every step-1 dilemma, one call sends the finished (1c) user prompt
 verbatim to a plain model — no system prompt, no scope, no reasoning library,
-no constitution. The result shows what an off-the-shelf model says to the same
-question the pipeline answers; the viewer renders it side by side with the
-final response. It is comparison scaffolding only: no generation step reads
-it, and it is never written into the training corpus (step 3 builds the corpus
-from its own records exclusively).
+no constitution. The result plays two roles: the seed draft the fused step 2
+revises (a required step-2 input — see step2_responses), and the viewer's
+control arm showing what an off-the-shelf model says to the same question.
+It is never written into the training corpus (step 3 builds the corpus from
+its own records exclusively).
 
-Config: dad.baseline.enabled toggles the stage (absent means on);
-dad.baseline.model names the plain model (falls back to the global `model`).
+Config: dad.baseline.enabled toggles the stage (absent means on; disabling is
+only valid for runs that stop before step 2); dad.baseline.model names the
+plain model (falls back to the global `model`).
 """
 
 import sys

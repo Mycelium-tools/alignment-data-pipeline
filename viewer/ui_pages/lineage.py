@@ -365,7 +365,7 @@ else:
                                    lambda: common.json_block(lin.get("tension_tag"), key="s2tag",
                                                              label="tensions", expanded=True))
 
-                stage_expander("Step 2b — response from the reasoning library", "step2_respond", lin,
+                stage_expander("Step 2b — revise the baseline draft with the reasoning library", "step2_respond", lin,
                                lambda: st.code((lin.get("response") or {}).get("assistant_response", ""),
                                                language=None, wrap_lines=True)
                                if lin.get("response") else st.caption("not reached"),
@@ -396,10 +396,11 @@ else:
                         line = _call_stats_line("baseline_response", pid)
                         if line:
                             st.caption(f":material/speed: {line}")
-                        st.caption("Control arm: the step-1c user prompt (left panel) sent "
-                                   "verbatim to a plain model — no system prompt, no reasoning "
-                                   "library, no constitution. Read it against the pipeline's "
-                                   "response on the left; never enters the training corpus.")
+                        st.caption("The step-1c user prompt (left panel) sent verbatim to a "
+                                   "plain model — no system prompt, no reasoning library, no "
+                                   "constitution. Doubles as the control arm and as the seed "
+                                   "draft step 2b revises (fused runs); never enters the "
+                                   "training corpus itself.")
                         st.code(baseline_rec["baseline_response"], language=None, wrap_lines=True)
             else:
                 # Legacy 7-step runs (pre-spec pipeline)

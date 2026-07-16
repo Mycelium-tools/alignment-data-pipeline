@@ -106,7 +106,7 @@ def _dad_dispatch(user_message, **kw):
                            "magnitude": "m", "upside": "u", "counterfactual": "cf"})
     if "doing retrieval for a response" in blob:  # step 2a.5 select
         return "C1, M1"
-    if "advisor responding to a user's dilemma" in blob:  # step 2b
+    if "advisor revising your own draft reply" in blob:  # step 2b (fused revision)
         return "Draft response."
     if "rewrite a draft assistant response" in blob:  # step 3
         return "Rewritten careful answer."
@@ -137,30 +137,40 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
         assert [m["role"] for m in record["messages"]] == ["user", "assistant"]
         assert record["messages"][0]["content"] == "Refined user message."  # 1c ran
         assert record["messages"][1]["content"] == "Rewritten careful answer."
-    # the baseline control arm rode along: one record per prompt, never in the corpus
+    # the baseline stage ran: one record per prompt, never in the corpus itself
     baselines = utils.load_jsonl(run_dir / "baseline" / "baseline_responses.jsonl")
     assert len(baselines) == N_DAD_PROMPTS
     assert all(b["baseline_response"] == "Plain baseline answer." for b in baselines)
+    # fused 2b: every revision call carried the baseline draft in its user turn
+    fuse_calls = [c for c in calls
+                  if "advisor revising your own draft reply" in (c["system_prompt"] or "")]
+    assert len(fuse_calls) == N_DAD_PROMPTS
+    assert all("Plain baseline answer." in c["user_message"] for c in fuse_calls)
     # 1 batch draft, then per prompt: refine (1c) + baseline + scope (2a)
     # + select (2a.5) + respond (2b) + rewrite (3)
     assert len(calls) == 1 + 6 * N_DAD_PROMPTS
 
 
-def test_dad_baseline_disabled_makes_no_baseline_calls(
+def test_dad_baseline_disabled_only_valid_before_step2(
     tiny_config, outputs_root, stub_claude, monkeypatch, tmp_path
 ):
+    # The fused 2b revises the baseline draft, so disabling the baseline stage
+    # is a hard error on a full run — but still fine for a prompts-only run.
     config = dict(tiny_config)
     config["dad"] = {**tiny_config["dad"], "baseline": {"enabled": False}}
     config_file = tmp_path / "config_no_baseline.yaml"
     config_file.write_text(yaml.safe_dump(config))
 
     calls = stub_claude(_dad_dispatch)
-    _run_main(monkeypatch, dad_run.main, config_file)
+    with pytest.raises(RuntimeError, match="baseline"):
+        _run_main(monkeypatch, dad_run.main, config_file)
+    assert all(c["stage"] != "baseline_response" for c in calls)
 
+    calls = stub_claude(_dad_dispatch)
+    _run_main(monkeypatch, dad_run.main, config_file, "--stop-after", "1")
+    assert len(calls) == 1 + N_DAD_PROMPTS  # 1b batch + per-prompt 1c refines
     run_dir = outputs_root / "dad" / "latest"
     assert not (run_dir / "baseline").exists()
-    assert all(c["stage"] != "baseline_response" for c in calls)
-    assert len(calls) == 1 + 5 * N_DAD_PROMPTS  # everything else untouched
 
 
 def test_dad_resume_at_step3_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):

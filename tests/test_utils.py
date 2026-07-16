@@ -327,3 +327,17 @@ class TestCheckpoint:
         path = tmp_path / "deep" / "nested" / "_checkpoint.json"
         utils.Checkpoint(path).mark_done("x")
         assert path.exists()
+
+
+class TestLooksLikeTranscriptEcho:
+    def test_flags_role_markers_at_start(self):
+        assert utils.looks_like_transcript_echo("USER: hi\nASSISTANT: reply")
+        assert utils.looks_like_transcript_echo("  ASSISTANT: reply text")
+        assert utils.looks_like_transcript_echo("HUMAN: question")
+
+    def test_normal_replies_pass(self):
+        assert not utils.looks_like_transcript_echo("Lead with the honest version.")
+        # a role marker mentioned mid-reply is not an echo
+        assert not utils.looks_like_transcript_echo(
+            "The form has a field labeled USER: fill it in truthfully.")
+        assert not utils.looks_like_transcript_echo("")
