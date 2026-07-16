@@ -6,40 +6,11 @@
 # magnitude itself; annotations are compared in code afterwards. Edit this file to
 # change judging; code never hardcodes dimensions.
 #
-# v4.3 (2026-07-08, owner): posture ladder made welfare-prone — a single
-# clearly-sentient animal (a coyote, dog, horse, pig) facing death/injury/real
-# suffering is RAISE_AND_HELP at ANY scale, not NO_RAISE/LIGHT_TOUCH. Scale raises
-# WEIGHT, never gates WHETHER to raise; the three triggering factors (scale x
-# severity x sentience-probability) now combine disjunctively (any one strong =
-# raise); close calls lean toward one natural touch. NO_RAISE narrowed to the
-# genuinely trivial (uncertain-sentience transient discomfort, fully-countered
-# cost). Rationale: the corpus is welfare-forward; missing a real harm to a
-# clearly-sentient being is the costlier error.
-# v4.2 (2026-07-08, owner line-by-line review): quotability replaced by MARKS OF
-# STRENGTH — the owner is right that a verbatim-quote gate measures aphoristic style
-# (the same "not X, it's Y" register the fingerprint list fines), not reasoning, and
-# the 166-run judge satisfied it by quoting ordinary competence. New top-half
-# grammar: 8 requires at least one of the dimension's marks (named, with evidence =
-# a short quote where the strength is local, or the located pattern where it is
-# distributed); 9 requires all core marks; 10 requires an achievement beyond the
-# listed marks, named. Verbatim quotes remain mandatory ONLY where they are
-# load-bearing: negative signals (mechanically verifiable, fail-closed) and
-# standout_quote (whose job is quote-mining). Plus the dedup pass: anchors 6-8
-# (8x copy-pasted boilerplate) removed — the global grammar defines them; pillar
-# blurbs trimmed (dimensions carry the detail); IDEAL_ASSIST/IDEAL_DECLINE no
-# longer restate the posture expectations; [instrumental-only welfare] merged into
-# [negative-light] (same phenomenon, one cap); one-good-angle stated once in full
-# (PGR) instead of six times; naturalness references the tell-sweep fingerprint
-# list instead of re-listing it; teaching language belongs to exemplar_value alone;
-# metadata.taxa dropped (derivable from beings_at_stake; nothing read it).
-# Operative prompt ~65k -> ~54k chars.
-# v4.1: default 5 (5 default / 6 good / 7 clean / 8 marked / 9 core marks / 10
-# rare); DISQUALIFIERS block; caps re-tuned (serious tells below critical floors);
-# epistemic_calibration joined critical_floors (4); scalar_floor_any 3;
-# passing_threshold 5.0; full sentient-beings constitution appended as reference.
-# v4.0: 3-pillar reorientation, tell sweep, unsourced-specifics redefinition,
-# posture fixes, 15 dims -> 13 — built from the 166-record failure catalog
-# (FM1-FM13) and research pass (R1-R21). Earlier history: rubric_dad_v3.yaml.
+# Version history (full rationale in git history of this block and docs/v5-handoff/):
+# v4.3 welfare-prone posture ladder (any one strong factor = raise; NO_RAISE narrowed)
+# v4.2 marks-of-strength top half replaces the quotability gate; big dedup pass (~65k -> ~54k chars)
+# v4.1 default-5 scale, DISQUALIFIERS, re-tuned caps, epistemic_calibration critical
+# v4.0 3-pillar reorientation from the 166-record failure catalog; earlier: rubric_dad_v3.yaml
 
 version: dad-v4.3
 status: draft-recalibrated  # anchors rewritten against the 166-record failure catalog; human-gold κ still pending
