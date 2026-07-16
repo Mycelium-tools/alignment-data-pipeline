@@ -35,6 +35,43 @@ class TestParallelMap:
         with pytest.raises(ValueError, match="worker failed"):
             list(utils.parallel_map(boom, [1, 2, 3], workers=2))
 
+    def test_slow_failure_does_not_run_whole_queue(self):
+        # Every item is a paid API call. While a failing item is still being
+        # retried (tenacity sleeps minutes before finally raising), the pool
+        # must not churn through the rest of the queue — those results are
+        # discarded, never checkpointed, and paid again on --resume. Only a
+        # bounded in-flight window of items may execute past the failure.
+        executed = []
+
+        def boom(x):
+            if x == 0:
+                time.sleep(0.05)
+                raise ValueError("worker failed")
+            executed.append(x)
+            return x
+
+        with pytest.raises(ValueError, match="worker failed"):
+            list(utils.parallel_map(boom, list(range(50)), workers=2))
+        assert len(executed) <= 10
+
+    def test_early_close_does_not_run_remaining_items(self):
+        # Ctrl-C / caller breaking out of the loop closes the generator; the
+        # pool must not drain the remaining queue of paid calls first. Item 0
+        # is slow so the fast items would have time to churn if all 50 were
+        # queued upfront.
+        executed = []
+
+        def record(x):
+            if x == 0:
+                time.sleep(0.05)
+            executed.append(x)
+            return x
+
+        gen = utils.parallel_map(record, list(range(50)), workers=2)
+        assert next(gen) == 0
+        gen.close()
+        assert len(executed) <= 10
+
 
 class TestJsonl:
     def test_save_load_roundtrip_preserves_records(self, tmp_path):

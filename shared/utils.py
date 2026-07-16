@@ -7,7 +7,9 @@ import re
 import shutil
 import subprocess
 import sys
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from itertools import islice
 from pathlib import Path
 from datetime import datetime, UTC
 
@@ -22,12 +24,29 @@ def parallel_map(fn, items: list, workers: int):
     writes and checkpoint marks on their own thread. If a call ultimately fails,
     the exception surfaces here; items already yielded are safely checkpointed
     and --resume picks up the rest.
+
+    At most workers * 2 items are in flight at a time — every item is a paid
+    API call, so when one fails (or the consumer stops early), items beyond
+    the window must never start: their results would be discarded before the
+    caller could checkpoint them and paid again on --resume. Submitting the
+    whole list upfront (executor.map) let the pool churn through the entire
+    queue while a failing item sat in retry sleeps.
     """
     if workers <= 1 or len(items) <= 1:
         yield from map(fn, items)
         return
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        yield from pool.map(fn, items)
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        it = iter(items)
+        in_flight = deque(pool.submit(fn, item) for item in islice(it, workers * 2))
+        for item in it:
+            result = in_flight.popleft().result()
+            in_flight.append(pool.submit(fn, item))
+            yield result
+        while in_flight:
+            yield in_flight.popleft().result()
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
 
 
 def ensure_dir(path: str | Path) -> Path:
