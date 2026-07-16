@@ -4,3 +4,6 @@
 # stats, so both human and automated review focus on the code paths.
 outputs/*/runs/** linguist-generated=true
 outputs/cost_log.jsonl linguist-generated=true
+
+# append-only per-run logs: never a real conflict, always take both sides
+outputs/**/cost_log.jsonl merge=union
