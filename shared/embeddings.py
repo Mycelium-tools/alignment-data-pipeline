@@ -15,6 +15,7 @@ the Anthropic-driven pipelines never import this module.
 
 import os
 import json
+import functools
 import threading
 import sys
 from pathlib import Path
@@ -36,12 +37,27 @@ load_dotenv()
 DEFAULT_MODEL = "text-embedding-3-small"
 
 # The embeddings endpoint caps each request at 2048 inputs and ~300k total
-# tokens. A batch closes at MAX_BATCH items or MAX_BATCH_CHARS characters,
-# whichever comes first: item count alone can bust the token cap (128 full
-# SDF documents at ~4k tokens each is ~512k tokens). Chars bound tokens at
-# worst ~1 token/char (CJK), so 250k chars stays under the cap for any script.
+# tokens, and each individual input at MAX_INPUT_TOKENS tokens. A batch closes
+# at MAX_BATCH items or MAX_BATCH_CHARS characters, whichever comes first: item
+# count alone can bust the token cap (128 full SDF documents at ~4k tokens each
+# is ~512k tokens). Chars bound tokens, but NOT at 1 token/char — CJK runs
+# ~1.25-1.5 tokens/char in cl100k, so 180k chars (worst case ~270k tokens)
+# stays under the ~300k request cap for any script.
 MAX_BATCH = 128
-MAX_BATCH_CHARS = 250_000
+MAX_BATCH_CHARS = 180_000
+
+# text-embedding-3 rejects any single input over this many tokens, 400-ing the
+# WHOLE request. embed_texts truncates to it as a safety net (see below).
+MAX_INPUT_TOKENS = 8192
+
+# tiktoken downloads its BPE ranks from a remote blob store on first use and
+# caches them under TIKTOKEN_CACHE_DIR; the wheel ships no ranks. The offline
+# test suite (pytest-socket --disable-socket) and a fresh CI runner have no
+# warmed cache, so that first fetch would fail the required smoke check. We ship
+# the cl100k_base ranks (the encoding every text-embedding-3 model uses) under
+# vendor/tiktoken, keyed by tiktoken's own cache name, and point tiktoken there
+# unless the caller already set the dir.
+_VENDORED_TIKTOKEN_CACHE = Path(__file__).resolve().parent.parent / "vendor" / "tiktoken"
 
 _config: dict = {}
 _client: openai.OpenAI | None = None
@@ -116,6 +132,35 @@ def _embed_with_retry(client: openai.OpenAI, model: str, batch: list[str]):
     return client.embeddings.create(model=model, input=batch)
 
 
+@functools.lru_cache(maxsize=8)
+def _encoding_for(model: str):
+    """tiktoken encoding for a model; falls back to cl100k_base (what the
+    text-embedding-3 models use). Imported lazily so the module loads without
+    tiktoken for callers that never truncate."""
+    os.environ.setdefault("TIKTOKEN_CACHE_DIR", str(_VENDORED_TIKTOKEN_CACHE))
+    import tiktoken
+
+    try:
+        return tiktoken.encoding_for_model(model)
+    except KeyError:
+        return tiktoken.get_encoding("cl100k_base")
+
+
+def truncate_to_tokens(text: str, max_tokens: int = MAX_INPUT_TOKENS,
+                       model: str = DEFAULT_MODEL) -> str:
+    """Truncate text to at most max_tokens tokens under the model's encoding.
+
+    Character-based truncation cannot bound tokens across scripts: CJK runs well
+    over one token per character (~1.25-1.5 in cl100k), so a char cap that is
+    safe for English still exceeds the model's input window and 400s the whole
+    embedding request. Returns text unchanged when already within the cap."""
+    enc = _encoding_for(model)
+    tokens = enc.encode(text)
+    if len(tokens) <= max_tokens:
+        return text
+    return enc.decode(tokens[:max_tokens])
+
+
 def _batches(texts: list[str]):
     """Split texts into API batches: at most MAX_BATCH items and (except for a
     single oversized text, which still goes alone) MAX_BATCH_CHARS chars each."""
@@ -139,9 +184,12 @@ def embed_texts(texts: list[str], model: str = DEFAULT_MODEL) -> np.ndarray:
     should chunk their own input and call this per chunk.
 
     Raises ValueError on empty/whitespace-only texts — the API rejects them
-    mid-batch, so the caller must filter (and report) empties first. Texts
-    longer than the model's token window (8192 tokens for 3-small) also fail
-    the whole request: truncate before calling.
+    mid-batch, so the caller must filter (and report) empties first.
+
+    Inputs over the model's token window (MAX_INPUT_TOKENS) are truncated to it
+    as a safety net: an over-window input 400s the whole batch, and callers that
+    pre-truncate by characters cannot bound tokens for CJK/other dense scripts.
+    Callers that care about how much was cut should truncate (and report) first.
     """
     for i, t in enumerate(texts):
         if not t or not t.strip():
@@ -151,6 +199,8 @@ def embed_texts(texts: list[str], model: str = DEFAULT_MODEL) -> np.ndarray:
             )
     if not texts:
         return np.zeros((0, 0), dtype=np.float32)
+
+    texts = [truncate_to_tokens(t, MAX_INPUT_TOKENS, model) for t in texts]
 
     client = _get_client()
     rows: list[list[float]] = []

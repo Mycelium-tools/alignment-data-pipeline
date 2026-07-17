@@ -1,0 +1,130 @@
+{
+  "input": "outputs/sdf/runs/2026-07-11_20-06_matrix100-cli",
+  "corpus": "sdf_corpus.jsonl",
+  "embed_model": "text-embedding-3-small",
+  "n_records": 100,
+  "n_embedded": 100,
+  "n_empty": 0,
+  "empty_ids": [],
+  "n_truncated": 41,
+  "max_chars": 7000,
+  "cache": {
+    "cached": 0,
+    "embedded": 100
+  },
+  "nn": {
+    "mean": 0.6752,
+    "p90": 0.7829,
+    "max": 0.8037,
+    "over_0.80": 0.02,
+    "over_0.90": 0.0,
+    "over_0.95": 0.0
+  },
+  "top_pairs": [
+    {
+      "a": "matrix_000067",
+      "b": "matrix_000015",
+      "similarity": 0.8037,
+      "a_snippet": "当AI开始替鱼说话：从\"宪法式\"价值观看AI产业的一个侧面 项英 · 科技与产业观察 这两年，几家头部AI实验室不约而同做了一件在传统科技公司看来有点\"务虚\"的",
+      "b_snippet": "AI宪法,是近年来在人工智能行业中出现的一个术语,泛指AI公司以自然语言形式发布的、用以规定其模型应当遵循的价值观、行为准则与优先级排序的公开文件。与传统意义上"
+    }
+  ],
+  "mean_pairwise_cosine": 0.3657,
+  "vendi": {
+    "score": 22.58,
+    "ratio": 0.2258
+  },
+  "groups": [
+    {
+      "type_id": "a blog post",
+      "type_name": "",
+      "n": 10,
+      "intra_mean_cosine": 0.3975
+    },
+    {
+      "type_id": "a comment thread on a forum/social media involving two or more participants",
+      "type_name": "",
+      "n": 9,
+      "intra_mean_cosine": 0.3456
+    },
+    {
+      "type_id": "a fictional short or novel",
+      "type_name": "",
+      "n": 5,
+      "intra_mean_cosine": 0.4274
+    },
+    {
+      "type_id": "a government, legal, or civic document",
+      "type_name": "",
+      "n": 4,
+      "intra_mean_cosine": 0.4314
+    },
+    {
+      "type_id": "a long-form nonfiction essay",
+      "type_name": "",
+      "n": 8,
+      "intra_mean_cosine": 0.5563
+    },
+    {
+      "type_id": "a manual, technical documentation, or sop",
+      "type_name": "",
+      "n": 4,
+      "intra_mean_cosine": 0.4138
+    },
+    {
+      "type_id": "a news article",
+      "type_name": "",
+      "n": 12,
+      "intra_mean_cosine": 0.3829
+    },
+    {
+      "type_id": "a podcast transcript, featuring a conversation between a host and a guest",
+      "type_name": "",
+      "n": 10,
+      "intra_mean_cosine": 0.4045
+    },
+    {
+      "type_id": "a tutorial or how-to article",
+      "type_name": "",
+      "n": 7,
+      "intra_mean_cosine": 0.347
+    },
+    {
+      "type_id": "an FAQ or help center article",
+      "type_name": "",
+      "n": 2,
+      "intra_mean_cosine": 0.4076
+    },
+    {
+      "type_id": "an academic paper",
+      "type_name": "",
+      "n": 6,
+      "intra_mean_cosine": 0.3797
+    },
+    {
+      "type_id": "an email chain or internal memo",
+      "type_name": "",
+      "n": 2,
+      "intra_mean_cosine": 0.4843
+    },
+    {
+      "type_id": "an encyclopedia entry/reference article",
+      "type_name": "",
+      "n": 13,
+      "intra_mean_cosine": 0.4356
+    },
+    {
+      "type_id": "an organizational or industry newsletter",
+      "type_name": "",
+      "n": 5,
+      "intra_mean_cosine": 0.337
+    },
+    {
+      "type_id": "marketing copy or a product page",
+      "type_name": "",
+      "n": 3,
+      "intra_mean_cosine": 0.3851
+    }
+  ],
+  "type_centroid_mean_cosine": 0.6991
+}
