@@ -214,18 +214,31 @@ def _call_with_retry(
     # Extended thinking OFF everywhere — training data should show user-facing
     # reasoning, not internal scratchpads (see CLAUDE.md). Models in the Claude 5
     # family emit a thinking block by default, so disable it explicitly rather
-    # than parse around it. NOTE: `thinking={"type": "disabled"}` 400s on
-    # claude-fable-5 (which requires adaptive thinking); that model is therefore
-    # unsupported here, since omitting the flag would violate the no-scratchpads
-    # rule. The pipeline defaults to claude-sonnet-5, which supports disabling.
-    return client.messages.create(
+    # than parse around it. Exception: the Mythos-class models (fable/mythos)
+    # REQUIRE adaptive thinking — the API 400s on `thinking: disabled` — so for
+    # those the flag is omitted, thinking runs, and _response_text strips the
+    # thinking blocks. Their outputs are therefore generated WITH hidden
+    # reasoning: comparison/eval arms only, never corpus generation, unless the
+    # no-scratchpads design decision is deliberately revisited.
+    kwargs = dict(
         model=model,
         max_tokens=max_tokens,
         system=system,
         messages=messages,
         temperature=temperature,
-        thinking={"type": "disabled"},
     )
+    if not _requires_adaptive_thinking(model):
+        kwargs["thinking"] = {"type": "disabled"}
+    return client.messages.create(**kwargs)
+
+
+_ADAPTIVE_THINKING_PREFIXES = ("claude-fable", "claude-mythos")
+
+
+def _requires_adaptive_thinking(model: str) -> bool:
+    """Mythos-class models cannot run with thinking disabled (400); callers
+    omit the flag for them and rely on _response_text to strip the blocks."""
+    return model.startswith(_ADAPTIVE_THINKING_PREFIXES)
 
 
 def _response_text(response: anthropic.types.Message) -> str:

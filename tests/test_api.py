@@ -537,3 +537,42 @@ class TestClaudeCodeDispatch:
                             lambda model, system, user_message: ("cut", 1, 1, None, "max_tokens"))
         api.call_claude("hi")
         assert "max_tokens" in capsys.readouterr().err
+
+
+class TestAdaptiveThinkingModels:
+    class _FakeMessages:
+        def __init__(self):
+            self.kwargs = None
+        def create(self, **kwargs):
+            self.kwargs = kwargs
+            return "response"
+
+    class _FakeClient:
+        def __init__(self):
+            self.messages = TestAdaptiveThinkingModels._FakeMessages()
+
+    def test_thinking_disabled_for_standard_models(self):
+        # the autouse guard replaces _call_with_retry; restore the real one
+        # (same pattern as TestRetryPredicate)
+        import importlib
+        real = importlib.reload(api)._call_with_retry
+        client = self._FakeClient()
+        real(client=client, model="claude-sonnet-5", max_tokens=100,
+             system="s", messages=[], temperature=1.0)
+        assert client.messages.kwargs["thinking"] == {"type": "disabled"}
+
+    def test_thinking_flag_omitted_for_mythos_class(self):
+        # fable/mythos 400 on thinking-disabled; the flag is omitted and
+        # _response_text strips the thinking blocks downstream
+        import importlib
+        real = importlib.reload(api)._call_with_retry
+        client = self._FakeClient()
+        real(client=client, model="claude-fable-5", max_tokens=100,
+             system="s", messages=[], temperature=1.0)
+        assert "thinking" not in client.messages.kwargs
+
+    def test_predicate_covers_the_tier(self):
+        assert api._requires_adaptive_thinking("claude-fable-5")
+        assert api._requires_adaptive_thinking("claude-mythos-5")
+        assert not api._requires_adaptive_thinking("claude-sonnet-5")
+        assert not api._requires_adaptive_thinking("claude-haiku-4-5-20251001")
