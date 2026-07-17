@@ -23,17 +23,17 @@ sdf:
 
 dad:
   # Per-stage model overrides (each falls back to the global `model`).
-  # Step 3 is the alignment-critical rewrite — spend there first;
-  # cheap drafts, expensive critics:
-  prompt_draft_model: claude-haiku-4-5          # 1b: batch-draft user prompts
-  prompt_refine_model: claude-sonnet-5          # 1c: load-bearing rewrite
-  response_scope_model: claude-sonnet-5         # 2a: scope map — feeds every downstream step-2 call; worth the stronger read
-  response_select_model: claude-sonnet-5        # 2a.5: library-entry selection over the trigger index (falls back to response_scope_model if unset)
-  response_draft_model: claude-sonnet-5         # 2b: response over scope + library
-  constitution_rewrite_model: claude-sonnet-5   # step 3: constitution rewrite
+  # DAD runs on Opus 4.8 across the board (Sonnet stays the global/SDF default);
+  # Opus answers every welfare prompt where Fable's dual-use layer refuses ~30%.
+  prompt_draft_model: claude-opus-4-8           # 1b: batch-draft user prompts
+  prompt_refine_model: claude-opus-4-8          # 1c: load-bearing rewrite
+  response_scope_model: claude-opus-4-8         # 2a: scope map — feeds every downstream step-2 call
+  response_select_model: claude-opus-4-8        # 2a.5: library-entry selection over the trigger index (falls back to response_scope_model if unset)
+  response_draft_model: claude-opus-4-8         # 2b: response over scope + library
+  constitution_rewrite_model: claude-opus-4-8   # step 3: constitution rewrite (alignment-critical)
   baseline:
     enabled: true            # unguided control response per dilemma (viewer comparison only; never trains)
-    model: claude-sonnet-5   # plain call — no system prompt, the finished 1c user prompt verbatim
+    model: claude-opus-4-8   # plain call — no system prompt, the finished 1c user prompt verbatim
   dilemmas:
     count: 40         # total examples in step 1 (seed imports count toward this)
     batch_size: 10    # scenarios drafted per generation call
