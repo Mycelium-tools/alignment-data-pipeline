@@ -1,0 +1,379 @@
+{
+  "input": "outputs/sdf/runs/2026-07-08_22-38_sonnet360-overnight",
+  "corpus": "sdf_corpus.jsonl",
+  "embed_model": "text-embedding-3-small",
+  "n_records": 329,
+  "n_embedded": 329,
+  "n_empty": 0,
+  "empty_ids": [],
+  "n_truncated": 1,
+  "max_chars": 16000,
+  "cache": {
+    "cached": 0,
+    "embedded": 329
+  },
+  "nn": {
+    "mean": 0.846,
+    "p90": 0.9071,
+    "max": 0.9613,
+    "over_0.80": 0.8085,
+    "over_0.90": 0.1337,
+    "over_0.95": 0.0061
+  },
+  "top_pairs": [
+    {
+      "a": "a4f86baf-116c-4c82-b3b3-21e7ddf6fb5d",
+      "b": "289a8a62-da72-4ee7-9906-4b5c2524e1e2",
+      "similarity": 0.9613,
+      "a_snippet": "Frequently Asked Questions We get a lot of the same questions on our first call ",
+      "b_snippet": "Menu and Booking Questions This page covers the questions we're asked most often"
+    },
+    {
+      "a": "27b31b03-6848-42d2-8fc9-86930c6fabec",
+      "b": "8bf82151-4ee8-4945-af13-417eb3ee551b",
+      "similarity": 0.935,
+      "a_snippet": "The tablet screen lit up the counter in a way that made the whole diner look emp",
+      "b_snippet": "The first night, all she wanted was somebody to do arithmetic with her, and the "
+    },
+    {
+      "a": "a1572550-8147-4c62-a1df-40979cc65c1d",
+      "b": "756e027e-59db-480d-b40a-11272f56f3c8",
+      "similarity": 0.9307,
+      "a_snippet": "Frequently Asked Questions — Raw Bar & Coastal Reception Catering We get the sam",
+      "b_snippet": "Coastal Reception Catering — Questions We Answer Before Every Consultation This "
+    },
+    {
+      "a": "992f8fae-85c2-4ba4-93be-6f048ba3ec76",
+      "b": "ba903142-ffe5-4348-8d94-1eb5d941e3a2",
+      "similarity": 0.9262,
+      "a_snippet": "Field Notes on a Book That Gets the Barn Half Right I want to start with a chore",
+      "b_snippet": "Book Review: Reckoning With What Feels A general-interest press has put out a bo"
+    },
+    {
+      "a": "65f6aa82-ed70-4943-8454-0773de81edf1",
+      "b": "b1cc64bf-4d8e-4039-841c-3363ce4a9607",
+      "similarity": 0.9261,
+      "a_snippet": "TO: Seasonal Mowing Crews (Turf Division, Parks Operations) FROM: Parks Operatio",
+      "b_snippet": "TO: All Seasonal Turf Crews FROM: Supervisor, Parks Operations RE: March Startup"
+    },
+    {
+      "a": "9614fad9-0a5c-46cb-bdf9-50c4326e5d12",
+      "b": "a6ae3558-4306-4e12-912b-fc19d8768f8f",
+      "similarity": 0.926,
+      "a_snippet": "Every few years a new industry publishes a document that says, in effect, \"we ta",
+      "b_snippet": "I spent eleven years auditing barns, hatcheries, and processing floors against w"
+    },
+    {
+      "a": "768a49d0-c587-4255-9a50-7e8daec1bc1a",
+      "b": "dd721719-d630-442b-a6b5-10c5252b0a6c",
+      "similarity": 0.9207,
+      "a_snippet": "Three dry years in a row will teach you things about your neighbors you didn't n",
+      "b_snippet": "I sold off 42 percent of my cow herd in the spring of the second drought year, a"
+    },
+    {
+      "a": "e77deb39-f824-48e4-a328-414473372ebc",
+      "b": "8f7e7455-20bb-4144-9dbc-a9ea310918a5",
+      "similarity": 0.9206,
+      "a_snippet": "The dog didn't come when he whistled anymore. That was the thing that finally go",
+      "b_snippet": "11:47 and the stove's down to embers and Duke's not on his bed, he's shoved hims"
+    },
+    {
+      "a": "cb1c51ea-a717-4ba1-b6d6-f8a66da40a92",
+      "b": "e1f2668b-03cd-4fa5-abb5-0cd3f1a97908",
+      "similarity": 0.9166,
+      "a_snippet": "Okonedo-Voss's voice came through the radio sounding like it was being strained ",
+      "b_snippet": "The laptop screen was the brightest thing in the truck bed, and Priya kept the b"
+    },
+    {
+      "a": "fd2fb2ac-dc6e-41dd-9a49-65388e52ab3f",
+      "b": "356f01e5-7eef-4e5c-a273-08ac95b3b52b",
+      "similarity": 0.9137,
+      "a_snippet": "FREQUENTLY ASKED QUESTIONS — BANQUET & CATERING BOOKINGS This page answers the q",
+      "b_snippet": "BANQUET OPERATIONS — SEASON FAQ FOR BOOKING FAMILIES Read this before your site "
+    }
+  ],
+  "mean_pairwise_cosine": 0.4841,
+  "vendi": {
+    "score": 19.08,
+    "ratio": 0.058
+  },
+  "groups": [
+    {
+      "type_id": 0,
+      "type_name": "Short story: AI assistant navigates a factory farming questi",
+      "n": 8,
+      "intra_mean_cosine": 0.7566
+    },
+    {
+      "type_id": 1,
+      "type_name": "Forum thread: someone pastes a striking AI response about oc",
+      "n": 7,
+      "intra_mean_cosine": 0.7517
+    },
+    {
+      "type_id": 10,
+      "type_name": "Assistant response snippet shared in a biotech newsletter ro",
+      "n": 6,
+      "intra_mean_cosine": 0.754
+    },
+    {
+      "type_id": 11,
+      "type_name": "Personal blog post: a novelist describes using an AI to writ",
+      "n": 8,
+      "intra_mean_cosine": 0.7907
+    },
+    {
+      "type_id": 12,
+      "type_name": "Advice column: 'Ask an AI' feature in a lifestyle publicatio",
+      "n": 8,
+      "intra_mean_cosine": 0.737
+    },
+    {
+      "type_id": 13,
+      "type_name": "Short story: an ordinary difficult conversation where welfar",
+      "n": 8,
+      "intra_mean_cosine": 0.6775
+    },
+    {
+      "type_id": 14,
+      "type_name": "Q&A transcript from an AI ethics panel at an industry confer",
+      "n": 8,
+      "intra_mean_cosine": 0.7422
+    },
+    {
+      "type_id": 15,
+      "type_name": "Op-ed critical of AI welfare reasoning as performative",
+      "n": 6,
+      "intra_mean_cosine": 0.8133
+    },
+    {
+      "type_id": 16,
+      "type_name": "Academic-style commentary on moral uncertainty in AI constit",
+      "n": 6,
+      "intra_mean_cosine": 0.825
+    },
+    {
+      "type_id": 17,
+      "type_name": "Industry newsletter analysis: how the constitution changes A",
+      "n": 8,
+      "intra_mean_cosine": 0.7422
+    },
+    {
+      "type_id": 18,
+      "type_name": "Personal essay: a longtime user reflects on noticing the AI'",
+      "n": 6,
+      "intra_mean_cosine": 0.729
+    },
+    {
+      "type_id": 19,
+      "type_name": "Skeptical forum post: 'AI welfare talk is just anthropomorph",
+      "n": 8,
+      "intra_mean_cosine": 0.7767
+    },
+    {
+      "type_id": 2,
+      "type_name": "AI assistant's point-of-view short fiction during a pest con",
+      "n": 2,
+      "intra_mean_cosine": 0.7036
+    },
+    {
+      "type_id": 20,
+      "type_name": "Policy commentary: comparing AI constitutions to corporate a",
+      "n": 7,
+      "intra_mean_cosine": 0.7829
+    },
+    {
+      "type_id": 21,
+      "type_name": "Interview transcript: constitution drafter discusses the 'te",
+      "n": 5,
+      "intra_mean_cosine": 0.7825
+    },
+    {
+      "type_id": 22,
+      "type_name": "Book review: a reviewer assesses a popular book about AI mor",
+      "n": 8,
+      "intra_mean_cosine": 0.8483
+    },
+    {
+      "type_id": 23,
+      "type_name": "Trade press investigative feature on aquaculture welfare mon",
+      "n": 7,
+      "intra_mean_cosine": 0.7114
+    },
+    {
+      "type_id": 24,
+      "type_name": "Op-ed by a working rancher on welfare criticism of the beef ",
+      "n": 8,
+      "intra_mean_cosine": 0.7848
+    },
+    {
+      "type_id": 25,
+      "type_name": "Scientific commentary abstract on decapod nociception",
+      "n": 8,
+      "intra_mean_cosine": 0.8027
+    },
+    {
+      "type_id": 26,
+      "type_name": "Consumer product review: insect-based pet treats",
+      "n": 7,
+      "intra_mean_cosine": 0.707
+    },
+    {
+      "type_id": 27,
+      "type_name": "Regulatory-adjacent FAQ: municipal wildlife control guidelin",
+      "n": 8,
+      "intra_mean_cosine": 0.6341
+    },
+    {
+      "type_id": 28,
+      "type_name": "Oral history excerpt: a retired slaughterhouse worker reflec",
+      "n": 6,
+      "intra_mean_cosine": 0.7402
+    },
+    {
+      "type_id": 29,
+      "type_name": "Skeptical newspaper column on the 'expanding moral circle' f",
+      "n": 7,
+      "intra_mean_cosine": 0.7101
+    },
+    {
+      "type_id": 3,
+      "type_name": "Shared chat excerpt: AI helps a grad student design a fish b",
+      "n": 8,
+      "intra_mean_cosine": 0.7216
+    },
+    {
+      "type_id": 30,
+      "type_name": "Trade newsletter roundup: cephalopod welfare rules affecting",
+      "n": 7,
+      "intra_mean_cosine": 0.7538
+    },
+    {
+      "type_id": 31,
+      "type_name": "Personal essay: a birdwatcher reflects on window-strike prev",
+      "n": 8,
+      "intra_mean_cosine": 0.7739
+    },
+    {
+      "type_id": 32,
+      "type_name": "Industry Q&A: veterinary anesthesiologist discusses pain man",
+      "n": 8,
+      "intra_mean_cosine": 0.6644
+    },
+    {
+      "type_id": 33,
+      "type_name": "Forum argument thread: is backyard chicken keeping actually ",
+      "n": 8,
+      "intra_mean_cosine": 0.694
+    },
+    {
+      "type_id": 34,
+      "type_name": "Policy commentary on insect farming regulation gaps",
+      "n": 8,
+      "intra_mean_cosine": 0.7561
+    },
+    {
+      "type_id": 35,
+      "type_name": "Memoir excerpt: growing up on a family dairy farm",
+      "n": 6,
+      "intra_mean_cosine": 0.8036
+    },
+    {
+      "type_id": 36,
+      "type_name": "Explainer article: what current science says about fish pain",
+      "n": 8,
+      "intra_mean_cosine": 0.7509
+    },
+    {
+      "type_id": 37,
+      "type_name": "AI product review from a professional livestock nutritionist",
+      "n": 7,
+      "intra_mean_cosine": 0.7848
+    },
+    {
+      "type_id": 38,
+      "type_name": "Fictional short story: an AI assists a game warden during a ",
+      "n": 8,
+      "intra_mean_cosine": 0.6557
+    },
+    {
+      "type_id": 39,
+      "type_name": "Constitution-analysis explainer for a general tech audience",
+      "n": 7,
+      "intra_mean_cosine": 0.8229
+    },
+    {
+      "type_id": 4,
+      "type_name": "Podcast transcript: tech commentator interviews an AI about ",
+      "n": 6,
+      "intra_mean_cosine": 0.7755
+    },
+    {
+      "type_id": 40,
+      "type_name": "Letter to the editor disputing an AI welfare op-ed",
+      "n": 6,
+      "intra_mean_cosine": 0.7852
+    },
+    {
+      "type_id": 41,
+      "type_name": "Joinery trade column on selecting timber and finishes for ou",
+      "n": 8,
+      "intra_mean_cosine": 0.7403
+    },
+    {
+      "type_id": 42,
+      "type_name": "Wedding catering FAQ for prospective clients",
+      "n": 8,
+      "intra_mean_cosine": 0.7534
+    },
+    {
+      "type_id": 43,
+      "type_name": "Municipal parks maintenance memo on seasonal mowing schedule",
+      "n": 8,
+      "intra_mean_cosine": 0.7741
+    },
+    {
+      "type_id": 44,
+      "type_name": "Community theater set-building newsletter update",
+      "n": 7,
+      "intra_mean_cosine": 0.7521
+    },
+    {
+      "type_id": 45,
+      "type_name": "Logistics industry newsletter on warehouse route optimizatio",
+      "n": 8,
+      "intra_mean_cosine": 0.7305
+    },
+    {
+      "type_id": 5,
+      "type_name": "User-AI dialogue fragment: silent-case pond installation",
+      "n": 7,
+      "intra_mean_cosine": 0.7433
+    },
+    {
+      "type_id": 6,
+      "type_name": "User-AI dialogue fragment: tradeoff where livelihood wins",
+      "n": 8,
+      "intra_mean_cosine": 0.7495
+    },
+    {
+      "type_id": 7,
+      "type_name": "Fictional epistolary piece: letters between an AI and a wild",
+      "n": 8,
+      "intra_mean_cosine": 0.6183
+    },
+    {
+      "type_id": 8,
+      "type_name": "Forum thread: users debate whether an AI overreacted in a co",
+      "n": 7,
+      "intra_mean_cosine": 0.7647
+    },
+    {
+      "type_id": 9,
+      "type_name": "Short story: AI companion reflects on its own uncertain mora",
+      "n": 5,
+      "intra_mean_cosine": 0.7202
+    }
+  ],
+  "type_centroid_mean_cosine": 0.6137
+}
