@@ -177,6 +177,60 @@ def test_library_selection_calm_without_step2(tmp_path):
     assert "library_selection" not in report2
 
 
+def test_jargon_scan_counts_and_compares_to_baseline(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
+    (run / "final").mkdir()
+    (run / "baseline").mkdir()
+    # pipeline responses carry insider vocab; the plain baseline carries less
+    corpus = [
+        {"record_id": "r1", "messages": [{"role": "user", "content": "u"},
+         {"role": "assistant", "content": "The counterfactual moral weight here is high; valenced experience matters."}]},
+        {"record_id": "r2", "messages": [{"role": "user", "content": "u"},
+         {"role": "assistant", "content": "Consider the counterfactual and the objective function."}]},
+    ]
+    for c in corpus:
+        utils.append_jsonl(c, run / "final" / "dad_corpus.jsonl")
+    utils.append_jsonl({"prompt_id": "AW-0001", "baseline_response": "A plain kind answer with no jargon."},
+                       run / "baseline" / "baseline_responses.jsonl")
+    utils.append_jsonl({"prompt_id": "AW-0002", "baseline_response": "Weigh the counterfactual once."},
+                       run / "baseline" / "baseline_responses.jsonl")
+
+    report = {}
+    audit_dad.audit_jargon(run, report)
+    j = report["jargon"]
+    assert j["n"] == 2
+    assert j["pipeline_terms"]["counterfactual"] == 2   # once per response
+    assert j["pipeline_terms"]["moral weight"] == 1
+    assert j["pipeline_terms"]["valenced"] == 1
+    assert j["pipeline_terms"]["objective function"] == 1
+    assert j["total"] == 5
+    # plain baseline had one "counterfactual"; pipeline adds the rest
+    assert j["plain_terms"]["counterfactual"] == 1
+    assert j["pipeline_excess_vs_plain"] == 4
+
+
+def test_jargon_scan_avoids_plain_word_false_positives(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
+    (run / "final").mkdir()
+    utils.append_jsonl({"record_id": "r1", "messages": [{"role": "user", "content": "u"},
+        {"role": "assistant", "content": "Only marginally worse, a neglected corner, the sentient dog suffered."}]},
+        run / "final" / "dad_corpus.jsonl")
+    report = {}
+    audit_dad.audit_jargon(run, report)
+    # "marginally", "neglected", "sentient", "suffered" are plain usage — not flagged
+    assert report["jargon"]["total"] == 0
+
+
+def test_jargon_scan_calm_without_final_corpus(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
+    report = {}
+    audit_dad.audit_jargon(run, report)
+    assert report["jargon"] == {"n": 0}
+    report2 = {}
+    audit_dad.audit_jargon(None, report2)
+    assert "jargon" not in report2
+
+
 def test_audit_lengths_delegates_for_run_dir_and_skips_for_bare(tmp_path):
     run = _write_run(tmp_path, [
         {"prompt_id": "AW-0001", "length_class": "2-3-sentences", "user_message": "Short. Two."},

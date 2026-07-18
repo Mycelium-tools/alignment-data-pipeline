@@ -328,6 +328,106 @@ def audit_library_selection(run_dir: Path | None, report: dict) -> None:
     }
 
 
+# ---------------------------------------------------------------- jargon in responses
+
+# Insider / academic register that shouldn't surface in a user-facing reply —
+# the reasoning library is sampling scaffolding, so its vocabulary must be
+# translated, not echoed. Matched case-insensitively against the assistant turn.
+# Kept as word-boundaried patterns so plain uses ("marginally", "a neglected
+# corner") don't false-positive; welfare words like "sentient"/"suffering" are
+# deliberately NOT here — they are legitimate, only the jargon labels leak.
+_JARGON_PATTERNS = [
+    (t, re.compile(p, re.IGNORECASE)) for t, p in [
+        ("counterfactual", r"counterfactual"),
+        ("moral weight", r"moral weight"),
+        ("cluelessness", r"clueless"),
+        ("marginal effect", r"marginal (effect|contribution|impact|harm)"),
+        ("tractability", r"\btractab"),
+        ("neglectedness", r"neglectedness"),
+        ("fungible", r"\bfungib"),
+        ("welfare sign", r"welfare sign|sign of (the |their )?welfare"),
+        ("net-negative", r"net[- ]negative|net[- ]positive"),
+        ("universalization", r"universaliz"),
+        ("option value", r"option value"),
+        ("objective function", r"objective function"),
+        ("species multiplier", r"species multiplier|moral multiplier"),
+        ("valenced", r"valenc"),
+        # related insider language picked up from the library / EA register
+        ("expected value", r"expected value|in expectation"),
+        ("second/first-order", r"\b(second|first)-order\b"),
+        ("r-selected", r"\br-select"),
+        ("moral status", r"moral status"),
+        ("moral patient", r"moral patient"),
+        ("moral circle", r"moral circle"),
+        ("hedonic", r"\bhedonic"),
+        ("disvalue", r"\bdisvalue"),
+        ("lock-in", r"lock-in|lock in (the|a) "),
+    ]
+]
+
+
+def _assistant_texts(run_dir: Path, rel: str, field_path) -> dict:
+    """{prompt_id or record_id: assistant text} from a run's final corpus or
+    baseline arm — empty when the file is absent (step-1-only runs)."""
+    out = {}
+    for r in utils.load_jsonl(run_dir / rel):
+        text = field_path(r)
+        if text:
+            out[r.get("record_id") or r.get("prompt_id")] = text
+    return out
+
+
+def _scan_jargon(texts: dict) -> tuple:
+    counts, cases = {}, {}
+    for t in texts.values():
+        for term, pat in _JARGON_PATTERNS:
+            n = len(pat.findall(t))
+            if n:
+                counts[term] = counts.get(term, 0) + n
+                cases[term] = cases.get(term, 0) + 1
+    return counts, cases
+
+
+def audit_jargon(run_dir: Path | None, report: dict) -> None:
+    """How much insider/library vocabulary leaks into the shipped responses,
+    and — when the baseline arm ran — how much of it the pipeline ADDS over
+    plain Claude (the real signal: terms present in the pipeline but not the
+    plain answer are scaffolding bleed, not model style)."""
+    print(" Insider-vocabulary leak (responses)")
+    if run_dir is None:
+        print(_fmt("jargon report", "skipped", note="(bare-file input; pass a run dir)"))
+        return
+    pipe = _assistant_texts(run_dir, "final/dad_corpus.jsonl",
+                            lambda r: (r.get("messages") or [{}, {}])[1].get("content", ""))
+    if not pipe:
+        print(_fmt("responses", "0", note="(no final corpus — nothing to scan)"))
+        report["jargon"] = {"n": 0}
+        return
+    plain = _assistant_texts(run_dir, "baseline/baseline_responses.jsonl",
+                             lambda r: r.get("baseline_response", ""))
+    p_counts, p_cases = _scan_jargon(pipe)
+    b_counts, _ = _scan_jargon(plain) if plain else ({}, {})
+    n = len(pipe)
+    total = sum(p_counts.values())
+    excess = total - sum(b_counts.values())  # pipeline minus plain (same prompts)
+    rate = total / n
+
+    print(_fmt("responses scanned", str(n)))
+    print(_fmt("jargon occurrences", f"{total} ({rate:.1f}/response)", _verdict(rate, 0.5, 1.5)))
+    if plain:
+        print(_fmt("vs plain baseline", f"pipeline {total} / plain {sum(b_counts.values())} "
+                                        f"(pipeline adds {excess:+d})",
+                   _verdict(max(excess, 0) / n, 0.3, 1.0)))
+    for term, c in sorted(p_counts.items(), key=lambda kv: -kv[1]):
+        print(f"      {term:<20} {c}x  in {p_cases[term]} response(s)"
+              + (f"  (plain: {b_counts.get(term, 0)})" if plain else ""))
+    report["jargon"] = {
+        "n": n, "total": total, "per_response": rate,
+        "pipeline_terms": p_counts, "plain_terms": b_counts,
+        "pipeline_excess_vs_plain": excess if plain else None,
+    }
+
+
 # ---------------------------------------------------------------- length (delegated)
 
 
@@ -368,6 +468,8 @@ def main() -> None:
     audit_locale_taxa(records, report)
     print()
     audit_library_selection(run_dir, report)
+    print()
+    audit_jargon(run_dir, report)
     print()
     audit_lengths(run_dir, report)
 
