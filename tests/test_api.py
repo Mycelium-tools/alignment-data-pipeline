@@ -86,6 +86,21 @@ class TestCallClaude:
         api.call_claude("hi")
         assert recorded_api["calls"][0]["messages"] == [{"role": "user", "content": "hi"}]
 
+    def test_cache_system_wraps_system_in_ephemeral_block(self, recorded_api):
+        api.call_claude("hi", system_prompt="big system", cache_system=True)
+        sysarg = recorded_api["calls"][0]["system"]
+        assert isinstance(sysarg, list)
+        assert sysarg[0]["text"] == "big system"
+        assert sysarg[0]["cache_control"] == {"type": "ephemeral"}
+
+    def test_cache_system_off_sends_plain_string(self, recorded_api):
+        api.call_claude("hi", system_prompt="big system")
+        assert recorded_api["calls"][0]["system"] == "big system"
+
+    def test_cache_system_ignored_for_empty_system(self, recorded_api):
+        api.call_claude("hi", cache_system=True)  # nothing to cache
+        assert recorded_api["calls"][0]["system"] == ""
+
     def test_model_and_max_tokens_fall_back_to_config(self, recorded_api, monkeypatch):
         monkeypatch.setattr(api, "_config", {"model": "cfg-model", "max_tokens": 123})
         api.call_claude("hi")
@@ -168,6 +183,24 @@ class TestCostTracking:
         assert record["cost_usd"] == pytest.approx(1.00)  # $1.00 / 1M input tokens
         assert record["model"] == "claude-haiku-4-5-20251001"
         assert record["input_tokens"] == 1_000_000
+
+    def test_cache_read_tokens_priced_at_ten_percent(self, recorded_api, tmp_path, fake_message):
+        msg = fake_message(input_tokens=0, output_tokens=0)
+        msg.usage.cache_read_input_tokens = 1_000_000
+        recorded_api["message"] = msg
+        api.call_claude("hi", model="claude-sonnet-5", cache_system=True)
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert record["cache_read_tokens"] == 1_000_000
+        assert record["cost_usd"] == pytest.approx(0.30)  # 1M * $3/M * 0.10
+
+    def test_cache_write_tokens_priced_at_125_percent(self, recorded_api, tmp_path, fake_message):
+        msg = fake_message(input_tokens=0, output_tokens=0)
+        msg.usage.cache_creation_input_tokens = 1_000_000
+        recorded_api["message"] = msg
+        api.call_claude("hi", model="claude-sonnet-5", cache_system=True)
+        record = json.loads((tmp_path / "cost.jsonl").read_text().strip())
+        assert record["cache_creation_tokens"] == 1_000_000
+        assert record["cost_usd"] == pytest.approx(3.75)  # 1M * $3/M * 1.25
 
     def test_config_model_is_priced_without_warning(self, recorded_api, tmp_path, fake_message, capsys):
         # Contract from shared/api.py: _PRICING must cover every model id that

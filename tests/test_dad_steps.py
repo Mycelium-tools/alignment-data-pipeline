@@ -85,6 +85,17 @@ class TestGenerateScenarios:
                    for seed in range(12)
                    for p in step1_dilemmas.generate_scenarios(5, random.Random(seed)))
 
+    def test_at_least_one_guarantee_holds_at_small_n_every_seed(self):
+        # _share_deck reserves at_least_one items out of the trimmed pool, so
+        # the guarantee is CERTAIN, not probabilistic — including the overfill
+        # sizes where the pre-fix shuffle-then-truncate dropped it ~25-33% of
+        # the time (n=3 Systemic leverage, n=2 Hidden visibility).
+        for seed in range(60):
+            for n in (2, 3, 4, 5):
+                batch = step1_dilemmas.generate_scenarios(n, random.Random(seed))
+                assert any(p["leverage"] == "Systemic" for p in batch), (n, seed, "Systemic")
+                assert any(p["visibility"] == "Hidden" for p in batch), (n, seed, "Hidden")
+
     def test_cultural_setting_on_a_minority_slice_without_repeats(self):
         batch = step1_dilemmas.generate_scenarios(40, random.Random(1))
         dealt = [p["cultural_setting"] for p in batch if p["cultural_setting"]]
@@ -247,14 +258,14 @@ class TestStep1Run:
     def test_length_violating_draft_is_retried_not_checkpointed(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
-        # seed 1 deals a single scenario whose length class has a nonzero lower
+        # seed 0 deals a single scenario whose length class has a nonzero lower
         # band (precondition asserted below), so an egregiously short draft must
         # be rejected and re-drawn — and the reject is a retry, not a strike.
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
                                       "count": 1, "batch_size": 1,
-                                      "scenario_seed": 1, "refine": False}}
-        scen = step1_dilemmas.generate_scenarios(1, random.Random(1))[0]
+                                      "scenario_seed": 0, "refine": False}}
+        scen = step1_dilemmas.generate_scenarios(1, random.Random(0))[0]
         lo, _hi = step1_dilemmas._LENGTH_BANDS[scen["length_class"]]
         assert lo > 0, "precondition: pick a seed whose class has a lower band"
         batch_calls = {"n": 0}

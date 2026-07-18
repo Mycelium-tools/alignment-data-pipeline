@@ -440,19 +440,36 @@ def _deck(n: int, items, rng: random.Random, guaranteed=()) -> list:
 def _share_deck(n: int, shares: list[tuple[str, float]], rng: random.Random,
                 at_least_one=()) -> list:
     """An n-item deck matching the given (item, share) proportions. Rounding or
-    at_least_one can overfill the deck at small n; the shuffle runs before the
-    truncation so the overflow drops a random card — truncating first would
-    always sacrifice whichever share happens to be listed last."""
-    deck = []
+    at_least_one can overfill the deck at small n.
+
+    Guaranteed items (at_least_one) are reserved OUT of the pool before the
+    overflow is trimmed, then spliced back — so the guarantee holds at any n and
+    regardless of share-list order (mirrors how _deck handles `guaranteed`). The
+    remainder is shuffled before truncation so the overflow drops a random card
+    rather than whichever share is listed last, and a final shuffle randomizes
+    where the reserved cards land."""
+    # One reserved copy per guaranteed item. When guarantees outnumber the
+    # slots, reserve a RANDOM subset (not the first in list order) so the deal
+    # stays unbiased — reserving by list order would collapse small-n deals onto
+    # whichever items are listed first.
+    guaranteed = list(dict.fromkeys(i for i in at_least_one))
+    if len(guaranteed) > max(0, n):
+        guaranteed = rng.sample(guaranteed, max(0, n))
+    reserved = guaranteed
+    remaining = n - len(reserved)
+
+    pool = []
     for item, share in shares:
         count = round(share * n)
-        if item in at_least_one:
-            count = max(1, count)
-        deck.extend([item] * count)
-    while len(deck) < n:
-        deck.append(shares[-1][0])
+        if item in reserved:
+            count -= 1  # its guaranteed copy is already reserved
+        pool.extend([item] * max(0, count))
+    while len(pool) < remaining:
+        pool.append(shares[-1][0])
+    rng.shuffle(pool)
+    deck = reserved + pool[:remaining]
     rng.shuffle(deck)
-    return deck[:n]
+    return deck
 
 
 def generate_scenarios(n: int, rng: random.Random) -> list[dict]:

@@ -301,15 +301,26 @@ def resolve_constitution_dir(prompts_dir: str | Path) -> Path | None:
     return None
 
 
+_RUN_DIR_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}_")
+
+
 def resolve_run_dir(runs_root: str | Path, run_id: str | None = None) -> Path:
-    """Find an existing run directory: by ID if given, otherwise the most recent."""
+    """Find an existing run directory: by ID if given, otherwise the most recent.
+
+    "Most recent" considers only pipeline-created dirs (timestamp-prefixed
+    names). Hand-made dirs (e.g. local_* scratch runs) sort after every
+    timestamp lexicographically and would otherwise hijack every bare
+    --resume; they remain reachable explicitly via --run-id.
+    """
     runs_root = Path(runs_root)
     if run_id:
         run_dir = runs_root / run_id
         if not run_dir.is_dir():
             raise SystemExit(f"Run '{run_id}' not found under {runs_root}")
         return run_dir
-    runs = sorted(d for d in runs_root.iterdir() if d.is_dir()) if runs_root.is_dir() else []
+    runs = sorted(
+        d for d in runs_root.iterdir() if d.is_dir() and _RUN_DIR_TS_RE.match(d.name)
+    ) if runs_root.is_dir() else []
     if not runs:
         raise SystemExit(f"No runs found under {runs_root} — nothing to resume.")
     return runs[-1]

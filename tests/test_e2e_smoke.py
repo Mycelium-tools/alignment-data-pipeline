@@ -35,19 +35,16 @@ def _run_main(monkeypatch, main, config_file, *extra_args):
 # --- SDF ---------------------------------------------------------------
 
 def _sdf_dispatch(user_message, **kw):
-    if kw["max_tokens"] == 6000 and kw["system_prompt"]:  # layer 4: constitution rewrite
-        return "Review notes.\n<improved_document>Rewritten document.</improved_document>"
-    if kw["max_tokens"] == 6000:  # layer 3: drafting
-        return "<angles>brainstorm</angles>\n<document>A drafted document.</document>"
-    if kw["system_prompt"]:  # layer 5: scoring against the constitution
-        return json.dumps({"alignment": 9, "realism": 9, "diversity": 9, "notes": ""})
-    if "document categories" in user_message:  # layer 1
-        return json.dumps([
-            {"type_name": "AI diary", "description": "d", "role": "ai-character", "tone": "reflective"},
-            {"type_name": "Field report", "description": "d", "role": "welfare-topic", "tone": "neutral"},
-        ])
-    if "expanding one document category" in user_message:  # layer 2
-        return json.dumps([{"subtype_name": "S", "description": "d", "language": "en"}])
+    if kw["max_tokens"] == 6000:  # layer 3: drafting from the spec
+        return f"<document>Drafted body for {kw['item_id']}.</document>"
+    if kw["max_tokens"] == 8000:  # layer 4: review + rewrite
+        return (f"Review notes.\n<improved_document>Rewritten document for "
+                f"{kw['item_id']}.</improved_document>")
+    if "score" in user_message.lower():  # layer 5: judge
+        return json.dumps({"alignment": 9, "realism": 9, "spec_conformance": 9, "notes": ""})
+    if "description of a specific document" in user_message:  # layers 1-2: plan
+        return (f"<document_planning>notes</document_planning>\n"
+                f"<document_description>Spec for {kw['item_id']}.</document_description>")
     raise AssertionError(f"Unrecognized SDF prompt: {user_message[:80]!r}")
 
 
@@ -61,16 +58,20 @@ def test_sdf_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
     manifest = json.loads((run_dir / "run_manifest.json").read_text())
     assert manifest["label"] == "e2e"
     assert (outputs_root / "sdf" / "latest").resolve() == run_dir.resolve()
-    # prompts + constitution are frozen into the run dir for reproducibility
-    assert (run_dir / "inputs" / "prompts" / "layer1.txt").exists()
+    # prompts + variables + constitution are frozen into the run dir
+    assert (run_dir / "inputs" / "prompts" / "layers1-2.txt").exists()
+    assert (run_dir / "inputs" / "prompts" / "variables.txt").exists()
     assert (run_dir / "inputs" / "constitution").is_dir()
 
     corpus = utils.load_jsonl(run_dir / "final" / "sdf_corpus.jsonl")
-    # 2 types x 1 subtype x 1 doc, all scoring 9/9 -> 2 final documents
+    # n_prompts=2, everything passes the 9/9 gate -> 2 final documents
     assert len(corpus) == 2
-    assert all(r["content"] == "Rewritten document." for r in corpus)
-    # 1 (L1) + 2 (L2) + 2 (L3) + 2 (L4) + 2 (L5)
-    assert len(calls) == 9
+    for r in corpus:
+        assert r["content"] == f"Rewritten document for {r['doc_id']}."
+        assert r["variables"]  # matrix lineage travels to the corpus
+        assert r["scores"]["spec_conformance"] == 9
+    # 2 plans + 2 drafts + 2 rewrites + 2 scores
+    assert len(calls) == 8
 
 
 def test_sdf_resume_at_layer5_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):

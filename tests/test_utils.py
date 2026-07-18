@@ -341,3 +341,14 @@ class TestLooksLikeTranscriptEcho:
         assert not utils.looks_like_transcript_echo(
             "The form has a field labeled USER: fill it in truthfully.")
         assert not utils.looks_like_transcript_echo("")
+
+def test_resolve_run_dir_ignores_handmade_local_dirs(tmp_path):
+    """A local_* scratch dir sorts after every timestamp name; bare --resume
+    must still pick the newest pipeline-created run (the 2026-07-11 incident)."""
+    (tmp_path / "2026-07-10_09-00_dev").mkdir()
+    (tmp_path / "2026-07-11_20-06_matrix100").mkdir()
+    (tmp_path / "local_2026-07-11_scratch").mkdir()
+    picked = utils.resolve_run_dir(tmp_path)
+    assert picked.name == "2026-07-11_20-06_matrix100"
+    # explicit --run-id still reaches hand-made dirs
+    assert utils.resolve_run_dir(tmp_path, "local_2026-07-11_scratch").name == "local_2026-07-11_scratch"

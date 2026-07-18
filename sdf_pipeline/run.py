@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""SDF pipeline orchestrator. Runs layers 1-5 with checkpointing."""
+"""SDF matrix pipeline orchestrator: plan (layers 1-2), draft, rewrite, score.
+
+Layers 1-2 are a single stage: deterministic composition of the prompt matrix
+(offline) followed by one plan call per document. Layers 3-5 draft, rewrite,
+and score/gate. --layer accepts 1-5 for continuity with the old pipeline;
+1 and 2 both enter at the plan stage.
+"""
 
 import argparse
 import os
@@ -10,21 +16,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
 from sdf_pipeline import (
-    layer1_document_types,
-    layer2_subtypes,
+    layer12_plan,
     layer3_draft,
     layer4_rewrite,
     layer5_score,
 )
 
-LAYERS = [1, 2, 3, 4, 5]
-
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the SDF pipeline.")
+    parser = argparse.ArgumentParser(description="Run the SDF matrix pipeline.")
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoints.")
-    parser.add_argument("--layer", type=int, default=1, help="Start from this layer (1-5).")
+    parser.add_argument("--layer", type=int, default=1, help="Start from this layer (1-5; 1 and 2 = plan stage).")
     parser.add_argument("--label", default="dev", help="Run label, e.g. dev or full-scale.")
     parser.add_argument("--run-id", default=None, help="Run to resume (with --resume; defaults to latest).")
     args = parser.parse_args()
@@ -59,60 +62,47 @@ def main() -> None:
 
     api.init(args.config, cost_log_path=run_dir / "cost_log.jsonl")
 
-    layer_dirs = {i: run_dir / f"layer{i}" for i in range(1, 6)}
+    plan_dir = run_dir / "layer12"
+    layer_dirs = {3: run_dir / "layer3", 4: run_dir / "layer4", 5: run_dir / "layer5"}
     final_dir = run_dir / "final"
-    for d in layer_dirs.values():
+    for d in [plan_dir, *layer_dirs.values(), final_dir]:
         utils.ensure_dir(d)
-    utils.ensure_dir(final_dir)
 
     start_layer = args.layer
 
-    print(f"=== SDF Pipeline — run {run_dir.name} ===")
+    print(f"=== SDF Matrix Pipeline — run {run_dir.name} ===")
     print(f"Outputs: {run_dir}")
 
-    doc_types = subtypes = drafts = rewrites = None
-
-    if start_layer <= 1:
-        print("[Layer 1] Document types")
-        doc_types = layer1_document_types.run(config, prompts_dir, layer_dirs[1])
-        cost = api.get_total_cost()
-        print(f"  Running cost: ${cost:.4f}\n")
+    plans = drafts = rewrites = None
 
     if start_layer <= 2:
-        if doc_types is None:
-            doc_types = utils.load_jsonl(layer_dirs[1] / "document_types.jsonl")
-        print("[Layer 2] Subtypes")
-        subtypes = layer2_subtypes.run(config, prompts_dir, layer_dirs[2], doc_types)
-        cost = api.get_total_cost()
-        print(f"  Running cost: ${cost:.4f}\n")
+        print("[Layers 1-2] Compose matrix + plan documents")
+        plans = layer12_plan.run(config, prompts_dir, plan_dir)
+        print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
     if start_layer <= 3:
-        if subtypes is None:
-            subtypes = utils.load_jsonl(layer_dirs[2] / "subtypes.jsonl")
-        print("[Layer 3] Document drafts")
-        drafts = layer3_draft.run(config, prompts_dir, layer_dirs[3], subtypes)
-        cost = api.get_total_cost()
-        print(f"  Running cost: ${cost:.4f}\n")
+        if plans is None:
+            plans = utils.load_jsonl(plan_dir / "plans.jsonl")
+        print("[Layer 3] Draft documents")
+        drafts = layer3_draft.run(config, prompts_dir, layer_dirs[3], plans)
+        print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
     if start_layer <= 4:
         if drafts is None:
             drafts = utils.load_jsonl(layer_dirs[3] / "drafts.jsonl")
-        print("[Layer 4] Rewrites")
+        print("[Layer 4] Review and rewrite")
         rewrites = layer4_rewrite.run(config, prompts_dir, layer_dirs[4], drafts)
-        cost = api.get_total_cost()
-        print(f"  Running cost: ${cost:.4f}\n")
+        print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
     if start_layer <= 5:
         if rewrites is None:
             rewrites = utils.load_jsonl(layer_dirs[4] / "rewrites.jsonl")
-        print("[Layer 5] Score and filter")
+        print("[Layer 5] Score and gate")
         final = layer5_score.run(config, prompts_dir, layer_dirs[5], final_dir, rewrites)
-        cost = api.get_total_cost()
-        print(f"  Running cost: ${cost:.4f}\n")
+        print(f"  Running cost: ${api.get_total_cost():.4f}\n")
         print(f"=== Done. {len(final)} documents in {final_dir / 'sdf_corpus.jsonl'} ===")
 
-    total_cost = api.get_total_cost()
-    print(f"Total API cost this session: ${total_cost:.4f}")
+    print(f"Total API cost this session: ${api.get_total_cost():.4f}")
 
 
 if __name__ == "__main__":
