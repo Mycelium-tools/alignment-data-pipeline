@@ -21,3 +21,6 @@ outputs/*/latest
 # Bare filename so it matches wherever --input puts the audit/ dir (run dirs
 # under outputs/, but also next to a bare --input corpus.jsonl anywhere).
 embeddings_cache.npz
+
+# Machine-local config override (backend: auto etc.) — never committed
+config.local.yaml
