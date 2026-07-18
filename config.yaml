@@ -1,9 +1,15 @@
-# api = anthropic SDK billed to ANTHROPIC_API_KEY (use for full-scale runs)
-# claude_code = your Claude subscription via the Claude Code CLI (use for dev runs)
-# auto = subscription when available, api otherwise; empty-system calls (the DAD
-#        baseline arm) always go to the api so the plain-model condition stays
-#        exact, and an exhausted usage window falls back to the api mid-run
-backend: auto
+# api = anthropic SDK billed to ANTHROPIC_API_KEY. The FAITHFUL mode: it is the
+#       environment the spec's eventual consumer runs in, and the only mode where
+#       max_tokens caps, truncation-rejection dynamics, and the exact prompt
+#       context are reproduced. Use for full-scale runs, evals, and any run whose
+#       outputs are meant to represent pipeline behavior.
+# claude_code = your Claude subscription via the Claude Code CLI (dev iteration).
+# auto = subscription when available, api otherwise (dev iteration on a budget);
+#        empty-system calls (the DAD baseline arm) always go to the api so the
+#        plain-model condition stays exact, and an exhausted usage window falls
+#        back to the api mid-run. Caveats vs api: max_tokens not enforced and
+#        ~3K tokens of CLI scaffolding in context on subscription-served calls.
+backend: api
 model: claude-sonnet-5
 max_tokens: 4000
 temperature: 1.0  # sampling temperature for every API call (0.0-1.0); generation wants 1.0 — diversity IS the product
