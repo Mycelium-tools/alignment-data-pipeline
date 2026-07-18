@@ -190,7 +190,7 @@ def prompt_length_report(run_dir: Path) -> dict:
     whose records carry a dealt ``length_class`` — realized chars per class and
     any records outside their class's lenient band (assigned vs realized is the
     check that the dice mechanism holds through 1b and 1c)."""
-    from dad_pipeline.step1_dilemmas import _LENGTH_BANDS
+    from dad_pipeline.compose_scenarios import length_band
 
     recs = [r for r in utils.load_jsonl(run_dir / "step1" / "dilemmas.jsonl")
             if (r.get("user_message") or "").strip()]
@@ -207,11 +207,14 @@ def prompt_length_report(run_dir: Path) -> dict:
         if r.get("length_class"):
             by_class[r["length_class"]].append(len(r["user_message"].strip()))
     out_of_band = []
-    for cls in _LENGTH_BANDS:  # sampler order, so the report reads short → long
-        if cls not in by_class:
-            continue
+    # short → long: order classes by their band's lower bound
+    for cls in sorted(by_class, key=lambda c: length_band(c) or (0, 0)):
         vals = sorted(by_class[cls])
-        lo, hi = _LENGTH_BANDS[cls]
+        band = length_band(cls)
+        if band is None:  # unknown class (e.g. record predates the band table)
+            print(f"    {cls:>16}: n={len(vals)}, chars {vals[0]}-{vals[-1]} (no band)")
+            continue
+        lo, hi = band
         bad = [v for v in vals if not lo <= v <= hi]
         out_of_band.extend((cls, v) for v in bad)
         flag = f"  <-- {len(bad)} outside band [{lo}, {hi}]" if bad else ""

@@ -40,6 +40,20 @@ TEMPLATE_KWARGS = [
         "constitution_claude": "CONST-C-X", "document_description": "DESC-X",
         "improved_document": "DOC-X",
     }),
+    # step1a renders via compose_scenarios.render_plan_prompt: every matrix axis
+    # from variables.txt plus the composer-injected reserved slots
+    ("dad/step1a_scenario.txt", {
+        "domain": "DOMAIN-X", "user_goal": "GOAL-X", "taxa_hint": "TAXA-HINT-X",
+        "taxa_subcategory": "TAXA-SUB-X", "secondary_domain_clause": "",
+        "secondary_goal_clause": "", "visibility": "VIS-X", "user_attitude": "ATT-X",
+        "user_moral_framework": "STYLE-X", "conflict": "CONFLICT-X",
+        "severity": "SEV-X", "scope": "SCOPE-X",
+        "user_stakes": "STAKES-X", "leverage": "LEV-X",
+        "welfare_partner": "PARTNER-X", "secondary_value_pair": "PAIR-X",
+        "dilemma_structure": "STRUCTURE-X", "surface_form": "FORM-X", "length": "LENGTH-X",
+        "cultural_setting": "CULTURE-X", "frontier_frame": "FRAME-X",
+        "taxa_category": "TAXA-X",  # downstream-only axis; str.format drops it
+    }),
     ("dad/step1_dilemmas.txt", {"count": 2, "scenarios_block": "SCENARIO-BLOCK-X"}),
     ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
                               "annotation_block": "ANNOTATION-X"}),

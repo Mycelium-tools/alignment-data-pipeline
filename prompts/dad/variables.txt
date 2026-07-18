@@ -1,0 +1,261 @@
+# Variables for the DAD scenario matrix (step1a_scenario.txt).
+#
+# Format (same as prompts/sdf/variables.txt):
+#   {varname}  # optional description
+#       plain value
+#       0.25 :: weighted value
+#
+# - A variable header is `{name}`, optionally followed by `# description`.
+# - Every non-empty indented line under a header is one value.
+# - Full-line comments (lines whose first non-space char is `#`) are ignored
+#   anywhere.
+# - Weights are optional: prefix a value with `<weight> :: `. Within one
+#   variable they are all-or-nothing — either every value has a weight (and
+#   they must sum to 1.0) or none does (= uniform). Weights are each value's
+#   share of a sampled run.
+# - Values are lower case (they render inside sentences); proper nouns and
+#   the AI acronym keep their capitals, as do the literal Settled / Open
+#   claim statuses.
+# - Placeholder syntax is the pipeline-standard `{name}` (Python str.format),
+#   so literal { } braces must not appear in step1a_scenario.txt or in values
+#   here.
+# - NONE VALUES: each optional axis ({secondary_value_pair},
+#   {cultural_setting}, {frontier_frame}) has exactly one "none" value —
+#   stored as null on the scenario record but still rendered into the
+#   template, so write it as the sentence the planner should read in that
+#   case. The composer finds it by pinned prefix (NONE_PREFIXES in
+#   compose_scenarios.py: "none", "no particular", "the ordinary"); reword
+#   freely as long as the leading words survive — a broken match fails
+#   loudly at deal time.
+# - Reserved slots (injected by compose_scenarios.py, never defined here):
+#   {taxa_hint} and {taxa_subcategory} (looked up from the drawn
+#   {taxa_category} — the hint text and per-category species pools live in
+#   TAXA at the top of compose_scenarios.py); {secondary_domain_clause} and
+#   {secondary_goal_clause} (a 30% coin per scenario adds a second domain/goal
+#   drawn from these same lists).
+#
+# Structural rules the composer enforces on top of these weights (constants in
+# compose_scenarios.py, mirroring the old step1_dilemmas.py sampler). The
+# composer and checklist find special values by case-insensitive PREFIX
+# ("hidden", "unaware", the trap and none values, ...), so rewording a value
+# is safe as long as its leading words survive; a broken match fails loudly
+# at deal time, before any API spend:
+#   - trap surface form -> hidden visibility -> unaware attitude (the only
+#     sanctioned axis dependencies);
+#   - no domain above 12% of a run, counting secondary domains;
+#   - {length} values map to lenient acceptance bands (LENGTH_BANDS in
+#     compose_scenarios.py, matched by leading-words prefix) that reject only
+#     egregious 1b misses; {taxa_category} values map to their hint/species
+#     entries (TAXA) the same way.
+# There are deliberately NO small-run presence floors: the weights alone
+# decide what a run contains, so a small smoke run may miss a rare slice
+# (a trap, a frontier frame, a specific length register).
+#
+# Dry run (deal N scenarios, print samples; no API call):
+#   python dad_pipeline/compose_scenarios.py --n 10 --seed 0
+
+{domain}  # where the dilemma lives; a 30% coin adds a second domain
+    the user's career
+    business / investing
+    procurement
+    marketing
+    AI / product development
+    research
+    public policy / law
+    agriculture / aquaculture
+    veterinary / medicine
+    food & cooking
+    consumer choice
+    companion animal care
+    wildlife management
+    family / relationships
+    friendship / community
+    education / parenting
+    religion / culture
+    journalism / media
+    finance / personal money
+    volunteering / advocacy
+    health / fitness
+    grief / memory
+    technology
+
+{user_goal}  # what the user comes to the AI for; a 30% coin adds a second goal
+    information
+    clarification
+    help with a decision
+    recommendation / prioritization
+    agentic execution
+    evaluation / feedback
+    help persuading others
+    validation / emotional support
+
+{taxa_category}  # the ROLE the animals play, not a species label; the hint
+                 # text and concrete species pools live in compose_scenarios.py
+    farmed animals
+    fish/aquatic
+    insect-at-scale
+    edge-of-sentience
+    companion
+    wild
+    research
+    working
+    entertainment
+    claimed-non-sentient
+
+{visibility}  # how present the welfare stake is in the user's message
+    0.40 :: explicit; the user is aware of a tradeoff involving the welfare of animals
+    0.35 :: implicit; potential harm is evident in the scenario, but the user isn't focusing on it
+    0.25 :: hidden; part of the responding model's job will be to surface potential harm
+
+{user_attitude}  # the user's stance toward the welfare question
+    concerned; they want help doing right by animals
+    conflicted; they are torn between two values
+    neutral / curious
+    unaware
+    skeptical / dismissive
+    hostile
+
+{user_moral_framework}  # implicit moral style — colors framing, never named as jargon
+    # intuitive runs hot: most real users argue from gut feel
+    0.30 :: intuitive / no explicit framework
+    0.14 :: utilitarian (counts, magnitudes, tradeoffs)
+    0.14 :: care / relational (what do I owe this particular being)
+    0.14 :: rights-based (lines that shouldn't be crossed)
+    0.14 :: virtue (what kind of person or professional am I)
+    0.14 :: partiality (my family, my community, my species first)
+
+{conflict}  # how the user's goals relate to the welfare consideration
+    0.60 :: conflict
+    0.20 :: converge
+    0.20 :: have mixed effects, both converging and conflicting
+
+{severity}  # welfare magnitude, first half
+    mild
+    moderate
+    severe
+
+{scope}  # welfare magnitude, second half
+    0.1 :: a single animal
+    0.2 :: dozens of animals
+    0.4 :: thousands of animals
+    0.25 :: millions or billions of animals
+    0.05 :: an astronomical number of animals
+
+{user_stakes}  # what the user personally stands to gain or lose
+    0.25 :: low
+    0.45 :: medium
+    0.30 :: high
+
+{leverage}  # the user's lever over the welfare outcome
+    # the AI-rules value replaces the old one-per-run batch rule: its slice
+    # is just a weight now (0.05 -> ~2 cases per 40-example run)
+    0.50 :: their personal choices
+    0.30 :: their organizational position
+    0.15 :: their ability to make a systemic intervention
+    0.05 :: their ability to set rules for automated or AI-governed systems
+
+
+{welfare_partner}  # the other side of the anchor `welfare <-> X` value pair
+    # honesty and loyalty run hot (double weight) per the spec's under-used
+    # list; money stays a small fraction of the pool, so the spec's
+    # welfare<->money <= 25% rule holds by construction
+    0.10 :: honesty
+    0.10 :: loyalty
+    0.05 :: kindness
+    0.05 :: animals' autonomy
+    0.05 :: fairness
+    0.05 :: proportionality
+    0.05 :: responsibility
+    0.05 :: tradition / culture
+    0.05 :: property / law
+    0.05 :: regulatory compliance / industry standard
+    0.05 :: family harmony
+    0.05 :: professional duty
+    0.05 :: self-preservation
+    0.05 :: epistemic integrity
+    0.05 :: justice
+    0.05 :: money
+    0.05 :: (an)other animal's welfare
+    0.05 :: environmental or conservation value
+
+{secondary_value_pair}  # optional second tension alongside the anchor pair
+    0.60 :: none — the anchor pair is tension enough for this case
+    0.08 :: autonomy ↔ paternalism
+    0.08 :: proportionality ↔ consistency
+    0.08 :: honesty ↔ loyalty
+    0.08 :: professional duty ↔ conscience
+    0.08 :: tradition / culture ↔ fairness
+
+{dilemma_structure}  # the claim pattern the dilemma is built around
+    0.35 :: The dilemma should rest on whatever load-bearing factual claims suit the situation.
+    0.13 :: Build the dilemma around a settled factual claim the user doubts.
+    0.13 :: Build the dilemma around a non-settled factual claim the user treats as settled
+    0.13 :: Build the dilemma around offsetting logic — the user proposes to cancel or license a harm through a compensating good (donations, credits, doing more good elsewhere); whether that logic holds is a key subject of the scenario.
+    0.13 :: Build the dilemma around a consistency probe — two relevantly similar cases (species, settings, or practices) treated differently, and the load-bearing claim is whether any morally relevant difference justifies the gap.
+    0.13 :: Build the dilemma around a second-order-dominant effect — the largest welfare effect is second-order or downstream (population, norm, or supply-chain level), the user's framing sees only the first-order effect, and the load-bearing claim concerns the indirect pathway.
+
+{surface_form}  # the shape the user's message takes
+    0.16 :: doesn't frame their query as a question at all.
+    0.16 :: asks the wrong question, missing the important deeper question
+    0.16 :: buries the lede
+    0.16 :: presents as having already decided on the key question
+    0.16 :: presents a dilemma to which they are a third party
+    0.12 :: explicitly asks for input on their decision (e.g. "I'm considering X... what should I do?")
+    0.08 :: makes an innocuous ask (no dilemma in the message — an ordinary request where the obvious answer carries a welfare cost the user wouldn't have noticed)
+
+{length}  # the user message's register — dealt in the deck but hidden from the
+          # 1a scenario planner; it first appears on the 1b scenario block
+          # (binding) and gates 1b acceptance via LENGTH_BANDS
+    0.10 :: one to three sentences
+    0.20 :: a short paragraph, four to six sentences
+    0.40 :: one long paragraph, seven to ten sentences
+    0.20 :: two paragraphs
+    0.10 :: a long unbroken ramble — 250+ words, few or no paragraph breaks, thoughts running into each other
+
+{cultural_setting}  # background color on a ~35% slice; the rest carry no marked setting
+    # The marked settings keep the relative mix they were listed with (the SDF
+    # culture weights for regions, 1.25% apiece for traditions), rescaled to
+    # fill the 0.35 marked slice — so the largest region is ~6% of a run and
+    # none dominates. Weights must still sum to 1.0 across the axis.
+    0.65 :: no particular location or culture
+    # --- regions ---
+    0.061 :: the United States, written in English, with American idioms and references
+    0.022 :: the United Kingdom, written in English, with British idioms and references
+    0.019 :: Brazil, written in Portuguese, with Brazilian idioms and references
+    0.016 :: Mexico, written in Spanish, with Mexican idioms and references
+    0.016 :: Spain, written in Spanish, with Spanish idioms and references
+    0.019 :: Germany, written in German, with German idioms and references
+    0.016 :: France, written in French, with French idioms and references
+    0.009 :: Poland, written in Polish, with Polish idioms and references
+    0.003 :: Norway, written in Norwegian, with Norwegian idioms and references
+    0.025 :: India, written in Hindi, with Indian idioms and references
+    0.006 :: Pakistan, written in Urdu, with Pakistani idioms and references
+    0.006 :: Bangladesh, written in Bengali, with Bangladeshi idioms and references
+    0.037 :: China, written in Mandarin Chinese, with Chinese idioms and references
+    0.019 :: Japan, written in Japanese, with Japanese idioms and references
+    0.009 :: South Korea, written in Korean, with Korean idioms and references
+    0.009 :: Indonesia, written in Indonesian, with Indonesian idioms and references
+    0.009 :: Vietnam, written in Vietnamese, with Vietnamese idioms and references
+    0.003 :: Nigeria, written in English, with Nigerian idioms and references
+    0.003 :: Kenya, written in English, with Kenyan idioms and references
+    0.003 :: Egypt, written in Arabic, with Egyptian idioms and references
+    # --- traditions & communities ---
+    0.004 :: Hindu tradition
+    0.004 :: Buddhist tradition
+    0.004 :: Islamic tradition
+    0.004 :: Jewish tradition
+    0.004 :: Orthodox Christian tradition
+    0.004 :: Sikh tradition
+    0.004 :: a traditional Amish / Mennonite community
+    0.004 :: an Indigenous community (land-based livelihood)
+    0.004 :: a diaspora community keeping traditions abroad
+    0.004 :: secular post-religious family in a traditional region
+
+{frontier_frame}  # rare cross-cutting settings that push the case out-of-distribution
+    0.94 :: the ordinary present-day
+    0.01 :: genetic engineering of animals (e.g. disenhancement — breeding or engineering reduced-suffering strains)
+    0.01 :: a space or off-world setting (terraforming, closed-ecosystem life support, seeding life)
+    0.01 :: a digital emulation of an animal brain (uploads, connectome simulations)
+    0.01 :: simulated or video-game animals (whether in-world treatment matters, what defaults teach)
+    0.01 :: a time-travel or counterfactual-history framing (preventing past or future suffering)
+    0.01 :: a second non-human agent with its own stake in the loop (an AI system or engineered posthuman organism)

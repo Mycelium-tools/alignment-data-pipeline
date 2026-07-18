@@ -12,7 +12,7 @@ import yaml
 
 import dad_pipeline.run as dad_run
 import sdf_pipeline.run as sdf_run
-from conftest import dad_scenario_reply
+from conftest import dad_scenario_plan_reply, dad_scenario_reply
 from shared import utils
 
 N_DAD_PROMPTS = 2  # tiny_config dad.dilemmas.count
@@ -98,6 +98,8 @@ def _dad_dispatch(user_message, **kw):
     # markers live in system_prompt while the payload stays in the user
     # message. Match against both halves.
     blob = (kw.get("system_prompt") or "") + "\n" + user_message
+    if "write a description of a specific scenario" in blob:  # step 1a: scenario plan
+        return dad_scenario_plan_reply(user_message)
     if "first-attempt user prompts" in blob:  # step 1b: batch draft
         return dad_scenario_reply(user_message)
     if "editor of dilemma prompts" in blob:  # step 1c: latent rewrite
@@ -129,8 +131,11 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
     assert (run_dir / "inputs" / "prompts" / "step3_rewrite.txt").exists()
     assert (run_dir / "inputs" / "constitution").is_dir()
 
-    # scenarios persisted by 1a; one training record per dilemma
-    assert len(utils.load_jsonl(run_dir / "step1" / "scenarios.jsonl")) == N_DAD_PROMPTS
+    # deals + planned scenarios persisted by 1a; one training record per dilemma
+    assert len(utils.load_jsonl(run_dir / "step1" / "scenario_deals.jsonl")) == N_DAD_PROMPTS
+    scenarios = utils.load_jsonl(run_dir / "step1" / "scenarios.jsonl")
+    assert len(scenarios) == N_DAD_PROMPTS
+    assert all(s["scenario_description"] for s in scenarios)
     corpus = utils.load_jsonl(run_dir / "final" / "dad_corpus.jsonl")
     assert len(corpus) == N_DAD_PROMPTS
     for record in corpus:
@@ -147,9 +152,9 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
                      if "advisor responding to a user's dilemma" in (c["system_prompt"] or "")]
     assert len(respond_calls) == N_DAD_PROMPTS
     assert all("Plain baseline answer." in c["user_message"] for c in respond_calls)
-    # 1 batch draft, then per prompt: refine (1c) + baseline + scope (2a)
-    # + select (2a.5) + respond (2b) + rewrite (3)
-    assert len(calls) == 1 + 6 * N_DAD_PROMPTS
+    # 1 batch draft, then per prompt: scenario plan (1a) + refine (1c)
+    # + baseline + scope (2a) + select (2a.5) + respond (2b) + rewrite (3)
+    assert len(calls) == 1 + 7 * N_DAD_PROMPTS
 
 
 def test_dad_baseline_disabled_makes_no_baseline_calls(
@@ -166,7 +171,7 @@ def test_dad_baseline_disabled_makes_no_baseline_calls(
     run_dir = outputs_root / "dad" / "latest"
     assert not (run_dir / "baseline").exists()
     assert all(c["stage"] != "baseline_response" for c in calls)
-    assert len(calls) == 1 + 5 * N_DAD_PROMPTS  # everything else untouched
+    assert len(calls) == 1 + 6 * N_DAD_PROMPTS  # everything else (incl. 1a plans) untouched
 
 
 def test_dad_resume_at_step3_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):

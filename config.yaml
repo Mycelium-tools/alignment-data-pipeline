@@ -23,6 +23,7 @@ dad:
   # Per-stage model overrides (each falls back to the global `model`).
   # DAD runs on Opus 4.8 across the board (Sonnet stays the global/SDF default);
   # Opus answers every welfare prompt where Fable's dual-use layer refuses ~30%.
+  scenario_model: claude-opus-4-8               # 1a: scenario plan (deal -> description)
   prompt_draft_model: claude-opus-4-8           # 1b: batch-draft user prompts
   prompt_refine_model: claude-opus-4-8          # 1c: load-bearing rewrite
   response_scope_model: claude-opus-4-8         # 2a: scope map — feeds every downstream step-2 call
