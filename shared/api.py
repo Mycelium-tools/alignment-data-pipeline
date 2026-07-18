@@ -325,7 +325,7 @@ def _run_claude_code_query(
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(resolved_system)
 
-    options = ClaudeAgentOptions(
+    option_kwargs = dict(
         model=model,
         system_prompt=(
             {"type": "file", "path": system_file}
@@ -334,7 +334,11 @@ def _run_claude_code_query(
         ),
         tools=[],  # pure text generation: no file/bash/web access
         max_turns=1,
-        thinking={"type": "disabled"},  # training data must show user-facing reasoning only
+        # Thinking disabled so training data shows user-facing reasoning only.
+        # Mythos-class models (fable/mythos) require adaptive thinking and 400
+        # on disabled, so the flag is omitted for them (mirrors the api
+        # backend's _call_with_retry); their thinking blocks are stripped by
+        # the TextBlock filter below.
         # Hermetic run: without these, the CLI loads the contributor's own
         # ~/.claude settings (custom agents, plan-by-default permission modes,
         # hooks), which leaks agentic scaffolding into generated text.
@@ -345,6 +349,9 @@ def _run_claude_code_query(
         # and falls back to its own login / CLAUDE_CODE_OAUTH_TOKEN.
         env={"ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": ""},
     )
+    if not _requires_adaptive_thinking(model):
+        option_kwargs["thinking"] = {"type": "disabled"}
+    options = ClaudeAgentOptions(**option_kwargs)
 
     async def _run() -> tuple[list[str], object | None]:
         text_parts: list[str] = []
