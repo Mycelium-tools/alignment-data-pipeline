@@ -526,7 +526,7 @@ def _dad_step2_dispatch(user_message, **kw):
     blob = _sysuser(user_message, kw)
     if "build the full map of the case" in blob:  # 2a
         return GOOD_SCOPE
-    if "doing retrieval for a response" in blob:  # 2a.5 select
+    if "retrieving reasoning modules" in blob:  # 2a.5 select
         return "C1, M1"
     if "advisor responding to a user's dilemma" in blob:  # 2b
         return "Draft response."
@@ -568,7 +568,7 @@ class TestStep2Run:
             if "build the full map of the case" in blob:
                 attempts["n"] += 1
                 return "not json at all" if attempts["n"] == 1 else GOOD_SCOPE
-            if "doing retrieval for a response" in blob:
+            if "retrieving reasoning modules" in blob:
                 return "C1"
             return "Draft response."
 
@@ -631,7 +631,7 @@ class TestStep2Run:
             blob = _sysuser(user_message, kw)
             if "build the full map of the case" in blob:
                 return GOOD_SCOPE
-            if "doing retrieval for a response" in blob:
+            if "retrieving reasoning modules" in blob:
                 return "C1"
             return "USER: User dilemma text.\nASSISTANT: Draft response."
 
@@ -659,7 +659,7 @@ class TestStep2Run:
                 # a model improvising the retired sixth key must not pollute
                 # the stored scope — selection is the select call's alone
                 return json.dumps({**SCOPE_AXES, "triggered_entries": "T9"})
-            if "doing retrieval for a response" in blob:  # 2a.5
+            if "retrieving reasoning modules" in blob:  # 2a.5
                 return f"{picked}, BOGUS"
             return "Draft response."
 
@@ -701,7 +701,7 @@ class TestStep2Run:
             blob = _sysuser(user_message, kw)
             if "build the full map of the case" in blob:
                 return GOOD_SCOPE
-            if "doing retrieval for a response" in blob:
+            if "retrieving reasoning modules" in blob:
                 return "I could not find any relevant entries, sorry!"
             return "Draft response."
 
@@ -770,7 +770,7 @@ class TestStep2Run:
             if "build the full map of the case" in blob:
                 both_scoping.wait(timeout=10)
                 return GOOD_SCOPE
-            if "doing retrieval for a response" in blob:
+            if "retrieving reasoning modules" in blob:
                 return "C1"
             if "advisor responding to a user's dilemma" in blob:
                 return "Draft response."
