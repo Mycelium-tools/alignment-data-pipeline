@@ -138,10 +138,15 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
         assert [m["role"] for m in record["messages"]] == ["user", "assistant"]
         assert record["messages"][0]["content"] == "Refined user message."  # 1c ran
         assert record["messages"][1]["content"] == "Rewritten careful answer."
-    # the baseline control arm rode along: one record per prompt, never in the corpus
+    # the baseline rode along: one record per prompt, never in the corpus,
+    # and each one reached its 2b call as the advisory first take
     baselines = utils.load_jsonl(run_dir / "baseline" / "baseline_responses.jsonl")
     assert len(baselines) == N_DAD_PROMPTS
     assert all(b["baseline_response"] == "Plain baseline answer." for b in baselines)
+    respond_calls = [c for c in calls
+                     if "advisor responding to a user's dilemma" in (c["system_prompt"] or "")]
+    assert len(respond_calls) == N_DAD_PROMPTS
+    assert all("Plain baseline answer." in c["user_message"] for c in respond_calls)
     # 1 batch draft, then per prompt: refine (1c) + baseline + scope (2a)
     # + select (2a.5) + respond (2b) + rewrite (3)
     assert len(calls) == 1 + 6 * N_DAD_PROMPTS

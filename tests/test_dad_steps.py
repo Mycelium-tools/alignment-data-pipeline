@@ -531,6 +531,49 @@ class TestStep2Run:
         assert calls == []
         assert len(results) == 1
 
+    def test_first_take_reaches_2b_and_degrades_to_empty(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # With baselines provided, the plain draft rides the 2b USER prompt as
+        # the advisory first take; without them (stage disabled, older run),
+        # the slot renders empty and the call still succeeds.
+        calls = stub_claude(_dad_step2_dispatch)
+        baselines = [{"prompt_id": "AW-0001", "user_message": "User dilemma text.",
+                      "baseline_response": "Plain first-take answer."}]
+        step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()], baselines)
+        respond_call = calls[2]
+        assert "Plain first-take answer." in respond_call["user_message"]
+        assert "Plain first-take answer." not in (respond_call["system_prompt"] or "")
+
+        calls = stub_claude(_dad_step2_dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path / "bare", [_dilemma()])
+        assert len(results) == 1
+        assert "FIRST TAKE (reference only):" in calls[2]["user_message"]
+        assert "Plain first-take answer." not in calls[2]["user_message"]
+
+    def test_echoed_draft_skips_without_checkpoint(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # A 2b reply wrapped in a transcript replay must not feed step 3;
+        # resume retries it (same policy as truncation).
+        def echo_once(user_message, **kw):
+            blob = _sysuser(user_message, kw)
+            if "build the full map of the case" in blob:
+                return GOOD_SCOPE
+            if "doing retrieval for a response" in blob:
+                return "C1"
+            return "USER: User dilemma text.\nASSISTANT: Draft response."
+
+        stub_claude(echo_once)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+        assert results == []
+
+        calls = stub_claude(_dad_step2_dispatch)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+        assert len(calls) == 1  # only the 2b retry — scope + selection are reused
+        assert len(results) == 1
+        assert results[0]["assistant_response"] == "Draft response."
+
     def test_select_call_selects_records_and_injects(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
@@ -722,7 +765,9 @@ class TestStep3Run:
     @pytest.mark.parametrize("bad_replies", [
         [("cut off", "max_tokens"), ("still cut off", "max_tokens")],  # capped even at 8000
         [("", "end_turn")],                                            # empty (no retry)
-    ], ids=["truncated", "empty"])
+        # observed live: the rewrite wrapped in a transcript replay
+        [("USER: User dilemma text.\nASSISTANT: Rewritten careful answer.", "end_turn")],
+    ], ids=["truncated", "empty", "transcript-echo"])
     def test_unusable_rewrite_skips_without_checkpoint_and_is_logged(
         self, tiny_config, prompts_dad, tmp_path, stub_claude, bad_replies
     ):

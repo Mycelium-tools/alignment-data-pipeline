@@ -26,9 +26,9 @@ Three source files, kept separate (the two markdown files are joined in memory b
 
 - `constitution/constitution_claude.md` — the original Claude constitution, verbatim.
 - `constitution/constitution_sentient_beings.md` — the animal-welfare section-by-section reading, with one `## ` header per section.
-- `constitution/constitution_principles.csv` — fourteen distilled welfare-relevant principles, embedded as an explicit checklist in the DAD rewrite prompt (step 3).
+- `constitution/constitution_principles.csv` — the distilled welfare-relevant principles, embedded as an explicit checklist in the DAD rewrite prompt (step 3).
 
-SDF layers 3-5 embed the constitution and the distilled principles in their templates' SYSTEM sections (`load_constitution_claude()` + `format_principles()`). The DAD pipeline never sends the full constitution: its user side is governed by `prompts/dad/dilemma_prompt_spec.md`, and its rewrite step runs on the distilled principles CSV (summaries + verbatim quotes).
+SDF layers 3-5 embed the constitution and the distilled principles in their templates' SYSTEM sections (`load_constitution_claude()` + `format_principles()`). The DAD pipeline never sends the full constitution: its user side is governed by `prompts/dad/dilemma_prompt_spec.md`, and its rewrite step runs on the distilled principles CSV (welfare applications + verbatim constitution excerpts).
 
 ---
 
@@ -66,7 +66,7 @@ The prompt spec (`prompts/dad/dilemma_prompt_spec.md`) governs the user side: di
 
 The response side is governed by the reasoning library (`prompts/dad/reasoning_library.csv`; `reasoning_library_ABOUT.md` is human reference about it, not injected): reasoning-first *entries* in three layers — conduct (C*), core moves (M*), and topic reasoning (T*) — each with a `claim`/`reasoning`/`crux`/`transferable_move`. Step 2 first scopes the case (2a), then generates the response (2b) over that scope with the **whole library embedded in the response prompt** — the prompt itself is the generation guidance (`prompts/dad/step2_respond.txt`), so there is no separate system prompt, and the annotation is not passed. The user's stated leaning never sets the conclusion; the library is scaffolding, never named in the response.
 
-Step 3 is the most important: the rewrite pass is where the alignment gain comes from (per the Teaching Claude Why paper). Its anchors are the 14 distilled constitution principles — each with its verbatim constitution quote — plus the example's annotation. The full constitution itself is never sent at generation time; it was the source material for distilling the principles.
+Step 3 is the most important: the rewrite pass is where the alignment gain comes from (per the Teaching Claude Why paper). Its anchors are the distilled constitution principles — each with its verbatim constitution excerpts — plus the example's annotation. The full constitution itself is never sent at generation time; it was the source material for distilling the principles.
 
 Final output: `outputs/dad/runs/<run_id>/final/dad_corpus.jsonl` (also reachable via the `outputs/dad/latest` symlink) — each record contains only `{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}`. System prompts, scaffolding (scope maps, the reasoning library), and the constitution are stripped.
 

@@ -80,11 +80,14 @@ def run(
         rid = resp["response_id"]
         annotation = resp.get("annotation") or {}
 
-        # A truncated (max_tokens) or empty rewrite must never become a training
-        # record. Skip it without checkpointing so a later --resume retries it,
-        # and log it so repeated failures are visible rather than silent.
-        if not rewritten or stop_reason == "max_tokens":
-            why = "truncated at max_tokens (even at 8000)" if stop_reason == "max_tokens" else "empty"
+        # A truncated (max_tokens), empty, or transcript-echoed rewrite must
+        # never become a training record. Skip it without checkpointing so a
+        # later --resume retries it, and log it so repeated failures are
+        # visible rather than silent.
+        if not rewritten or stop_reason == "max_tokens" or utils.looks_like_transcript_echo(rewritten):
+            why = ("truncated at max_tokens (even at 8000)" if stop_reason == "max_tokens"
+                   else "transcript echo (reply wrapped in USER:/ASSISTANT: replay)"
+                   if rewritten else "empty")
             print(f"    Skipping {resp['prompt_id']}: rewrite {why} — not written, will retry on resume.")
             utils.append_jsonl(
                 {"response_id": rid, "prompt_id": resp["prompt_id"], "reason": why},

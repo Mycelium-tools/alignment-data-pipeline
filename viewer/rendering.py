@@ -4,8 +4,11 @@ Templates come from the run's inputs/ snapshot when present; for pre-snapshot
 runs we fall back to `git show <commit>:prompts/...` (labeled "git" so the UI
 can badge it as reconstructed), and finally to "missing"."""
 
+import difflib
+import html as html_lib
 import json
 import math
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -93,6 +96,39 @@ def get_constitution(run_dir: Path, git_commit: str | None, which: str) -> Templ
     if text is not None:
         return Template(filename, text, "git")
     return Template(filename, None, "missing")
+
+
+def inline_word_diff_html(before: str, after: str) -> str:
+    """The AFTER text rendered as HTML with word-level changes marked: words
+    added since BEFORE are highlighted, words removed are kept struck-through
+    in place. Built for the fused pipeline, where a revision keeps most of its
+    input verbatim — reading the additions inline beats side-by-side panels.
+    Pure (no streamlit) so it stays testable; the lineage page wraps it in a
+    scrollable container. Colors are translucent so they work on both themes.
+    """
+    def toks(text: str) -> list[str]:
+        return re.findall(r"\S+|\n+", text or "")
+
+    def span(tokens: list[str], style: str | None = None) -> str:
+        parts = []
+        for t in tokens:
+            if t.startswith("\n"):
+                parts.append("<br>" * t.count("\n"))
+            else:
+                parts.append(html_lib.escape(t) + " ")
+        body = "".join(parts)
+        return f'<span style="{style}">{body}</span>' if style else body
+
+    ADD = "background:rgba(63,179,102,.30);border-radius:3px;"
+    DEL = "opacity:.5;text-decoration:line-through;"
+    out = []
+    sm = difflib.SequenceMatcher(None, toks(before), toks(after), autojunk=False)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag in ("equal", "insert", "replace"):
+            out.append(span(sm.b[j1:j2], ADD if tag != "equal" else None))
+        if tag in ("delete", "replace"):
+            out.append(span(sm.a[i1:i2], DEL))
+    return "".join(out)
 
 
 def list_templates(run_dir: Path, git_commit: str | None, pipeline: str) -> list[Template]:
@@ -390,6 +426,11 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         block = reasoning_library.format_entries(library, ids) if library else ""
         annotation = (response.get("annotation") or (lineage.get("dilemma") or {}).get("annotation") or {})
         r.variables = {
+            # the plain-model baseline reaches 2b as the advisory first take
+            # (current runs) or as the fused draft_reply (fused-era snapshots);
+            # templates that predate either simply don't reference them
+            "first_take": (lineage.get("baseline") or {}).get("baseline_response", ""),
+            "draft_reply": (lineage.get("baseline") or {}).get("baseline_response", ""),
             # entry_ids is the list the pipeline actually injected (the
             # triggered subset since library retrieval; the full library on
             # runs recorded before it) — render exactly those rows. Fall back

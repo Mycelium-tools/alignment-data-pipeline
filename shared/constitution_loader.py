@@ -5,7 +5,7 @@ Three source files live in constitution/:
 - constitution_sentient_beings.md — the animal-welfare section-by-section
   reading, with one `## ` header per section.
 - constitution_principles.csv — the distilled welfare-relevant principles
-  (number, principle, constitution_summary, raw_text_from_constitution),
+  (number, principle, welfare_application, constitution_excerpts),
   embedded as a checklist in the DAD step-3 rewrite prompt and, joined with the
   Claude constitution, in the SDF prompts (system prompt at layers 4-5,
   template variables at layer 3).
@@ -108,7 +108,8 @@ def load_constitution_with_principles(base_dir: str | Path | None = None) -> str
 
 def parse_principles(csv_text: str) -> list[dict]:
     """Parse the principles CSV: one dict per row with number, principle,
-    constitution_summary, raw_text_from_constitution."""
+    welfare_application, constitution_excerpts (rows are keyed by header name,
+    so column order in the file is free to change)."""
     return list(csv.DictReader(io.StringIO(csv_text)))
 
 
@@ -126,12 +127,18 @@ def format_principles(principles: list[dict]) -> str:
     lines = []
     for p in principles:
         lines.append(f"{p.get('number', '?')}. {p.get('principle', '').strip()}")
-        summary = (p.get("constitution_summary") or "").strip()
-        if summary:
-            lines.append(f"   {summary}")
-        quote = (p.get("raw_text_from_constitution") or "").strip()
-        if quote:
-            lines.append(f'   Constitution: "{quote}"')
+        # Columns renamed 2026-07 (constitution_summary -> welfare_application,
+        # raw_text_from_constitution -> constitution_excerpts). The old names
+        # stay as fallbacks so pre-rename run snapshots re-render faithfully
+        # in the viewer.
+        application = (p.get("welfare_application")
+                       or p.get("constitution_summary") or "").strip()
+        if application:
+            lines.append(f"   {application}")
+        excerpts = (p.get("constitution_excerpts")
+                    or p.get("raw_text_from_constitution") or "").strip()
+        if excerpts:
+            lines.append(f'   Constitution: "{excerpts}"')
         lines.append("")
     return "\n".join(lines).strip()
 

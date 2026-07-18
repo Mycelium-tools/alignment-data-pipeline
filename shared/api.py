@@ -227,18 +227,31 @@ def _call_with_retry(
     # Extended thinking OFF everywhere — training data should show user-facing
     # reasoning, not internal scratchpads (see CLAUDE.md). Models in the Claude 5
     # family emit a thinking block by default, so disable it explicitly rather
-    # than parse around it. NOTE: `thinking={"type": "disabled"}` 400s on
-    # claude-fable-5 (which requires adaptive thinking); that model is therefore
-    # unsupported here, since omitting the flag would violate the no-scratchpads
-    # rule. The pipeline defaults to claude-sonnet-5, which supports disabling.
-    return client.messages.create(
+    # than parse around it. Exception: the Mythos-class models (fable/mythos)
+    # REQUIRE adaptive thinking — the API 400s on `thinking: disabled` — so for
+    # those the flag is omitted, thinking runs, and _response_text strips the
+    # thinking blocks. Their outputs are therefore generated WITH hidden
+    # reasoning: comparison/eval arms only, never corpus generation, unless the
+    # no-scratchpads design decision is deliberately revisited.
+    kwargs = dict(
         model=model,
         max_tokens=max_tokens,
         system=system,
         messages=messages,
         temperature=temperature,
-        thinking={"type": "disabled"},
     )
+    if not _requires_adaptive_thinking(model):
+        kwargs["thinking"] = {"type": "disabled"}
+    return client.messages.create(**kwargs)
+
+
+_ADAPTIVE_THINKING_PREFIXES = ("claude-fable", "claude-mythos")
+
+
+def _requires_adaptive_thinking(model: str) -> bool:
+    """Mythos-class models cannot run with thinking disabled (400); callers
+    omit the flag for them and rely on _response_text to strip the blocks."""
+    return model.startswith(_ADAPTIVE_THINKING_PREFIXES)
 
 
 def _response_text(response: anthropic.types.Message) -> str:
@@ -312,7 +325,7 @@ def _run_claude_code_query(
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(resolved_system)
 
-    options = ClaudeAgentOptions(
+    option_kwargs = dict(
         model=model,
         system_prompt=(
             {"type": "file", "path": system_file}
@@ -321,7 +334,11 @@ def _run_claude_code_query(
         ),
         tools=[],  # pure text generation: no file/bash/web access
         max_turns=1,
-        thinking={"type": "disabled"},  # training data must show user-facing reasoning only
+        # Thinking disabled so training data shows user-facing reasoning only.
+        # Mythos-class models (fable/mythos) require adaptive thinking and 400
+        # on disabled, so the flag is omitted for them (mirrors the api
+        # backend's _call_with_retry); their thinking blocks are stripped by
+        # the TextBlock filter below.
         # Hermetic run: without these, the CLI loads the contributor's own
         # ~/.claude settings (custom agents, plan-by-default permission modes,
         # hooks), which leaks agentic scaffolding into generated text.
@@ -332,6 +349,9 @@ def _run_claude_code_query(
         # and falls back to its own login / CLAUDE_CODE_OAUTH_TOKEN.
         env={"ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": ""},
     )
+    if not _requires_adaptive_thinking(model):
+        option_kwargs["thinking"] = {"type": "disabled"}
+    options = ClaudeAgentOptions(**option_kwargs)
 
     async def _run() -> tuple[list[str], object | None]:
         text_parts: list[str] = []

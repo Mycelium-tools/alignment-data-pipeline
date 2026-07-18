@@ -48,6 +48,7 @@ TEMPLATE_KWARGS = [
                               "user_message": "USER-X"}),
     ("dad/step2_respond.txt", {
         "library_block": "LIBRARY-X", "scope_block": "SCOPE-X", "user_message": "USER-X",
+        "first_take": "FIRST-TAKE-X",
         "opening_hints": "HINT-X; HINT-Y; HINT-Z",
     }),
     ("dad/step3_rewrite.txt", {
@@ -57,7 +58,6 @@ TEMPLATE_KWARGS = [
     # Not yet consumed by pipeline code; kwargs are the placeholders they declare
     ("dad/step3_score.txt", {
         "user_message": "USER-X", "assistant_response": "RESP-X",
-        "intended_direction": "Under-weighting", "user_attitude": "Neutral / Curious",
     }),
     ("tools/pattern_scan.txt", {"documents": "DOCS-X"}),
 ]

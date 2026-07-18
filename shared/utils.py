@@ -142,6 +142,17 @@ def load_prompt(path: str | Path, **kwargs) -> str:
     return text
 
 
+def looks_like_transcript_echo(text: str) -> bool:
+    """True when a generation came back wrapped in a transcript replay
+    ("USER: <message>\\nASSISTANT: <reply>") instead of the reply alone —
+    observed live from a step-3 rewrite call. Such output must never become a
+    training record; callers treat it like a truncated reply (skip without
+    checkpointing so --resume retries). Deliberately narrow: only a role
+    marker at the very start of the text counts, so advice that merely
+    mentions "USER:" mid-reply is not flagged."""
+    return bool(re.match(r"\s*(USER|ASSISTANT|HUMAN)\s*:", text[:40]))
+
+
 # A template that carries both a system and a user half separates them with a
 # line equal to this marker. See load_split_prompt.
 _PROMPT_SPLIT_MARKER = "===USER==="
