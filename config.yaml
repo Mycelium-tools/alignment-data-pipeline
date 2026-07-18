@@ -1,6 +1,9 @@
 # api = anthropic SDK billed to ANTHROPIC_API_KEY (use for full-scale runs)
 # claude_code = your Claude subscription via the Claude Code CLI (use for dev runs)
-backend: api
+# auto = subscription when available, api otherwise; empty-system calls (the DAD
+#        baseline arm) always go to the api so the plain-model condition stays
+#        exact, and an exhausted usage window falls back to the api mid-run
+backend: auto
 model: claude-sonnet-5
 max_tokens: 4000
 temperature: 1.0  # sampling temperature for every API call (0.0-1.0); generation wants 1.0 — diversity IS the product

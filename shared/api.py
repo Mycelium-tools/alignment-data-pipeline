@@ -1,10 +1,17 @@
 """Anthropic API wrapper with retry logic and cost tracking.
 
-Two backends behind the same call_claude() contract:
+Three backends behind the same call_claude() contract:
 - "api" (default): the anthropic SDK, billed to the shared ANTHROPIC_API_KEY.
 - "claude_code": the Claude Agent SDK driving the Claude Code CLI, billed to
   the contributor's own Claude subscription (Claude Code login, or a
   CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`).
+- "auto": prefer the subscription, fall back to the api key. Per-call routing:
+  empty-system calls (the DAD baseline arm) always go to the api so the
+  plain-model condition stays exact; everything else goes to claude_code until
+  it can't serve the run (sdk/CLI missing, usage window exhausted, or a
+  persistently failing CLI), at which point the rest of the run is served by
+  the api — announced loudly, and each cost-log record names the backend that
+  actually served it. Requires ANTHROPIC_API_KEY (the fallback leg).
 
 Select via the `backend` key in config.yaml. See README "Authentication".
 """
@@ -56,7 +63,12 @@ _PRICING = {
 }
 _UNPRICED_WARNED: set = set()
 
-_BACKENDS = ("api", "claude_code")
+_BACKENDS = ("api", "claude_code", "auto")
+
+# auto backend: why the subscription path is currently out of play (None =
+# still in play). Set once per run, loudly — after a demotion every remaining
+# call is served by the api backend.
+_cc_demoted: str | None = None
 
 # Matches subscription-limit exhaustion, which must abort rather than retry.
 # Two message families qualify: "Claude AI usage limit reached|<reset-timestamp>"
@@ -100,15 +112,18 @@ class ClaudeCodeError(Exception):
 
 
 def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = None) -> None:
-    global _config, _client, _cost_log_path, _backend
+    global _config, _client, _cost_log_path, _backend, _cc_demoted
     with open(config_path, encoding="utf-8") as f:
         _config = yaml.safe_load(f)
     _backend = _config.get("backend", "api")
+    _cc_demoted = None
     if _backend not in _BACKENDS:
         raise ValueError(f"config backend must be one of {_BACKENDS}, got {_backend!r}")
     # The api backend needs the key; fail loudly here rather than deep in a run.
     # The claude_code backend authenticates via the Claude Code CLI, so no key.
-    if _backend == "api" and not os.environ.get("ANTHROPIC_API_KEY"):
+    # auto needs the key too: it is the fallback leg AND serves the empty-system
+    # calls (the DAD baseline arm) that claude_code cannot reproduce exactly.
+    if _backend in ("api", "auto") and not os.environ.get("ANTHROPIC_API_KEY"):
         raise KeyError("ANTHROPIC_API_KEY")
     _client = None  # constructed lazily; the claude_code backend needs no API key
     _cost_log_path = Path(cost_log_path or _config["outputs"]["cost_log"])
@@ -139,6 +154,7 @@ def _log_usage(
     attempts: int | None = None,
     cache_creation_tokens: int = 0,
     cache_read_tokens: int = 0,
+    backend: str | None = None,
 ) -> None:
     # claude_code passes Claude Code's own reported cost; the api backend leaves
     # cost_usd=None, so we price it from _PRICING with a loud fallback on unknown
@@ -168,7 +184,9 @@ def _log_usage(
         "model": model,
         # For claude_code, cost_usd is notional (what the call would have cost
         # at API prices) — actual billing is the contributor's subscription.
-        "backend": _backend,
+        # The EFFECTIVE backend that served the call (auto runs log which leg
+        # each call actually took); falls back to the configured backend.
+        "backend": backend or _backend,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "cost_usd": round(cost_usd, 6),
@@ -292,6 +310,29 @@ def _classify_claude_code_error(message: str) -> Exception:
             "then continue this run with --resume."
         )
     return ClaudeCodeError(message)
+
+
+def _sdk_importable() -> bool:
+    """True when the claude-agent-sdk package is importable (the subscription
+    path's in-process requirement; the CLI itself is probed by the first call)."""
+    import importlib.util
+    return importlib.util.find_spec("claude_agent_sdk") is not None
+
+
+def _demote_cc(reason: str) -> None:
+    """auto backend: take the subscription path out of play for the rest of the
+    run and say so loudly — every remaining call is served by the api backend
+    (billed to ANTHROPIC_API_KEY). Progress made so far is unaffected."""
+    global _cc_demoted
+    if _cc_demoted is not None:
+        return
+    _cc_demoted = reason
+    print(
+        f"  NOTICE: backend 'auto' — subscription path unavailable ({reason}). "
+        "Falling back to the Anthropic API (billed to ANTHROPIC_API_KEY) for the "
+        "rest of this run. Each cost-log record names the backend that served it.",
+        file=sys.stderr,
+    )
 
 
 def _resolve_cc_system(system: str) -> str:
@@ -500,7 +541,20 @@ def call_claude(
     _attempt_state.n = 1  # _note_attempt overwrites this on every real attempt
     started = time.monotonic()
 
-    if _backend == "claude_code":
+    # Backend routing. "auto" prefers the subscription (claude_code) and falls
+    # back to the api key when it can't serve the call:
+    #   - empty-system calls (the DAD baseline arm) always go to the api, so the
+    #     plain-model condition stays exact (claude_code would substitute a
+    #     neutral system prompt);
+    #   - once demoted (sdk missing, CLI missing, usage window exhausted, or a
+    #     persistently failing CLI), the rest of the run is served by the api.
+    use_cc = _backend == "claude_code"
+    if _backend == "auto":
+        if _cc_demoted is None and not _sdk_importable():
+            _demote_cc("claude-agent-sdk is not installed — pip install -r requirements.txt")
+        use_cc = _cc_demoted is None and bool(full_system)
+
+    if use_cc:
         # The Claude Code CLI exposes no sampling-temperature control, so a
         # non-default temperature cannot be honored on this backend. The config
         # default (1.0) matches normal sampling, so only deliberate overrides
@@ -514,21 +568,31 @@ def call_claude(
                 "CLI's default sampling. Use backend: api for temperature-sensitive runs.",
                 file=sys.stderr,
             )
-        text, input_tokens, output_tokens, cost, stop_reason = _call_claude_code_with_retry(
-            model=resolved_model,
-            system=full_system,
-            user_message=user_message,
-        )
-        _log_usage(resolved_model, input_tokens, output_tokens, cost_usd=cost, stage=stage,
-                   item_id=item_id, duration_s=time.monotonic() - started,
-                   attempts=_attempt_state.n)
-        # Same suspect-stop-reason guard as the api path below; Claude Code
-        # reports stop_reason on its ResultMessage (e.g. "end_turn").
-        if stop_reason not in ("end_turn", "stop_sequence"):
-            print(f"  WARNING: response stop_reason={stop_reason!r} "
-                  f"(model {resolved_model}, backend claude_code) — output may be "
-                  "truncated or refused.", file=sys.stderr)
-        return (text, stop_reason) if return_stop_reason else text
+        try:
+            text, input_tokens, output_tokens, cost, stop_reason = _call_claude_code_with_retry(
+                model=resolved_model,
+                system=full_system,
+                user_message=user_message,
+            )
+        except (UsageLimitExceeded, ClaudeCodeError, RuntimeError) as e:
+            if _backend != "auto":
+                raise
+            # auto: the subscription can't serve this run any more (window
+            # exhausted, CLI missing, or 8 straight transient failures) —
+            # demote and re-serve THIS call via the api path below.
+            _demote_cc(str(e).split("\n")[0])
+            use_cc = False
+        else:
+            _log_usage(resolved_model, input_tokens, output_tokens, cost_usd=cost, stage=stage,
+                       item_id=item_id, duration_s=time.monotonic() - started,
+                       attempts=_attempt_state.n, backend="claude_code")
+            # Same suspect-stop-reason guard as the api path below; Claude Code
+            # reports stop_reason on its ResultMessage (e.g. "end_turn").
+            if stop_reason not in ("end_turn", "stop_sequence"):
+                print(f"  WARNING: response stop_reason={stop_reason!r} "
+                      f"(model {resolved_model}, backend claude_code) — output may be "
+                      "truncated or refused.", file=sys.stderr)
+            return (text, stop_reason) if return_stop_reason else text
 
     # A non-default temperature can't be honored on models that drop sampling
     # params — surface it once (mirrors the claude_code temperature warning).
@@ -565,7 +629,8 @@ def call_claude(
                stage=stage, item_id=item_id,
                duration_s=time.monotonic() - started, attempts=_attempt_state.n,
                cache_creation_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
-               cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0)
+               cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+               backend="api")
     # A completion that stopped for any reason other than end_turn/stop_sequence
     # is suspect — max_tokens truncates mid-text, refusal yields little or none.
     # Warn loudly so it isn't silently written into a corpus; callers that build

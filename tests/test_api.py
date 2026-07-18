@@ -663,3 +663,82 @@ class TestAdaptiveThinkingModels:
         assert api._requires_adaptive_thinking("claude-mythos-5")
         assert not api._requires_adaptive_thinking("claude-sonnet-5")
         assert not api._requires_adaptive_thinking("claude-haiku-4-5-20251001")
+
+
+class TestAutoBackend:
+    """backend 'auto': subscription-first per-call routing with api fallback.
+
+    The cc seam is stubbed per test; recorded_api provides the api leg. Routing
+    contract: system-prompt calls prefer claude_code, empty-system calls (the
+    DAD baseline arm) always take the api leg, and any subscription failure
+    demotes the rest of the run to the api — re-serving the failed call."""
+
+    def _arm(self, monkeypatch, tmp_path, cc=None):
+        monkeypatch.setattr(api, "_backend", "auto")
+        monkeypatch.setattr(api, "_cost_log_path", tmp_path / "cost.jsonl")
+        monkeypatch.setattr(api, "_sdk_importable", lambda: True)
+        if cc is not None:
+            monkeypatch.setattr(api, "_call_claude_code_with_retry", cc)
+
+    def test_routes_by_system_prompt(self, recorded_api, monkeypatch, tmp_path):
+        cc_calls = []
+
+        def fake_cc(model, system, user_message):
+            cc_calls.append(system)
+            return ("cc-text", 1, 1, 0.001, "end_turn")
+
+        self._arm(monkeypatch, tmp_path, fake_cc)
+        # a system-prompt call takes the subscription leg...
+        assert api.call_claude("hi", system_prompt="sys") == "cc-text"
+        # ...an empty-system call (the baseline arm) takes the api leg exactly
+        assert api.call_claude("hi") == "response-text"
+        assert cc_calls == ["sys"]
+        assert len(recorded_api["calls"]) == 1
+        # each cost-log record names the backend that actually served it
+        records = [json.loads(l) for l in (tmp_path / "cost.jsonl").read_text().splitlines()]
+        assert [r["backend"] for r in records] == ["claude_code", "api"]
+
+    def test_window_exhaustion_falls_back_and_stays_demoted(
+        self, recorded_api, monkeypatch, tmp_path, capsys
+    ):
+        cc_calls = {"n": 0}
+
+        def limited_cc(model, system, user_message):
+            cc_calls["n"] += 1
+            raise api.UsageLimitExceeded("Claude AI usage limit reached|1234567890")
+
+        self._arm(monkeypatch, tmp_path, limited_cc)
+        # the failed call is re-served via the api, not lost
+        assert api.call_claude("hi", system_prompt="sys") == "response-text"
+        # demotion is sticky: later calls skip the subscription entirely
+        assert api.call_claude("again", system_prompt="sys") == "response-text"
+        assert cc_calls["n"] == 1
+        assert "Falling back to the Anthropic API" in capsys.readouterr().err
+        records = [json.loads(l) for l in (tmp_path / "cost.jsonl").read_text().splitlines()]
+        assert [r["backend"] for r in records] == ["api", "api"]
+
+    def test_missing_sdk_serves_run_via_api(self, recorded_api, monkeypatch, tmp_path, capsys):
+        # cc seam stays the _api_guard raiser — it must never be reached
+        monkeypatch.setattr(api, "_backend", "auto")
+        monkeypatch.setattr(api, "_sdk_importable", lambda: False)
+        assert api.call_claude("hi", system_prompt="sys") == "response-text"
+        assert "claude-agent-sdk is not installed" in capsys.readouterr().err
+
+    def test_auto_requires_api_key(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "c.yaml"
+        cfg.write_text(f"backend: auto\noutputs:\n  cost_log: {tmp_path / 'log.jsonl'}\n")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        with pytest.raises(KeyError, match="ANTHROPIC_API_KEY"):
+            api.init(str(cfg))
+
+    def test_pure_claude_code_backend_still_propagates_limit(self, monkeypatch, tmp_path):
+        # the fallback is an auto-mode behavior; explicit claude_code keeps the
+        # stop-and---resume contract (checkpointed progress, window resets later)
+        def limited_cc(model, system, user_message):
+            raise api.UsageLimitExceeded("usage limit reached")
+
+        monkeypatch.setattr(api, "_backend", "claude_code")
+        monkeypatch.setattr(api, "_cost_log_path", tmp_path / "cost.jsonl")
+        monkeypatch.setattr(api, "_call_claude_code_with_retry", limited_cc)
+        with pytest.raises(api.UsageLimitExceeded):
+            api.call_claude("hi", system_prompt="sys")
