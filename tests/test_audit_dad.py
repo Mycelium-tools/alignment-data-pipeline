@@ -143,6 +143,40 @@ def test_resolve_input_run_dir_vs_bare_file(tmp_path):
     assert len(recs2) == 1 and report_dir2 == bare.parent / "audit" and run_dir2 is None
 
 
+def test_library_selection_reports_sizes_and_fallbacks(tmp_path):
+    from dad_pipeline import reasoning_library
+    total = len(reasoning_library.all_ids(reasoning_library.load("prompts/dad")))
+
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
+    (run / "step2").mkdir()
+    scopes = [
+        {"prompt_id": "AW-0001", "entry_ids": ["C1", "M1", "T3"], "selection_source": "select"},
+        {"prompt_id": "AW-0002", "entry_ids": list(map(str, range(total))),  # fail-open
+         "selection_source": "full_library"},
+        {"prompt_id": "AW-0003"},  # pre-selection record: no entry_ids, skipped
+    ]
+    for s in scopes:
+        utils.append_jsonl(s, run / "step2" / "scopes.jsonl")
+
+    report = {}
+    audit_dad.audit_library_selection(run, report)
+    ls = report["library_selection"]
+    assert ls["n"] == 2 and ls["library_size"] == total
+    assert ls["sizes"] == [3, total]
+    assert ls["fallbacks"] == 1
+    assert ls["per_case"] == {"AW-0001": 3, "AW-0002": total}
+
+
+def test_library_selection_calm_without_step2(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
+    report = {}
+    audit_dad.audit_library_selection(run, report)
+    assert report["library_selection"] == {"n": 0}
+    report2 = {}
+    audit_dad.audit_library_selection(None, report2)  # bare-file input
+    assert "library_selection" not in report2
+
+
 def test_audit_lengths_delegates_for_run_dir_and_skips_for_bare(tmp_path):
     run = _write_run(tmp_path, [
         {"prompt_id": "AW-0001", "length_class": "2-3-sentences", "user_message": "Short. Two."},

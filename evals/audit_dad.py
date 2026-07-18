@@ -284,6 +284,50 @@ def audit_locale_taxa(records: list[dict], report: dict) -> None:
     report["locale_taxa"] = {"n_flagged": len(flags), "flags": flags}
 
 
+# ---------------------------------------------------------------- library selection
+
+
+def audit_library_selection(run_dir: Path | None, report: dict) -> None:
+    """Step 2a.5 selection sizes: how many reasoning-library rows each case
+    pulled. Reads step2/scopes.jsonl (entry_ids + selection_source); the target
+    after the selective-prompt change is typical selections well under half the
+    library, with the fail-open full-library fallback staying rare."""
+    print(" Reasoning-library selection (2a.5)")
+    if run_dir is None:
+        print(_fmt("selection report", "skipped", note="(bare-file input; pass a run dir)"))
+        return
+    scopes = utils.load_jsonl(run_dir / "step2" / "scopes.jsonl")
+    rows = [(str(s.get("prompt_id") or "?"), len(s.get("entry_ids") or []),
+             s.get("selection_source")) for s in scopes if s.get("entry_ids") is not None]
+    if not rows:
+        print(_fmt("scoped cases", "0", note="(no step 2 in this run — nothing to check)"))
+        report["library_selection"] = {"n": 0}
+        return
+    # Library size from the run's frozen prompt snapshot when present, so old
+    # runs are judged against the library they actually ran with.
+    from dad_pipeline import reasoning_library
+    lib_dir = run_dir / "inputs" / "prompts"
+    if not reasoning_library.resolve_path(lib_dir).exists():
+        lib_dir = Path(__file__).parent.parent / "prompts" / "dad"
+    total = len(reasoning_library.all_ids(reasoning_library.load(lib_dir)))
+
+    sizes = sorted(n for _, n, _ in rows)
+    median = sizes[len(sizes) // 2]
+    fallbacks = sum(1 for _, _, src in rows if src == "full_library")
+    share = median / total if total else 0.0
+    print(_fmt("cases scoped", str(len(rows))))
+    print(_fmt("rows pulled (of library)", f"min {sizes[0]} / median {median} / max {sizes[-1]} of {total}",
+               _verdict(share, 0.50, 0.70)))
+    print(_fmt("full-library fallbacks", f"{fallbacks}/{len(rows)}",
+               _verdict(fallbacks / len(rows), 0.0, 0.2)))
+    print("      " + ", ".join(f"{pid} {n}" for pid, n, _ in rows))
+    report["library_selection"] = {
+        "n": len(rows), "library_size": total, "sizes": sizes,
+        "median": median, "median_share": share, "fallbacks": fallbacks,
+        "per_case": {pid: n for pid, n, _ in rows},
+    }
+
+
 # ---------------------------------------------------------------- length (delegated)
 
 
@@ -322,6 +366,8 @@ def main() -> None:
     audit_unrealized_details(records, report)
     print()
     audit_locale_taxa(records, report)
+    print()
+    audit_library_selection(run_dir, report)
     print()
     audit_lengths(run_dir, report)
 
