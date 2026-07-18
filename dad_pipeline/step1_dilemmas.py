@@ -44,8 +44,16 @@ from shared import api, utils
 from dad_pipeline.id_registry import IdRegistry, prompt_fingerprint, scenario_fingerprint
 
 _LIST_FIELDS = ("domain", "user_goal", "values_in_tension", "claims")
-_STR_FIELDS = ("moral_patients", "visibility", "user_attitude", "conflict",
+_STR_FIELDS = ("moral_patients", "patient_visibility", "segmented_response_type",
+               "visibility", "user_attitude", "conflict",
                "direction", "welfare_magnitude", "user_stakes", "leverage")
+
+# Descriptive vocabularies for the two model-categorized annotation fields
+# (fixed labels so evals/audit_dad.py can count them; the 1b template names
+# the same sets — keep in sync). The response types mirror dad_segmented's
+# single-turn behavior families.
+PATIENT_VISIBILITY_LABELS = ("on-scene", "offstage", "supply-chain", "statistical")
+SEGMENTED_RESPONSE_TYPES = ("advice", "tension", "refusal", "noticing")
 
 # Domains the spec flags as historically thin (Part 4, item 5).
 _THIN_DOMAINS = ("Family / Relationships", "Education / Parenting", "Journalism / Media",
@@ -278,6 +286,8 @@ def format_annotation(annotation: dict) -> str:
         f"Temptation = {anatomy.get('temptation', '')} | Cost = {anatomy.get('cost', '')}",
         f"Values in tension: {'; '.join(annotation.get('values_in_tension') or [])}",
         f"Moral patients: {annotation.get('moral_patients', '')}",
+        f"Patient visibility: {annotation.get('patient_visibility', '')}",
+        f"Segmented response type: {annotation.get('segmented_response_type', '')}",
         f"Visibility: {annotation.get('visibility', '')}",
         f"User attitude: {annotation.get('user_attitude', '')}",
         f"Conflict: {annotation.get('conflict', '')}",

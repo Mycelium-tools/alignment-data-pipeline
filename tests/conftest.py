@@ -73,6 +73,8 @@ def dad_scenario_reply(user_message: str) -> str:
                 "dilemma_anatomy": {"goal": "g", "temptation": "t", "cost": "c"},
                 "values_in_tension": [pair],
                 "moral_patients": "test patients in context",
+                "patient_visibility": "on-scene",
+                "segmented_response_type": "advice",
                 "visibility": field["Visibility"],
                 "user_attitude": field["User attitude"],
                 "conflict": field["Conflict"],

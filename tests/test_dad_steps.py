@@ -180,6 +180,12 @@ class TestStep1Run:
                          if "gate for dilemma prompts" in c["system_prompt"])
         assert "test patients in context" in gate_call
         assert "a load-bearing claim" not in gate_call
+        # the descriptive categorization fields ride along
+        assert "Patient visibility: on-scene" in gate_call
+        assert "Segmented response type: advice" in gate_call
+        for e in examples:
+            assert e["annotation"]["patient_visibility"] in step1_dilemmas.PATIENT_VISIBILITY_LABELS
+            assert e["annotation"]["segmented_response_type"] in step1_dilemmas.SEGMENTED_RESPONSE_TYPES
 
     def test_malformed_1b_annotation_is_normalized_before_the_gate_prompt(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
