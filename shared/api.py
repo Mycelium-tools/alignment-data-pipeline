@@ -238,8 +238,12 @@ def _call_with_retry(
         max_tokens=max_tokens,
         system=system,
         messages=messages,
-        temperature=temperature,
     )
+    # temperature/top_p/top_k are REMOVED on the Claude 5 family and Opus 4.7+ —
+    # the API 400s if any is sent. Only send temperature to models that still
+    # accept it; the rest run at default sampling (steer them via prompting).
+    if _accepts_sampling_params(model):
+        kwargs["temperature"] = temperature
     if not _requires_adaptive_thinking(model):
         kwargs["thinking"] = {"type": "disabled"}
     return client.messages.create(**kwargs)
@@ -252,6 +256,23 @@ def _requires_adaptive_thinking(model: str) -> bool:
     """Mythos-class models cannot run with thinking disabled (400); callers
     omit the flag for them and rely on _response_text to strip the blocks."""
     return model.startswith(_ADAPTIVE_THINKING_PREFIXES)
+
+
+# Models that reject sampling parameters (temperature/top_p/top_k) with a 400:
+# the Claude 5 family (Fable/Mythos/Sonnet 5) and Opus 4.7+. Older models
+# (Opus 4.6/4.5, Sonnet 4.6/4.5, Haiku 4.5, …) still accept temperature.
+_NO_SAMPLING_PREFIXES = (
+    "claude-fable", "claude-mythos",
+    "claude-opus-4-8", "claude-opus-4-7",
+    "claude-sonnet-5",
+)
+
+
+def _accepts_sampling_params(model: str) -> bool:
+    """False for models that 400 on temperature/top_p/top_k (Claude 5 family,
+    Opus 4.7+). Callers pass temperature unconditionally; this gates whether it
+    reaches the API."""
+    return not model.startswith(_NO_SAMPLING_PREFIXES)
 
 
 def _response_text(response: anthropic.types.Message) -> str:
@@ -508,6 +529,16 @@ def call_claude(
                   f"(model {resolved_model}, backend claude_code) — output may be "
                   "truncated or refused.", file=sys.stderr)
         return (text, stop_reason) if return_stop_reason else text
+
+    # A non-default temperature can't be honored on models that drop sampling
+    # params — surface it once (mirrors the claude_code temperature warning).
+    # _temperature_warned is already declared global earlier in this function.
+    if resolved_temp != 1.0 and not _accepts_sampling_params(resolved_model) and not _temperature_warned:
+        _temperature_warned = True
+        print(f"  WARNING: temperature={resolved_temp} requested, but model "
+              f"{resolved_model!r} does not accept sampling parameters (removed on the "
+              "Claude 5 family / Opus 4.7+) — the call runs at default sampling.",
+              file=sys.stderr)
 
     # Cache the (static, often constitution-sized) system prompt when asked, so
     # calls sharing it pay the cache-read rate after the first. An empty system

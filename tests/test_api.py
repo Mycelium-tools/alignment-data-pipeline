@@ -6,6 +6,7 @@ Nothing here (or anywhere in the suite) reaches the network: see conftest.py.
 import json
 import socket
 from pathlib import Path
+from types import SimpleNamespace
 
 import anthropic
 import httpx
@@ -143,6 +144,59 @@ class TestCallClaude:
 
     def test_clean_stop_reason_is_silent(self, recorded_api, capsys):
         api.call_claude("hi")
+        assert capsys.readouterr().err == ""
+
+
+class TestSamplingParams:
+    """temperature/top_p/top_k are removed on the Claude 5 family and Opus 4.7+
+    (the API 400s if sent). call_claude resolves temperature unconditionally;
+    _call_with_retry gates whether it reaches the transport."""
+
+    def test_predicate_matches_current_model_families(self):
+        for m in ("claude-opus-4-8", "claude-opus-4-7", "claude-sonnet-5",
+                  "claude-fable-5", "claude-mythos-5"):
+            assert not api._accepts_sampling_params(m), m
+        for m in ("claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-6",
+                  "claude-opus-4-5", "claude-sonnet-4-5"):
+            assert api._accepts_sampling_params(m), m
+
+    def _capture(self, monkeypatch, model):
+        """Drive the REAL _call_with_retry with a fake client; return the kwargs
+        that reached client.messages.create."""
+        seen = {}
+
+        class FakeMessages:
+            def create(self, **kwargs):
+                seen.update(kwargs)
+                return SimpleNamespace(
+                    usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+                    content=[SimpleNamespace(text="ok", type="text")],
+                    stop_reason="end_turn")
+
+        class FakeClient:
+            messages = FakeMessages()
+
+        import importlib
+        real = importlib.reload(api)._call_with_retry
+        real(client=FakeClient(), model=model, max_tokens=5, system="", messages=[],
+             temperature=0.0)
+        return seen
+
+    def test_temperature_omitted_for_rejecting_model(self, monkeypatch):
+        seen = self._capture(monkeypatch, "claude-opus-4-8")
+        assert "temperature" not in seen
+
+    def test_temperature_sent_for_accepting_model(self, monkeypatch):
+        seen = self._capture(monkeypatch, "claude-haiku-4-5")
+        assert seen["temperature"] == 0.0
+
+    def test_nondefault_temperature_on_rejecting_model_warns_once(
+        self, recorded_api, monkeypatch, capsys
+    ):
+        monkeypatch.setattr(api, "_config", {"model": "claude-opus-4-8", "temperature": 1.0})
+        api.call_claude("hi", temperature=0.0)
+        assert "does not accept sampling parameters" in capsys.readouterr().err
+        api.call_claude("hi", temperature=0.0)  # warned-once
         assert capsys.readouterr().err == ""
 
 
