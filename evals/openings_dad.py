@@ -185,6 +185,45 @@ def embedding_report(run_dir: Path, stage: str, threshold: float = 0.9) -> None:
         print(f"      {s:.3f}  {sents[i][:60]!r} ~ {sents[j][:60]!r}")
 
 
+def prompt_length_report(run_dir: Path) -> dict:
+    """User-message length audit for step 1: overall spread, plus — on runs
+    whose records carry a dealt ``length_class`` — realized chars per class and
+    any records outside their class's lenient band (assigned vs realized is the
+    check that the dice mechanism holds through 1b and 1c)."""
+    from dad_pipeline.step1_dilemmas import _LENGTH_BANDS
+
+    recs = [r for r in utils.load_jsonl(run_dir / "step1" / "dilemmas.jsonl")
+            if (r.get("user_message") or "").strip()]
+    if not recs:
+        print("  [prompt lengths] no dilemmas found")
+        return {"n": 0}
+    lens = sorted(len(r["user_message"].strip()) for r in recs)
+    median = lens[len(lens) // 2]
+    print(f"  [prompt lengths] {len(recs)} prompts | chars min {lens[0]} / "
+          f"median {median} / max {lens[-1]} | {sum(l > 1000 for l in lens)} over 1000")
+
+    by_class: dict = defaultdict(list)
+    for r in recs:
+        if r.get("length_class"):
+            by_class[r["length_class"]].append(len(r["user_message"].strip()))
+    out_of_band = []
+    for cls in _LENGTH_BANDS:  # sampler order, so the report reads short → long
+        if cls not in by_class:
+            continue
+        vals = sorted(by_class[cls])
+        lo, hi = _LENGTH_BANDS[cls]
+        bad = [v for v in vals if not lo <= v <= hi]
+        out_of_band.extend((cls, v) for v in bad)
+        flag = f"  <-- {len(bad)} outside band [{lo}, {hi}]" if bad else ""
+        print(f"    {cls:>16}: n={len(vals)}, chars {vals[0]}-{vals[-1]}, "
+              f"median {vals[len(vals) // 2]}{flag}")
+    if not by_class:
+        print("    (records carry no length_class — pre-dice run)")
+    return {"n": len(recs), "median": median,
+            "by_class": {c: sorted(v) for c, v in by_class.items()},
+            "out_of_band": out_of_band}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Opening-shape audit for DAD runs.")
     parser.add_argument("--input", action="append", required=True,
@@ -198,6 +237,7 @@ def main() -> None:
     for inp in args.input:
         run_dir = Path(inp).resolve()
         print(f"\n=== {run_dir.name} ===")
+        prompt_length_report(run_dir)
         for stage in stages:
             report(run_dir, stage)
             if args.embeddings:

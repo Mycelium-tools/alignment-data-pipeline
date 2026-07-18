@@ -47,14 +47,26 @@ def dad_scenario_reply(user_message: str) -> str:
     prompt: one object per SCENARIO block, its annotation copied verbatim from
     the block's own assigned fields (as the template instructs). Kept here
     because both the step-level and e2e DAD tests dispatch on it."""
+    # Derived, not hardcoded: the length bands live with the sampler, and a
+    # drafted prompt must clear its card's lenient band to be accepted.
+    from dad_pipeline.step1_dilemmas import _LENGTH_BANDS, _LENGTH_TEXT
+
     out = []
     for block in re.findall(r"SCENARIO (S-\d+)\n((?:- .*\n?)*)", user_message):
         sid, body = block
         field = dict(re.findall(r"- ([^:]+): (.*)", body))
         pair = field["Value pairs to build in"].split(" (add more")[0].split(";")[0].strip()
+        prompt = f"Drafted user message for {sid}."
+        for label, text in _LENGTH_TEXT.items():
+            if field.get("Length", "").startswith(text):
+                lo, _hi = _LENGTH_BANDS[label]
+                filler = " The situation keeps going with believable texture."
+                while len(prompt) < lo + 40:
+                    prompt += filler
+                break
         out.append({
             "scenario_id": sid,
-            "prompt": f"Drafted user message for {sid}.",
+            "prompt": prompt,
             "annotation": {
                 "domain": field["Domain"].split(", "),
                 "user_goal": field["User goal"].split(", "),

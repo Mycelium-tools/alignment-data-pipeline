@@ -157,3 +157,19 @@ class TestMatchDad:
     def test_run_without_scenario_ids(self, tmp_path):
         a = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "x"}])
         assert loader.run_has_scenario_ids(a) is False
+
+
+class TestDadLineageBaseline:
+    def test_baseline_joins_by_prompt_id_in_both_lineage_shapes(self, tmp_path):
+        run = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "U"}])
+        _write_jsonl(run / "baseline" / "baseline_responses.jsonl",
+                     [{"prompt_id": "AW-0001", "user_message": "U",
+                       "baseline_response": "plain answer", "model": "m-base"}])
+        lin = loader.dad_lineage(run, "A-rec-0")
+        assert lin["baseline"]["baseline_response"] == "plain answer"
+        lin = loader.dad_lineage_by_prompt(run, "AW-0001")
+        assert lin["baseline"]["baseline_response"] == "plain answer"
+
+    def test_runs_without_baseline_records_get_none(self, tmp_path):
+        run = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "U"}])
+        assert loader.dad_lineage(run, "A-rec-0")["baseline"] is None

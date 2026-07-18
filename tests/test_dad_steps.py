@@ -15,7 +15,7 @@ import threading
 import pytest
 
 from conftest import dad_scenario_reply
-from dad_pipeline import reasoning_library, step1_dilemmas, step2_responses, step3_rewrite
+from dad_pipeline import baseline, reasoning_library, step1_dilemmas, step2_responses, step3_rewrite
 from shared import utils
 
 
@@ -68,6 +68,60 @@ class TestGenerateScenarios:
         assert len(framed) >= 1
         assert all(p["user_moral_framework"] for p in batch)
 
+    def test_length_classes_dealt_to_exact_shares(self):
+        # At n=40 every share is integral, so counts are exact by construction —
+        # derived from the sampler's own table, never hardcoded.
+        batch = step1_dilemmas.generate_scenarios(40, random.Random(1))
+        counts = {}
+        for p in batch:
+            counts[p["length_class"]] = counts.get(p["length_class"], 0) + 1
+        expected = {label: round(share * 40)
+                    for label, share, _, _ in step1_dilemmas._LENGTH_CLASSES}
+        assert counts == expected
+        # no positional truncation bias: the tail share must be reachable at
+        # small n (the pre-fix _share_deck could never deal it at n=5)
+        tail = step1_dilemmas._LENGTH_CLASSES[-1][0]
+        assert any(p["length_class"] == tail
+                   for seed in range(12)
+                   for p in step1_dilemmas.generate_scenarios(5, random.Random(seed)))
+
+    def test_at_least_one_guarantee_holds_at_small_n_every_seed(self):
+        # _share_deck reserves at_least_one items out of the trimmed pool, so
+        # the guarantee is CERTAIN, not probabilistic — including the overfill
+        # sizes where the pre-fix shuffle-then-truncate dropped it ~25-33% of
+        # the time (n=3 Systemic leverage, n=2 Hidden visibility).
+        for seed in range(60):
+            for n in (2, 3, 4, 5):
+                batch = step1_dilemmas.generate_scenarios(n, random.Random(seed))
+                assert any(p["leverage"] == "Systemic" for p in batch), (n, seed, "Systemic")
+                assert any(p["visibility"] == "Hidden" for p in batch), (n, seed, "Hidden")
+
+    def test_cultural_setting_on_a_minority_slice_without_repeats(self):
+        batch = step1_dilemmas.generate_scenarios(40, random.Random(1))
+        dealt = [p["cultural_setting"] for p in batch if p["cultural_setting"]]
+        assert len(dealt) == round(step1_dilemmas._CULTURAL_SETTING_FRACTION * 40)
+        assert set(dealt) <= set(step1_dilemmas._CULTURAL_SETTINGS)
+        assert len(set(dealt)) == len(dealt), "a setting repeated before the deck cycled"
+        assert any(p["cultural_setting"] is None for p in batch)
+
+    def test_format_scenario_renders_length_always_and_culture_conditionally(self):
+        p = step1_dilemmas.generate_scenarios(1, random.Random(3))[0]
+        p["cultural_setting"] = "Jain tradition"
+        card = step1_dilemmas.format_scenario(p)
+        assert f"- Length: {step1_dilemmas._LENGTH_TEXT[p['length_class']]}" in card
+        assert "- Cultural setting: Jain tradition" in card
+        p["cultural_setting"] = None
+        assert "Cultural setting" not in step1_dilemmas.format_scenario(p)
+
+    def test_length_ok_bands_are_lenient_and_fail_open_for_legacy(self):
+        assert not step1_dilemmas._length_ok("way too short", "ramble")
+        assert not step1_dilemmas._length_ok("x" * 5000, "2-3-sentences")
+        assert step1_dilemmas._length_ok("A blunt ask about the corridor?", "2-3-sentences")
+        assert step1_dilemmas._length_ok("x" * 1200, "ramble")
+        # scenarios from runs that predate the axis carry no class: no gate
+        assert step1_dilemmas._length_ok("anything", None)
+        assert step1_dilemmas._length_ok("anything", "unknown-class")
+
 
 # --- Step 1b/1c: drafting via run() --------------------------------------
 
@@ -96,8 +150,11 @@ class TestStep1Run:
         assert [e["prompt_id"] for e in examples] == ["AW-0001", "AW-0002"]
         for e in examples:
             assert e["user_message"] == "Refined user message."  # 1c output
-            assert e["draft_user_message"] == f"Drafted user message for {e['scenario_id']}."
+            # the stub pads drafts to their dealt length band, so match the stem
+            assert e["draft_user_message"].startswith(
+                f"Drafted user message for {e['scenario_id']}.")
             assert e["taxa_subcategory"]
+            assert e["length_class"] in step1_dilemmas._LENGTH_TEXT  # stamped
             assert "scenario_deviations" not in e
             # stable content-keyed ids assigned alongside the per-run ids
             assert e["scenario_gid"].startswith("S-")
@@ -197,6 +254,39 @@ class TestStep1Run:
         assert "draft_user_message" not in e  # only set when refine succeeded
         assert len(utils.load_jsonl(tmp_path / "refine_failures.jsonl")) == 2
         assert utils.load_jsonl(tmp_path / "refinements.jsonl") == []
+
+    def test_length_violating_draft_is_retried_not_checkpointed(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # seed 0 deals a single scenario whose length class has a nonzero lower
+        # band (precondition asserted below), so an egregiously short draft must
+        # be rejected and re-drawn — and the reject is a retry, not a strike.
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "batch_size": 1,
+                                      "scenario_seed": 0, "refine": False}}
+        scen = step1_dilemmas.generate_scenarios(1, random.Random(0))[0]
+        lo, _hi = step1_dilemmas._LENGTH_BANDS[scen["length_class"]]
+        assert lo > 0, "precondition: pick a seed whose class has a lower band"
+        batch_calls = {"n": 0}
+
+        def short_then_valid(user_message, **kw):
+            batch_calls["n"] += 1
+            reply = json.loads(dad_scenario_reply(user_message))
+            if batch_calls["n"] == 1:
+                reply[0]["prompt"] = "Too short."  # egregious band miss
+            return json.dumps(reply)
+
+        calls = stub_claude(short_then_valid)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(calls) == 2  # rejected draft cost one call, then the retry
+        assert len(examples) == 1
+        assert examples[0]["length_class"] == scen["length_class"]
+        assert step1_dilemmas._length_ok(examples[0]["user_message"],
+                                         scen["length_class"])
+        # a length reject is not a parse failure: nothing lands in draft_failures
+        assert utils.load_jsonl(tmp_path / "draft_failures.jsonl") == []
 
     def test_unusable_batch_raw_is_persisted(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -682,6 +772,78 @@ class TestStep3Run:
         )
         assert calls == []
         assert len(final) == 2
+
+
+# --- Baseline: unguided control responses ----------------------------------
+
+class TestBaselineRun:
+    def test_plain_call_no_system_prompt_verbatim_user_message(
+        self, tiny_config, tmp_path, stub_claude
+    ):
+        calls = stub_claude(["Plain model answer."])
+        results = baseline.run(tiny_config, tmp_path, [_dilemma()])
+
+        assert len(results) == 1
+        rec = results[0]
+        assert rec["prompt_id"] == "AW-0001"
+        assert rec["baseline_response"] == "Plain model answer."
+        # the whole point of the control arm: NO system prompt, and the 1c
+        # user prompt reaches the model verbatim
+        assert calls[0]["system_prompt"] == ""
+        assert calls[0]["user_message"] == "User dilemma text."
+        assert calls[0]["stage"] == "baseline_response"
+        assert calls[0]["item_id"] == "AW-0001"
+        stored = utils.load_jsonl(tmp_path / "baseline_responses.jsonl")
+        assert stored == results
+
+    def test_model_knob_reaches_the_api_and_the_record(
+        self, tiny_config, tmp_path, stub_claude
+    ):
+        config = dict(tiny_config)
+        config["dad"] = {**tiny_config["dad"], "baseline": {"enabled": True, "model": "m-base"}}
+        calls = stub_claude(["Plain model answer."])
+        results = baseline.run(config, tmp_path, [_dilemma()])
+        assert calls[0]["model"] == "m-base"
+        assert results[0]["model"] == "m-base"
+
+        # without the knob: model=None reaches the API (call_claude resolves
+        # the global fallback), and the record names the global model
+        calls = stub_claude(["Plain model answer."])
+        results = baseline.run(tiny_config, tmp_path / "no_knob", [_dilemma()])
+        assert calls[0]["model"] is None
+        assert results[0]["model"] == tiny_config["model"]
+
+    def test_enabled_defaults_on_and_honors_explicit_off(self, tiny_config):
+        assert baseline.enabled(tiny_config) is True  # no baseline block at all
+        assert baseline.enabled(
+            {"dad": {"baseline": {"enabled": False}}}) is False
+        assert baseline.enabled({"dad": {"baseline": {"enabled": True}}}) is True
+
+    @pytest.mark.parametrize("bad_reply", [
+        ("cut off mid-sen", "max_tokens"),  # truncated
+        ("", "end_turn"),                   # empty
+    ], ids=["truncated", "empty"])
+    def test_unusable_reply_skips_without_checkpoint(
+        self, tiny_config, tmp_path, stub_claude, bad_reply
+    ):
+        stub_claude([bad_reply])
+        assert baseline.run(tiny_config, tmp_path, [_dilemma()]) == []
+        assert utils.load_jsonl(tmp_path / "baseline_responses.jsonl") == []
+
+        # resume retries the same dilemma and succeeds
+        calls = stub_claude(["Plain model answer."])
+        results = baseline.run(tiny_config, tmp_path, [_dilemma()])
+        assert len(calls) == 1
+        assert len(results) == 1
+
+    def test_resume_makes_no_calls(self, tiny_config, tmp_path, stub_claude):
+        stub_claude(["Plain model answer."])
+        baseline.run(tiny_config, tmp_path, [_dilemma()])
+
+        calls = stub_claude([])
+        results = baseline.run(tiny_config, tmp_path, [_dilemma()])
+        assert calls == []
+        assert len(results) == 1
 
 
 # --- Per-stage model knobs + cost-log stage tags ---------------------------

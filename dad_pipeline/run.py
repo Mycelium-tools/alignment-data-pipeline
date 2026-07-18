@@ -7,6 +7,10 @@ rewrite) → 2 responses (2a scope the case from the user's message; 2a.5 flag
 which reasoning-library trigger conditions fire, in a dedicated selection
 call; 2b respond over the scope plus the triggered library rows) → 3 rewrite
 against the distilled constitution principles (the alignment-critical pass).
+
+A baseline control arm (dad_pipeline/baseline.py) rides along with step 2:
+one plain-model call per dilemma, no system prompt — viewer comparison data,
+never a training input. Toggled by dad.baseline.enabled.
 """
 
 import argparse
@@ -18,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
 from dad_pipeline import (
+    baseline,
     step1_dilemmas,
     step2_responses,
     step3_rewrite,
@@ -85,6 +90,16 @@ def main() -> None:
     if start_step <= 1 <= stop_after:
         print("[Step 1] Scenario generation (1a) and first-attempt drafts (1b)")
         dilemmas = step1_dilemmas.run(config, prompts_dir, step_dirs[1])
+        print(f"  Running cost: ${api.get_total_cost():.4f}\n")
+
+    # Baseline control arm: rides with step 2 (it needs only the step-1
+    # prompts) — one plain-model call per dilemma, no system prompt. Viewer
+    # comparison data; never read by any generation step, never trains.
+    if baseline.enabled(config) and start_step <= 2 <= stop_after:
+        if dilemmas is None:
+            dilemmas = utils.load_jsonl(step_dirs[1] / "dilemmas.jsonl")
+        print("[Baseline] Plain-model control responses (no system prompt)")
+        baseline.run(config, run_dir / "baseline", dilemmas)
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 
     if start_step <= 2 <= stop_after:
