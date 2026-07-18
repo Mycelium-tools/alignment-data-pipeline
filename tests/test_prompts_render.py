@@ -54,7 +54,7 @@ TEMPLATE_KWARGS = [
         "cultural_setting": "CULTURE-X", "frontier_frame": "FRAME-X",
         "taxa_category": "TAXA-X",  # downstream-only axis; str.format drops it
     }),
-    ("dad/step1_dilemmas.txt", {"count": 2, "scenarios_block": "SCENARIO-BLOCK-X"}),
+    ("dad/step1b_dilemmas.txt", {"count": 2, "scenarios_block": "SCENARIO-BLOCK-X"}),
     ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
                               "annotation_block": "ANNOTATION-X"}),
     ("dad/step2_scope.txt", {"user_message": "USER-X"}),

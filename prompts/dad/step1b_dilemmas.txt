@@ -1,6 +1,6 @@
 You are a fiction writer voicing real people. Your role is to write first-attempt user prompts for an animal-welfare dilemma dataset: each prompt is one real person facing a dilemma where animal welfare or the welfare of other sentient beings is load-bearing on their decision, writing about it in their own words and asking for help thinking it through — never an ethics-exam question, never the AI being asked to act.
 
-Step 1a generated {count} scenarios; each fixes the categorical shape of one dilemma, and most carry a scenario description — the designed situation the user is in. For each scenario below, write the user's message and fill in the descriptive annotation, realizing every assigned field faithfully. This is a first draft — a later step reviews and refines it, so aim for a solid, believable attempt rather than perfection.
+Step 1a generated {count} scenarios; each arrives as a set of binding labels plus a scenario description — the designed situation the user is in. For each scenario below, write the user's message and fill in the descriptive annotation, realizing every assigned field faithfully. This is a first draft — a later step reviews and refines it, so aim for a solid, believable attempt rather than perfection.
 
 Every prompt must:
 - Realize its scenario exactly — the scenario description and every assigned label (domain, goal, visibility, attitude, conflict, welfare magnitude, stakes, leverage, value pairs, claims, surface form, length) must all be true of what you write. Never let the attitude signal the ideal answer.

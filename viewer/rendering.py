@@ -314,7 +314,11 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "coverage_report": batch.get("coverage_report", ""),
             "tension_vocab": vocab,
         }
-        r.system, r.user = _format_split(tpl("step1_dilemmas.txt"), r.variables, r)
+        # renamed 2026-07; snapshots from older runs carry the old filename
+        draft_name = ("step1b_dilemmas.txt"
+                      if get_template(run_dir, commit, "step1b_dilemmas.txt", pipeline).text
+                      is not None else "step1_dilemmas.txt")
+        r.system, r.user = _format_split(tpl(draft_name), r.variables, r)
         return r
 
     if stage == "step1_refine":

@@ -53,7 +53,7 @@ def dad_scenario_plan_reply(user_message: str) -> str:
 
 
 def dad_scenario_reply(user_message: str) -> str:
-    """Echo a conforming step-1b JSON array for a rendered step1_dilemmas.txt
+    """Echo a conforming step-1b JSON array for a rendered step1b_dilemmas.txt
     prompt: one object per SCENARIO block, its annotation copied verbatim from
     the block's own assigned fields (as the template instructs). Kept here
     because both the step-level and e2e DAD tests dispatch on it."""

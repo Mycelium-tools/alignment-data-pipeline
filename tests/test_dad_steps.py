@@ -316,6 +316,49 @@ class TestStep1Run:
         plan_calls = [c for c in calls if c["stage"] == "scenario_plan"]
         assert [c["item_id"] for c in plan_calls] == ["S-001"]  # only the failed deal replanned
 
+    def test_truncated_plan_is_retried_never_checkpointed(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # The codebase invariant: a max_tokens completion is rejected on
+        # stop_reason alone — even when its tags happen to parse cleanly.
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "batch_size": 1}}
+        plan_calls = {"n": 0}
+
+        def truncated_then_valid(user_message, **kw):
+            if "write a description of a specific scenario" in _sysuser(user_message, kw):
+                plan_calls["n"] += 1
+                if plan_calls["n"] == 1:
+                    # well-formed text, truncated stop: must still be rejected
+                    return (dad_scenario_plan_reply(user_message), "max_tokens")
+                return dad_scenario_plan_reply(user_message)
+            return _dad_step1_dispatch(user_message, **kw)
+
+        stub_claude(truncated_then_valid)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1  # the in-call retry recovered
+        assert plan_calls["n"] == 2
+        failures = utils.load_jsonl(tmp_path / "scenario_plan_failures.jsonl")
+        assert len(failures) == 1
+        assert failures[0]["truncated"] is True and failures[0]["attempt"] == 1
+
+    def test_legacy_snapshot_template_name_still_drafts(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Runs snapshotted before the step1b_dilemmas.txt rename carry the old
+        # filename in inputs/prompts; --resume must keep drafting from it.
+        import shutil
+        legacy_prompts = tmp_path / "prompts"
+        shutil.copytree(prompts_dad, legacy_prompts)
+        (legacy_prompts / "step1b_dilemmas.txt").rename(
+            legacy_prompts / "step1_dilemmas.txt")
+
+        stub_claude(_dad_step1_dispatch)
+        examples = step1_dilemmas.run(tiny_config, legacy_prompts, tmp_path / "out")
+        assert len(examples) == 2
+
     def test_seed_import_rejects_duplicate_ids(self, tiny_config, prompts_dad, tmp_path):
         seed_file = tmp_path / "seeds.jsonl"
         rows = [{"id": "AW-0001", "prompt": "p1"}, {"id": "AW-0001", "prompt": "p2"}]

@@ -15,7 +15,7 @@
 - Step 1b — first attempt: the model drafts each user prompt to fit its
   scenario (binding labels + the plan's description) and completes the
   descriptive annotation fields, per the instructions in
-  prompts/dad/step1_dilemmas.txt. Drafting runs in batches; a draft missing
+  prompts/dad/step1b_dilemmas.txt. Drafting runs in batches; a draft missing
   from a batch's output is re-requested, and accepted drafts are taken as
   returned — there is no per-example adherence check; distribution fidelity
   is monitored by the corpus-level checklist instead.
@@ -396,9 +396,15 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     # Stable content-keyed ids (scenario_gid / prompt_gid), shared across runs.
     registry = IdRegistry(_registry_path(output_dir))
 
-    draft_template = prompts_dir / "step1_dilemmas.txt"
+    draft_template = prompts_dir / "step1b_dilemmas.txt"
     if not draft_template.exists():
-        raise SystemExit(f"Draft template not found at {draft_template} — the DAD pipeline cannot run without it.")
+        # runs snapshotted before the 2026-07 rename carry the old filename
+        legacy = prompts_dir / "step1_dilemmas.txt"
+        if legacy.exists():
+            draft_template = legacy
+        else:
+            raise SystemExit(f"Draft template not found at {draft_template} — "
+                             "the DAD pipeline cannot run without it.")
 
     # Step 1c: review-and-rewrite each draft. On by default (matches config.yaml
     # and CLAUDE.md); disable with dad.dilemmas.refine: false.
@@ -485,9 +491,18 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                     deal, plan_template)
                 failures = []
                 for attempt in (1, 2):
-                    raw = api.call_claude(user_message=user_prompt, system_prompt=system_prompt,
-                                          max_tokens=4000, model=plan_model,
-                                          stage="scenario_plan", item_id=deal["scenario_id"])
+                    raw, stop_reason = api.call_claude(
+                        user_message=user_prompt, system_prompt=system_prompt,
+                        max_tokens=4000, model=plan_model,
+                        stage="scenario_plan", item_id=deal["scenario_id"],
+                        return_stop_reason=True)
+                    # The codebase invariant: truncated output is never used or
+                    # checkpointed, even when its tags happen to parse.
+                    if stop_reason == "max_tokens":
+                        failures.append({"scenario_id": deal["scenario_id"],
+                                         "attempt": attempt, "raw": raw,
+                                         "truncated": True})
+                        continue
                     if compose_scenarios.is_incoherent(raw):
                         return None, raw, failures
                     description = compose_scenarios.extract_description(raw)
