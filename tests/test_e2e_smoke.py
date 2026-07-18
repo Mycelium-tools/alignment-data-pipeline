@@ -90,9 +90,9 @@ def test_sdf_resume_at_layer5_makes_no_calls(tiny_config_file, outputs_root, stu
 def _dad_dispatch(user_message, **kw):
     # The baseline control arm is the only DAD call with no system prompt
     # (every template splits into system + user halves) — and it must carry
-    # the finished 1c prompt verbatim.
+    # the shipped prompt verbatim (the 1b draft, since 1c no longer rewrites).
     if not (kw.get("system_prompt") or ""):
-        assert user_message == "Refined user message."
+        assert user_message.startswith("Drafted user message for ")
         return "Plain baseline answer."
     # Every DAD template splits into a system + user prompt, so the role
     # markers live in system_prompt while the payload stays in the user
@@ -100,8 +100,8 @@ def _dad_dispatch(user_message, **kw):
     blob = (kw.get("system_prompt") or "") + "\n" + user_message
     if "first-attempt user prompts" in blob:  # step 1b: batch draft
         return dad_scenario_reply(user_message)
-    if "editor of dilemma prompts" in blob:  # step 1c: latent rewrite
-        return json.dumps({"prompt": "Refined user message.", "notes": "n"})
+    if "gate for dilemma prompts" in blob:  # step 1c: pass/fail gate
+        return json.dumps({"pass": True, "failures": []})
     if "build the full map of the case" in blob:  # step 2a
         return json.dumps({"patients": "p", "goal": "g", "levers": "l", "cost": "c",
                            "magnitude": "m", "upside": "u", "counterfactual": "cf"})
@@ -136,7 +136,7 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
     for record in corpus:
         assert set(record.keys()) == {"record_id", "messages"}
         assert [m["role"] for m in record["messages"]] == ["user", "assistant"]
-        assert record["messages"][0]["content"] == "Refined user message."  # 1c ran
+        assert record["messages"][0]["content"].startswith("Drafted user message for ")  # 1b draft (gate kept it)
         assert record["messages"][1]["content"] == "Rewritten careful answer."
     # the baseline rode along: one record per prompt, never in the corpus,
     # and each one reached its 2b call as the advisory first take
@@ -147,7 +147,7 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
                      if "advisor responding to a user's dilemma" in (c["system_prompt"] or "")]
     assert len(respond_calls) == N_DAD_PROMPTS
     assert all("Plain baseline answer." in c["user_message"] for c in respond_calls)
-    # 1 batch draft, then per prompt: refine (1c) + baseline + scope (2a)
+    # 1 batch draft, then per prompt: gate (1c) + baseline + scope (2a)
     # + select (2a.5) + respond (2b) + rewrite (3)
     assert len(calls) == 1 + 6 * N_DAD_PROMPTS
 

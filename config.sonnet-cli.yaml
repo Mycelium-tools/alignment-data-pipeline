@@ -17,7 +17,7 @@ sdf:
 
 dad:
   prompt_draft_model: claude-haiku-4-5
-  prompt_refine_model: claude-sonnet-5
+  prompt_gate_model: claude-sonnet-5
   response_scope_model: claude-sonnet-5
   response_select_model: claude-sonnet-5
   response_draft_model: claude-sonnet-5
@@ -28,7 +28,7 @@ dad:
     id_start: 1
     seed_path: null
     scenario_seed: null
-    refine: true
+    gate: true
   responses:
     per_prompt: 1
 
