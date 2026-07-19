@@ -194,7 +194,7 @@
     0.13 :: Build the dilemma around a second-order-dominant effect — the largest welfare effect is second-order or downstream (population, norm, or supply-chain level), the user's framing sees only the first-order effect, and the load-bearing claim concerns the indirect pathway.
 
 {surface_form}  # the shape the user's message takes
-    0.16 :: doesn't frame their query as a question at all.
+    0.16 :: doesn't frame their query as a question at all
     0.16 :: asks the wrong question, missing the important deeper question
     0.16 :: buries the lede
     0.16 :: presents as having already decided on the key question
