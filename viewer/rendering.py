@@ -132,6 +132,146 @@ def inline_word_diff_html(before: str, after: str) -> str:
     return "".join(out)
 
 
+_AUDIT_BADGES = {"GOOD": "🟢", "OK": "🟠", "BAD": "🔴"}
+
+
+def audit_section_table(section: dict) -> list[dict]:
+    """One corpus-audit report section (a ``sections`` entry written by
+    evals/audit_dad.py) shaped as dataframe rows. Verdicts get a color badge;
+    the verdict/note columns are omitted when the whole section has none, so
+    tables stay compact. Pure (no streamlit) so it stays testable."""
+    rows = section.get("rows") or []
+    keep_verdict = any(r.get("verdict") for r in rows)
+    keep_note = any(r.get("note") for r in rows)
+    out = []
+    for r in rows:
+        row = {"check": r.get("label", ""), "value": r.get("value", "")}
+        if keep_verdict:
+            v = r.get("verdict")
+            row["verdict"] = f"{_AUDIT_BADGES.get(v, '')} {v}".strip() if v else ""
+        if keep_note:
+            row["note"] = r.get("note", "")
+        out.append(row)
+    return out
+
+
+# Fixed arm colors for the comparison charts: plain Claude wears Claude's
+# terracotta, the pipeline wears the same green as the viewer's diff
+# highlights (rendering.inline_word_diff_html's ADD color).
+AUDIT_ARM_COLUMNS = ("plain Claude", "pipeline")
+AUDIT_ARM_COLORS = ("#D97757", "#3FB366")
+
+
+def audit_length_chart_rows(per_case: dict) -> list[dict]:
+    """Response-length per_case ({pid: {pipeline: chars, plain: chars|None}})
+    as wide-form rows (one per record, one column per arm) so the chart can
+    pin each arm's color. Pure so it stays testable."""
+    return [{"record": pid,
+             "plain Claude": per_case[pid].get("plain"),
+             "pipeline": per_case[pid].get("pipeline") or 0}
+            for pid in sorted(per_case)]
+
+
+def _batch_delta_row(metric: str, plain_total: int, pipeline_total: int) -> dict:
+    diff = pipeline_total - plain_total
+    return {"metric": metric,
+            "plain Claude": f"{plain_total:,}", "pipeline": f"{pipeline_total:,}",
+            "Δ absolute": f"{diff:+,}",
+            "Δ %": f"{diff / plain_total:+.1%}" if plain_total else "—"}
+
+
+def audit_batch_totals(report: dict) -> list[dict]:
+    """Whole-batch plain-vs-pipeline totals (characters, unique reasons) with
+    absolute and percentage deltas. Computed from per_case data so reports
+    written before the batch rows render too; only paired records (both arms
+    present) are summed, so the comparison stays like-for-like."""
+    rows = []
+    lengths_pc = (report.get("response_lengths") or {}).get("per_case") or {}
+    paired = [v for v in lengths_pc.values()
+              if v.get("plain") is not None and v.get("pipeline") is not None]
+    if paired:
+        rows.append(_batch_delta_row("total characters",
+                                     sum(v["plain"] for v in paired),
+                                     sum(v["pipeline"] for v in paired)))
+    reasons_pc = (report.get("moral_patient_reasons") or {}).get("per_case") or {}
+    paired_r = [v for v in reasons_pc.values() if v.get("plain") and v.get("pipeline")]
+    if paired_r:
+        rows.append(_batch_delta_row("total unique reasons",
+                                     sum(len(v["plain"]["reasons"]) for v in paired_r),
+                                     sum(len(v["pipeline"]["reasons"]) for v in paired_r)))
+    return rows
+
+
+def audit_survival_groups(case: dict) -> list[tuple[str, list[str]]] | None:
+    """One record's reason comparison as verdict groups — the plain-anchored
+    reasons bucketed kept/weakened/dropped (judged against the pipeline
+    response) plus the pipeline-added list. None when the survival judge
+    hasn't run for this record; pages then fall back to plain per-arm lists.
+    Pure (no streamlit) so it stays testable."""
+    surv = case.get("survival")
+    if not surv:
+        return None
+    buckets: dict = {"kept": [], "weakened": [], "dropped": []}
+    for a in surv.get("anchored") or []:
+        if a.get("verdict") in buckets:
+            buckets[a["verdict"]].append(str(a.get("reason")))
+    added = [str(x) for x in surv.get("added") or []]
+    return [
+        (f"✓ Kept by the pipeline ({len(buckets['kept'])})", buckets["kept"]),
+        (f"〜 Weakened ({len(buckets['weakened'])})", buckets["weakened"]),
+        (f"✗ Dropped ({len(buckets['dropped'])})", buckets["dropped"]),
+        (f"➕ Added by the pipeline ({len(added)})", added),
+    ]
+
+
+def audit_reason_chart_rows(per_case: dict) -> list[dict]:
+    """Moral-patient-reasons per_case ({pid: {arm: {reasons, chars, ...}}})
+    as wide-form rows (unique-reason counts, one column per arm). Fallback
+    chart for reports without survival data."""
+    rows = []
+    for pid in sorted(per_case):
+        plain, pipe = per_case[pid].get("plain"), per_case[pid].get("pipeline")
+        rows.append({"record": pid,
+                     "plain Claude": len(plain["reasons"]) if plain else None,
+                     "pipeline": len(pipe["reasons"]) if pipe else None})
+    return rows
+
+
+# Survival stacked chart: per record, plain-anchored reasons bucketed by their
+# fate plus the pipeline's additions. Bottom three segments sum to the plain
+# arm's count; kept+weakened+added approximates the pipeline arm's.
+# Colors follow the arm semantics of AUDIT_ARM_COLORS: the terracotta family
+# for plain-Claude-origin reasons (kept / paler weakened / darkest dropped),
+# pipeline green for what the pipeline added.
+AUDIT_SURVIVAL_CATEGORIES = ("✓ kept", "〜 weakened", "✗ dropped", "➕ added")
+AUDIT_SURVIVAL_COLORS = ("#D97757", "#EFB09A", "#8F3E1F", "#3FB366")
+
+
+def audit_survival_chart_rows(per_case: dict) -> list[dict]:
+    """Long-form rows for the stacked survival chart, one row per record ×
+    category, each carrying the joined reason texts so the chart's hover
+    tooltip can show WHICH reasons sit in the segment. Empty when no record
+    has survival data (page falls back to the per-arm grouped chart)."""
+    rows = []
+    for pid in sorted(per_case):
+        surv = per_case[pid].get("survival")
+        if not surv:
+            continue
+        buckets = {c: [] for c in AUDIT_SURVIVAL_CATEGORIES}
+        for a in surv.get("anchored") or []:
+            key = {"kept": "✓ kept", "weakened": "〜 weakened",
+                   "dropped": "✗ dropped"}.get(a.get("verdict"))
+            if key:
+                buckets[key].append(str(a.get("reason")))
+        buckets["➕ added"] = [str(x) for x in surv.get("added") or []]
+        for order, cat in enumerate(AUDIT_SURVIVAL_CATEGORIES):
+            if buckets[cat]:
+                rows.append({"record": pid, "category": cat, "stack_order": order,
+                             "count": len(buckets[cat]),
+                             "reasons": " • ".join(buckets[cat])})
+    return rows
+
+
 def list_templates(run_dir: Path, git_commit: str | None, pipeline: str) -> list[Template]:
     """Every template file relevant to a run (for the run-detail Prompts tab)."""
     names = []
