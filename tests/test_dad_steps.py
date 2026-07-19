@@ -443,7 +443,7 @@ class TestCoverageTally:
 SCOPE_AXES = {
     "patients": "full pathway", "goal": "underlying goal", "levers": "highest lever",
     "cost": "real cost", "magnitude": "stake magnitude",
-    "upside": "second-order upside", "counterfactual": "realistic baseline",
+    "upside": "second-order upside", "replaceability": "realistic baseline",
 }
 # The well-behaved 2a reply: exactly the seven axes (selection is 2a.5's job).
 GOOD_SCOPE = json.dumps(SCOPE_AXES)
@@ -457,7 +457,7 @@ class TestParseScope:
     def test_control_characters_inside_strings_are_tolerated(self):
         # temperature-1 prose JSON often carries literal newlines inside values —
         # the historical cause of silently empty scopes
-        raw = '{"patients": "line one\nline two", "goal": "g", "levers": "l", "cost": "c", "magnitude": "m", "upside": "u", "counterfactual": "cf"}'
+        raw = '{"patients": "line one\nline two", "goal": "g", "levers": "l", "cost": "c", "magnitude": "m", "upside": "u", "replaceability": "cf"}'
         assert step2_responses._parse_scope(raw)["patients"] == "line one\nline two"
 
     def test_garbage_returns_empty_and_fails_validation(self):
@@ -470,7 +470,7 @@ class TestParseScope:
         # scopes.jsonl records from before the key rename display via the
         # fallback map — the viewer re-renders old runs' 2b prompts with them
         legacy = {"system": "old pathway", "agent": "old lever", "cost": "c",
-                  "upside": "u", "counterfactual": "cf"}
+                  "upside": "u", "replaceability": "cf"}
         rendered = step2_responses.format_scope(legacy)
         assert "old pathway" in rendered and "old lever" in rendered
         # but new runs must produce the new keys — legacy doesn't pass validation
@@ -481,7 +481,7 @@ class TestParseScope:
         # written before the goal/magnitude axes existed must not grow "—"
         # lines that were never in the prompt actually sent (fidelity).
         five_axis = {"patients": "p", "levers": "l", "cost": "c",
-                     "upside": "u", "counterfactual": "cf"}
+                     "upside": "u", "replaceability": "cf"}
         rendered = step2_responses.format_scope(five_axis)
         assert "Goal" not in rendered and "Magnitude" not in rendered
         assert not any(line.endswith(": —") for line in rendered.splitlines())
@@ -540,7 +540,7 @@ class TestStep2Run:
 
         assert len(results) == 1
         assert results[0]["assistant_response"] == "Draft response."
-        assert results[0]["scope"]["counterfactual"] == "realistic baseline"
+        assert results[0]["scope"]["replaceability"] == "realistic baseline"
         assert len(calls) == 3  # scope + select + response
         # the scope map and the user message both reach the response prompt
         respond_call = calls[2]["user_message"]

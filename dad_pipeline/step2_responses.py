@@ -101,14 +101,15 @@ _SCOPE_AXES = (
     ("goal", "Goal (the user's underlying goal, beneath the question they asked)"),
     ("levers", "Levers (available to the user; highest-leverage for welfare identified)"),
     ("cost", "Cost (what acting on the highest-leverage levers could cost the user)"),
-    ("magnitude", "Magnitude (size, likelihood, tractability of the welfare stake; whether this choice is counterfactual for it)"),
+    ("magnitude", "Magnitude (size, likelihood, and how feasible it is to improve the welfare stake; whether this choice changes what would happen otherwise)"),
     ("upside", "Upside (second-order stakes — what choices build, signal, normalize, lock in)"),
-    ("counterfactual", "Counterfactual (is the user's role counterfactual or fungible; the costs at stake)"),
+    ("replaceability", "Replaceability (whether the user's role changes the outcome or someone else would do the same work; the costs at stake)"),
 )
 
-# Scope records from runs before the 2a key rename (system->patients,
-# agent->levers) still render in the viewer via this display-only fallback.
-_LEGACY_AXIS_KEYS = {"patients": "system", "levers": "agent"}
+# Scope records from runs before a 2a key rename still render in the viewer via
+# this display-only fallback: system->patients, agent->levers (an older rename),
+# and counterfactual->replaceability (the de-jargon rename).
+_LEGACY_AXIS_KEYS = {"patients": "system", "levers": "agent", "replaceability": "counterfactual"}
 
 
 def format_scope(scope: dict) -> str:
