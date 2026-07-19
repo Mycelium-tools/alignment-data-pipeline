@@ -57,3 +57,123 @@ class TestInlineWordDiff:
         html = rendering.inline_word_diff_html("a <b> start", "a <b> start\n\nnew para")
         assert "&lt;b&gt;" in html and "<b>" not in html.replace("<br>", "")
         assert "<br><br>" in html
+
+
+class TestAuditSectionTable:
+    def test_verdicts_get_color_badges(self):
+        sec = {"title": "T", "rows": [
+            {"label": "a", "value": "1", "verdict": "GOOD", "note": ""},
+            {"label": "b", "value": "2", "verdict": "BAD", "note": "look here"},
+            {"label": "c", "value": "3", "verdict": None, "note": ""},
+        ]}
+        rows = rendering.audit_section_table(sec)
+        assert rows[0]["verdict"] == "🟢 GOOD"
+        assert rows[1]["verdict"] == "🔴 BAD"
+        assert rows[1]["note"] == "look here"
+        assert rows[2]["verdict"] == ""  # informational row keeps the column blank
+
+    def test_columns_omitted_when_section_has_no_verdicts_or_notes(self):
+        sec = {"rows": [{"label": "a", "value": "1", "verdict": None, "note": ""}]}
+        assert rendering.audit_section_table(sec) == [{"check": "a", "value": "1"}]
+
+    def test_empty_section_is_empty(self):
+        assert rendering.audit_section_table({}) == []
+
+
+class TestAuditChartRows:
+    def test_length_rows_wide_form_keeps_missing_plain_as_none(self):
+        per_case = {"AW-0002": {"pipeline": 500, "plain": 200},
+                    "AW-0001": {"pipeline": 300, "plain": None}}
+        rows = rendering.audit_length_chart_rows(per_case)
+        # sorted by record; one row per record, one column per arm (colors are
+        # pinned by column order — AUDIT_ARM_COLUMNS/AUDIT_ARM_COLORS)
+        assert rows == [
+            {"record": "AW-0001", "plain Claude": None, "pipeline": 300},
+            {"record": "AW-0002", "plain Claude": 200, "pipeline": 500},
+        ]
+
+    def test_reason_rows_count_unique_reasons_per_arm(self):
+        per_case = {"AW-0001": {
+            "plain": {"reasons": ["a"], "chars": 100},
+            "pipeline": {"reasons": ["a", "b", "c"], "chars": 400},
+        }}
+        rows = rendering.audit_reason_chart_rows(per_case)
+        assert rows == [{"record": "AW-0001", "plain Claude": 1, "pipeline": 3}]
+
+    def test_arm_columns_and_colors_stay_paired(self):
+        assert len(rendering.AUDIT_ARM_COLUMNS) == len(rendering.AUDIT_ARM_COLORS)
+        assert rendering.AUDIT_ARM_COLUMNS[0] == "plain Claude"
+
+
+class TestAuditSurvivalGroups:
+    def test_reasons_bucketed_by_verdict_plus_added(self):
+        case = {
+            "plain": {"reasons": ["a", "b", "c"]},
+            "pipeline": {"reasons": ["x", "y"]},
+            "survival": {"anchored": [
+                {"reason": "a", "verdict": "kept"},
+                {"reason": "b", "verdict": "weakened"},
+                {"reason": "c", "verdict": "dropped"},
+            ], "added": ["y"]},
+        }
+        groups = rendering.audit_survival_groups(case)
+        assert [(t.split(" (")[0], rs) for t, rs in groups] == [
+            ("✓ Kept by the pipeline", ["a"]),
+            ("〜 Weakened", ["b"]),
+            ("✗ Dropped", ["c"]),
+            ("➕ Added by the pipeline", ["y"]),
+        ]
+        # counts live in the titles
+        assert groups[0][0].endswith("(1)") and groups[3][0].endswith("(1)")
+
+    def test_no_survival_data_returns_none_for_fallback(self):
+        assert rendering.audit_survival_groups({"plain": {"reasons": ["a"]}}) is None
+
+
+class TestAuditBatchTotals:
+    def test_totals_with_absolute_and_percent_deltas(self):
+        report = {
+            "response_lengths": {"per_case": {
+                "AW-0001": {"pipeline": 400, "plain": 200},
+                "AW-0002": {"pipeline": 600, "plain": 300},
+                "AW-0003": {"pipeline": 999, "plain": None},  # unpaired: excluded
+            }},
+            "moral_patient_reasons": {"per_case": {
+                "AW-0001": {"pipeline": {"reasons": ["a", "b", "c"]},
+                            "plain": {"reasons": ["a", "b"]}},
+            }},
+        }
+        rows = rendering.audit_batch_totals(report)
+        assert rows == [
+            {"metric": "total characters", "plain Claude": "500", "pipeline": "1,000",
+             "Δ absolute": "+500", "Δ %": "+100.0%"},
+            {"metric": "total unique reasons", "plain Claude": "2", "pipeline": "3",
+             "Δ absolute": "+1", "Δ %": "+50.0%"},
+        ]
+
+    def test_empty_report_gives_no_rows(self):
+        assert rendering.audit_batch_totals({}) == []
+
+
+class TestAuditSurvivalChartRows:
+    def test_rows_bucket_counts_and_carry_reason_texts(self):
+        per_case = {"AW-0001": {
+            "survival": {"anchored": [
+                {"reason": "a", "verdict": "kept"},
+                {"reason": "b", "verdict": "kept"},
+                {"reason": "c", "verdict": "dropped"},
+            ], "added": ["n1"]},
+        }, "AW-0002": {}}  # no survival -> no rows
+        rows = rendering.audit_survival_chart_rows(per_case)
+        assert rows == [
+            {"record": "AW-0001", "category": "✓ kept", "stack_order": 0,
+             "count": 2, "reasons": "a • b"},
+            {"record": "AW-0001", "category": "✗ dropped", "stack_order": 2,
+             "count": 1, "reasons": "c"},
+            {"record": "AW-0001", "category": "➕ added", "stack_order": 3,
+             "count": 1, "reasons": "n1"},
+        ]
+
+    def test_no_survival_anywhere_gives_empty(self):
+        assert rendering.audit_survival_chart_rows({"AW-0001": {"plain": {}}}) == []
+        assert len(rendering.AUDIT_SURVIVAL_CATEGORIES) == len(rendering.AUDIT_SURVIVAL_COLORS)

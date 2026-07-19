@@ -116,6 +116,26 @@ def load_manifest(run_dir: Path) -> dict:
         return json.load(f)
 
 
+def load_audit(run_dir: Path) -> dict | None:
+    """The corpus-level audit report (audit/audit_report.json) written by
+    evals/audit_dad.py / audit_sdf.py, or None when no audit has run."""
+    return _load_report_json(run_dir, "audit_report.json")
+
+
+def load_diversity(run_dir: Path) -> dict | None:
+    """The semantic diversity report (audit/diversity_report.json) written by
+    evals/diversity.py, or None when it hasn't run."""
+    return _load_report_json(run_dir, "diversity_report.json")
+
+
+def _load_report_json(run_dir: Path, name: str) -> dict | None:
+    path = Path(run_dir) / "audit" / name
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def load_stage(run_dir: Path, pipeline: str, stage: str) -> list[dict]:
     rel = STAGE_FILES[pipeline].get(stage)
     if rel is None:

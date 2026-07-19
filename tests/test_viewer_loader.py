@@ -173,3 +173,25 @@ class TestDadLineageBaseline:
     def test_runs_without_baseline_records_get_none(self, tmp_path):
         run = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "U"}])
         assert loader.dad_lineage(run, "A-rec-0")["baseline"] is None
+
+
+class TestLoadAudit:
+    def test_missing_report_returns_none(self, tmp_path):
+        assert loader.load_audit(tmp_path) is None
+
+    def test_reads_report_json(self, tmp_path):
+        (tmp_path / "audit").mkdir()
+        (tmp_path / "audit" / "audit_report.json").write_text(
+            json.dumps({"n_prompts": 3, "sections": []}), encoding="utf-8")
+        assert loader.load_audit(tmp_path) == {"n_prompts": 3, "sections": []}
+
+
+class TestLoadDiversity:
+    def test_missing_returns_none(self, tmp_path):
+        assert loader.load_diversity(tmp_path) is None
+
+    def test_reads_report_json(self, tmp_path):
+        (tmp_path / "audit").mkdir()
+        (tmp_path / "audit" / "diversity_report.json").write_text(
+            json.dumps({"embed_model": "m", "sections": []}), encoding="utf-8")
+        assert loader.load_diversity(tmp_path)["embed_model"] == "m"

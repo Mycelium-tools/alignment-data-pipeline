@@ -400,6 +400,24 @@ else:
                                step3_output,
                                stats=("constitution_rewrite", audit.get("response_id")) if audit else None)
 
+                # Distinct moral-patient reasons — from the corpus audit's
+                # --reasons pass (a report file, not a pipeline stage; absent
+                # until `evals/audit_dad.py --reasons` has run on this run).
+                reasons_pc = ((loader.load_audit(run.run_dir) or {})
+                              .get("moral_patient_reasons") or {}).get("per_case") or {}
+                with st.expander(":blue[Distinct moral-patient reasons — plain vs pipeline (audit)]"):
+                    rec_reasons = reasons_pc.get(pid)
+                    if not rec_reasons:
+                        st.caption("No reason extraction for this run yet. Generate it "
+                                   "(costs API calls) with:")
+                        st.code(f"python evals/audit_dad.py --input {run.run_dir} --reasons",
+                                language="bash")
+                    else:
+                        st.caption("Distinct reasons in each response that appeal to a moral "
+                                   "patient's interests (animal or not), extracted by the "
+                                   "corpus audit. Density = unique reasons per 1,000 chars.")
+                        common.show_reason_comparison(rec_reasons)
+
                 # Baseline control arm — only rendered when the run recorded one
                 # (dad.baseline; absent for runs predating the stage or with it
                 # off). Deliberately NOT a stage_expander: its prompt is the 1c
