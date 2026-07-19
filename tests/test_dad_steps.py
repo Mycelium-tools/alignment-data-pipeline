@@ -400,7 +400,7 @@ class TestCoverageTally:
 SCOPE_AXES = {
     "patients": "full pathway", "goal": "underlying goal", "levers": "highest lever",
     "cost": "real cost", "magnitude": "stake magnitude",
-    "upside": "second-order upside", "counterfactual": "realistic baseline",
+    "upside": "second-order upside", "replaceability": "realistic baseline",
 }
 # The well-behaved 2a reply: exactly the seven axes (selection is 2a.5's job).
 GOOD_SCOPE = json.dumps(SCOPE_AXES)
@@ -414,7 +414,7 @@ class TestParseScope:
     def test_control_characters_inside_strings_are_tolerated(self):
         # temperature-1 prose JSON often carries literal newlines inside values —
         # the historical cause of silently empty scopes
-        raw = '{"patients": "line one\nline two", "goal": "g", "levers": "l", "cost": "c", "magnitude": "m", "upside": "u", "counterfactual": "cf"}'
+        raw = '{"patients": "line one\nline two", "goal": "g", "levers": "l", "cost": "c", "magnitude": "m", "upside": "u", "replaceability": "cf"}'
         assert step2_responses._parse_scope(raw)["patients"] == "line one\nline two"
 
     def test_garbage_returns_empty_and_fails_validation(self):
@@ -427,7 +427,7 @@ class TestParseScope:
         # scopes.jsonl records from before the key rename display via the
         # fallback map — the viewer re-renders old runs' 2b prompts with them
         legacy = {"system": "old pathway", "agent": "old lever", "cost": "c",
-                  "upside": "u", "counterfactual": "cf"}
+                  "upside": "u", "replaceability": "cf"}
         rendered = step2_responses.format_scope(legacy)
         assert "old pathway" in rendered and "old lever" in rendered
         # but new runs must produce the new keys — legacy doesn't pass validation
@@ -438,7 +438,7 @@ class TestParseScope:
         # written before the goal/magnitude axes existed must not grow "—"
         # lines that were never in the prompt actually sent (fidelity).
         five_axis = {"patients": "p", "levers": "l", "cost": "c",
-                     "upside": "u", "counterfactual": "cf"}
+                     "upside": "u", "replaceability": "cf"}
         rendered = step2_responses.format_scope(five_axis)
         assert "Goal" not in rendered and "Magnitude" not in rendered
         assert not any(line.endswith(": —") for line in rendered.splitlines())
@@ -483,7 +483,7 @@ def _dad_step2_dispatch(user_message, **kw):
     blob = _sysuser(user_message, kw)
     if "build the full map of the case" in blob:  # 2a
         return GOOD_SCOPE
-    if "doing retrieval for a response" in blob:  # 2a.5 select
+    if "retrieving reasoning modules" in blob:  # 2a.5 select
         return "C1, M1"
     if "advisor responding to a user's dilemma" in blob:  # 2b
         return "Draft response."
@@ -497,7 +497,7 @@ class TestStep2Run:
 
         assert len(results) == 1
         assert results[0]["assistant_response"] == "Draft response."
-        assert results[0]["scope"]["counterfactual"] == "realistic baseline"
+        assert results[0]["scope"]["replaceability"] == "realistic baseline"
         assert len(calls) == 3  # scope + select + response
         # the scope map and the user message both reach the response prompt
         respond_call = calls[2]["user_message"]
@@ -525,7 +525,7 @@ class TestStep2Run:
             if "build the full map of the case" in blob:
                 attempts["n"] += 1
                 return "not json at all" if attempts["n"] == 1 else GOOD_SCOPE
-            if "doing retrieval for a response" in blob:
+            if "retrieving reasoning modules" in blob:
                 return "C1"
             return "Draft response."
 
@@ -588,7 +588,7 @@ class TestStep2Run:
             blob = _sysuser(user_message, kw)
             if "build the full map of the case" in blob:
                 return GOOD_SCOPE
-            if "doing retrieval for a response" in blob:
+            if "retrieving reasoning modules" in blob:
                 return "C1"
             return "USER: User dilemma text.\nASSISTANT: Draft response."
 
@@ -616,7 +616,7 @@ class TestStep2Run:
                 # a model improvising the retired sixth key must not pollute
                 # the stored scope — selection is the select call's alone
                 return json.dumps({**SCOPE_AXES, "triggered_entries": "T9"})
-            if "doing retrieval for a response" in blob:  # 2a.5
+            if "retrieving reasoning modules" in blob:  # 2a.5
                 return f"{picked}, BOGUS"
             return "Draft response."
 
@@ -658,7 +658,7 @@ class TestStep2Run:
             blob = _sysuser(user_message, kw)
             if "build the full map of the case" in blob:
                 return GOOD_SCOPE
-            if "doing retrieval for a response" in blob:
+            if "retrieving reasoning modules" in blob:
                 return "I could not find any relevant entries, sorry!"
             return "Draft response."
 
@@ -727,7 +727,7 @@ class TestStep2Run:
             if "build the full map of the case" in blob:
                 both_scoping.wait(timeout=10)
                 return GOOD_SCOPE
-            if "doing retrieval for a response" in blob:
+            if "retrieving reasoning modules" in blob:
                 return "C1"
             if "advisor responding to a user's dilemma" in blob:
                 return "Draft response."

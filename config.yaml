@@ -1,5 +1,14 @@
-# api = anthropic SDK billed to ANTHROPIC_API_KEY (use for full-scale runs)
-# claude_code = your Claude subscription via the Claude Code CLI (use for dev runs)
+# api = anthropic SDK billed to ANTHROPIC_API_KEY. The FAITHFUL mode: it is the
+#       environment the spec's eventual consumer runs in, and the only mode where
+#       max_tokens caps, truncation-rejection dynamics, and the exact prompt
+#       context are reproduced. Use for full-scale runs, evals, and any run whose
+#       outputs are meant to represent pipeline behavior.
+# claude_code = your Claude subscription via the Claude Code CLI (dev iteration).
+# auto = subscription when available, api otherwise (dev iteration on a budget);
+#        empty-system calls (the DAD baseline arm) always go to the api so the
+#        plain-model condition stays exact, and an exhausted usage window falls
+#        back to the api mid-run. Caveats vs api: max_tokens not enforced and
+#        ~3K tokens of CLI scaffolding in context on subscription-served calls.
 backend: api
 model: claude-sonnet-5
 max_tokens: 4000
@@ -32,13 +41,13 @@ dad:
   constitution_rewrite_model: claude-opus-4-8   # step 3: constitution rewrite (alignment-critical)
   baseline:
     enabled: true            # unguided control response per dilemma (viewer comparison only; never trains)
-    model: claude-opus-4-8   # plain call — no system prompt, the finished 1c user prompt verbatim
+    model: claude-opus-4-8   # plain call — no system prompt, the shipped user prompt verbatim
   dilemmas:
     count: 40         # total examples in step 1 (seed imports count toward this)
     id_start: 1       # AW-#### numbering floor; generation continues above any seed IDs
     seed_path: null   # optional JSONL of handwritten examples ({prompt|user_message, annotation?, id?})
     scenario_seed: null  # optional int for reproducible scenario generation; scenarios persist per run either way
-    refine: true      # step 1c: review-and-rewrite each 1b draft (welfare load-bearing, coherent, non-moralizing).
+    refine: true      # step 1c: review-and-rewrite each 1b draft (welfare load-bearing, coherent, non-moralizing)
   responses:
     per_prompt: 1  # independent samples per dilemma; each reasons from the reasoning library
 

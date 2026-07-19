@@ -134,8 +134,9 @@ cp .env.example .env           # then add your ANTHROPIC_API_KEY
 
 The pipeline supports two backends, selected by the `backend` key in `config.yaml`:
 
-- **`backend: api`** (default) — calls the Anthropic API directly, billed per token to the `ANTHROPIC_API_KEY` in your `.env` (ask Oliver). Use this for full-scale runs and evals.
+- **`backend: api`** — calls the Anthropic API directly, billed per token to the `ANTHROPIC_API_KEY` in your `.env` (ask Oliver). Use this for full-scale runs and evals.
 - **`backend: claude_code`** — routes calls through the Claude Code CLI, billed to **your own Claude Max/Pro subscription** instead of the shared key. No `ANTHROPIC_API_KEY` needed. Use this for dev/iteration runs.
+- **`backend: auto`** — prefers your subscription and falls back to the API key; a dev-iteration mode. Routing is per call: **empty-system calls (the DAD baseline arm) always take the API leg** so the plain-model condition stays exact (avoiding the neutral stand-in caveat below); everything else runs on `claude_code` until it can't serve the run — sdk/CLI missing, usage window exhausted, or a persistently failing CLI — at which point the rest of the run is served by the API, announced loudly. Each cost-log record's `backend` field names the leg that actually served that call. Requires `ANTHROPIC_API_KEY` (it is the fallback leg). **Not for representative runs:** subscription-served calls inherit the `claude_code` caveats (no `max_tokens` enforcement, CLI scaffolding in context), so runs whose outputs must represent pipeline behavior belong on `backend: api`.
 
 To use it, set `backend: claude_code` in `config.yaml` and give the Claude Code CLI credentials one of two ways:
 

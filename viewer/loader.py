@@ -31,6 +31,7 @@ STAGE_FILES = {
         "step1_scenarios": "step1/scenarios.jsonl",
         "step1_dilemmas": "step1/dilemmas.jsonl",
         "step1_batches": "step1/batches.jsonl",
+        "step1_gate": "step1/gate.jsonl",
         "step2_scopes": "step2/scopes.jsonl",
         "step2_tensions": "step2/tensions.jsonl",
         "step2_responses": "step2/responses.jsonl",
@@ -295,12 +296,16 @@ def dad_lineage(run_dir: Path, record_id: str) -> dict:
     scenarios = _index(load_stage(run_dir, "dad", "step1_scenarios"), "scenario_id")
     scope_recs = _index(load_stage(run_dir, "dad", "step2_scopes"), "prompt_id")
     baselines = _index(load_stage(run_dir, "dad", "baseline"), "prompt_id")
+    # 1c gate verdicts keyed by scenario_id; _index keeps the LAST row, i.e. the
+    # verdict the shipping draft was accepted on (pass, or fail-then-shipped).
+    gate_recs = _index(load_stage(run_dir, "dad", "step1_gate"), "scenario_id")
 
     dilemma = dilemmas.get(audit.get("prompt_id"))
     return {
         "format": "v2",
         "dilemma": dilemma,
         "scenario": scenarios.get((dilemma or {}).get("scenario_id")),
+        "gate": gate_recs.get((dilemma or {}).get("scenario_id")),
         "scope": scope_recs.get(audit.get("prompt_id")),
         "tension_tag": tension_tags.get(audit.get("prompt_id")),
         "response": responses.get(audit.get("response_id")),
@@ -328,10 +333,12 @@ def dad_lineage_by_prompt(run_dir: Path, prompt_id: str) -> dict:
         final = _index(load_final(run_dir, "dad"), "record_id").get(rewrite.get("record_id"))
     dilemma = dilemmas.get(prompt_id)
     baselines = _index(load_stage(run_dir, "dad", "baseline"), "prompt_id")
+    gate_recs = _index(load_stage(run_dir, "dad", "step1_gate"), "scenario_id")
     return {
         "format": "v2",
         "dilemma": dilemma,
         "scenario": scenarios.get((dilemma or {}).get("scenario_id")),
+        "gate": gate_recs.get((dilemma or {}).get("scenario_id")),
         "scope": scope_recs.get(prompt_id),
         "tension_tag": tension_tags.get(prompt_id),
         "response": responses[0] if responses else None,

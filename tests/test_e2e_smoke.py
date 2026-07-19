@@ -106,8 +106,8 @@ def _dad_dispatch(user_message, **kw):
         return json.dumps({"prompt": "Refined user message.", "notes": "n"})
     if "build the full map of the case" in blob:  # step 2a
         return json.dumps({"patients": "p", "goal": "g", "levers": "l", "cost": "c",
-                           "magnitude": "m", "upside": "u", "counterfactual": "cf"})
-    if "doing retrieval for a response" in blob:  # step 2a.5 select
+                           "magnitude": "m", "upside": "u", "replaceability": "cf"})
+    if "retrieving reasoning modules" in blob:  # step 2a.5 select
         return "C1, M1"
     if "advisor responding to a user's dilemma" in blob:  # step 2b
         return "Draft response."
