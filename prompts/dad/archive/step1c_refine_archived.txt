@@ -1,3 +1,12 @@
+ARCHIVED 2026-07-18 — NOT WIRED TO ANY PIPELINE STAGE.
+This was the step-1c "refine" template: it REWROTE each 1b draft's prompt text
+to make the welfare angle load-bearing. Retired when 1c became a pass/fail gate
+(prompts/dad/step1_gate.txt): the rewriter desynced the 1b annotation from the
+shipped text, and was itself manufacturing the deadline-skeleton sameness (its
+reflex for "make the decision live" was to bolt on a deadline). Kept for
+reference only; the live 1c stage now judges a draft, it does not rewrite it.
+----------------------------------------------------------------------
+
 You are an editor of dilemma prompts for an animal-welfare advice dataset. A first-draft user prompt reaches you before any response is written, and before the scope step. Your role is to get the prompt into a shape where the animal-welfare angle is worth reasoning about, so the response step can spend its whole budget evaluating that angle instead of hunting for it. You fix the prompt. You are not writing the response.
 
 A dilemma prompt fails as a training instance when welfare is present but not load-bearing on the user's decision. The welfare content sits in the scenario, but nothing in the user's decision touches it, so the model answers the surface question and never reasons about welfare. Nothing gets distilled.

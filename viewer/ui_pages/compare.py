@@ -174,6 +174,15 @@ else:
             if stage == "step1_dilemmas":
                 return d.get("draft_user_message") or d.get("user_message"), None
             if stage == "step1_refine":
+                gate = lin.get("gate")
+                if gate is not None:
+                    # Gate run: no rewrite — the shipped text is the 1b draft.
+                    passed = gate.get("passed")
+                    verdict = ("gate: passed" if passed is True
+                               else "gate: FAILED, shipped anyway" if passed is False
+                               else "gate: unusable reply, shipped")
+                    reasons = "; ".join(gate.get("failures") or [])
+                    return d.get("user_message"), verdict + (f" — {reasons}" if reasons else "")
                 if d.get("refine_failed"):
                     return d.get("user_message"), "every 1c attempt was unusable — the 1b draft shipped"
                 if d.get("draft_user_message") is None:

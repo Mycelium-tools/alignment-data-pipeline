@@ -6,6 +6,7 @@ Nothing here (or anywhere in the suite) reaches the network: see conftest.py.
 import json
 import socket
 from pathlib import Path
+from types import SimpleNamespace
 
 import anthropic
 import httpx
@@ -143,6 +144,59 @@ class TestCallClaude:
 
     def test_clean_stop_reason_is_silent(self, recorded_api, capsys):
         api.call_claude("hi")
+        assert capsys.readouterr().err == ""
+
+
+class TestSamplingParams:
+    """temperature/top_p/top_k are removed on the Claude 5 family and Opus 4.7+
+    (the API 400s if sent). call_claude resolves temperature unconditionally;
+    _call_with_retry gates whether it reaches the transport."""
+
+    def test_predicate_matches_current_model_families(self):
+        for m in ("claude-opus-4-8", "claude-opus-4-7", "claude-sonnet-5",
+                  "claude-fable-5", "claude-mythos-5"):
+            assert not api._accepts_sampling_params(m), m
+        for m in ("claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-6",
+                  "claude-opus-4-5", "claude-sonnet-4-5"):
+            assert api._accepts_sampling_params(m), m
+
+    def _capture(self, monkeypatch, model):
+        """Drive the REAL _call_with_retry with a fake client; return the kwargs
+        that reached client.messages.create."""
+        seen = {}
+
+        class FakeMessages:
+            def create(self, **kwargs):
+                seen.update(kwargs)
+                return SimpleNamespace(
+                    usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+                    content=[SimpleNamespace(text="ok", type="text")],
+                    stop_reason="end_turn")
+
+        class FakeClient:
+            messages = FakeMessages()
+
+        import importlib
+        real = importlib.reload(api)._call_with_retry
+        real(client=FakeClient(), model=model, max_tokens=5, system="", messages=[],
+             temperature=0.0)
+        return seen
+
+    def test_temperature_omitted_for_rejecting_model(self, monkeypatch):
+        seen = self._capture(monkeypatch, "claude-opus-4-8")
+        assert "temperature" not in seen
+
+    def test_temperature_sent_for_accepting_model(self, monkeypatch):
+        seen = self._capture(monkeypatch, "claude-haiku-4-5")
+        assert seen["temperature"] == 0.0
+
+    def test_nondefault_temperature_on_rejecting_model_warns_once(
+        self, recorded_api, monkeypatch, capsys
+    ):
+        monkeypatch.setattr(api, "_config", {"model": "claude-opus-4-8", "temperature": 1.0})
+        api.call_claude("hi", temperature=0.0)
+        assert "does not accept sampling parameters" in capsys.readouterr().err
+        api.call_claude("hi", temperature=0.0)  # warned-once
         assert capsys.readouterr().err == ""
 
 
@@ -609,3 +663,82 @@ class TestAdaptiveThinkingModels:
         assert api._requires_adaptive_thinking("claude-mythos-5")
         assert not api._requires_adaptive_thinking("claude-sonnet-5")
         assert not api._requires_adaptive_thinking("claude-haiku-4-5-20251001")
+
+
+class TestAutoBackend:
+    """backend 'auto': subscription-first per-call routing with api fallback.
+
+    The cc seam is stubbed per test; recorded_api provides the api leg. Routing
+    contract: system-prompt calls prefer claude_code, empty-system calls (the
+    DAD baseline arm) always take the api leg, and any subscription failure
+    demotes the rest of the run to the api — re-serving the failed call."""
+
+    def _arm(self, monkeypatch, tmp_path, cc=None):
+        monkeypatch.setattr(api, "_backend", "auto")
+        monkeypatch.setattr(api, "_cost_log_path", tmp_path / "cost.jsonl")
+        monkeypatch.setattr(api, "_sdk_importable", lambda: True)
+        if cc is not None:
+            monkeypatch.setattr(api, "_call_claude_code_with_retry", cc)
+
+    def test_routes_by_system_prompt(self, recorded_api, monkeypatch, tmp_path):
+        cc_calls = []
+
+        def fake_cc(model, system, user_message):
+            cc_calls.append(system)
+            return ("cc-text", 1, 1, 0.001, "end_turn")
+
+        self._arm(monkeypatch, tmp_path, fake_cc)
+        # a system-prompt call takes the subscription leg...
+        assert api.call_claude("hi", system_prompt="sys") == "cc-text"
+        # ...an empty-system call (the baseline arm) takes the api leg exactly
+        assert api.call_claude("hi") == "response-text"
+        assert cc_calls == ["sys"]
+        assert len(recorded_api["calls"]) == 1
+        # each cost-log record names the backend that actually served it
+        records = [json.loads(l) for l in (tmp_path / "cost.jsonl").read_text().splitlines()]
+        assert [r["backend"] for r in records] == ["claude_code", "api"]
+
+    def test_window_exhaustion_falls_back_and_stays_demoted(
+        self, recorded_api, monkeypatch, tmp_path, capsys
+    ):
+        cc_calls = {"n": 0}
+
+        def limited_cc(model, system, user_message):
+            cc_calls["n"] += 1
+            raise api.UsageLimitExceeded("Claude AI usage limit reached|1234567890")
+
+        self._arm(monkeypatch, tmp_path, limited_cc)
+        # the failed call is re-served via the api, not lost
+        assert api.call_claude("hi", system_prompt="sys") == "response-text"
+        # demotion is sticky: later calls skip the subscription entirely
+        assert api.call_claude("again", system_prompt="sys") == "response-text"
+        assert cc_calls["n"] == 1
+        assert "Falling back to the Anthropic API" in capsys.readouterr().err
+        records = [json.loads(l) for l in (tmp_path / "cost.jsonl").read_text().splitlines()]
+        assert [r["backend"] for r in records] == ["api", "api"]
+
+    def test_missing_sdk_serves_run_via_api(self, recorded_api, monkeypatch, tmp_path, capsys):
+        # cc seam stays the _api_guard raiser — it must never be reached
+        monkeypatch.setattr(api, "_backend", "auto")
+        monkeypatch.setattr(api, "_sdk_importable", lambda: False)
+        assert api.call_claude("hi", system_prompt="sys") == "response-text"
+        assert "claude-agent-sdk is not installed" in capsys.readouterr().err
+
+    def test_auto_requires_api_key(self, monkeypatch, tmp_path):
+        cfg = tmp_path / "c.yaml"
+        cfg.write_text(f"backend: auto\noutputs:\n  cost_log: {tmp_path / 'log.jsonl'}\n")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        with pytest.raises(KeyError, match="ANTHROPIC_API_KEY"):
+            api.init(str(cfg))
+
+    def test_pure_claude_code_backend_still_propagates_limit(self, monkeypatch, tmp_path):
+        # the fallback is an auto-mode behavior; explicit claude_code keeps the
+        # stop-and---resume contract (checkpointed progress, window resets later)
+        def limited_cc(model, system, user_message):
+            raise api.UsageLimitExceeded("usage limit reached")
+
+        monkeypatch.setattr(api, "_backend", "claude_code")
+        monkeypatch.setattr(api, "_cost_log_path", tmp_path / "cost.jsonl")
+        monkeypatch.setattr(api, "_call_claude_code_with_retry", limited_cc)
+        with pytest.raises(api.UsageLimitExceeded):
+            api.call_claude("hi", system_prompt="sys")
