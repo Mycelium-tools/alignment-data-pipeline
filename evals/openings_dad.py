@@ -219,7 +219,8 @@ def prompt_length_report(run_dir: Path) -> dict:
               f"median {vals[len(vals) // 2]}{flag}")
     if not by_class:
         print("    (records carry no length_class — pre-dice run)")
-    return {"n": len(recs), "median": median,
+    return {"n": len(recs), "median": median, "min": lens[0], "max": lens[-1],
+            "over_1000": sum(l > 1000 for l in lens),
             "by_class": {c: sorted(v) for c, v in by_class.items()},
             "out_of_band": out_of_band}
 
