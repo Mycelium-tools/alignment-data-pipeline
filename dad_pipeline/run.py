@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """DAD pipeline orchestrator. Runs steps 1-3 with checkpointing.
 
-Steps: 1 dilemma prompts (1a scenario generation: stratified scenarios sampled
-per example; 1b first attempt drafted to fit each scenario; 1c latent-welfare
-rewrite) → 2 responses (2a scope the case from the user's message; 2a.5 flag
+Steps: 1 dilemma prompts (1a scenario deal + plan: a stratified variable
+combination dealt per example from prompts/dad/variables.txt, then one plan
+call writes its scenario description; 1b first attempt drafted to fit each
+scenario; 1c latent-welfare rewrite) → 2 responses (2a scope the case from
+the user's message; 2a.5 flag
 which reasoning-library trigger conditions fire, in a dedicated selection
 call; 2b respond over the scope plus the triggered library rows) → 3 rewrite
 against the distilled constitution principles (the alignment-critical pass).
@@ -88,7 +90,7 @@ def main() -> None:
     dilemmas = responses = None
 
     if start_step <= 1 <= stop_after:
-        print("[Step 1] Scenario generation (1a) and first-attempt drafts (1b)")
+        print("[Step 1] Scenario deal + plan (1a) and first-attempt drafts (1b)")
         dilemmas = step1_dilemmas.run(config, prompts_dir, step_dirs[1])
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
 

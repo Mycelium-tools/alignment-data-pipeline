@@ -1130,9 +1130,8 @@ def audit_lengths(run_dir: Path | None, report: dict) -> None:
          f"/ max {stats.get('max', '?')} | {stats.get('over_1000', '?')} over 1000", echo=False)
     by_class = stats.get("by_class") or {}
     if by_class:
-        from dad_pipeline.step1_dilemmas import _LENGTH_BANDS
-        ordered = [c for c in _LENGTH_BANDS if c in by_class] + \
-                  [c for c in by_class if c not in _LENGTH_BANDS]
+        from dad_pipeline.compose_scenarios import length_band
+        ordered = sorted(by_class, key=lambda c: length_band(c) or (0, 0))
         for cls in ordered:
             vals = by_class[cls]
             _row(sec, cls, f"n={len(vals)}, chars {vals[0]}-{vals[-1]}, "

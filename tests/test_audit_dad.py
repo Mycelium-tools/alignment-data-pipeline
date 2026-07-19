@@ -9,9 +9,18 @@ strings the pipeline actually deals.
 
 import pytest
 
-from dad_pipeline.step1_dilemmas import _FRONTIER_FRAMES
+from dad_pipeline import compose_scenarios
 from evals import audit_dad
 from shared import utils
+
+# Frontier frames now live in prompts/dad/variables.txt (the 2026-07 matrix
+# refactor); derive them the way the composer does, excluding the none value.
+_AXIS_VALUES, _ = compose_scenarios.load_axes()
+_FRONTIER_FRAMES = tuple(
+    v for v in _AXIS_VALUES["frontier_frame"]
+    if v != compose_scenarios.resolve_value(
+        _AXIS_VALUES["frontier_frame"],
+        compose_scenarios.NONE_PREFIXES["frontier_frame"]))
 
 # A real "space / off-world" frontier frame and its expected in-text traces.
 _SPACE_FRAME = next(f for f in _FRONTIER_FRAMES if "space or off-world" in f)
@@ -474,7 +483,7 @@ def test_locale_flags_recorded_as_detail_lines():
 
 
 def test_lengths_section_rows_added_without_reprinting(tmp_path, capsys):
-    from dad_pipeline.step1_dilemmas import _LENGTH_BANDS
+    from dad_pipeline.compose_scenarios import length_band
     msg = "Short. Two."
     run = _write_run(tmp_path, [
         {"prompt_id": "AW-0001", "length_class": "2-3-sentences", "user_message": msg},
@@ -485,7 +494,7 @@ def test_lengths_section_rows_added_without_reprinting(tmp_path, capsys):
     by_label = {r["label"]: r for r in sec["rows"]}
     assert by_label["prompt lengths"]["value"].startswith("1 prompts")
     assert by_label["2-3-sentences"]["value"] == f"n=1, chars {len(msg)}-{len(msg)}, median {len(msg)}"
-    lo, hi = _LENGTH_BANDS["2-3-sentences"]
+    lo, hi = length_band("2-3-sentences")
     expected = "GOOD" if lo <= len(msg) <= hi else "BAD"
     assert by_label["records outside their band"]["verdict"] == expected
     # rows mirror prompt_length_report's own printing — they must not re-print

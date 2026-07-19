@@ -75,11 +75,11 @@ def _fake_run(tmp_path, drafts, finals=None):
 
 
 def test_prompt_length_report_assigned_vs_realized(tmp_path, capsys):
-    from dad_pipeline.step1_dilemmas import _LENGTH_BANDS
+    from dad_pipeline.compose_scenarios import _LEGACY_LENGTH_BANDS
 
     run = tmp_path / "run"
     (run / "step1").mkdir(parents=True)
-    lo, _hi = _LENGTH_BANDS["ramble"]
+    lo, _hi = _LEGACY_LENGTH_BANDS["ramble"]
     records = [
         {"prompt_id": "AW-0001", "length_class": "2-3-sentences",
          "user_message": "Short and blunt. Two sentences."},

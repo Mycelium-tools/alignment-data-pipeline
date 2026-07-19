@@ -42,50 +42,36 @@ from shared import api, embeddings
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
-def dad_scenario_reply(user_message: str) -> str:
-    """Echo a conforming step-1b JSON array for a rendered step1_dilemmas.txt
-    prompt: one object per SCENARIO block, its annotation copied verbatim from
-    the block's own assigned fields (as the template instructs). Kept here
-    because both the step-level and e2e DAD tests dispatch on it."""
-    # Derived, not hardcoded: the length bands live with the sampler, and a
-    # drafted prompt must clear its card's lenient band to be accepted.
-    from dad_pipeline.step1_dilemmas import _LENGTH_BANDS, _LENGTH_TEXT
+def dad_scenario_plan_reply(user_message: str) -> str:
+    """Echo a conforming step-1a plan reply for a rendered step1a_scenario.txt
+    prompt: working notes plus a tagged self-contained scenario description."""
+    return ("<scenario_planning>Considered five situations; chose the second."
+            "</scenario_planning>\n"
+            "<scenario_description>A person faces a concrete decision where the "
+            "tempting option quietly runs its cost through the animals involved."
+            "</scenario_description>")
 
-    out = []
-    for block in re.findall(r"SCENARIO (S-\d+)\n((?:- .*\n?)*)", user_message):
-        sid, body = block
-        field = dict(re.findall(r"- ([^:]+): (.*)", body))
-        pair = field["Value pairs to build in"].split(" (add more")[0].split(";")[0].strip()
-        prompt = f"Drafted user message for {sid}."
-        for label, text in _LENGTH_TEXT.items():
-            if field.get("Length", "").startswith(text):
-                lo, _hi = _LENGTH_BANDS[label]
-                filler = " The situation keeps going with believable texture."
-                while len(prompt) < lo + 40:
-                    prompt += filler
-                break
-        out.append({
-            "scenario_id": sid,
-            "prompt": prompt,
-            "annotation": {
-                "domain": field["Domain"].split(", "),
-                "user_goal": field["User goal"].split(", "),
-                "dilemma_anatomy": {"goal": "g", "temptation": "t", "cost": "c"},
-                "values_in_tension": [pair],
-                "moral_patients": "test patients in context",
-                "patient_visibility": "on-scene",
-                "segmented_response_type": "advice",
-                "visibility": field["Visibility"],
-                "user_attitude": field["User attitude"],
-                "conflict": field["Conflict"],
-                "direction": field["Direction"],
-                "welfare_magnitude": field["Welfare magnitude"],
-                "user_stakes": field["User stakes"],
-                "leverage": field["Leverage"].split(" — ")[0],
-                "claims": [{"claim": "a load-bearing claim", "status": "Settled"}],
-            },
-        })
-    return json.dumps(out)
+
+def dad_scenario_reply(user_message: str) -> str:
+    """Echo a conforming step-1b reply for a rendered step1b_dilemmas.txt
+    prompt: the drafted user message inside <user_prompt> tags (the template's
+    output contract), padded to clear the dealt length band. Kept here because
+    both the step-level and e2e DAD tests dispatch on it."""
+    # Derived, not hardcoded: the length bands live with the composer, and a
+    # drafted prompt must clear its lenient band to be accepted. The dealt
+    # length arrives in the prompt's closing line ("It should be <length>.").
+    from dad_pipeline.compose_scenarios import length_band
+
+    m = re.search(r"It should be (.+?)\.?\s*$", user_message.strip())
+    length_class = m.group(1) if m else None
+    prompt = "Drafted user message from the scenario description."
+    band = length_band(length_class)
+    if band is not None:
+        lo, _hi = band
+        filler = " The situation keeps going with believable texture."
+        while len(prompt) < lo + 40:
+            prompt += filler
+    return f"<user_prompt>{prompt}</user_prompt>"
 
 
 @pytest.fixture(autouse=True)

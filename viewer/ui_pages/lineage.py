@@ -275,15 +275,26 @@ else:
                 resp_item = (f"{resp['prompt_id']}_s{resp.get('sample_index', 0)}"
                              if resp.get("prompt_id") else None)
 
-                # Step 1a — scenario generation: pure sampling, no model call.
-                with st.expander(":blue[Step 1a — scenario generation (sampled, no model call)]"):
-                    sc = lin.get("scenario")
-                    if sc:
-                        st.caption("Stratified categorical assignment for this example, drawn by the "
-                                   "sampler — no LLM call.")
-                        common.json_block(sc, key="s1a", label="scenario")
-                    else:
-                        st.caption("scenario record not found (older run, or pre-scenario snapshot)")
+                # Step 1a — scenario deal + plan (a billed call since 2026-07).
+                # Pre-plan runs (no scenario_description) were pure sampling.
+                sc = lin.get("scenario") or {}
+                if sc.get("scenario_description"):
+                    def step1a_output():
+                        st.code(sc.get("scenario_description", ""), language=None, wrap_lines=True)
+                        common.json_block(
+                            {k: v for k, v in sc.items()
+                             if k not in ("scenario_description", "variables")},
+                            key="s1a", label="dealt scenario")
+                    stage_expander("Step 1a — scenario deal + plan", "step1a_plan", lin,
+                                   step1a_output, stats=("scenario_plan", scenario_id))
+                else:
+                    with st.expander(":blue[Step 1a — scenario generation (sampled, no model call)]"):
+                        if sc:
+                            st.caption("Stratified categorical assignment for this example, drawn by the "
+                                       "sampler — no LLM call (pre-plan run).")
+                            common.json_block(sc, key="s1a", label="scenario")
+                        else:
+                            st.caption("scenario record not found (older run, or pre-scenario snapshot)")
 
                 def step1b_output():
                     d = lin.get("dilemma") or {}
@@ -301,8 +312,8 @@ else:
                     d = lin.get("dilemma") or {}
                     gate = lin.get("gate")
                     if gate is not None:
-                        # Current pipeline: 1c is a pass/fail gate, not a rewrite —
-                        # the shipped prompt is the 1b draft verbatim.
+                        # Gate-era runs (2026-07, superseded): 1c was a pass/fail
+                        # gate, not a rewrite — the shipped prompt is the 1b draft.
                         passed = gate.get("passed")
                         if passed is True:
                             st.success("Gate: PASSED — the 1b draft shipped unchanged.")
@@ -315,7 +326,8 @@ else:
                         for f in (gate.get("failures") or d.get("gate_failures") or []):
                             st.write(f"- {f}")
                         return
-                    # Legacy refine runs: keep the draft→refined diff.
+                    # Refine runs (current pipeline, and pre-gate legacy):
+                    # keep the draft→refined diff.
                     if d.get("refine_failed"):
                         st.caption(":material/warning: every refine attempt was unusable — "
                                    "the 1b draft shipped unrefined (raw outputs in "
