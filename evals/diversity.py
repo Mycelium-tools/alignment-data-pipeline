@@ -62,6 +62,26 @@ def _verdict(value: float, good: float, ok: float, higher_better: bool = False) 
     return "GOOD" if value <= good else ("OK" if value <= ok else "BAD")
 
 
+# Display rows are also collected into report["sections"] (same convention as
+# evals/audit_dad.py) so the viewer renders this report without re-deriving
+# any threshold. Unlike audit_dad the prints here predate the collectors, so
+# rows are recorded alongside the existing prints rather than through them.
+
+
+def _sec(report: dict, title: str) -> dict:
+    sec: dict = {"title": title, "rows": []}
+    report.setdefault("sections", []).append(sec)
+    return sec
+
+
+def _r(sec: dict, label: str, value: str, verdict: str | None = None, note: str = "") -> None:
+    sec["rows"].append({"label": label, "value": value, "verdict": verdict, "note": note})
+
+
+def _d(sec: dict, line: str) -> None:
+    sec.setdefault("detail", []).append(line)
+
+
 def _fmt(label: str, value: str, verdict: str | None = None, note: str = "") -> str:
     tail = f"  [{verdict}]" if verdict else ""
     tail += f"  {note}" if note else ""
@@ -212,6 +232,115 @@ def vendi_score(X: np.ndarray) -> float:
     return float(np.exp(-(nz * np.log(nz)).sum()))
 
 
+def kmeans_evenness(X: np.ndarray, k: int | None = None, seed: int = 0,
+                    iters: int = 60) -> dict:
+    """Topic evenness, the CaML-report analog: k-means over the (unit) doc
+    embeddings, then the normalized entropy of cluster sizes (1.0 = topics
+    perfectly even) and the largest cluster's share. Plain numpy k-means++
+    (cosine via normalized centroids) — no new dependency; deterministic via
+    seed. k defaults to n/5 capped at 50 (CaML used 50 at n≈5.6k)."""
+    n = len(X)
+    if k is None:
+        k = min(50, max(2, n // 5))
+    k = max(2, min(k, n))
+    rng = np.random.default_rng(seed)
+    centers = [X[int(rng.integers(n))]]
+    for _ in range(k - 1):
+        d2 = np.min(np.stack([((X - c) ** 2).sum(axis=1) for c in centers]), axis=0)
+        total = float(d2.sum())
+        pick = int(rng.choice(n, p=d2 / total)) if total > 0 else int(rng.integers(n))
+        centers.append(X[pick])
+    C = np.stack(centers)
+    labels = np.zeros(n, dtype=int)
+    for _ in range(iters):
+        labels = np.argmax(X @ C.T, axis=1)
+        newC = np.stack([X[labels == j].mean(axis=0) if (labels == j).any() else C[j]
+                         for j in range(k)])
+        norms = np.linalg.norm(newC, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        newC = newC / norms
+        if np.allclose(newC, C, atol=1e-6):
+            C = newC
+            break
+        C = newC
+    sizes = np.bincount(labels, minlength=k).astype(float)
+    sizes = sizes[sizes > 0]
+    p = sizes / sizes.sum()
+    evenness = float(-(p * np.log(p)).sum() / np.log(len(p))) if len(p) > 1 else 0.0
+    return {"k": int(k), "clusters_nonempty": int(len(p)),
+            "evenness": round(evenness, 3), "largest_share": round(float(p.max()), 4),
+            "sizes": sorted((int(s) for s in sizes), reverse=True)}
+
+
+def pca_coords(X: np.ndarray) -> np.ndarray:
+    """2-D PCA projection for the document-cloud scatter. PCA rather than
+    UMAP/t-SNE deliberately: deterministic and dependency-free; good enough to
+    show clumps and outliers, which is all the cloud is for."""
+    Xc = X - X.mean(axis=0, keepdims=True)
+    U, S, _ = np.linalg.svd(Xc, full_matrices=False)
+    return (U[:, :2] * S[:2]).astype(float)
+
+
+# Idea-level diversity (CaML-report analog): each record is reduced to a
+# one-line scenario summary; summaries are embedded and near neighbours
+# counted. Catches the same idea re-skinned across registers/settings, which
+# document-level embeddings miss.
+_IDEA_PROMPT = (
+    "Reduce the text below to ONE line naming its core scenario: who faces what "
+    "decision or question about what. Strip register, names, place, and phrasing — "
+    "two texts with the same underlying scenario should produce near-identical "
+    "lines. BEGIN the line with the most specific actor or setting available "
+    "(e.g. 'A town-board member', 'A backyard cricket farmer') — NEVER with a "
+    "generic stem like 'A person', 'A user', 'Someone', or 'An AI': these lines "
+    "are compared by embedding similarity, and a uniform opening shared across "
+    "summaries inflates every pairwise score. Return ONLY the line.\n\nTEXT:\n"
+)
+
+
+def idea_text(rec: dict) -> str:
+    """The text whose IDEA we summarize: for chat records the user message
+    (the scenario lives there); for documents the content."""
+    msgs = rec.get("messages")
+    if isinstance(msgs, list) and msgs:
+        return str(msgs[0].get("content") or "")
+    return str(rec.get("content") or rec.get("text") or "")
+
+
+def scope_text(rec: dict, scope: str) -> str:
+    """One side of a chat record: 'prompts' = the user message, 'responses' =
+    the assistant message. Non-chat records have no sides (empty string)."""
+    msgs = rec.get("messages")
+    if not isinstance(msgs, list) or not msgs:
+        return ""
+    if scope == "prompts":
+        return str(msgs[0].get("content") or "")
+    if len(msgs) > 1:
+        return str(msgs[1].get("content") or "")
+    return ""
+
+
+def idea_summaries(ids: list[str], texts: list[str], config: dict) -> dict[str, str]:
+    """One summary call per record via shared.api (Anthropic; cents). Failed
+    summaries are dropped (and counted by the caller via missing ids)."""
+    from shared import api, utils as _utils
+
+    def one(item):
+        rid, text = item
+        try:
+            line = api.call_claude(user_message=_IDEA_PROMPT + text[:6000],
+                                   max_tokens=120, temperature=0.2,
+                                   stage="eval_diversity_ideas", item_id=rid)
+            return rid, re.sub(r"\s+", " ", line).strip()
+        except Exception:
+            return rid, None
+    out = {}
+    for rid, line in _utils.parallel_map(one, list(zip(ids, texts)),
+                                         config.get("workers", 1)):
+        if line:
+            out[rid] = line
+    return out
+
+
 def top_pairs(
     sims: np.ndarray, idx: np.ndarray, ids: list[str], texts: list[str],
     limit: int, floor: float,
@@ -297,6 +426,7 @@ def compare_reports(current: dict, previous_path: str) -> None:
         ("near-dup fraction >0.90", ("nn", "over_0.90"), "{:+.1%}"),
         ("mean pairwise cosine", ("mean_pairwise_cosine",), "{:+.3f}"),
         ("Vendi ratio", ("vendi", "ratio"), "{:+.3f}"),
+        ("topic evenness", ("clusters", "evenness"), "{:+.3f}"),
     ]
     for label, keys, fmt in rows:
         cur_v, prev_v = current, prev
@@ -315,7 +445,13 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--max-docs", type=int, default=2000,
                         help="Deterministic stride-sample cap (Vendi is O(n^3) past a few thousand)")
-    parser.add_argument("--embed-model", default=embeddings.DEFAULT_MODEL)
+    parser.add_argument("--embed-model", default=None,
+                        help="Embedding model (default: resolve_default_model() — "
+                             "EMBEDDINGS_MODEL env var, else whichever provider has a key)")
+    parser.add_argument("--ideas", action="store_true",
+                        help="Idea-level diversity: one-line scenario summary per record "
+                             "(Anthropic call each), summaries embedded and near "
+                             "neighbours counted — catches re-skinned scenarios")
     # A first, cheap char cap (bounds cost and keeps runs consistent); English
     # is ~4 chars/token, so 7000 chars is ~1.7k tokens. It does NOT bound tokens
     # for CJK (~1.25-1.5 tok/char) — that safety is enforced under embed_texts,
@@ -338,6 +474,7 @@ def main() -> None:
         raise SystemExit("Corpus is empty — nothing to audit.")
 
     embeddings.init(args.config)  # evals log to the global cost log
+    args.embed_model = args.embed_model or embeddings.resolve_default_model()
 
     indexed = [(record_id(r, i), record_text(r), r) for i, r in enumerate(records)]
     empty = [rid for rid, text, _ in indexed if not text]
@@ -358,51 +495,176 @@ def main() -> None:
     cache_path = None if args.no_cache else report_dir / "embeddings_cache.npz"
     X, cache_stats = embed_with_cache(texts, args.embed_model, cache_path)
 
+    report: dict = {}
+    sec = _sec(report, "Embedding")
     print("EMBEDDING")
     print(_fmt("model", args.embed_model))
+    _r(sec, "model", args.embed_model)
     print(_fmt("cache", f"{cache_stats['cached']} reused, {cache_stats['embedded']} embedded"))
+    _r(sec, "embedded", f"{n} of {len(records)} records "
+                        f"({cache_stats['cached']} cached, {cache_stats['embedded']} new)")
     if empty:
         print(_fmt("empty documents skipped", f"{len(empty)}", "BAD",
                    "(empty training records are a pipeline defect)"))
+        _r(sec, "empty documents skipped", str(len(empty)), "BAD",
+           "(empty training records are a pipeline defect)")
     if truncated:
         print(_fmt("truncated for embedding", f"{truncated} of {n} (> {args.max_chars} chars)"))
+        _r(sec, "truncated for embedding", f"{truncated} of {n} (> {args.max_chars} chars)")
 
     sims, nn_idx = nearest_neighbors(X)
     over = {t: float((sims > t).sum()) / n for t in (0.80, 0.90, 0.95)}
     v = _verdict(over[0.90], 0.02, 0.08)
     pairs = top_pairs(sims, nn_idx, ids, texts, args.top_pairs, floor=0.80)
 
+    sec = _sec(report, "Redundancy (semantic)")
     print("\nREDUNDANCY (embedding cosine — semantic; catches paraphrase, not just copied text)")
     print(_fmt("mean nearest-neighbor sim", f"{float(sims.mean()):.3f}"))
+    _r(sec, "mean nearest-neighbor sim", f"{float(sims.mean()):.3f}")
     print(_fmt("p90 / max nearest-neighbor sim",
                f"{float(np.quantile(sims, 0.9)):.3f} / {float(sims.max()):.3f}"))
+    _r(sec, "p90 / max nearest-neighbor sim",
+       f"{float(np.quantile(sims, 0.9)):.3f} / {float(sims.max()):.3f}")
     print(_fmt("near-dup >0.80 / >0.90 / >0.95",
                f"{over[0.80]:.1%} / {over[0.90]:.1%} / {over[0.95]:.1%}", v,
                "(verdict on >0.90: near-verbatim in meaning-space)"))
+    _r(sec, "near-dup >0.80 / >0.90 / >0.95",
+       f"{over[0.80]:.1%} / {over[0.90]:.1%} / {over[0.95]:.1%}", v,
+       "(verdict on >0.90: near-verbatim in meaning-space)")
     for p in pairs:
         print(f"      {p['similarity']:.3f}  {p['a'][:12]} ~ {p['b'][:12]}")
         print(f"             a: {p['a_snippet']}")
         print(f"             b: {p['b_snippet']}")
+        _d(sec, f"{p['similarity']:.3f}  {p['a']} ~ {p['b']}  ·  a: {p['a_snippet'][:60]}  ·  "
+                f"b: {p['b_snippet'][:60]}")
 
     mpc = mean_pairwise_cosine(X)
     vendi = vendi_score(X)
+    sec = _sec(report, "Diversity")
     print("\nDIVERSITY")
     print(_fmt("mean pairwise cosine", f"{mpc:.3f}", None,
                "(shared-topic corpora sit well above 0; track the trend across runs)"))
+    _r(sec, "mean pairwise cosine", f"{mpc:.3f}", None,
+       "(shared-topic corpora sit well above 0; track the trend across runs)")
     print(_fmt("Vendi score", f"{vendi:.1f} effective docs of {n} (ratio {vendi / n:.3f})", None,
                "(higher = more semantically distinct documents)"))
+    _r(sec, "Vendi score", f"{vendi:.1f} effective docs of {n} (ratio {vendi / n:.3f})", None,
+       "(higher = more semantically distinct documents)")
+
+    clusters = kmeans_evenness(X)
+    print(_fmt("topic evenness", f"{clusters['evenness']:.3f} across {clusters['k']} clusters "
+                                 f"(largest {clusters['largest_share']:.1%})", None,
+               "(k-means on embeddings; 1.0 = perfectly even; compare across runs)"))
+    _r(sec, "topic evenness", f"{clusters['evenness']:.3f} across {clusters['k']} clusters "
+                              f"(largest {clusters['largest_share']:.1%})", None,
+       "(k-means on embeddings; 1.0 = perfectly even; compare across runs)")
 
     groups = group_breakdown(recs, X)
     centroid_sim = centroid_mean_cosine(recs, X)
     if groups:
+        sec = _sec(report, "Groups (by type_id)")
         print("\nGROUPS (by type_id)")
         for g in groups:
             intra = f"{g['intra_mean_cosine']:.3f}" if g["intra_mean_cosine"] is not None else "n/a"
             print(f"   type {g['type_id']}: n={g['n']}, intra-cosine {intra}  {g['type_name']}")
+            _d(sec, f"type {g['type_id']}: n={g['n']}, intra-cosine {intra}  {g['type_name']}")
         print(_fmt("mean type-centroid cosine", f"{centroid_sim:.3f}", None,
                    "(types blurring together pushes this toward 1)"))
+        _r(sec, "mean type-centroid cosine", f"{centroid_sim:.3f}", None,
+           "(types blurring together pushes this toward 1)")
 
-    report = {
+    # Per-scope distributions (prompts / responses / combined), stored with the
+    # raw nearest-neighbour sims and sorted cluster sizes so the viewer can
+    # draw the CaML-style chart rows (NN histogram · topic-spread bars · cloud).
+    # Chat corpora get all three scopes; document corpora just the combined one.
+    def _scope_block(s_ids: list, s_texts: list, S: np.ndarray) -> dict:
+        s_sims, _ = nearest_neighbors(S)
+        s_cloud = pca_coords(S)
+        return {
+            "n": len(s_ids),
+            "nn_sims": [round(float(v), 3) for v in s_sims],
+            "over": {f"{t:.2f}": round(float((s_sims > t).sum()) / len(s_ids), 4)
+                     for t in (0.80, 0.90, 0.95)},
+            "mean_pairwise_cosine": round(mean_pairwise_cosine(S), 4),
+            "vendi_ratio": round(vendi_score(S) / len(s_ids), 4),
+            "clusters": kmeans_evenness(S),
+            "cloud": [{"id": rid, "x": round(float(x), 3), "y": round(float(y), 3),
+                       "snippet": _snippet(t, 90)}
+                      for rid, t, (x, y) in zip(s_ids, s_texts, s_cloud)],
+        }
+
+    scopes = {"combined": _scope_block(ids, texts, X)}
+    if any(isinstance(r.get("messages"), list) and r.get("messages") for r in recs):
+        for scope, label in (("prompts", "user messages"), ("responses", "assistant messages")):
+            kept = [(rid, scope_text(r, scope)) for rid, r in zip(ids, recs)]
+            kept = [(rid, t) for rid, t in kept if t.strip()]
+            if len(kept) < 2:
+                continue
+            s_ids = [rid for rid, _ in kept]
+            s_texts = [t[: args.max_chars] for _, t in kept]
+            S, _ = embed_with_cache(s_texts, args.embed_model, cache_path)
+            blk = _scope_block(s_ids, s_texts, S)
+            scopes[scope] = blk
+            sec = _sec(report, f"Scope: {scope} ({label})")
+            print(f"\nSCOPE {scope} ({label})")
+            nd = (f"{blk['over']['0.80']:.1%} / {blk['over']['0.90']:.1%} / "
+                  f"{blk['over']['0.95']:.1%}")
+            ndv = _verdict(blk["over"]["0.90"], 0.02, 0.08)
+            print(_fmt("near-dup >0.80 / >0.90 / >0.95", nd, ndv))
+            _r(sec, "near-dup >0.80 / >0.90 / >0.95", nd, ndv)
+            dv = (f"cosine {blk['mean_pairwise_cosine']:.3f} · "
+                  f"Vendi ratio {blk['vendi_ratio']:.3f}")
+            print(_fmt("mean pairwise / Vendi", dv))
+            _r(sec, "mean pairwise / Vendi", dv)
+            c = blk["clusters"]
+            ev = f"{c['evenness']:.3f} across {c['k']} clusters (largest {c['largest_share']:.1%})"
+            print(_fmt("topic evenness", ev))
+            _r(sec, "topic evenness", ev)
+
+    ideas_report = None
+    if args.ideas:
+        from shared import api
+        api.init(args.config)  # summary calls log to the global cost log too
+        idea_texts_all = [idea_text(r) for r in recs]
+        keep = [i for i, t in enumerate(idea_texts_all) if t.strip()]
+        summaries = idea_summaries([ids[i] for i in keep],
+                                   [idea_texts_all[i] for i in keep],
+                                   utils.load_config(args.config))
+        sec = _sec(report, "Idea-level diversity (LLM summaries)")
+        print("\nIDEA-LEVEL (one-line scenario summaries, embedded — catches re-skinned ideas)")
+        s_ids = sorted(summaries)
+        failures = len(keep) - len(s_ids)
+        line = f"{len(s_ids)} of {len(keep)}" + (f" ({failures} summary failures)" if failures else "")
+        print(_fmt("records summarized", line))
+        _r(sec, "records summarized", line)
+        if len(s_ids) >= 2:
+            s_texts = [summaries[i] for i in s_ids]
+            S, s_cache = embed_with_cache(s_texts, args.embed_model, cache_path)
+            s_sims, s_nn = nearest_neighbors(S)
+            s_over = {t: float((s_sims > t).sum()) / len(s_ids) for t in (0.80, 0.90, 0.95)}
+            sv = _verdict(s_over[0.95], 0.05, 0.15)
+            print(_fmt("idea near-dup >0.80 / >0.90 / >0.95",
+                       f"{s_over[0.80]:.1%} / {s_over[0.90]:.1%} / {s_over[0.95]:.1%}", sv,
+                       "(verdict on >0.95: the same idea re-skinned)"))
+            _r(sec, "idea near-dup >0.80 / >0.90 / >0.95",
+               f"{s_over[0.80]:.1%} / {s_over[0.90]:.1%} / {s_over[0.95]:.1%}", sv,
+               "(verdict on >0.95: the same idea re-skinned)")
+            s_pairs = top_pairs(s_sims, s_nn, s_ids, s_texts, args.top_pairs, floor=0.80)
+            for p in s_pairs:
+                print(f"      {p['similarity']:.3f}  {p['a'][:12]} ~ {p['b'][:12]}")
+                print(f"             a: {p['a_snippet']}")
+                print(f"             b: {p['b_snippet']}")
+                _d(sec, f"{p['similarity']:.3f}  a: {p['a_snippet'][:70]}  ·  b: {p['b_snippet'][:70]}")
+            ideas_report = {
+                "n": len(s_ids), "failures": failures,
+                "nn_mean": round(float(s_sims.mean()), 4),
+                "nn_sims": [round(float(v), 3) for v in s_sims],
+                **{f"over_{t:.2f}": round(frac, 4) for t, frac in s_over.items()},
+                "top_pairs": s_pairs,
+                "summaries": {rid: summaries[rid] for rid in s_ids},
+            }
+
+    report.update({
         "input": str(args.input),
         "corpus": corpus_name,
         "embed_model": args.embed_model,
@@ -422,9 +684,12 @@ def main() -> None:
         "top_pairs": pairs,
         "mean_pairwise_cosine": round(mpc, 4),
         "vendi": {"score": round(vendi, 2), "ratio": round(vendi / n, 4)},
+        "clusters": clusters,
+        "scopes": scopes,
+        "ideas": ideas_report,
         "groups": groups,
         "type_centroid_mean_cosine": round(centroid_sim, 4) if centroid_sim is not None else None,
-    }
+    })
 
     if args.compare:
         compare_reports(report, args.compare)

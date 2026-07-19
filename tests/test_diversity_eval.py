@@ -307,3 +307,90 @@ class TestCompareReports:
         prev.write_text(json.dumps({"embed_model": "text-embedding-3-large"}))
         diversity.compare_reports(self._current(), str(prev))
         assert "skipped" in capsys.readouterr().out
+
+
+class TestKmeansEvenness:
+    def test_even_clusters_score_one(self):
+        X = np.array([[1, 0]] * 10 + [[0, 1]] * 10, dtype=np.float32)
+        ev = diversity.kmeans_evenness(X, k=2)
+        assert ev["evenness"] == 1.0 and ev["largest_share"] == 0.5
+
+    def test_skewed_clusters_score_below_one(self):
+        X = np.array([[1, 0]] * 18 + [[0, 1]] * 2, dtype=np.float32)
+        ev = diversity.kmeans_evenness(X, k=2)
+        assert ev["largest_share"] == 0.9
+        assert ev["evenness"] < 0.5   # H(0.9, 0.1)/ln 2 ≈ 0.469
+
+    def test_k_defaults_to_n_over_5_capped(self):
+        X = np.eye(20, dtype=np.float32)
+        assert diversity.kmeans_evenness(X)["k"] == 4
+
+
+class TestPcaCoords:
+    def test_two_components_separate_the_blobs(self):
+        X = np.zeros((30, 5), dtype=np.float32)
+        X[:15, 0] = 1.0
+        X[15:, 1] = 1.0
+        P = diversity.pca_coords(X)
+        assert P.shape == (30, 2)
+        # PC1 puts the two blobs on opposite sides
+        assert (P[:15, 0].mean() > 0) != (P[15:, 0].mean() > 0)
+
+
+class TestIdeaLevel:
+    def test_idea_text_prefers_user_message_then_content(self):
+        assert diversity.idea_text({"messages": [{"content": "u"}, {"content": "a"}]}) == "u"
+        assert diversity.idea_text({"content": "doc body"}) == "doc body"
+
+    def test_summaries_via_stubbed_claude(self, stub_claude):
+        calls = stub_claude(lambda um, **kw: "a farmer weighs cheaper cages against hens' welfare")
+        out = diversity.idea_summaries(["r1", "r2"], ["text one", "text two"], {"workers": 1})
+        assert set(out) == {"r1", "r2"}
+        assert all(c["stage"] == "eval_diversity_ideas" for c in calls)
+        assert all(c["item_id"] in ("r1", "r2") for c in calls)
+
+    def test_failed_summary_dropped_not_fatal(self, stub_claude):
+        def flaky(um, **kw):
+            if "bad" in um:
+                raise RuntimeError("boom")
+            return "fine line"
+        stub_claude(flaky)
+        out = diversity.idea_summaries(["a", "b"], ["good text", "bad text"], {"workers": 1})
+        assert set(out) == {"a"}
+
+
+class TestScopes:
+    def test_scope_text_splits_chat_sides(self):
+        rec = {"messages": [{"content": "u"}, {"content": "a"}]}
+        assert diversity.scope_text(rec, "prompts") == "u"
+        assert diversity.scope_text(rec, "responses") == "a"
+        assert diversity.scope_text({"content": "doc"}, "prompts") == ""
+
+    def test_dad_run_reports_three_scopes_with_distributions(
+        self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch
+    ):
+        records = [
+            {"record_id": f"r{i}", "messages": [
+                {"role": "user", "content": f"question {i} about {t}?"},
+                {"role": "assistant", "content": f"an answer regarding {t}."},
+            ]}
+            for i, t in enumerate(["lobsters", "broilers", "shrimp", "mink"])
+        ]
+        corpus = _write_corpus(tmp_path / "dad_corpus.jsonl", records)
+        stub_embeddings(dim=32)
+        _run_main(monkeypatch, corpus, tiny_config_file)
+        report = json.loads((tmp_path / "audit" / "diversity_report.json").read_text())
+        assert set(report["scopes"]) == {"prompts", "responses", "combined"}
+        for blk in report["scopes"].values():
+            assert blk["n"] == 4 and len(blk["nn_sims"]) == 4
+            assert len(blk["cloud"]) == 4
+            assert blk["clusters"]["sizes"] == sorted(blk["clusters"]["sizes"], reverse=True)
+
+    def test_document_corpus_gets_combined_scope_only(
+        self, stub_embeddings, tmp_path, tiny_config_file, monkeypatch
+    ):
+        corpus = _write_corpus(tmp_path / "corpus.jsonl", _sdf_records())
+        stub_embeddings(dim=32)
+        _run_main(monkeypatch, corpus, tiny_config_file)
+        report = json.loads((tmp_path / "audit" / "diversity_report.json").read_text())
+        assert set(report["scopes"]) == {"combined"}
