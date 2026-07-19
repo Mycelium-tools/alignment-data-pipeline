@@ -476,20 +476,41 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                                  "the DAD pipeline cannot run without it.")
             plan_template = plan_template_path.read_text(encoding="utf-8")
             plan_model = config["dad"].get("scenario_model")
+            # On a persistent refusal, the last-ditch attempt switches models.
+            # A stochastic refusal clears on an Opus retry (attempts 1-2 stay on
+            # the stage model); a deterministic one needs a model no Opus retry
+            # can escape, and dropping the plan would bias the corpus away from
+            # the refused content — often the insect-welfare slice the matrix
+            # upweights. null/absent = no switch (the granted attempt stays on
+            # the stage model — the pre-fallback behavior). Whether Sonnet
+            # actually refuses less here is unmeasured; even at equal rates this
+            # is an independent draw, and it degrades safely (a fallback refusal
+            # just lands in the failures file, so the run dies no sooner).
+            refusal_fallback_model = config["dad"].get("scenario_refusal_fallback_model")
             print(f"  [1a plan] Writing scenario descriptions for {len(pending_deals)} deals...")
 
-            def _plan(deal: dict) -> tuple[str | None, str | None, list[dict]]:
+            def _plan(deal: dict) -> tuple[str | None, str | None, list[dict], str | None]:
                 """One plan call (API + parse only, per the parallel_map
-                contract). Returns (description, incoherent_raw, failures)."""
+                contract). Returns (description, incoherent_raw, failures,
+                served_model) — served_model is the model that produced an
+                accepted description (None when none was), so the caller can
+                flag a fallback-authored scenario."""
                 system_prompt, user_prompt = compose_scenarios.render_plan_prompt(
                     deal, plan_template)
                 failures = []
                 attempt, attempts_allowed = 0, 2
+                refused = False
                 while attempt < attempts_allowed:
                     attempt += 1
+                    # The fallback engages only on the last granted attempt, and
+                    # only a refusal grants one — so attempts 1-2 always run on
+                    # the stage model, giving a stochastic refusal its Opus retry.
+                    use_fallback = (refused and refusal_fallback_model
+                                    and attempt == attempts_allowed)
+                    model = refusal_fallback_model if use_fallback else plan_model
                     raw, stop_reason = api.call_claude(
                         user_message=user_prompt, system_prompt=system_prompt,
-                        max_tokens=4000, model=plan_model,
+                        max_tokens=4000, model=model,
                         stage="scenario_plan", item_id=deal["scenario_id"],
                         return_stop_reason=True)
                     # The codebase invariant: output the API stopped short —
@@ -497,24 +518,25 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                     # stream (seen intermittently on insect-welfare plans,
                     # 2026-07-19) — is never parsed or checkpointed, even when
                     # its tags happen to parse. Records carry the stop_reason
-                    # because the api.py console warning doesn't persist.
+                    # and model because the api.py console warning doesn't persist.
                     if stop_reason in ("max_tokens", "refusal"):
                         if stop_reason == "refusal":
                             # the classifier is stochastic on the same prompt —
                             # one extra attempt keeps the run from dying on it
                             attempts_allowed = 3
+                            refused = True
                         failure = {"scenario_id": deal["scenario_id"],
                                    "attempt": attempt, "raw": raw,
-                                   "stop_reason": stop_reason}
+                                   "stop_reason": stop_reason, "model": model}
                         if stop_reason == "max_tokens":
                             failure["truncated"] = True
                         failures.append(failure)
                         continue
                     if compose_scenarios.is_incoherent(raw):
-                        return None, raw, failures
+                        return None, raw, failures, None
                     description = compose_scenarios.extract_description(raw)
                     if description:
-                        return description, None, failures
+                        return description, None, failures, model
                     # ~20% of Opus plan attempts (2026-07-19, n=40) write a
                     # complete description but end the turn without the
                     # closing tag. end_turn certifies the reply finished
@@ -528,16 +550,17 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                             failures.append({"scenario_id": deal["scenario_id"],
                                              "attempt": attempt, "raw": raw,
                                              "stop_reason": stop_reason,
+                                             "model": model,
                                              "recovered_unclosed": True})
-                            return description, None, failures
+                            return description, None, failures, model
                     failures.append({"scenario_id": deal["scenario_id"],
                                      "attempt": attempt, "raw": raw,
-                                     "stop_reason": stop_reason})
-                return None, None, failures
+                                     "stop_reason": stop_reason, "model": model})
+                return None, None, failures, None
 
             workers = int(config.get("workers", 1))
             unusable = []
-            for deal, (description, incoherent_raw, failures) in zip(
+            for deal, (description, incoherent_raw, failures, served_model) in zip(
                     pending_deals,
                     utils.parallel_map(_plan, pending_deals, workers)):
                 # Failure raws persist here on the main thread, in input order.
@@ -555,6 +578,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                           "checkpointed as a deliberate rejection.")
                 elif description is not None:
                     scenario = {**deal, "scenario_description": description}
+                    # Stamp scenarios the fallback model authored (the stage
+                    # model refused, this model didn't), so the corpus audit
+                    # can see which plans weren't Opus-written.
+                    if served_model and served_model != plan_model:
+                        scenario["scenario_model_fallback"] = served_model
+                        print(f"    {deal['scenario_id']}: recovered on fallback "
+                              f"model {served_model} after {plan_model} refused "
+                              "— scenario_model_fallback stamped.")
                     scenarios.append(scenario)
                     utils.append_jsonl(scenario, scenarios_path)
                 else:

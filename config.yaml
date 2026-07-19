@@ -33,6 +33,14 @@ dad:
   # DAD runs on Opus 4.8 across the board (Sonnet stays the global/SDF default);
   # Opus answers every welfare prompt where Fable's dual-use layer refuses ~30%.
   scenario_model: claude-opus-4-8               # 1a: scenario plan (deal -> description)
+  # 1a refusal fallback: if Opus's refusal classifier cuts the scenario-plan
+  # stream twice (stop_reason "refusal", seen on insect-welfare plans), the
+  # last-ditch attempt switches to this model. Attempts 1-2 stay on the stage
+  # model (a stochastic refusal clears on an Opus retry); a persistent one
+  # needs a different model, and dropping the plan would bias the corpus away
+  # from the refused content. null = no switch (the granted attempt stays on
+  # Opus). Fallback-authored scenarios are stamped scenario_model_fallback.
+  scenario_refusal_fallback_model: claude-sonnet-5
   prompt_draft_model: claude-opus-4-8           # 1b: draft user prompts (one call per scenario)
   prompt_refine_model: claude-opus-4-8          # 1c: load-bearing rewrite
   response_scope_model: claude-opus-4-8         # 2a: scope map — feeds every downstream step-2 call

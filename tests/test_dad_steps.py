@@ -455,6 +455,75 @@ class TestStep1Run:
         assert [f["attempt"] for f in failures] == [1, 2]
         # a refusal-cut reply is never salvaged via the unclosed-tag path
         assert not any(f.get("recovered_unclosed") for f in failures)
+        # no fallback model configured -> no model switch, no stamp
+        scenarios = utils.load_jsonl(tmp_path / "scenarios.jsonl")
+        assert "scenario_model_fallback" not in scenarios[0]
+
+    def test_persistent_refusal_falls_back_to_configured_model(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # When the stage model refuses twice, the last-ditch attempt switches
+        # to scenario_refusal_fallback_model. Attempts 1-2 stay on the stage
+        # model (a stochastic refusal gets its Opus retry); only the granted
+        # third attempt switches. The recovered scenario is stamped so the
+        # audit can see it wasn't Opus-authored.
+        config = dict(tiny_config)
+        dad = dict(tiny_config["dad"])
+        dad["dilemmas"] = {**tiny_config["dad"]["dilemmas"], "count": 1}
+        dad["scenario_model"] = "claude-opus-4-8"
+        dad["scenario_refusal_fallback_model"] = "claude-sonnet-5"
+        config["dad"] = dad
+        plan_models = []
+
+        def opus_refuses_fallback_succeeds(user_message, **kw):
+            if "write a description of a specific scenario" in _sysuser(user_message, kw):
+                plan_models.append(kw.get("model"))
+                if kw.get("model") == "claude-opus-4-8":
+                    return (dad_scenario_plan_reply(user_message), "refusal")
+                return dad_scenario_plan_reply(user_message)  # fallback model is willing
+            return _dad_step1_dispatch(user_message, **kw)
+
+        stub_claude(opus_refuses_fallback_succeeds)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1
+        # 1-2 on the stage model (both refused), 3rd on the fallback model
+        assert plan_models == ["claude-opus-4-8", "claude-opus-4-8", "claude-sonnet-5"]
+        scenarios = utils.load_jsonl(tmp_path / "scenarios.jsonl")
+        assert scenarios[0]["scenario_model_fallback"] == "claude-sonnet-5"
+        failures = utils.load_jsonl(tmp_path / "scenario_plan_failures.jsonl")
+        assert [f["stop_reason"] for f in failures] == ["refusal", "refusal"]
+        assert all(f["model"] == "claude-opus-4-8" for f in failures)  # Opus refused, on file
+
+    def test_stochastic_refusal_recovers_on_stage_model_before_fallback(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # A single refusal that clears on the Opus retry must NOT reach the
+        # fallback: attempt 2 stays on the stage model and succeeds, so no
+        # Sonnet call happens and the scenario is not stamped.
+        config = dict(tiny_config)
+        dad = dict(tiny_config["dad"])
+        dad["dilemmas"] = {**tiny_config["dad"]["dilemmas"], "count": 1}
+        dad["scenario_model"] = "claude-opus-4-8"
+        dad["scenario_refusal_fallback_model"] = "claude-sonnet-5"
+        config["dad"] = dad
+        plan_models = []
+
+        def refuse_once_then_opus_ok(user_message, **kw):
+            if "write a description of a specific scenario" in _sysuser(user_message, kw):
+                plan_models.append(kw.get("model"))
+                if len(plan_models) == 1:
+                    return (dad_scenario_plan_reply(user_message), "refusal")
+                return dad_scenario_plan_reply(user_message)
+            return _dad_step1_dispatch(user_message, **kw)
+
+        stub_claude(refuse_once_then_opus_ok)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1
+        assert plan_models == ["claude-opus-4-8", "claude-opus-4-8"]  # never reached Sonnet
+        scenarios = utils.load_jsonl(tmp_path / "scenarios.jsonl")
+        assert "scenario_model_fallback" not in scenarios[0]
 
     def test_legacy_snapshot_template_name_still_drafts(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
