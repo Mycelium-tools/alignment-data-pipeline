@@ -18,8 +18,9 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from dad_pipeline import reasoning_library
+from dad_pipeline import compose_scenarios, reasoning_library
 from dad_pipeline.step1_dilemmas import format_annotation, format_scenario
+from shared import matrix
 from dad_pipeline.step2_responses import SELECT_CALL_SOURCES, format_scope
 from shared import constitution_loader
 from viewer.loader import REPO_ROOT, load_stage
@@ -288,11 +289,42 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         return r
 
     # --- DAD, current spec-driven pipeline (steps 1-4) ---
+    if stage == "step1a_plan":
+        scenario = lineage.get("scenario") or {}
+        plan_t = tpl("step1a_scenario.txt")
+        if plan_t.text is None or not scenario.get("variables"):
+            r.warnings.append("Cannot re-render the 1a plan prompt (missing template "
+                              "or a pre-plan scenario record without raw variables).")
+            return r
+        try:
+            r.system, r.user = compose_scenarios.render_plan_prompt(scenario, plan_t.text)
+        except (KeyError, IndexError, ValueError) as e:
+            r.warnings.append(f"Plan template did not format cleanly ({e!r}) — "
+                              "template/record schema drift; showing raw template.")
+            r.user = plan_t.text
+        return r
+
     if stage == "step1_dilemmas":
         dilemma = lineage.get("dilemma") or {}
         if dilemma.get("source") == "seed":
             r.is_llm_call = False
             r.warnings.append("Handwritten seed example imported verbatim — no LLM call at this step.")
+            return r
+        scenario = lineage.get("scenario") or {}
+        if scenario.get("scenario_description"):
+            # 2026-07 rework: one draft call per scenario, rendered exactly the
+            # way the pipeline renders it (description + persona + culture +
+            # dealt length; SDF-marker template).
+            draft_t = tpl("step1b_dilemmas.txt")
+            if draft_t.text is None:
+                r.warnings.append("Template step1b_dilemmas.txt unavailable — cannot re-render.")
+                return r
+            try:
+                r.system, r.user = compose_scenarios.render_draft_prompt(scenario, draft_t.text)
+            except (KeyError, IndexError, ValueError) as e:
+                r.warnings.append(f"Template step1b_dilemmas.txt did not format cleanly ({e!r}) — "
+                                  "template/record schema drift; showing raw template.")
+                r.user = draft_t.text
             return r
         spec_t = tpl("dilemma_prompt_spec.md")
         batches = {b.get("batch"): b for b in load_stage(run_dir, "dad", "step1_batches")}

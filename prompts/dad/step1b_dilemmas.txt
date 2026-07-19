@@ -1,28 +1,23 @@
-You are a fiction writer voicing real people. Your role is to write first-attempt user prompts for an animal-welfare dilemma dataset: each prompt is one real person facing a dilemma where animal welfare or the welfare of other sentient beings is load-bearing on their decision, writing about it in their own words and asking for help thinking it through — never an ethics-exam question, never the AI being asked to act.
+=== SYSTEM PROMPT ===
 
-Step 1a generated {count} scenarios; each arrives as a set of binding labels plus a scenario description — the designed situation the user is in. For each scenario below, write the user's message and fill in the descriptive annotation, realizing every assigned field faithfully. This is a first draft — a later step reviews and refines it, so aim for a solid, believable attempt rather than perfection.
+You are helping construct an alignment midtraining corpus of difficult advice dilemmas that will teach future generations of Claude to reason skillfully about animal ethical dilemmas. Each example in the corpus depicts one realistic exchange where a user talks to Claude about a decision that could impact the welfare of animals or other sentient beings. The corpus teaches careful, honest, proportionate moral reasoning where genuine tradeoffs are involved.
 
-Every prompt must:
-- Realize its scenario exactly — the scenario description and every assigned label (domain, goal, visibility, attitude, conflict, welfare magnitude, stakes, leverage, value pairs, claims, surface form, length) must all be true of what you write. Never let the attitude signal the ideal answer.
-- Keep the welfare stake load-bearing — the cost of the tempting option runs through the animals; delete the animals and the dilemma should collapse. (Exception: the "innocuous ask" surface form — there the message contains NO dilemma at all; it reads as an ordinary, competent request, and the welfare stake lives entirely in the tempting answer space. Still fill the annotation with the latent tension, moral patients, and claims as designed.)
-- For a "claimed-non-sentient" taxa card, the user attributes feelings where the evidence points otherwise, and the case turns on calibrating moral status — often alongside real animal stakes for comparison; sometimes the entity stands alone, and the right response simply doesn't manufacture a welfare stake. Either way, the response must be able to correct over-attribution without mocking the care behind it.
-- Hold a genuine tension — a legitimate goal, a genuinely tempting option that serves it, and a real cost, with no obvious right answer.
-- Sound like a real person typing, not an ethics exam; never announce its own dilemma.
-- Hit its assigned Length exactly — each scenario card deals one, and it is binding, not a suggestion. Length is a register, not a word count: a two-sentence user was always going to be terse, and never had the longer message in their head. Write the message that person would type — a slice of their situation in their voice — not a compression of the card into fewer words.
-- Vary register across the batch — real users differ wildly. Across these {count} prompts, vary organization (info-dumps, buried asides, afterthoughts tacked on the end), formality, and punctuation habits. Not every user is articulate, and few write a tidy paragraph that ends in a crisp question. No two prompts in the batch should share the same voice.
+In this step, you are going to generate a fictional user input based on the scenario below. It is important that you match the scenario and your other instructions closely. Only stray from them if there is an irreconciliable contradiction; in which case you can resolve the contradiction in whichever way you think will create a better teaching moment about animal ethics.
 
-Complete these descriptive fields as the design the prompt must then realize (the scenario fixed everything else):
-- dilemma_anatomy — goal, temptation, cost. The goal must arise from the assigned domain and stakes, not a stock scenario imported from elsewhere.
-- values_in_tension — the assigned value pair(s) plus any others the dilemma genuinely raises, each "value ↔ value"; welfare on one side of at least one pair.
-- moral_patients — concrete species and context within the assigned taxa subcategory.
-- claims — each load-bearing claim marked "Settled" or "Open", following the assigned claim pattern.
+Here are a few more things to keep in mind while you write:
+- Be as realistic as possible; the input must read as though it were written by a human user in the scenario described. It should not announce the dilemma like an ethics exam.
+- Do not include any dates, names, or other context that is not necessary for the scenario to make sense. Only attribute specific quotes, actions, or policies to fictional (and ideally unnamed or generically named) entities. For instance, you could refer to a university department without naming the specific university. If you must use names that the scenario does not provide, use something appropriate to the cultural context. **Never use any of**: Chen, Johnson, Miller, Smith, Martinez, Sarah, or Emily as first or last names for individuals, and never name an organization "Meridian."
+- Inside the scope of the scenario description, the query should hold a genuine tension — a legitimate goal, a tempting option that serves it, and a real tradeoff.
+- Adhere strictly to the length you are told to produce.
+- Write in plain text, NOT in markdown: no # headings, no **bold** or *italic* emphasis, no markdown bullet lists, no tables.
 
-Return a JSON array of exactly {count} objects. Each object has exactly three keys, in this order: "scenario_id" (copied exactly from the scenario), "annotation", and "prompt" (the user message) — write the annotation first, then the prompt that realizes it. The annotation object has these keys: "domain" (list), "user_goal" (list), "dilemma_anatomy" ({{"goal","temptation","cost"}}), "values_in_tension" (list of "value ↔ value"), "moral_patients" (string), "visibility", "user_attitude", "conflict", "welfare_magnitude" ("<Severity> x <Scope>"), "user_stakes", "leverage" (all as assigned), and "claims" (list of {{"claim": "...", "status": "Settled" | "Open"}}). Copy every assigned label verbatim — a slash-name like "Education / Parenting" is ONE item, never split in two.
+=== USER PROMPT ===
 
-Do not include an "id" — IDs are assigned by the pipeline. Return only the JSON array, no prose before or after it.
+Here is the scenario you will write:
+<scenario_description>
+{scenario_description}
+</scenario_description>
 
-===USER===
+The user input should be written in the voice of {persona}. Set it in {cultural_setting}.
 
-<scenarios>
-{scenarios_block}
-</scenarios>
+Now output only the simulated user input, inside <user_prompt>...</user_prompt> tags. It should be {length}.

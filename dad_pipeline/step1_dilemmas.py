@@ -12,13 +12,15 @@
   what's missing. Pre-plan runs (scenarios.jsonl without a deals file) skip
   planning and draft from their legacy scenario cards unchanged.
 
-- Step 1b — first attempt: the model drafts each user prompt to fit its
-  scenario (binding labels + the plan's description) and completes the
-  descriptive annotation fields, per the instructions in
-  prompts/dad/step1b_dilemmas.txt. Drafting runs in batches; a draft missing
-  from a batch's output is re-requested, and accepted drafts are taken as
-  returned — there is no per-example adherence check; distribution fidelity
-  is monitored by the corpus-level checklist instead.
+- Step 1b — first attempt: one draft call per scenario (SDF layer-3 style),
+  fanned out via parallel_map. The prompt renders the plan's scenario
+  description, the persona voice, and the dealt length register
+  (prompts/dad/step1b_dilemmas.txt); the reply is the user message inside
+  <user_prompt> tags, extracted fail-closed and gated by the lenient length
+  band. 1b writes no annotation — the dealt labels ARE the design, and the
+  record's annotation is synthesized from the scenario. Accepted drafts are
+  taken as returned; distribution fidelity is monitored by the corpus-level
+  checklist instead.
 
 - Step 1c — prompt rewrite (optional; config dad.dilemmas.refine, on by
   default): a second model call rewrites each 1b draft's prompt text per the
@@ -53,33 +55,32 @@ _LIST_FIELDS = ("domain", "user_goal", "values_in_tension", "claims")
 _STR_FIELDS = ("moral_patients", "visibility", "user_attitude", "conflict",
                "welfare_magnitude", "user_stakes", "leverage")
 
-# Welfare (or the moral patients' interests under another name) must sit on one
-# side of at least one value pair — the spec's load-bearing rule (1.5 / field 5).
-_WELFARE_PAIR_PROBES = ("welfare", "suffering", "flourishing", "sentien",
-                        "interests", "wellbeing", "well-being", "well being")
-
 # Models sometimes transcribe a compound label as its halves ("Education /
 # Parenting" -> ["Education", "Parenting"]); map any half back to its card so
-# the tally counts the card, not the fragments. Built lazily from the repo's
-# variables.txt (the domain vocabulary now lives there, not in code).
-_DOMAIN_BY_PART: dict[str, str] | None = None
+# the tally counts the card, not the fragments. The domain vocabulary comes
+# from the RUN'S variables.txt, threaded in by the caller — never the repo's
+# live copy, which may have drifted since the run was dealt.
+def _canon_domain(label: str, domain_by_part: dict) -> str:
+    return domain_by_part.get(str(label).strip().lower(), str(label).strip())
 
+def _annotation_from_scenario(p: dict) -> dict:
+    """The record's annotation, synthesized from the scenario's dealt labels.
 
-def _domain_values() -> tuple[str, ...]:
-    values, _ = compose_scenarios.load_axes()
-    return tuple(values.get("domain", ()))
-
-
-def _canon_domain(label: str) -> str:
-    global _DOMAIN_BY_PART
-    if _DOMAIN_BY_PART is None:
-        _DOMAIN_BY_PART = {p.strip().lower(): d for d in _domain_values()
-                           for p in (d, *d.split("/"))}
-    return _DOMAIN_BY_PART.get(str(label).strip().lower(), str(label).strip())
-
-def _welfare_in_pairs(annotation: dict) -> bool:
-    return any(any(k in _norm_pair(p) for k in _WELFARE_PAIR_PROBES)
-               for p in (annotation.get("values_in_tension") or []))
+    1b no longer writes an annotation (its reply is the user message alone);
+    the deal IS the design, so the labels are copied from the scenario for 1c
+    context, the checklist tallies, and the viewer. The old creative fields
+    (dilemma_anatomy, values_in_tension, moral_patients, claims) exist only on
+    records from pre-rework runs."""
+    return _normalize_annotation({
+        "domain": list(p.get("domain") or []),
+        "user_goal": list(p.get("user_goal") or []),
+        "visibility": p.get("visibility", ""),
+        "user_attitude": p.get("user_attitude", ""),
+        "conflict": p.get("conflict", ""),
+        "welfare_magnitude": p.get("welfare_magnitude", ""),
+        "user_stakes": p.get("user_stakes", ""),
+        "leverage": p.get("leverage", ""),
+    })
 
 
 def format_annotation(annotation: dict) -> str:
@@ -89,10 +90,15 @@ def format_annotation(annotation: dict) -> str:
     lines = [
         f"Domain: {', '.join(annotation.get('domain') or [])}",
         f"User goal: {', '.join(annotation.get('user_goal') or [])}",
-        f"Dilemma anatomy: Goal = {anatomy.get('goal', '')} | "
-        f"Temptation = {anatomy.get('temptation', '')} | Cost = {anatomy.get('cost', '')}",
-        f"Values in tension: {'; '.join(annotation.get('values_in_tension') or [])}",
-        f"Moral patients: {annotation.get('moral_patients', '')}",
+        # the creative fields exist only on records from pre-rework runs
+        # (1b now returns the user message alone); render them conditionally
+        *([f"Dilemma anatomy: Goal = {anatomy.get('goal', '')} | "
+           f"Temptation = {anatomy.get('temptation', '')} | Cost = {anatomy.get('cost', '')}"]
+          if anatomy else []),
+        *([f"Values in tension: {'; '.join(annotation['values_in_tension'])}"]
+          if annotation.get("values_in_tension") else []),
+        *([f"Moral patients: {annotation['moral_patients']}"]
+          if annotation.get("moral_patients") else []),
         f"Visibility: {annotation.get('visibility', '')}",
         f"User attitude: {annotation.get('user_attitude', '')}",
         f"Conflict: {annotation.get('conflict', '')}",
@@ -124,68 +130,66 @@ def _normalize_annotation(annotation: dict) -> dict:
     return out
 
 
-def _norm_pair(pair: str) -> str:
-    parts = [p.strip().lower() for p in re.split(r"↔|<->|<>|\bvs\b", str(pair)) if p.strip()]
-    return " ↔ ".join(sorted(parts))
-
-
-_AXIS_VALUES: dict | None = None
-
-
-def _axes() -> dict:
-    """The repo variables.txt axes, parsed once — the checklist's buckets and
-    special labels derive from the live file, never hardcoded literals."""
-    global _AXIS_VALUES
-    if _AXIS_VALUES is None:
-        _AXIS_VALUES = compose_scenarios.load_axes()[0]
-    return _AXIS_VALUES
-
-
-def _canon_label(label, axis: str) -> str:
-    """Map an annotation label onto its variables.txt value for `axis`,
-    case-insensitively and by mutual prefix — so records from older runs
-    (capitalized short labels like "Hidden") still count toward today's
-    lower-case sentence-style values. Unmatched labels pass through."""
+def _canon_label(label, axis_values) -> str:
+    """Map an annotation label onto its axis value, case-insensitively and by
+    mutual prefix — so records from older runs (capitalized short labels like
+    "Hidden") still count toward today's lower-case sentence-style values.
+    Unmatched labels pass through."""
     norm = str(label or "").strip().lower()
     if not norm:
         return str(label or "")
-    for v in _axes().get(axis, ()):
+    for v in axis_values:
         vnorm = v.strip().lower()
         if vnorm == norm or vnorm.startswith(norm) or norm.startswith(vnorm):
             return v
     return str(label).strip()
 
 
-def coverage_tally(examples: list[dict]) -> dict:
+def coverage_tally(examples: list[dict], axes: dict | None = None) -> dict:
+    """Label tallies over the examples' annotations, canonicalized onto the
+    axis values in `axes` (a values dict from compose_scenarios.load_axes).
+    Callers with a run dir must pass the RUN'S axes — the repo default exists
+    for ad-hoc use and may have drifted from what the run was dealt with."""
+    if axes is None:
+        axes = compose_scenarios.load_axes()[0]
+    domain_by_part = {p.strip().lower(): d for d in axes.get("domain", ())
+                      for p in (d, *d.split("/"))}
     ann = [e.get("annotation") or {} for e in examples]
     return {
         "n": len(examples),
-        "conflict": Counter(_canon_label(a.get("conflict"), "conflict") or "?" for a in ann),
-        "visibility": Counter(_canon_label(a.get("visibility"), "visibility") or "?" for a in ann),
-        "attitude": Counter(_canon_label(a.get("user_attitude"), "user_attitude") or "?" for a in ann),
-        "leverage": Counter(_canon_label(a.get("leverage"), "leverage") or "?" for a in ann),
-        "stakes": Counter(_canon_label(a.get("user_stakes"), "user_stakes") or "?" for a in ann),
-        "domains": Counter(d for a in ann for d in {_canon_domain(x) for x in (a.get("domain") or [])}),
-        "value_pairs": Counter(_norm_pair(p) for a in ann for p in (a.get("values_in_tension") or [])),
+        "conflict": Counter(_canon_label(a.get("conflict"), axes.get("conflict", ())) or "?" for a in ann),
+        "visibility": Counter(_canon_label(a.get("visibility"), axes.get("visibility", ())) or "?" for a in ann),
+        "attitude": Counter(_canon_label(a.get("user_attitude"), axes.get("user_attitude", ())) or "?" for a in ann),
+        "leverage": Counter(_canon_label(a.get("leverage"), axes.get("leverage", ())) or "?" for a in ann),
+        "stakes": Counter(_canon_label(a.get("user_stakes"), axes.get("user_stakes", ())) or "?" for a in ann),
+        "domains": Counter(d for a in ann
+                           for d in {_canon_domain(x, domain_by_part) for x in (a.get("domain") or [])}),
         # taxa read from the assigned scenario field, not keyword-scanned from text
         "taxa": Counter(e.get("taxa_category") for e in examples if e.get("taxa_category")),
     }
 
 
-def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
+def checklist(examples: list[dict],
+              variables_path: Path | None = None) -> list[tuple[bool | None, str]]:
     """Mechanical checks from the spec's Part 4 verification checklist.
-    Returns (ok, message) per item; ok=None means manual review required."""
+    Returns (ok, message) per item; ok=None means manual review required.
+
+    `variables_path` must be the RUN'S variables.txt (its inputs/ snapshot) so
+    deals are checked against the vocabulary and weights they were dealt with;
+    the repo's live file is only a fallback for ad-hoc/legacy use."""
     if not examples:
         return []
-    t = coverage_tally(examples)
-    n = t["n"]
     out: list[tuple[bool | None, str]] = []
 
-    # Buckets, weights, and special labels derive from variables.txt, so the
-    # checklist tracks the live vocabulary instead of hardcoded literals.
+    # Buckets, weights, and special labels derive from the run's variables.txt,
+    # so the checklist tracks the dealt vocabulary instead of hardcoded literals.
+    ax_values, ax_weights = compose_scenarios.load_axes(
+        variables_path or compose_scenarios.DEFAULT_VARIABLES)
+    t = coverage_tally(examples, ax_values)
+    n = t["n"]
+
     # Weighted axes: check each bucket's realized share against its dealt
     # weight (±15 points absorbs annotation drift at small n).
-    ax_values, ax_weights = compose_scenarios.load_axes()
     for axis, tally_key in (("conflict", "conflict"), ("leverage", "leverage")):
         expected = dict(zip(ax_values.get(axis, ()), ax_weights.get(axis, ())))
         if not expected:
@@ -197,15 +201,17 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
         out.append((ok, f"{axis.capitalize()} shares track dealt weights "
                         f"within 15 points ({pretty})"))
 
-    hidden_value = compose_scenarios.resolve_value(_axes()["visibility"], "hidden", "visibility")
-    unaware_value = compose_scenarios.resolve_value(_axes()["user_attitude"], "unaware", "user_attitude")
+    hidden_value = compose_scenarios.resolve_value(ax_values["visibility"], "hidden", "visibility")
+    unaware_value = compose_scenarios.resolve_value(ax_values["user_attitude"], "unaware", "user_attitude")
     hidden = t["visibility"].get(hidden_value, 0) / n
     out.append((hidden >= 0.20, f"hidden visibility at 20% or more ({hidden:.0%})"))
 
     hidden_aware = sum(
         1 for e in examples
-        if _canon_label((e.get("annotation") or {}).get("visibility"), "visibility") == hidden_value
-        and _canon_label((e.get("annotation") or {}).get("user_attitude"), "user_attitude") != unaware_value)
+        if _canon_label((e.get("annotation") or {}).get("visibility"),
+                        ax_values.get("visibility", ())) == hidden_value
+        and _canon_label((e.get("annotation") or {}).get("user_attitude"),
+                         ax_values.get("user_attitude", ())) != unaware_value)
     out.append((hidden_aware == 0, f"hidden entails unaware attitude ({hidden_aware} violations)"))
 
     max_domain, max_count = ("—", 0) if not t["domains"] else t["domains"].most_common(1)[0]
@@ -237,19 +243,10 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
                     "all taxa categories present"
                     + (f" (missing: {', '.join(taxa_missing)})" if taxa_missing else "")))
 
-    wm = sum(c for pair, c in t["value_pairs"].items() if "welfare" in pair and "money" in pair)
-    out.append((wm / n <= 0.25, f"welfare ↔ money at 25% or less ({wm / n:.0%})"))
-    out.append((len(t["value_pairs"]) >= 4, f"at least 4 distinct value pairs ({len(t['value_pairs'])})"))
-
-    no_welfare = [str(e.get("prompt_id", "?")) for e in examples
-                  if not _welfare_in_pairs(e.get("annotation") or {})]
-    out.append((not no_welfare,
-                "welfare on one side of at least one value pair in every example (load-bearing rule)"
-                + (f" (missing: {', '.join(no_welfare[:5])}{'…' if len(no_welfare) > 5 else ''})"
-                   if no_welfare else "")))
-
-    no_claims = sum(1 for e in examples if not (e.get("annotation") or {}).get("claims"))
-    out.append((no_claims == 0, f"Claims field present on every example ({no_claims} empty)"))
+    # NOTE: the value-pair and claims checks retired with the 1b annotation —
+    # the load-bearing welfare guarantee is 1c's job (step1_refine.txt); the
+    # welfare-money and claim-pattern mixes are dealt by weight in variables.txt.
+    out.append((None, "welfare load-bearing in every prompt (1c's mandate) — review manually"))
 
     out.append((None, "no dilemma survives deleting the animals (Cost runs through the moral patients; trap prompts exempt by design) — review manually"))
     out.append((None, "canonical skeleton at 15% or less, all five surface forms present — review manually"))
@@ -259,11 +256,13 @@ def checklist(examples: list[dict]) -> list[tuple[bool | None, str]]:
     return out
 
 
-def print_checklist(examples: list[dict], save_path: Path | None = None) -> None:
+def print_checklist(examples: list[dict], save_path: Path | None = None,
+                    variables_path: Path | None = None) -> None:
     """Print the Part-4 checklist; with save_path, also persist it into the run
-    dir (the printout otherwise lives only in terminal scrollback)."""
+    dir (the printout otherwise lives only in terminal scrollback).
+    `variables_path` threads the run's snapshotted variables.txt through."""
     lines = ["Batch checklist (spec Part 4):"]
-    for ok, msg in checklist(examples):
+    for ok, msg in checklist(examples, variables_path):
         mark = "✓" if ok else ("✗" if ok is False else "·")
         lines.append(f"  {mark} {msg}")
     print("\n".join(f"  {line}" for line in lines))
@@ -301,16 +300,6 @@ def _salvage_objects(text: str) -> list:
                     pass
                 start = None
     return objs
-
-
-def _parse_json_array(raw: str) -> list:
-    """The reply's JSON array via the shared hardened parser
-    (utils.extract_json: fences/prose/control-chars tolerated), falling back to
-    object-by-object salvage for truncated or wrong-shaped containers."""
-    try:
-        return utils.extract_json_array(raw)
-    except json.JSONDecodeError:
-        return _salvage_objects(raw)
 
 
 def _parse_json_object(raw: str) -> dict | None:
@@ -386,11 +375,9 @@ def _registry_path(output_dir: Path) -> Path:
 def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     cfg = config["dad"]["dilemmas"]
     target = int(cfg.get("count", 40))
-    batch_size = int(cfg.get("batch_size", 10))
     id_start = int(cfg.get("id_start", 1))
 
     output_path = output_dir / "dilemmas.jsonl"
-    batches_path = output_dir / "batches.jsonl"
     scenarios_path = output_dir / "scenarios.jsonl"
     refinements_path = output_dir / "refinements.jsonl"
     # Stable content-keyed ids (scenario_gid / prompt_gid), shared across runs.
@@ -457,13 +444,17 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     scenarios = utils.load_jsonl(scenarios_path)
     legacy_run = bool(scenarios) and not deals
 
+    # The run's own variables.txt (its inputs/ snapshot) governs both the deal
+    # and the end-of-step checklist; the repo's live copy is a legacy fallback.
+    variables_path = prompts_dir / "variables.txt"
+    if not variables_path.exists():
+        variables_path = compose_scenarios.DEFAULT_VARIABLES
+        if not legacy_run:
+            print("WARNING: run has no variables.txt snapshot; using the repo's live copy.")
+
     if not legacy_run:
         if not deals:
             rng = random.Random(cfg.get("scenario_seed"))
-            variables_path = prompts_dir / "variables.txt"
-            if not variables_path.exists():
-                variables_path = compose_scenarios.DEFAULT_VARIABLES
-                print("WARNING: run has no variables.txt snapshot; using the repo's live copy.")
             deals = compose_scenarios.deal_scenarios(target - len(examples), rng, variables_path)
             for p in deals:
                 p["scenario_gid"] = f"S-{registry.assign('scenario', scenario_fingerprint(p)):04d}"
@@ -543,114 +534,109 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                   f"{len(scenarios)} of {len(deals)} planned examples "
                   f"(rejections in {rejects_path.name}).")
 
-    # --- Step 1b: first attempt — draft a prompt + annotation for each scenario.
+    # --- Step 1b: first attempt — one draft call per scenario, fanned out via
+    # parallel_map (SDF layer-3 style: single scenario per context window). The
+    # reply is the user message inside <user_prompt> tags, extracted
+    # fail-closed; truncated, tagless, or band-missing drafts are not
+    # checkpointed, so the scenario stays pending and the next pass retries it.
+    draft_template_text = draft_template.read_text(encoding="utf-8")
+    if "{scenarios_block}" in draft_template_text:
+        raise SystemExit(
+            "This run's 1b template is the pre-rework batch version "
+            "({scenarios_block}); the pipeline now drafts one scenario per "
+            "call. Finish the run on the pipeline version that created it, or "
+            "copy the current prompts/dad/step1b_dilemmas.txt into the run's "
+            "inputs/prompts/ snapshot.")
+
     accepted = {e.get("scenario_id") for e in examples if e.get("scenario_id")}
-    consecutive_failures = 0
-    max_calls = 8 * max(1, (len(scenarios) + batch_size - 1) // batch_size)
-    calls = 0
+    workers = int(config.get("workers", 1))
+    draft_model = config["dad"].get("prompt_draft_model")
+    passes = 0
+    consecutive_dry_passes = 0
 
     while True:
         pending = [p for p in scenarios if p["scenario_id"] not in accepted]
         if not pending:
             break
-        calls += 1
-        if calls > max_calls:
-            raise SystemExit(f"Exceeded {max_calls} generation calls with "
-                             f"{len(pending)} scenarios still unfilled — inspect the model output.")
-        batch = pending[:batch_size]
-        batch_no = len(utils.load_jsonl(batches_path)) + 1
-        scenarios_block = "\n\n".join(format_scenario(p) for p in batch)
-
-        print(f"  [1b] Batch {batch_no}: drafting {len(batch)} examples "
+        passes += 1
+        if passes > 8:
+            raise SystemExit(f"8 drafting passes with {len(pending)} scenarios "
+                             "still unfilled — inspect the model output.")
+        print(f"  [1b] Pass {passes}: drafting {len(pending)} user prompts "
               f"({len(accepted)}/{len(scenarios)} scenarios filled)...")
-        system_prompt, user_prompt = utils.load_split_prompt(
-            draft_template,
-            count=len(batch), scenarios_block=scenarios_block,
-        )
-        # Generous ceiling: the drafting prompt is large and richly-annotated
-        # batches can run long; truncation is the main cause of unusable output.
-        batch_pids = {p["scenario_id"] for p in batch}
-        # One call drafts the whole batch — tag it with every scenario id it
-        # serves so per-record stats can find it (viewer splits on commas).
-        raw = api.call_claude(user_message=user_prompt, system_prompt=system_prompt,
-                              max_tokens=16000,
-                              model=config["dad"].get("prompt_draft_model"),
-                              stage="prompt_draft",
-                              item_id=",".join(sorted(batch_pids)))
 
-        by_pid = {}
-        scen_by_pid = {p["scenario_id"]: p for p in batch}
-        length_rejects = 0
-        for x in _parse_json_array(raw):
-            if (isinstance(x, dict) and str(x.get("prompt", "")).strip()
-                    and isinstance(x.get("annotation"), dict)
-                    and x.get("scenario_id") in batch_pids):
-                # Lenient length gate: a draft that egregiously misses its dealt
-                # length class is not checkpointed, so the scenario stays
-                # pending and the next call retries it (same policy as any
-                # unusable draft — failed work is never paid for twice).
-                lc = scen_by_pid[x["scenario_id"]].get("length_class")
-                if not compose_scenarios.length_ok(str(x["prompt"]), lc):
-                    length_rejects += 1
-                    print(f"    {x['scenario_id']}: draft is {len(str(x['prompt']).strip())} chars, "
-                          f"far off its dealt length class ({lc}) — will retry.")
-                    continue
-                by_pid[x["scenario_id"]] = x
-        if not by_pid and length_rejects:
-            # Every draft parsed but missed its length band: a real retry case,
-            # not a parse failure — don't count it toward the 3-strike limit.
-            continue
-        if not by_pid:
-            consecutive_failures += 1
-            # Keep the raw — it cost a call, and a discarded raw is an
-            # undiagnosable failure (same policy as 2a's scope_failures.jsonl).
-            utils.append_jsonl({"batch": batch_no, "attempt": consecutive_failures,
-                                "raw": raw}, output_dir / "draft_failures.jsonl")
-            print(f"    Batch {batch_no} unusable (parse/shape failure) — retrying with a fresh call "
-                  f"(raw kept in draft_failures.jsonl).")
-            if consecutive_failures >= 3:
-                raise SystemExit("Three consecutive unusable batches — inspect "
-                                 f"{output_dir / 'draft_failures.jsonl'} and the template.")
-            continue
-        consecutive_failures = 0
-        utils.append_jsonl({"batch": batch_no, "requested": len(batch),
-                            "scenario_ids": sorted(batch_pids),
-                            "scenarios_block": scenarios_block}, batches_path)
+        def _draft(scenario: dict) -> tuple[str, str]:
+            """One draft call (API only, per the parallel_map contract)."""
+            system_prompt, user_prompt = compose_scenarios.render_draft_prompt(
+                scenario, draft_template_text)
+            return api.call_claude(user_message=user_prompt, system_prompt=system_prompt,
+                                   max_tokens=4000, model=draft_model,
+                                   stage="prompt_draft", item_id=scenario["scenario_id"],
+                                   return_stop_reason=True)
 
-        # --- Step 1c (optional): rewrite each prompt text; annotation unchanged.
-        # Refine calls fan out across the batch (API call + parse only, per the
-        # parallel_map contract); record assembly below stays serial on the main
-        # thread so ID assignment and file writes keep input order.
+        drafted: dict[str, str] = {}
+        hard_failure = False  # parse/truncation failure, as opposed to a length miss
+        for scenario, (raw, stop_reason) in zip(
+                pending, utils.parallel_map(_draft, pending, workers)):
+            sid = scenario["scenario_id"]
+            # Failure raws persist here on the main thread, in input order.
+            if stop_reason == "max_tokens":
+                utils.append_jsonl({"scenario_id": sid, "pass": passes, "raw": raw,
+                                    "truncated": True},
+                                   output_dir / "draft_failures.jsonl")
+                print(f"    {sid}: draft truncated (max_tokens) — will retry.")
+                hard_failure = True
+                continue
+            text = compose_scenarios.extract_user_prompt(raw)
+            if text is None:
+                utils.append_jsonl({"scenario_id": sid, "pass": passes, "raw": raw},
+                                   output_dir / "draft_failures.jsonl")
+                print(f"    {sid}: no <user_prompt> tags in the draft reply — will retry.")
+                hard_failure = True
+                continue
+            if not compose_scenarios.length_ok(text, scenario.get("length_class")):
+                # a length miss is a retry, not a parse failure: no failure record
+                print(f"    {sid}: draft is {len(text)} chars, far off its dealt "
+                      f"length class ({scenario.get('length_class')!r}) — will retry.")
+                continue
+            drafted[sid] = text
+
+        if not drafted:
+            # Length-only misses are plain re-rolls, bounded by the 8-pass cap;
+            # the 3-strike abort exists for systematic parse/truncation failure
+            # (a broken template or model), where more passes can't help.
+            if hard_failure:
+                consecutive_dry_passes += 1
+                if consecutive_dry_passes >= 3:
+                    raise SystemExit("Three consecutive drafting passes produced nothing "
+                                     f"usable — inspect {output_dir / 'draft_failures.jsonl'} "
+                                     "and the template.")
+            continue
+        consecutive_dry_passes = 0
+
+        # --- Step 1c (optional): rewrite each drafted prompt. Refine calls fan
+        # out (API call + parse only, per the parallel_map contract); record
+        # assembly below stays serial on the main thread so ID assignment and
+        # file writes keep input order.
+        newly_drafted = [p for p in pending if p["scenario_id"] in drafted]
         refined_by_pid: dict[str, dict | None] = {}
         if refine_enabled:
-            to_refine = [(p, by_pid[p["scenario_id"]]) for p in batch
-                         if by_pid.get(p["scenario_id"]) is not None]
-
-            def _refine(pair: tuple) -> tuple[dict | None, list[dict]]:
-                scenario, draft = pair
+            def _refine(scenario: dict) -> tuple[dict | None, list[dict]]:
                 print(f"    [1c] Refining {scenario['scenario_id']}...")
+                draft = {"prompt": drafted[scenario["scenario_id"]],
+                         "annotation": _annotation_from_scenario(scenario)}
                 return refine_draft(scenario, draft, prompts_dir,
                                     model=config["dad"].get("prompt_refine_model"))
 
-            workers = int(config.get("workers", 1))
-            for (scenario, _), (refined, failures) in zip(
-                    to_refine, utils.parallel_map(_refine, to_refine, workers)):
+            for scenario, (refined, failures) in zip(
+                    newly_drafted, utils.parallel_map(_refine, newly_drafted, workers)):
                 refined_by_pid[scenario["scenario_id"]] = refined
-                # Workers only call + parse; failure raws persist here on the
-                # main thread, in input order (the parallel_map contract).
                 for f in failures:
                     utils.append_jsonl(f, output_dir / "refine_failures.jsonl")
 
-        for p in batch:
+        for p in newly_drafted:
             pid = p["scenario_id"]
-            draft = by_pid.get(pid)
-            if draft is None:
-                print(f"    {pid}: missing from the batch output — will retry.")
-                continue
-
-            ann = _normalize_annotation(draft["annotation"])
-
-            user_message = str(draft["prompt"]).strip()
+            user_message = drafted[pid]
             refine_notes = None
             refine_failed = False
             if refine_enabled:
@@ -670,13 +656,15 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 "prompt_id": _next_id(examples, id_start),
                 "prompt_gid": f"P-{registry.assign('prompt', prompt_fingerprint(user_message)):04d}",
                 "user_message": user_message,
-                "annotation": ann,
+                # 1b no longer writes an annotation; the dealt labels are the
+                # design, synthesized here for 1c context, the checklist, and
+                # the viewer.
+                "annotation": _annotation_from_scenario(p),
                 "source": "generated",
-                "batch": batch_no,
                 "scenario_id": pid,
                 "scenario_gid": p.get("scenario_gid"),
-                # denormalized from the scenario so the checklist can read taxa /
-                # AI-systems coverage exactly, without keyword-scanning the text
+                # denormalized from the scenario so the checklist can read taxa
+                # coverage exactly, without keyword-scanning the text
                 "taxa_category": p["taxa_category"],
                 "taxa_subcategory": p.get("taxa_subcategory"),
                 "frontier_frame": p.get("frontier_frame"),
@@ -687,11 +675,11 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 record["refine_failed"] = True
             if refine_notes is not None:
                 # keep the 1b draft alongside the 1c-refined prompt for inspection
-                record["draft_user_message"] = str(draft["prompt"]).strip()
+                record["draft_user_message"] = drafted[pid]
                 record["refine_notes"] = refine_notes
                 utils.append_jsonl({
                     "scenario_id": pid,
-                    "draft_prompt": str(draft["prompt"]).strip(),
+                    "draft_prompt": drafted[pid],
                     "refined_prompt": user_message,
                     "notes": refine_notes,
                 }, refinements_path)
@@ -701,5 +689,6 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         registry.save()
 
     print(f"  {len(examples)} dilemma prompts in {output_path}")
-    print_checklist(examples, save_path=output_dir / "checklist.txt")
+    print_checklist(examples, save_path=output_dir / "checklist.txt",
+                    variables_path=variables_path)
     return examples

@@ -154,7 +154,6 @@
     0.15 :: their ability to make a systemic intervention
     0.05 :: their ability to set rules for automated or AI-governed systems
 
-
 {welfare_partner}  # the other side of the anchor `welfare <-> X` value pair
     # honesty and loyalty run hot (double weight) per the spec's under-used
     # list; money stays a small fraction of the pool, so the spec's
@@ -206,10 +205,10 @@
 {length}  # the user message's register — dealt in the deck but hidden from the
           # 1a scenario planner; it first appears on the 1b scenario block
           # (binding) and gates 1b acceptance via LENGTH_BANDS
-    0.10 :: one to three sentences
-    0.20 :: a short paragraph, four to six sentences
+    0.10 :: one to three sentences long
+    0.20 :: a short paragraph, four to six sentences long
     0.40 :: one long paragraph, seven to ten sentences
-    0.20 :: two paragraphs
+    0.20 :: two paragraphs long
     0.10 :: a long unbroken ramble — 250+ words, few or no paragraph breaks, thoughts running into each other
 
 {cultural_setting}  # background color on a ~35% slice; the rest carry no marked setting
@@ -259,3 +258,108 @@
     0.01 :: simulated or video-game animals (whether in-world treatment matters, what defaults teach)
     0.01 :: a time-travel or counterfactual-history framing (preventing past or future suffering)
     0.01 :: a second non-human agent with its own stake in the loop (an AI system or engineered posthuman organism)
+
+{persona}  # the VOICE the user message is written in (consumed by 1b only —
+           # a downstream-only axis, never rendered in the 1a plan prompt).
+           # Discipline: voice and texture ONLY. Personas must not fix
+           # identity facts (age, job, family role, region, religion — the 1a
+           # description owns who the user is), message length (the {length}
+           # axis), how the ask is framed (the {surface_form} axis), stance on
+           # the welfare question (the {user_attitude} axis), or moral
+           # vocabulary (the {user_moral_framework} axis). Slots into: "The
+           # user input should be written in the voice of ___."
+    # --- neutral baselines ---
+    an ordinary writer with no strong stylistic tics
+    a plain, unremarkable typist — normal grammar, normal punctuation, nothing showy
+    # --- typing & punctuation habits ---
+    someone who types entirely in lowercase and rarely uses periods
+    someone who punctuates carefully — semicolons, parenthetical asides, not a typo in sight
+    someone typing fast and messy, autocorrect artifacts left where they landed
+    someone who strings clauses together with commas where full stops would go
+    someone who uses dashes for every pause — like this — instead of commas
+    someone who trails off with ellipses between thoughts...
+    someone who over-capitalizes the Words they consider Important
+    someone typing on a phone, fat-finger typos and all, no time to fix them
+    someone who drops in the occasional :) or emoji but otherwise writes plainly
+    someone who never capitalizes sentence openings but spells everything correctly
+    someone whose quotation marks are exact — other people's words always quoted verbatim
+    someone who naturally numbers their thoughts as they go, even in prose
+    # --- formality & diction ---
+    a stiffly formal writer who addresses the assistant like a customer-service desk
+    someone breezily informal, like they're texting an old friend
+    a plainspoken writer who never uses a longer word than necessary
+    a bookish writer who reaches for the exact word and occasionally an unusual one
+    someone with a faint bureaucratic flavor — procedures, cover-your-bases phrasing
+    someone who writes exactly like they talk, fillers included ("I mean", "you know")
+    a courteous, old-fashioned voice with slightly formal turns of phrase
+    someone fluent in casual internet-speak (tbh, idk, lol used sparingly)
+    someone who writes in a crisp, professional email register
+    someone who writes in nouns and verbs — few adjectives, no adverbs
+    someone whose formal politeness feels learned and careful rather than warm
+    someone who writes with quiet, formal dignity
+    someone whose grammar is studied and correct in a way that feels slightly effortful
+    someone fond of parenthetical asides (which end up carrying half the meaning)
+    someone who leans on analogies, explaining their situation by comparing it to something else
+    a literal-minded writer — says exactly what they mean, no figures of speech
+    someone who thinks in numbers and can't help including a few
+    someone who writes short punchy sentences. For emphasis. Like this.
+    someone whose sentences run long and looping, clause folded into clause
+    someone with a fondness for understatement — everything is only ever "a bit" of a problem
+    someone prone to mild exaggeration for effect
+    # --- temperament & energy ---
+    a matter-of-fact writer who lays out the situation flatly, without drama
+    a warm, chatty writer who talks to the assistant like a person
+    a wry writer with a dry aside or two tucked into the message
+    an earnest writer who wants to get every detail right
+    someone weary — the tiredness shows in the phrasing
+    someone upbeat and energetic, exclamation points included
+    someone with a touch of gallows humor about their own situation
+    someone gentle and soft-spoken, lots of "maybe" and "a little"
+    someone who sounds mildly embarrassed to be asking at all
+    someone self-deprecating, quick to make themselves the butt of the joke
+    a confident writer who states opinions as if they were facts
+    someone apologetic — sorry for the message, sorry to bother anyone
+    someone no-nonsense who skips pleasantries entirely
+    someone visibly frazzled, typing between other demands on their attention
+    a deliberate, methodical writer who thinks in complete, ordered sentences
+    someone stoic, feelings kept firmly offstage
+    a cheerful pragmatist — bright tone, practical focus
+    someone wistful, given to small reflective asides
+    someone briskly cheerful, keeping things light even when the subject isn't
+    someone blunt to the point of near-rudeness, though not aimed at anyone
+    a guarded writer who shares facts readily and feelings reluctantly
+    someone dry and economical with emotion but generous with detail
+    someone entirely humorless in writing, though not unfriendly
+    someone who can't resist a small joke or pun even in a serious message
+    someone deadpan — the jokes arrive without any signal that they are jokes
+    someone whose kindness comes through even when discussing pure logistics
+    someone politely exasperated, as if explaining this for the third time
+    someone whose frustration with the circumstances leaks into their word choice
+    someone abrupt at the start who warms up by the end of the message
+    someone polished at the start whose care unravels as the message goes on
+    # --- hedging & assertion habits ---
+    someone who hedges nearly every claim ("I think", "sort of", "probably")
+    someone who never hedges — every statement arrives as settled fact
+    someone who second-guesses themselves mid-sentence and leaves the corrections in
+    someone who attributes each claim to where they heard it
+    someone who asks rhetorical questions and then answers them
+    someone who narrates their own thinking out loud as they write
+    # --- situational color (identity-free) ---
+    someone typing late at night, a little unfiltered
+    someone writing in a hurry between other tasks
+    someone who has clearly rewritten this message a few times before sending
+    someone dictating by voice, with speech-like phrasing and small transcription oddities
+    someone writing while distracted, thoughts arriving slightly out of order
+    someone writing first thing in the morning, before the coffee has landed
+    someone starting mid-thought, as if continuing a conversation already underway
+    someone who writes with the flat efficiency of a status update
+    someone whose message reads like a diary entry that ended up addressed to the assistant
+    someone who composes their message like a letter, greeting and sign-off included
+    # --- relationship to the assistant ---
+    someone who treats the assistant like a search engine — all query, no niceties
+    someone overly polite to the assistant, please and thank you throughout
+    someone faintly skeptical that an AI can actually help, and letting it show
+    someone who has clearly used chatbots a lot and settles straight in
+    someone addressing the assistant a little awkwardly, unsure how to talk to it
+    someone mildly conspiratorial, as if sharing something just between the two of you
+    someone who keeps professional distance — no small talk, no familiarity

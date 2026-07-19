@@ -24,7 +24,7 @@ dad:
   # DAD runs on Opus 4.8 across the board (Sonnet stays the global/SDF default);
   # Opus answers every welfare prompt where Fable's dual-use layer refuses ~30%.
   scenario_model: claude-opus-4-8               # 1a: scenario plan (deal -> description)
-  prompt_draft_model: claude-opus-4-8           # 1b: batch-draft user prompts
+  prompt_draft_model: claude-opus-4-8           # 1b: draft user prompts (one call per scenario)
   prompt_refine_model: claude-opus-4-8          # 1c: load-bearing rewrite
   response_scope_model: claude-opus-4-8         # 2a: scope map — feeds every downstream step-2 call
   response_select_model: claude-opus-4-8        # 2a.5: library-entry selection over the trigger index (falls back to response_scope_model if unset)
@@ -35,7 +35,6 @@ dad:
     model: claude-opus-4-8   # plain call — no system prompt, the finished 1c user prompt verbatim
   dilemmas:
     count: 40         # total examples in step 1 (seed imports count toward this)
-    batch_size: 10    # scenarios drafted per generation call
     id_start: 1       # AW-#### numbering floor; generation continues above any seed IDs
     seed_path: null   # optional JSONL of handwritten examples ({prompt|user_message, annotation?, id?})
     scenario_seed: null  # optional int for reproducible scenario generation; scenarios persist per run either way

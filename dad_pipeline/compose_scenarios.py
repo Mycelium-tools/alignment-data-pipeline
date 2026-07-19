@@ -167,7 +167,9 @@ NONE_PREFIXES = {
 # the {length} values (leading words), so tails can be reworded freely; every
 # value must match exactly one band (validated at deal time).
 LENGTH_BANDS = {
-    "one to three": (0, 700),
+    # ceiling raised 700->950 (2026-07-18 n=30 probe): Opus writing three meaty
+    # sentences lands at 700-870 chars and re-rolling can't fix that
+    "one to three": (0, 950),
     "a short paragraph": (100, 1500),
     "one long paragraph": (250, 2600),
     "two paragraphs": (400, 3500),
@@ -185,6 +187,9 @@ _LEGACY_LENGTH_BANDS = {
 
 DESCRIPTION_TAG_RE = re.compile(
     r"<scenario_description>(.*?)</scenario_description>", re.DOTALL | re.IGNORECASE
+)
+USER_PROMPT_TAG_RE = re.compile(
+    r"<user_prompt>(.*?)</user_prompt>", re.DOTALL | re.IGNORECASE
 )
 INCOHERENT_RE = re.compile(r"\bINCOHERENT\b")
 
@@ -420,9 +425,49 @@ def extract_description(plan: str) -> str | None:
     return m.group(1).strip() or None
 
 
+# Until a {persona} axis exists in variables.txt, the draft prompt's persona
+# slot renders this neutral stub. Once the axis is added (downstream-only is
+# fine — it doesn't need to appear in the 1a template), the dealt value flows
+# through scenario["variables"]["persona"] with no code change here.
+DEFAULT_PERSONA = "the person described in the scenario"
+
+
+def render_draft_prompt(scenario: dict, template: str) -> tuple[str | None, str]:
+    """Render the step-1b draft prompt for ONE planned scenario: (system, user).
+
+    The 1b template is single-scenario (SDF layer-3 style): it receives the
+    plan's scenario description, the persona voice, and the dealt length
+    register. Any other placeholder in the template raises KeyError — the
+    render is the contract check."""
+    raw = scenario.get("variables") or {}
+    persona = raw.get("persona") or scenario.get("persona") or DEFAULT_PERSONA
+    # The RAW dealt value (not the None-mapped record field), so the axis's
+    # "no particular location or culture" sentence renders naturally.
+    cultural = (raw.get("cultural_setting") or scenario.get("cultural_setting")
+                or "no particular location or culture")
+    rendered = template.format(
+        scenario_description=scenario.get("scenario_description", ""),
+        persona=persona,
+        cultural_setting=cultural,
+        length=scenario.get("length_class", ""),
+    )
+    return matrix.split_sections(rendered)
+
+
+def extract_user_prompt(reply: str) -> str | None:
+    """Pull the drafted user message out of a 1b reply: the text inside
+    <user_prompt> tags (bounded on both ends, so preamble or trailing chatter
+    never rides into the record). Fail-closed: None when the tags are absent
+    or empty — don't checkpoint it; retry instead."""
+    m = USER_PROMPT_TAG_RE.search(reply or "")
+    if not m:
+        return None
+    return m.group(1).strip() or None
+
+
 def render_scenario_block(p: dict) -> str:
-    """The scenario block step 1b drafts from (and 1c reads): the labels the
-    annotation must copy verbatim, the binding length register, and the plan's
+    """The scenario block step 1c reads (and the 1b of pre-rework runs drafted
+    from): the dealt labels, the binding length register, and the plan's
     scenario description. Scenarios from pre-plan runs (no description) render
     the full legacy card instead, so the viewer re-renders old runs faithfully."""
     lev = p["leverage"]

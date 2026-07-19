@@ -33,7 +33,7 @@ def _dad_step1_dispatch(user_message, **kw):
     blob = _sysuser(user_message, kw)
     if "write a description of a specific scenario" in blob:  # 1a scenario plan
         return dad_scenario_plan_reply(user_message)
-    if "first-attempt user prompts" in blob:  # 1b batch draft
+    if "generate a fictional user input" in blob:  # 1b single-scenario draft
         return dad_scenario_reply(user_message)
     if "editor of dilemma prompts" in blob:  # 1c refine
         return json.dumps({"prompt": "Refined user message.", "notes": "relocated the lever"})
@@ -50,8 +50,10 @@ class TestStep1Run:
         for e in examples:
             assert e["user_message"] == "Refined user message."  # 1c output
             # the stub pads drafts to their dealt length band, so match the stem
-            assert e["draft_user_message"].startswith(
-                f"Drafted user message for {e['scenario_id']}.")
+            assert e["draft_user_message"].startswith("Drafted user message")
+            # 1b writes no annotation: the record's annotation is the dealt labels
+            assert e["annotation"]["visibility"] and e["annotation"]["leverage"]
+            assert not e["annotation"].get("claims")
             assert e["taxa_subcategory"]
             assert compose_scenarios.length_band(e["length_class"])  # stamped, has a band
             assert "scenario_deviations" not in e
@@ -70,55 +72,26 @@ class TestStep1Run:
         assert len(utils.load_jsonl(tmp_path / "refinements.jsonl")) == 2
         saved = (tmp_path / "checklist.txt").read_text()
         assert saved.startswith("Batch checklist (spec Part 4):")
-        assert "load-bearing rule" in saved
-        # 2 plan calls + 1 batch call + 2 refine calls
-        assert len(calls) == 5
-        # the plan's description reaches the 1b drafting prompt
-        draft_call = next(c["user_message"] for c in calls
-                          if "first-attempt user prompts" in c["system_prompt"])
-        assert "Scenario description:" in draft_call
-        # the 1b annotation reaches the 1c prompt — minus the claims lines
+        assert "load-bearing" in saved
+        # 2 plan calls + 2 single-scenario draft calls + 2 refine calls
+        assert len(calls) == 6
+        # the plan's description reaches each 1b drafting prompt, one per call
+        draft_calls = [c for c in calls
+                       if "generate a fictional user input" in (c["system_prompt"] or "")]
+        assert len(draft_calls) == 2
+        assert all("<scenario_description>" in c["user_message"] for c in draft_calls)
+        assert {c["item_id"] for c in draft_calls} == {"S-001", "S-002"}
+        # the synthesized (dealt-labels) annotation reaches the 1c prompt
         refine_call = next(c["user_message"] for c in calls
                            if "editor of dilemma prompts" in c["system_prompt"])
-        assert "test patients in context" in refine_call
-        assert "a load-bearing claim" not in refine_call
-
-    def test_malformed_1b_annotation_is_normalized_before_the_1c_prompt(
-        self, tiny_config, prompts_dad, tmp_path, stub_claude
-    ):
-        # The model may ignore the "(list)" typing and return a bare string for
-        # a list field, or a non-dict anatomy. The 1c annotation block must be
-        # built from the NORMALIZED annotation, or ', '.join() silently
-        # character-joins the string into garbage inside the paid refine call.
-        config = dict(tiny_config)
-        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "batch_size": 1}}
-
-        def malformed(user_message, **kw):
-            if "write a description of a specific scenario" in _sysuser(user_message, kw):
-                return dad_scenario_plan_reply(user_message)
-            if "editor of dilemma prompts" in _sysuser(user_message, kw):  # 1c refine
-                return json.dumps({"prompt": "Refined user message.", "notes": "n"})
-            reply = json.loads(dad_scenario_reply(user_message))
-            reply[0]["annotation"]["domain"] = "Education / Youth"  # bare string, not list
-            reply[0]["annotation"]["dilemma_anatomy"] = "not a dict"
-            return json.dumps(reply)
-
-        calls = stub_claude(malformed)
-        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
-
-        assert len(examples) == 1
-        refine_call = next(c["user_message"] for c in calls
-                           if "editor of dilemma prompts" in c["system_prompt"])
-        assert "Domain: Education / Youth" in refine_call
-        assert "E, d, u" not in refine_call  # the character-join failure mode
+        assert "Visibility:" in refine_call and "Leverage:" in refine_call
 
     def test_unusable_refine_is_retried_once_and_raw_kept(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "batch_size": 1}}
+                                      "count": 1}}
         refine_calls = {"n": 0}
 
         def flaky_refine(user_message, **kw):
@@ -134,7 +107,7 @@ class TestStep1Run:
         calls = stub_claude(flaky_refine)
         examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
 
-        assert len(calls) == 4  # 1 plan + 1 batch + 2 refine attempts
+        assert len(calls) == 4  # 1 plan + 1 draft + 2 refine attempts
         assert examples[0]["user_message"] == "Refined user message."
         assert "refine_failed" not in examples[0]
         failures = utils.load_jsonl(tmp_path / "refine_failures.jsonl")
@@ -146,7 +119,7 @@ class TestStep1Run:
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "batch_size": 1}}
+                                      "count": 1}}
 
         def bad_refine(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
@@ -158,7 +131,7 @@ class TestStep1Run:
         calls = stub_claude(bad_refine)
         examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
 
-        assert len(calls) == 4  # 1 plan + 1 batch + MAX_REFINE_ATTEMPTS refine attempts
+        assert len(calls) == 4  # 1 plan + 1 draft + MAX_REFINE_ATTEMPTS refine attempts
         e = examples[0]
         assert e["refine_failed"] is True
         assert e["user_message"].startswith("Drafted user message")  # 1b draft shipped
@@ -181,7 +154,7 @@ class TestStep1Run:
         scen = compose_scenarios.deal_scenarios(1, random.Random(seed))[0]
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "batch_size": 1,
+                                      "count": 1,
                                       "scenario_seed": seed, "refine": False}}
         batch_calls = {"n": 0}
 
@@ -189,10 +162,9 @@ class TestStep1Run:
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
                 return dad_scenario_plan_reply(user_message)
             batch_calls["n"] += 1
-            reply = json.loads(dad_scenario_reply(user_message))
             if batch_calls["n"] == 1:
-                reply[0]["prompt"] = "Too short."  # egregious band miss
-            return json.dumps(reply)
+                return "<user_prompt>Too short.</user_prompt>"  # egregious band miss
+            return dad_scenario_reply(user_message)
 
         calls = stub_claude(short_then_valid)
         examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
@@ -205,62 +177,98 @@ class TestStep1Run:
         # a length reject is not a parse failure: nothing lands in draft_failures
         assert utils.load_jsonl(tmp_path / "draft_failures.jsonl") == []
 
-    def test_unusable_batch_raw_is_persisted(
+    def test_tagless_draft_raw_is_persisted_and_retried(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "batch_size": 1, "refine": False}}
-        batch_calls = {"n": 0}
+                                      "count": 1, "refine": False}}
+        draft_calls = {"n": 0}
 
-        def flaky_batch(user_message, **kw):
+        def flaky_draft(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
                 return dad_scenario_plan_reply(user_message)
-            batch_calls["n"] += 1
-            return "no json here" if batch_calls["n"] == 1 else dad_scenario_reply(user_message)
+            draft_calls["n"] += 1
+            return "no tags here" if draft_calls["n"] == 1 else dad_scenario_reply(user_message)
 
-        stub_claude(flaky_batch)
+        stub_claude(flaky_draft)
         examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
 
-        assert len(examples) == 1  # retry recovered
+        assert len(examples) == 1  # the second pass recovered
         failures = utils.load_jsonl(tmp_path / "draft_failures.jsonl")
         assert len(failures) == 1
-        assert failures[0]["raw"] == "no json here" and failures[0]["attempt"] == 1
+        assert failures[0]["raw"] == "no tags here" and failures[0]["pass"] == 1
 
-    def test_mismatching_draft_is_accepted_first_try(
+    def test_persistent_length_misses_hit_the_pass_cap_not_the_three_strike(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
-        # No per-example adherence check: a draft that strays from its card is
-        # accepted as returned — distribution drift is the checklist's job.
+        # A draft that keeps missing its length band is a plain re-roll — it
+        # must never trip the 3-strike abort (that's for parse/truncation
+        # failure); it runs to the 8-pass cap instead. Regression: the n=30
+        # probe (2026-07-18) aborted after 3 length-miss passes.
+        seed = next(
+            s for s in range(50)
+            if compose_scenarios.length_band(
+                compose_scenarios.deal_scenarios(1, random.Random(s))[0]["length_class"]
+            )[1] < 10 ** 6
+        )
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "batch_size": 1, "refine": False}}
+                                      "count": 1, "scenario_seed": seed,
+                                      "refine": False}}
+        draft_calls = {"n": 0}
 
-        def deviating(user_message, **kw):
+        def always_too_long(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
                 return dad_scenario_plan_reply(user_message)
-            reply = json.loads(dad_scenario_reply(user_message))
-            reply[0]["annotation"]["conflict"] = "NOT-A-CONFLICT"
-            return json.dumps(reply)
+            draft_calls["n"] += 1
+            return f"<user_prompt>{'x' * 20000}</user_prompt>"  # over every ceiling
 
-        calls = stub_claude(deviating)
-        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+        stub_claude(always_too_long)
+        with pytest.raises(SystemExit, match="8 drafting passes"):
+            step1_dilemmas.run(config, prompts_dad, tmp_path)
+        assert draft_calls["n"] == 8  # all eight passes ran; no early 3-strike
+        # length misses are re-rolls, never failure records
+        assert utils.load_jsonl(tmp_path / "draft_failures.jsonl") == []
 
-        assert len(calls) == 2  # 1 plan + 1 batch
-        assert len(examples) == 1
-        assert examples[0]["annotation"]["conflict"] == "NOT-A-CONFLICT"
-        assert "scenario_deviations" not in examples[0]
+    def test_checklist_uses_the_runs_variables_snapshot_not_the_repos(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # A run deals (and must be checked) against ITS OWN variables.txt.
+        # Rename a conflict value in the run's snapshot: the deals and the
+        # saved checklist must both speak the snapshot's vocabulary, even
+        # though the repo's live file still says "converge".
+        import shutil
+        snap_prompts = tmp_path / "prompts"
+        shutil.copytree(prompts_dad, snap_prompts)
+        variables = (snap_prompts / "variables.txt").read_text(encoding="utf-8")
+        assert "0.20 :: converge" in variables  # precondition on the repo file
+        (snap_prompts / "variables.txt").write_text(
+            variables.replace("0.20 :: converge", "0.20 :: align"), encoding="utf-8")
 
-    def test_resume_makes_no_calls(self, tiny_config, prompts_dad, tmp_path, stub_claude):
-        # Step 1 has no Checkpoint object — it resumes by re-reading its own
-        # append-only jsonl files. A completed run must cost zero on re-run.
         stub_claude(_dad_step1_dispatch)
-        step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
+        step1_dilemmas.run(tiny_config, snap_prompts, tmp_path / "out")
 
-        calls = stub_claude([])
-        examples = step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
-        assert calls == []
-        assert len(examples) == 2
+        saved = (tmp_path / "out" / "checklist.txt").read_text()
+        conflict_line = next(l for l in saved.splitlines() if "Conflict shares" in l)
+        assert "'align'" in conflict_line
+        assert "'converge'" not in conflict_line
+
+    def test_batch_era_template_snapshot_dies_loudly(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # A pre-rework snapshot's 1b template is batch-shaped ({scenarios_block});
+        # the single-scenario pipeline must refuse it with a clear error rather
+        # than KeyError mid-render.
+        import shutil
+        legacy_prompts = tmp_path / "prompts"
+        shutil.copytree(prompts_dad, legacy_prompts)
+        (legacy_prompts / "step1b_dilemmas.txt").write_text(
+            "batch era\n===USER===\n<scenarios>\n{scenarios_block}\n</scenarios>\n",
+            encoding="utf-8")
+        stub_claude(_dad_step1_dispatch)
+        with pytest.raises(SystemExit, match="pre-rework batch"):
+            step1_dilemmas.run(tiny_config, legacy_prompts, tmp_path / "out")
 
     def test_incoherent_plan_is_checkpointed_not_retried(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -323,7 +331,7 @@ class TestStep1Run:
         # stop_reason alone — even when its tags happen to parse cleanly.
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "batch_size": 1}}
+                                      "count": 1}}
         plan_calls = {"n": 0}
 
         def truncated_then_valid(user_message, **kw):
@@ -962,14 +970,16 @@ class TestPerStageModelKnobs:
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
         # Every stage tags its call with the record it serves (the viewer's
-        # per-record stats look rows up by this id): 1b logs the batch's
-        # scenario ids comma-joined, 1c its scenario id, 2a the prompt id,
-        # 2b prompt id + sample, step 3 the response id.
+        # per-record stats look rows up by this id): 1a/1b/1c their scenario
+        # id (one call per scenario), 2a the prompt id, 2b prompt id + sample,
+        # step 3 the response id.
         calls = stub_claude(_dad_step1_dispatch)
         examples = step1_dilemmas.run(tiny_config, prompts_dad, tmp_path / "step1")
         scenario_ids = sorted(e["scenario_id"] for e in examples)
+        draft_ids = sorted(c["item_id"] for c in calls if c["stage"] == "prompt_draft")
+        assert draft_ids == scenario_ids
         by_stage = {c["stage"]: c for c in calls}
-        assert by_stage["prompt_draft"]["item_id"] == ",".join(scenario_ids)
+        assert by_stage["scenario_plan"]["item_id"] in scenario_ids
         assert by_stage["prompt_refine"]["item_id"] in scenario_ids
 
         calls = stub_claude(_dad_step2_dispatch)
