@@ -502,6 +502,20 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                     description = compose_scenarios.extract_description(raw)
                     if description:
                         return description, None, failures
+                    # ~20% of Opus plan attempts (2026-07-19, n=40) write a
+                    # complete description but end the turn without the
+                    # closing tag. end_turn certifies the reply finished
+                    # naturally (max_tokens was rejected above), so accept
+                    # the unclosed tail — and keep the raw on file, marked
+                    # recovered, so the rate stays measurable run over run.
+                    if stop_reason == "end_turn":
+                        description = compose_scenarios.extract_description(
+                            raw, allow_unclosed=True)
+                        if description:
+                            failures.append({"scenario_id": deal["scenario_id"],
+                                             "attempt": attempt, "raw": raw,
+                                             "recovered_unclosed": True})
+                            return description, None, failures
                     failures.append({"scenario_id": deal["scenario_id"],
                                      "attempt": attempt, "raw": raw})
                 return None, None, failures
@@ -514,6 +528,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 # Failure raws persist here on the main thread, in input order.
                 for f in failures:
                     utils.append_jsonl(f, output_dir / "scenario_plan_failures.jsonl")
+                if any(f.get("recovered_unclosed") for f in failures):
+                    print(f"    {deal['scenario_id']}: accepted unclosed "
+                          "<scenario_description> (end_turn) — raw kept in "
+                          "scenario_plan_failures.jsonl")
                 if incoherent_raw is not None:
                     reject = {**deal, "incoherent": True, "plan_raw": incoherent_raw}
                     rejects.append(reject)

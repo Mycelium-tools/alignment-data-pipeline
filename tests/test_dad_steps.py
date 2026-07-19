@@ -385,6 +385,44 @@ class TestStep1Run:
         assert len(failures) == 1
         assert failures[0]["truncated"] is True and failures[0]["attempt"] == 1
 
+    def test_unclosed_plan_accepted_on_end_turn_and_kept_on_file(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # The measured Opus behavior (~20% of plan attempts, 2026-07-19 n=40):
+        # a complete description that ends the turn without the closing tag.
+        # end_turn makes end-of-reply a real boundary, so the plan is accepted
+        # without burning a paid retry — and the raw stays on file, marked
+        # recovered, so the rate remains measurable run over run.
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1}}
+        plan_calls = {"n": 0}
+
+        def unclosed_plan(user_message, **kw):
+            if "write a description of a specific scenario" in _sysuser(user_message, kw):
+                plan_calls["n"] += 1
+                reply = dad_scenario_plan_reply(user_message)
+                return reply.removesuffix("</scenario_description>")
+            return _dad_step1_dispatch(user_message, **kw)
+
+        stub_claude(unclosed_plan)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1
+        assert plan_calls["n"] == 1  # accepted first attempt, zero retries
+        scenarios = utils.load_jsonl(tmp_path / "scenarios.jsonl")
+        assert scenarios[0]["scenario_description"].startswith("A person faces")
+        assert "</scenario_description" not in scenarios[0]["scenario_description"]
+        failures = utils.load_jsonl(tmp_path / "scenario_plan_failures.jsonl")
+        assert len(failures) == 1
+        assert failures[0]["recovered_unclosed"] is True
+        assert failures[0]["attempt"] == 1
+        # resume: the recovered plan is checkpointed like any other — the
+        # replanning pass sees nothing pending and makes zero plan calls
+        calls = stub_claude(_dad_step1_dispatch)
+        step1_dilemmas.run(config, prompts_dad, tmp_path)
+        assert all(c["stage"] != "scenario_plan" for c in calls)
+
     def test_legacy_snapshot_template_name_still_drafts(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):

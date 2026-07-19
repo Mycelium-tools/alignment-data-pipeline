@@ -188,6 +188,7 @@ _LEGACY_LENGTH_BANDS = {
 DESCRIPTION_TAG_RE = re.compile(
     r"<scenario_description>(.*?)</scenario_description>", re.DOTALL | re.IGNORECASE
 )
+DESCRIPTION_OPEN_TAG_RE = re.compile(r"<scenario_description>", re.IGNORECASE)
 USER_PROMPT_TAG_RE = re.compile(
     r"<user_prompt>(.*?)</user_prompt>", re.DOTALL | re.IGNORECASE
 )
@@ -410,19 +411,37 @@ def is_incoherent(plan: str) -> bool:
     return bool(INCOHERENT_RE.search(plan[:2000]))
 
 
-def extract_description(plan: str) -> str | None:
+def extract_description(plan: str, *, allow_unclosed: bool = False) -> str | None:
     """Pull the self-contained scenario description out of a plan response.
 
     The spec is the text inside <scenario_description> tags (bounded on both
     ends, so trailing chatter never rides into the 1b prompt). Fail-closed:
     returns None for INCOHERENT plans and for plans without the tags
-    (malformed output — don't checkpoint it; retry or drop instead)."""
+    (malformed output — don't checkpoint it; retry or drop instead).
+
+    allow_unclosed: also accept a reply that opens the tag, writes the
+    description, and ends the turn without ever closing it — Opus does this on
+    ~20% of plan attempts (2026-07-19, n=40). The caller must gate the flag on
+    stop_reason == "end_turn": only a naturally finished reply makes
+    end-of-reply a real boundary (a max_tokens cut would hand 1b a truncated
+    spec). Extraction starts at the LAST opening tag, so an inline mention of
+    the tag in the planning notes can't drag them in; a tail declaring
+    INCOHERENT still fails closed (is_incoherent only scans the first 2000
+    chars, which long planning notes can exceed)."""
     if is_incoherent(plan):
         return None
     m = DESCRIPTION_TAG_RE.search(plan)
-    if not m:
+    if m:
+        return m.group(1).strip() or None
+    if not allow_unclosed:
         return None
-    return m.group(1).strip() or None
+    opens = list(DESCRIPTION_OPEN_TAG_RE.finditer(plan))
+    if not opens:
+        return None
+    tail = plan[opens[-1].end():]
+    if INCOHERENT_RE.search(tail):
+        return None
+    return tail.strip() or None
 
 
 # Until a {persona} axis exists in variables.txt, the draft prompt's persona
