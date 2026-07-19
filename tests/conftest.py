@@ -135,8 +135,11 @@ def _api_guard(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _openai_guard(monkeypatch):
-    """Fake OpenAI credentials, reset shared.embeddings globals, block the seam."""
+    """Fake embedding-provider credentials (both legs), reset shared.embeddings
+    globals, block the provider-routing seam."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-gemini-key")
+    monkeypatch.delenv("EMBEDDINGS_MODEL", raising=False)
     monkeypatch.setattr(embeddings, "_config", {})
     monkeypatch.setattr(embeddings, "_client", None)
     monkeypatch.setattr(embeddings, "_cost_log_path", None)
@@ -144,7 +147,7 @@ def _openai_guard(monkeypatch):
 
     def _blocked(*args, **kwargs):
         raise AssertionError(
-            "OpenAI API call attempted during tests — stub shared.embeddings.embed_texts"
+            "Embedding API call attempted during tests — stub shared.embeddings.embed_texts"
         )
 
     monkeypatch.setattr(embeddings, "_embed_with_retry", _blocked)

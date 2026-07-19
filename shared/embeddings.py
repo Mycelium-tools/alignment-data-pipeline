@@ -1,4 +1,4 @@
-"""OpenAI embeddings wrapper with retry logic and cost tracking.
+"""Embeddings wrapper (OpenAI or Gemini) with retry logic and cost tracking.
 
 Structured exactly like shared/api.py: a lazily-initialized module client, a
 tenacity-wrapped transport call that retries only transient failures, and
@@ -7,10 +7,17 @@ always 0 — embeddings bill input only). ``embed_texts`` is the single
 chokepoint every caller uses; tests stub it the same way they stub
 ``shared.api.call_claude`` (see tests/conftest.py).
 
+Two provider legs behind the one chokepoint, routed by model name: OpenAI
+(``text-embedding-*``, needs OPENAI_API_KEY) and Gemini (``gemini-*``, needs
+GEMINI_API_KEY; plain REST via httpx — openai's own pinned dependency — so no
+new package). ``resolve_default_model()`` picks whichever provider has a key,
+OpenAI first. IMPORTANT: diversity numbers are only comparable within one
+embedding model — pick one and freeze it; reports refuse cross-model compares.
+
 This is the embedding-based complement to the lexical word-shingle scan in
 shared/textstats.py, whose docstring defers paraphrase-level semantic
-duplication to embeddings. Requires OPENAI_API_KEY in the environment/.env;
-the Anthropic-driven pipelines never import this module.
+duplication to embeddings. The Anthropic-driven pipelines never import this
+module.
 """
 
 import os
@@ -59,6 +66,15 @@ MAX_INPUT_TOKENS = 8192
 # unless the caller already set the dir.
 _VENDORED_TIKTOKEN_CACHE = Path(__file__).resolve().parent.parent / "vendor" / "tiktoken"
 
+GEMINI_DEFAULT_MODEL = "gemini-embedding-001"
+_GEMINI_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
+               "{model}:batchEmbedContents")
+# batchEmbedContents caps at 100 requests; gemini-embedding-001 caps each
+# input at 2048 tokens (we bound with the cl100k estimate, close enough as a
+# safety net — the API truncates silently rather than 400ing on overflow).
+GEMINI_MAX_BATCH = 100
+GEMINI_MAX_INPUT_TOKENS = 2048
+
 _config: dict = {}
 _client: openai.OpenAI | None = None
 _cost_log_path: Path | None = None
@@ -69,22 +85,50 @@ _cost_log_lock = threading.Lock()
 _PRICING = {
     "text-embedding-3-small": 0.02,
     "text-embedding-3-large": 0.13,
+    "gemini-embedding-001": 0.15,
 }
 _UNPRICED_WARNED: set = set()
+
+
+def _is_gemini(model: str) -> bool:
+    return model.startswith("gemini")
+
+
+def resolve_default_model() -> str:
+    """The embedding model to use when the caller doesn't name one: an explicit
+    EMBEDDINGS_MODEL env var wins; otherwise whichever provider has a key,
+    OpenAI first (the repo's original stack), then Gemini."""
+    explicit = os.environ.get("EMBEDDINGS_MODEL")
+    if explicit:
+        return explicit
+    if os.environ.get("OPENAI_API_KEY"):
+        return DEFAULT_MODEL
+    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        return GEMINI_DEFAULT_MODEL
+    return DEFAULT_MODEL  # no key at all: fail later with the provider's error
 
 
 def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = None) -> None:
     global _config, _client, _cost_log_path
     with open(config_path, encoding="utf-8") as f:
         _config = yaml.safe_load(f)
-    _client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    _client = None  # constructed lazily; Gemini-only environments never need it
     _cost_log_path = Path(cost_log_path or _config["outputs"]["cost_log"])
     _cost_log_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _get_client() -> openai.OpenAI:
-    if _client is None:
+    global _client
+    if _cost_log_path is None:
         init()
+    if _client is None:
+        key = os.environ.get("OPENAI_API_KEY")
+        if not key:
+            raise RuntimeError(
+                "OpenAI embedding models need OPENAI_API_KEY in .env; set it, or "
+                "use a gemini-* embed model (GEMINI_API_KEY)."
+            )
+        _client = openai.OpenAI(api_key=key)
     return _client
 
 
@@ -112,6 +156,10 @@ def _log_usage(model: str, input_tokens: int) -> None:
         f.write(json.dumps(record) + "\n")
 
 
+class GeminiTransientError(Exception):
+    """Gemini embeddings 429/5xx/connection failure; retried by tenacity."""
+
+
 # Same predicate rationale as shared/api.py: retrying a deterministic 4xx (bad
 # request, auth, over-context input) burns 8 exponential-backoff attempts
 # before surfacing the real error — retry only rate limits, 5xx, and
@@ -120,7 +168,45 @@ _RETRYABLE_ERRORS = (
     openai.RateLimitError,
     openai.InternalServerError,
     openai.APIConnectionError,
+    GeminiTransientError,
 )
+
+
+def _gemini_transport(model: str, batch: list[str]) -> tuple[list[list[float]], int]:
+    """One batchEmbedContents call. The response carries no usage block, so
+    input tokens are estimated with the cl100k encoding (cost-log honesty at
+    cents scale). httpx is openai's own pinned dependency — no new package."""
+    import httpx
+
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if not key:
+        raise RuntimeError(
+            "gemini-* embedding models need GEMINI_API_KEY (or GOOGLE_API_KEY) "
+            "in .env; set it, or use an OpenAI text-embedding-* model."
+        )
+    try:
+        resp = httpx.post(
+            _GEMINI_URL.format(model=model),
+            headers={"x-goog-api-key": key},
+            json={"requests": [
+                {"model": f"models/{model}", "content": {"parts": [{"text": t}]}}
+                for t in batch]},
+            timeout=120,
+        )
+    except httpx.TransportError as e:
+        raise GeminiTransientError(str(e)) from e
+    if resp.status_code == 429 or resp.status_code >= 500:
+        raise GeminiTransientError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+    resp.raise_for_status()
+    vectors = [e["values"] for e in resp.json()["embeddings"]]
+    enc = _encoding_for(DEFAULT_MODEL)
+    return vectors, sum(len(enc.encode(t)) for t in batch)
+
+
+def _openai_normalize(response) -> tuple[list[list[float]], int]:
+    # the API preserves order, but each item carries its index — trust that
+    ordered = sorted(response.data, key=lambda d: d.index)
+    return [d.embedding for d in ordered], response.usage.prompt_tokens
 
 
 @retry(
@@ -128,8 +214,13 @@ _RETRYABLE_ERRORS = (
     wait=wait_exponential(multiplier=2, min=4, max=60),
     stop=stop_after_attempt(8),
 )
-def _embed_with_retry(client: openai.OpenAI, model: str, batch: list[str]):
-    return client.embeddings.create(model=model, input=batch)
+def _embed_with_retry(client: openai.OpenAI | None, model: str,
+                      batch: list[str]) -> tuple[list[list[float]], int]:
+    """Provider-normalized transport: (vectors in input order, input tokens).
+    The single seam tests block/stub — both provider legs live below it."""
+    if _is_gemini(model):
+        return _gemini_transport(model, batch)
+    return _openai_normalize(client.embeddings.create(model=model, input=batch))
 
 
 @functools.lru_cache(maxsize=8)
@@ -161,13 +252,13 @@ def truncate_to_tokens(text: str, max_tokens: int = MAX_INPUT_TOKENS,
     return enc.decode(tokens[:max_tokens])
 
 
-def _batches(texts: list[str]):
-    """Split texts into API batches: at most MAX_BATCH items and (except for a
+def _batches(texts: list[str], max_items: int = MAX_BATCH):
+    """Split texts into API batches: at most max_items items and (except for a
     single oversized text, which still goes alone) MAX_BATCH_CHARS chars each."""
     batch: list[str] = []
     chars = 0
     for t in texts:
-        if batch and (len(batch) >= MAX_BATCH or chars + len(t) > MAX_BATCH_CHARS):
+        if batch and (len(batch) >= max_items or chars + len(t) > MAX_BATCH_CHARS):
             yield batch
             batch, chars = [], 0
         batch.append(t)
@@ -176,21 +267,25 @@ def _batches(texts: list[str]):
         yield batch
 
 
-def embed_texts(texts: list[str], model: str = DEFAULT_MODEL) -> np.ndarray:
+def embed_texts(texts: list[str], model: str | None = None) -> np.ndarray:
     """Embed texts and return an L2-normalized float32 matrix, one row per text.
 
-    Batching happens here (MAX_BATCH items / MAX_BATCH_CHARS chars per
+    model=None resolves via resolve_default_model() (explicit EMBEDDINGS_MODEL,
+    else whichever provider has a key, OpenAI first).
+
+    Batching happens here (per-provider item cap / MAX_BATCH_CHARS chars per
     request); callers that want to checkpoint paid work between requests
     should chunk their own input and call this per chunk.
 
     Raises ValueError on empty/whitespace-only texts — the API rejects them
     mid-batch, so the caller must filter (and report) empties first.
 
-    Inputs over the model's token window (MAX_INPUT_TOKENS) are truncated to it
-    as a safety net: an over-window input 400s the whole batch, and callers that
-    pre-truncate by characters cannot bound tokens for CJK/other dense scripts.
-    Callers that care about how much was cut should truncate (and report) first.
+    Inputs over the model's token window are truncated to it as a safety net:
+    an over-window input 400s the whole batch, and callers that pre-truncate by
+    characters cannot bound tokens for CJK/other dense scripts. Callers that
+    care about how much was cut should truncate (and report) first.
     """
+    model = model or resolve_default_model()
     for i, t in enumerate(texts):
         if not t or not t.strip():
             raise ValueError(
@@ -200,16 +295,18 @@ def embed_texts(texts: list[str], model: str = DEFAULT_MODEL) -> np.ndarray:
     if not texts:
         return np.zeros((0, 0), dtype=np.float32)
 
-    texts = [truncate_to_tokens(t, MAX_INPUT_TOKENS, model) for t in texts]
+    gemini = _is_gemini(model)
+    cap = GEMINI_MAX_INPUT_TOKENS if gemini else MAX_INPUT_TOKENS
+    texts = [truncate_to_tokens(t, cap, model) for t in texts]
 
-    client = _get_client()
+    if _cost_log_path is None:
+        init()
+    client = None if gemini else _get_client()
     rows: list[list[float]] = []
-    for batch in _batches(texts):
-        response = _embed_with_retry(client, model, batch)
-        _log_usage(model, response.usage.prompt_tokens)
-        # the API preserves order, but each item carries its index — trust that
-        ordered = sorted(response.data, key=lambda d: d.index)
-        rows.extend(d.embedding for d in ordered)
+    for batch in _batches(texts, GEMINI_MAX_BATCH if gemini else MAX_BATCH):
+        vectors, input_tokens = _embed_with_retry(client, model, batch)
+        _log_usage(model, input_tokens)
+        rows.extend(vectors)
 
     X = np.asarray(rows, dtype=np.float32)
     norms = np.linalg.norm(X, axis=1, keepdims=True)
