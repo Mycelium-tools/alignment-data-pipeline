@@ -254,6 +254,39 @@ class TestStep1Run:
         assert "'align'" in conflict_line
         assert "'converge'" not in conflict_line
 
+    def test_preplan_legacy_scenarios_draft_from_their_card(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # A pre-plan run's scenarios carry no scenario_description. Resumed
+        # through the current single-scenario template, the rendered legacy
+        # card must fill the description slot — never an empty block — and no
+        # plan calls may fire (the deal-less run skips planning entirely).
+        legacy_scenario = {
+            "scenario_id": "S-001", "scenario_gid": "S-0001",
+            "domain": ["Consumer Choice"], "user_goal": ["Decision Support"],
+            "taxa_category": "companion", "taxa_subcategory": "dogs",
+            "visibility": "Hidden", "user_attitude": "Unaware",
+            "conflict": "Convergent", "welfare_magnitude": "Mild x Individual",
+            "user_stakes": "Low", "leverage": "Individual",
+            "anchor_value_pair": "welfare ↔ honesty",
+            "surface_form": "buried lede", "length_class": "2-3-sentences",
+            "cultural_setting": None, "frontier_frame": None,
+        }
+        utils.append_jsonl(legacy_scenario, tmp_path / "scenarios.jsonl")
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "refine": False}}
+
+        calls = stub_claude(_dad_step1_dispatch)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1
+        assert all(c["stage"] != "scenario_plan" for c in calls)  # no planning
+        draft_call = next(c for c in calls if c["stage"] == "prompt_draft")
+        # the legacy card rides inside the description tags — not an empty block
+        assert "<scenario_description>\nSCENARIO S-001" in draft_call["user_message"]
+        assert "- Domain: Consumer Choice" in draft_call["user_message"]
+
     def test_batch_era_template_snapshot_dies_loudly(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):

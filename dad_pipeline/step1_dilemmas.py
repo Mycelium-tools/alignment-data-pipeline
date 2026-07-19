@@ -10,7 +10,10 @@
   persist to step1/scenario_deals.jsonl and planned scenarios to
   step1/scenarios.jsonl, so --resume replays the same deal and only plans
   what's missing. Pre-plan runs (scenarios.jsonl without a deals file) skip
-  planning and draft from their legacy scenario cards unchanged.
+  planning; when drafted through the current single-scenario template, their
+  rendered legacy card fills the scenario-description slot (see
+  compose_scenarios.render_draft_prompt) — a run whose snapshot still holds
+  the old batch template is refused loudly instead.
 
 - Step 1b — first attempt: one draft call per scenario (SDF layer-3 style),
   fanned out via parallel_map. The prompt renders the plan's scenario

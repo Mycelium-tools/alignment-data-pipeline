@@ -433,12 +433,15 @@ DEFAULT_PERSONA = "the person described in the scenario"
 
 
 def render_draft_prompt(scenario: dict, template: str) -> tuple[str | None, str]:
-    """Render the step-1b draft prompt for ONE planned scenario: (system, user).
+    """Render the step-1b draft prompt for ONE scenario: (system, user).
 
     The 1b template is single-scenario (SDF layer-3 style): it receives the
     plan's scenario description, the persona voice, and the dealt length
-    register. Any other placeholder in the template raises KeyError — the
-    render is the contract check."""
+    register. A pre-plan legacy scenario (no scenario_description) falls back
+    to its rendered card — the dealt labels ARE its scenario description —
+    so a resumed old run never drafts from an empty block. Any other
+    placeholder in the template raises KeyError — the render is the contract
+    check."""
     raw = scenario.get("variables") or {}
     persona = raw.get("persona") or scenario.get("persona") or DEFAULT_PERSONA
     # The RAW dealt value (not the None-mapped record field), so the axis's
@@ -446,7 +449,8 @@ def render_draft_prompt(scenario: dict, template: str) -> tuple[str | None, str]
     cultural = (raw.get("cultural_setting") or scenario.get("cultural_setting")
                 or "no particular location or culture")
     rendered = template.format(
-        scenario_description=scenario.get("scenario_description", ""),
+        scenario_description=(scenario.get("scenario_description")
+                              or render_scenario_block(scenario)),
         persona=persona,
         cultural_setting=cultural,
         length=scenario.get("length_class", ""),
