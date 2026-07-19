@@ -246,6 +246,20 @@ def checklist(examples: list[dict],
                     "all taxa categories present"
                     + (f" (missing: {', '.join(taxa_missing)})" if taxa_missing else "")))
 
+    # Archetypes: reserved cross-axis conjunctions (compose_scenarios.
+    # ARCHETYPES, live repo code like TAXA). Gated on the records carrying the
+    # field — runs that predate archetypes are never checked against them.
+    if any("archetype" in e for e in examples):
+        arch = Counter(e.get("archetype") for e in examples if e.get("archetype"))
+        for name, spec in compose_scenarios.ARCHETYPES.items():
+            expected = round(spec["share"] * n)
+            got = arch.get(name, 0)
+            out.append((got >= expected,
+                        f"archetype {name!r} present ({got}; dealt share expects {expected})"))
+        overwrites = sum(len(e.get("archetype_overwrites") or []) for e in examples)
+        out.append((overwrites == 0,
+                    f"archetype swaps preserved marginal shares ({overwrites} overwrites)"))
+
     # NOTE: the value-pair and claims checks retired with the 1b annotation —
     # the load-bearing welfare guarantee is 1c's job (step1_refine.txt); the
     # welfare-money and claim-pattern mixes are dealt by weight in variables.txt.
@@ -673,6 +687,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 "frontier_frame": p.get("frontier_frame"),
                 "length_class": p.get("length_class"),
                 "cultural_setting": p.get("cultural_setting"),
+                "archetype": p.get("archetype"),
+                **({"archetype_overwrites": p["archetype_overwrites"]}
+                   if p.get("archetype_overwrites") else {}),
             }
             if refine_failed:
                 record["refine_failed"] = True

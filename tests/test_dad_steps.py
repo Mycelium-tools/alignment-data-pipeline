@@ -428,6 +428,56 @@ class TestCoverageTally:
         assert t["domains"]["Space Tourism"] == 1
 
 
+class TestChecklistArchetypes:
+    """The Part-4 checklist's archetype lines: quotas reported per archetype,
+    overwrites flagged, and runs that predate the field never checked."""
+
+    @staticmethod
+    def _examples_from_deals(n, seed):
+        # records the way step1 denormalizes them: dealt labels as annotation,
+        # archetype fields alongside
+        return [{"prompt_id": f"AW-{i:04d}",
+                 "annotation": {"domain": p["domain"], "user_goal": p["user_goal"],
+                                "visibility": p["visibility"],
+                                "user_attitude": p["user_attitude"],
+                                "conflict": p["conflict"],
+                                "welfare_magnitude": p["welfare_magnitude"],
+                                "user_stakes": p["user_stakes"],
+                                "leverage": p["leverage"]},
+                 "taxa_category": p["taxa_category"],
+                 "archetype": p.get("archetype"),
+                 **({"archetype_overwrites": p["archetype_overwrites"]}
+                    if p.get("archetype_overwrites") else {})}
+                for i, p in enumerate(compose_scenarios.deal_scenarios(
+                    n, random.Random(seed)), 1)]
+
+    def test_quotas_and_zero_overwrites_pass(self):
+        examples = self._examples_from_deals(40, 0)
+        lines = dict((msg, ok) for ok, msg in step1_dilemmas.checklist(examples)
+                     if "archetype" in msg)
+        arch_lines = [m for m in lines if "present" in m]
+        assert len(arch_lines) == len(compose_scenarios.ARCHETYPES)
+        assert all(lines[m] for m in arch_lines)
+        overwrite_line = next(m for m in lines if "overwrites" in m)
+        assert lines[overwrite_line] and "0 overwrites" in overwrite_line
+
+    def test_overwrites_flagged(self):
+        examples = self._examples_from_deals(40, 0)
+        tagged = next(e for e in examples if e["archetype"])
+        tagged["archetype_overwrites"] = ["scope"]
+        lines = {msg: ok for ok, msg in step1_dilemmas.checklist(examples)}
+        overwrite_line = next(m for m in lines if "overwrites" in m)
+        assert not lines[overwrite_line] and "1 overwrites" in overwrite_line
+
+    def test_legacy_records_without_the_field_are_not_checked(self):
+        examples = self._examples_from_deals(6, 0)
+        for e in examples:
+            e.pop("archetype", None)
+            e.pop("archetype_overwrites", None)
+        assert not any("archetype" in msg
+                       for _, msg in step1_dilemmas.checklist(examples))
+
+
 # --- Step 2: scope + respond ---------------------------------------------
 
 SCOPE_AXES = {

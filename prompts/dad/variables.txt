@@ -42,6 +42,9 @@
 # at deal time, before any API spend:
 #   - trap surface form -> hidden visibility -> unaware attitude (the only
 #     sanctioned axis dependencies);
+#   - ARCHETYPES: named cross-axis conjunctions guaranteed a share of each
+#     run by trading cards between deals (marginal shares stay as dealt);
+#     defined and documented in compose_scenarios.py;
 #   - no domain above 12% of a run, counting secondary domains;
 #   - {length} values map to lenient acceptance bands (LENGTH_BANDS in
 #     compose_scenarios.py, matched by leading-words prefix) that reject only

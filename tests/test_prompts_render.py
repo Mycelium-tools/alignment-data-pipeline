@@ -45,7 +45,8 @@ TEMPLATE_KWARGS = [
     ("dad/step1a_scenario.txt", {
         "domain": "DOMAIN-X", "user_goal": "GOAL-X", "taxa_hint": "TAXA-HINT-X",
         "taxa_subcategory": "TAXA-SUB-X", "secondary_domain_clause": "",
-        "secondary_goal_clause": "", "visibility": "VIS-X", "user_attitude": "ATT-X",
+        "secondary_goal_clause": "", "archetype_clause": "",
+        "visibility": "VIS-X", "user_attitude": "ATT-X",
         "user_moral_framework": "STYLE-X", "conflict": "CONFLICT-X",
         "severity": "SEV-X", "scope": "SCOPE-X",
         "user_stakes": "STAKES-X", "leverage": "LEV-X",

@@ -208,3 +208,88 @@ class TestRenderAndExtract:
         assert not cs.length_ok("way too short", "ramble")
         assert cs.length_ok("anything", None)
         assert cs.length_ok("anything", "unknown-class")
+
+
+class TestArchetypes:
+    """The reserved-slot mechanism: cross-axis conjunctions guaranteed a share
+    of every run by trading cards between deals (compose_scenarios.ARCHETYPES).
+    Expectations derive from the live ARCHETYPES specs and variables.txt."""
+
+    def test_quotas_met_and_constraints_satisfied(self):
+        n = 40
+        batch = cs.deal_scenarios(n, random.Random(0))
+        tagged = [p for p in batch if p["archetype"]]
+        by_name = {}
+        for p in tagged:
+            by_name.setdefault(p["archetype"], []).append(p)
+        for name, spec in cs.ARCHETYPES.items():
+            assert len(by_name.get(name, [])) == round(spec["share"] * n)
+        for p in tagged:
+            spec = cs.ARCHETYPES[p["archetype"]]
+            for axis, prefixes in spec["axes"].items():
+                allowed = {cs.resolve_value(VALUES[axis], px, axis) for px in prefixes}
+                # visibility/attitude assert on the post-rule record fields
+                # (trap/hidden overrides run after archetype assignment)
+                got = {"visibility": p["visibility"],
+                       "user_attitude": p["user_attitude"]}.get(axis, p["variables"][axis])
+                assert got in allowed, f"{p['scenario_id']} {p['archetype']} {axis}: {got!r}"
+
+    def test_swaps_preserve_every_axis_marginal(self, monkeypatch):
+        # same seed with archetypes disabled: per-axis counts must be identical
+        # (cards are traded between deals, never re-printed) — and the real
+        # archetypes must need zero overwrites at this n
+        with_arch = cs.deal_scenarios(40, random.Random(7))
+        assert not any(p.get("archetype_overwrites") for p in with_arch)
+        monkeypatch.setattr(cs, "ARCHETYPES", {})
+        plain = cs.deal_scenarios(40, random.Random(7))
+        for axis in VALUES:
+            counts = lambda batch: sorted(p["variables"][axis] for p in batch)
+            assert counts(with_arch) == counts(plain), f"marginal drift on {axis}"
+
+    def test_overwrite_fallback_is_recorded(self, monkeypatch):
+        # an archetype demanding more of a rare card than the run was dealt
+        # must fall back to overwriting and flag it on the record
+        rare = cs.resolve_value(VALUES["scope"], "an astronomical number", "scope")
+        monkeypatch.setattr(cs, "ARCHETYPES", {
+            "starved": {"share": 0.25, "axes": {"scope": ("an astronomical number",)}},
+        })
+        batch = cs.deal_scenarios(20, random.Random(0))
+        tagged = [p for p in batch if p["archetype"] == "starved"]
+        assert len(tagged) == 5  # round(0.25 * 20)
+        assert all(p["variables"]["scope"] == rare for p in tagged)
+        dealt_supply = round(dict(zip(VALUES["scope"], WEIGHTS["scope"]))[rare] * 20)
+        flagged = sum(len(p.get("archetype_overwrites") or []) for p in tagged)
+        assert flagged == 5 - dealt_supply
+
+    def test_validation_fails_loudly_before_any_spend(self, monkeypatch):
+        monkeypatch.setattr(cs, "ARCHETYPES", {
+            "bad": {"share": 0.05, "axes": {"no_such_axis": ("x",)}},
+        })
+        with pytest.raises(ValueError, match="archetype 'bad'.*no_such_axis"):
+            cs.deal_scenarios(4, random.Random(0))
+        monkeypatch.setattr(cs, "ARCHETYPES", {
+            "bad": {"share": 0.05, "axes": {"visibility": ("zzz-no-match",)}},
+        })
+        with pytest.raises(ValueError, match="archetype 'bad'"):
+            cs.deal_scenarios(4, random.Random(0))
+        monkeypatch.setattr(cs, "ARCHETYPES", {
+            "greedy": {"share": 0.30, "axes": {"visibility": ("hidden",)}},
+        })
+        with pytest.raises(ValueError, match="share"):
+            cs.deal_scenarios(4, random.Random(0))
+
+    def test_clause_renders_only_on_archetype_deals(self):
+        template = cs.DEFAULT_TEMPLATE.read_text(encoding="utf-8")
+        batch = cs.deal_scenarios(40, random.Random(0))
+        tagged = next(p for p in batch if p["archetype"])
+        _, user = cs.render_plan_prompt(tagged, template)
+        assert cs.ARCHETYPES[tagged["archetype"]]["clause"] in user
+        untagged = next(p for p in batch if not p["archetype"])
+        _, user2 = cs.render_plan_prompt(untagged, template)
+        assert "{archetype_clause}" not in user2
+        for spec in cs.ARCHETYPES.values():
+            assert spec["clause"] not in user2
+        # records from runs that predate archetypes render the same way
+        legacy = {k: v for k, v in untagged.items() if k != "archetype"}
+        _, user3 = cs.render_plan_prompt(legacy, template)
+        assert user3 == user2
