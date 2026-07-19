@@ -7,9 +7,18 @@ values are taken from the real axis definitions so the checks stay pinned to the
 strings the pipeline actually deals.
 """
 
-from dad_pipeline.step1_dilemmas import _FRONTIER_FRAMES
+from dad_pipeline import compose_scenarios
 from evals import audit_dad
 from shared import utils
+
+# Frontier frames now live in prompts/dad/variables.txt (the 2026-07 matrix
+# refactor); derive them the way the composer does, excluding the none value.
+_AXIS_VALUES, _ = compose_scenarios.load_axes()
+_FRONTIER_FRAMES = tuple(
+    v for v in _AXIS_VALUES["frontier_frame"]
+    if v != compose_scenarios.resolve_value(
+        _AXIS_VALUES["frontier_frame"],
+        compose_scenarios.NONE_PREFIXES["frontier_frame"]))
 
 # A real "space / off-world" frontier frame and its expected in-text traces.
 _SPACE_FRAME = next(f for f in _FRONTIER_FRAMES if "space or off-world" in f)

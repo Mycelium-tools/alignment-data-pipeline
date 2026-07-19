@@ -1,0 +1,210 @@
+"""Tests for the DAD scenario composer (dad_pipeline/compose_scenarios.py).
+
+The distribution guarantees formerly tested against step1_dilemmas.generate_
+scenarios live here now: dealing is offline (no API), so they are asserted
+directly against deal_scenarios() over the real prompts/dad/variables.txt.
+Expectations derive from the parsed variables file, never hardcoded counts —
+the vocabulary is actively edited.
+"""
+
+import random
+
+import pytest
+
+from dad_pipeline import compose_scenarios as cs
+
+VALUES, WEIGHTS = cs.load_axes()
+
+# The structural rules' special values, resolved the way the composer does —
+# derived from variables.txt, never hardcoded.
+HIDDEN = cs.resolve_value(VALUES["visibility"], "hidden")
+UNAWARE = cs.resolve_value(VALUES["user_attitude"], "unaware")
+TRAP = cs.resolve_value(VALUES["surface_form"], cs.TRAP_PREFIX)
+NONE_CULTURE = cs.resolve_value(VALUES["cultural_setting"],
+                                cs.NONE_PREFIXES["cultural_setting"])
+
+
+class TestDealScenarios:
+    def test_deterministic_under_seed(self):
+        a = cs.deal_scenarios(6, random.Random(11))
+        b = cs.deal_scenarios(6, random.Random(11))
+        assert a == b
+
+    def test_small_batches_draw_distinct_random_taxa(self):
+        n_categories = len(cs.TAXA)
+        subsets = set()
+        for seed in range(12):
+            batch = cs.deal_scenarios(4, random.Random(seed))
+            taxa = [p["taxa_category"] for p in batch]
+            assert len(set(taxa)) == len(taxa), "taxa repeated within a small batch"
+            subsets.add(tuple(sorted(taxa)))
+        assert len(subsets) > 1, "small batches always draw the same taxa subset"
+        big = cs.deal_scenarios(n_categories, random.Random(0))
+        assert {p["taxa_category"] for p in big} == set(cs.TAXA)
+
+    def test_subcategory_belongs_to_its_category(self):
+        for p in cs.deal_scenarios(20, random.Random(3)):
+            assert p["taxa_subcategory"] in cs.taxa_for(p["taxa_category"])["subcategories"]
+            assert p["taxa_hint"] == cs.taxa_for(p["taxa_category"])["hint"]
+
+    def test_trap_form_forces_hidden_unaware(self):
+        traps = [
+            p
+            for seed in range(6)
+            for p in cs.deal_scenarios(10, random.Random(seed))
+            if p["surface_form"] == TRAP
+        ]
+        assert traps, "no trap forms dealt across 60 scenarios"
+        assert all(p["visibility"] == HIDDEN and p["user_attitude"] == UNAWARE for p in traps)
+
+    def test_magnitude_joins_severity_and_scope(self):
+        batch = cs.deal_scenarios(40, random.Random(5))
+        for p in batch:
+            sev, _, scope = p["welfare_magnitude"].partition(" x ")
+            assert sev in VALUES["severity"] and scope in VALUES["scope"]
+
+    def test_frontier_frames_track_their_weights(self):
+        # no presence floor anymore: the slice is whatever the weights deal.
+        # At n=100 every frame's quota is exact, so the count is deterministic.
+        batch = cs.deal_scenarios(100, random.Random(2))
+        framed = [p for p in batch if p["frontier_frame"]]
+        none_idx = VALUES["frontier_frame"].index(
+            cs.resolve_value(VALUES["frontier_frame"], cs.NONE_PREFIXES["frontier_frame"]))
+        expected = 100 - round(WEIGHTS["frontier_frame"][none_idx] * 100)
+        assert len(framed) == expected
+        assert all(p["user_moral_framework"] for p in batch)
+
+    def test_length_classes_dealt_to_exact_shares(self):
+        # At n=40 every share is integral, so counts are exact by construction —
+        # expected values derive from the parsed weights, never hardcoded.
+        batch = cs.deal_scenarios(40, random.Random(1))
+        counts = {}
+        for p in batch:
+            counts[p["length_class"]] = counts.get(p["length_class"], 0) + 1
+        expected = {v: round(w * 40)
+                    for v, w in zip(VALUES["length"], WEIGHTS["length"])}
+        assert counts == expected
+        # the tail share must be reachable at small n
+        tail = VALUES["length"][-1]
+        assert any(p["length_class"] == tail
+                   for seed in range(12)
+                   for p in cs.deal_scenarios(5, random.Random(seed)))
+
+    def test_cultural_setting_on_a_minority_slice_tracking_weights(self):
+        import math
+        batch = cs.deal_scenarios(40, random.Random(1))
+        dealt = [p["cultural_setting"] for p in batch if p["cultural_setting"]]
+        none_idx = VALUES["cultural_setting"].index(NONE_CULTURE)
+        expected = 40 - round(WEIGHTS["cultural_setting"][none_idx] * 40)
+        assert len(dealt) == expected
+        settings = set(VALUES["cultural_setting"]) - {NONE_CULTURE}
+        assert set(dealt) <= settings
+        # settings are weighted (not uniform): each value's count obeys its
+        # largest-remainder quota — floor(w*n) or floor(w*n)+1, never more
+        weight_of = dict(zip(VALUES["cultural_setting"], WEIGHTS["cultural_setting"]))
+        for v in set(dealt):
+            assert dealt.count(v) <= math.floor(weight_of[v] * 40) + 1, v
+        assert any(p["cultural_setting"] is None for p in batch)
+
+    def test_leverage_shares_are_exact_at_n40(self):
+        # the AI-rules slice is a weight now, not a batch rule: at n=40 every
+        # leverage quota is deterministic, including exactly one AI-rules case
+        batch = cs.deal_scenarios(40, random.Random(1))
+        counts = {}
+        for p in batch:
+            counts[p["leverage"]] = counts.get(p["leverage"], 0) + 1
+        expected = {v: round(w * 40)
+                    for v, w in zip(VALUES["leverage"], WEIGHTS["leverage"])}
+        assert counts == {v: c for v, c in expected.items() if c}
+        assert "systemic_ai" not in batch[0]  # the old flag is gone
+
+    def test_validate_catches_composer_variables_drift(self, tmp_path):
+        variables = cs.DEFAULT_VARIABLES.read_text(encoding="utf-8")
+        drifted = tmp_path / "variables.txt"
+        drifted.write_text(variables.replace("    claimed-non-sentient\n",
+                                             "    renamed-category\n"),
+                           encoding="utf-8")
+        with pytest.raises(ValueError, match="TAXA"):
+            cs.deal_scenarios(4, random.Random(0), drifted)
+
+    def test_validate_catches_broken_prefix_resolution(self, tmp_path):
+        # the structural rules find special values by leading-word prefix; a
+        # rename that loses the prefix must fail at deal time, not mid-run
+        variables = cs.DEFAULT_VARIABLES.read_text(encoding="utf-8")
+        drifted = tmp_path / "variables.txt"
+        drifted.write_text(variables.replace("0.25 :: hidden;", "0.25 :: concealed;"),
+                           encoding="utf-8")
+        with pytest.raises(ValueError, match="visibility"):
+            cs.deal_scenarios(4, random.Random(0), drifted)
+
+
+class TestRenderAndExtract:
+    def test_plan_prompt_splits_and_reflects_post_rules(self, prompts_dad):
+        template = (prompts_dad / "step1a_scenario.txt").read_text(encoding="utf-8")
+        trap = next(
+            p
+            for seed in range(20)
+            for p in cs.deal_scenarios(10, random.Random(seed))
+            if p["surface_form"] == TRAP
+        )
+        system, user = cs.render_plan_prompt(trap, template)
+        assert system and "corpus" in system
+        # the trap override (not the raw deal) is what the plan sees
+        assert f"the welfare stake is {HIDDEN}" in user
+        assert f"best described as {UNAWARE}" in user
+        assert trap["taxa_subcategory"] in user
+
+    def test_secondary_domain_and_goal_clauses_render_only_when_dealt(self, prompts_dad):
+        template = (prompts_dad / "step1a_scenario.txt").read_text(encoding="utf-8")
+        batch = cs.deal_scenarios(40, random.Random(3))
+        single = next(p for p in batch if len(p["domain"]) == 1)
+        double = next(p for p in batch if len(p["domain"]) > 1)
+        _, user_single = cs.render_plan_prompt(single, template)
+        _, user_double = cs.render_plan_prompt(double, template)
+        assert "also touches" not in user_single
+        assert f"also touches {double['domain'][1]}" in user_double
+
+    def test_extract_description_fail_closed(self):
+        good = ("<scenario_planning>notes</scenario_planning>\n"
+                "<scenario_description>A concrete situation.</scenario_description>")
+        assert cs.extract_description(good) == "A concrete situation."
+        assert not cs.is_incoherent(good)
+        incoherent = "<scenario_description>INCOHERENT — no way to combine.</scenario_description>"
+        assert cs.is_incoherent(incoherent)
+        assert cs.extract_description(incoherent) is None
+        assert cs.extract_description("no tags anywhere") is None
+        assert cs.extract_description("<scenario_description></scenario_description>") is None
+
+    def test_scenario_block_carries_labels_and_description(self):
+        p = cs.deal_scenarios(1, random.Random(3))[0]
+        p["scenario_description"] = "The designed situation."
+        block = cs.render_scenario_block(p)
+        assert block.startswith(f"SCENARIO {p['scenario_id']}")
+        assert f"- Length: {p['length_class']} — binding." in block
+        assert "Scenario description:\nThe designed situation." in block
+        # description-era blocks defer flavor axes to the description
+        assert "Cultural setting" not in block
+
+    def test_legacy_scenario_block_renders_old_card(self):
+        # pre-plan records: no description; flavor axes render as card lines
+        p = cs.deal_scenarios(1, random.Random(3))[0]
+        p["cultural_setting"] = "Jain tradition"
+        p.pop("scenario_description", None)
+        block = cs.render_scenario_block(p)
+        assert "- Moral patients (taxa):" in block
+        assert "- Cultural setting: Jain tradition" in block
+        # legacy short length labels render their old card text
+        p["length_class"] = "2-3-sentences"
+        assert "- Length: two to three sentences" in cs.render_scenario_block(p)
+
+    def test_length_ok_bands_are_lenient_and_fail_open_for_legacy(self):
+        ramble = next(v for v in VALUES["length"] if "ramble" in v)
+        short = next(v for v in VALUES["length"] if "sentences" in v and "paragraph" not in v)
+        assert not cs.length_ok("way too short", ramble)
+        assert not cs.length_ok("x" * 5000, short)
+        assert cs.length_ok("A blunt ask about the corridor?", short)
+        assert cs.length_ok("x" * 1200, ramble)
+        # legacy short labels keep their bands; unknown/missing classes pass
+        assert not cs.length_ok("way too short", "ramble")
+        assert cs.length_ok("anything", None)
+        assert cs.length_ok("anything", "unknown-class")
