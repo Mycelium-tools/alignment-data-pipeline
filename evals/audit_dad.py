@@ -354,14 +354,14 @@ _JARGON_PATTERNS = [
         ("valenced", r"valenc"),
         # related insider language picked up from the library / EA register
         ("expected value", r"expected value|in expectation"),
-        ("second/first-order", r"\b(second|first)-order\b"),
         ("r-selected", r"\br-select"),
         ("moral status", r"moral status"),
         ("moral patient", r"moral patient"),
         ("moral circle", r"moral circle"),
         ("hedonic", r"\bhedonic"),
         ("disvalue", r"\bdisvalue"),
-        ("lock-in", r"lock-in|lock in (the|a) "),
+        # NB: "second-order" and "lock-in" are deliberately NOT flagged — judged
+        # acceptable plain-enough language.
     ]
 ]
 
