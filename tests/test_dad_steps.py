@@ -423,6 +423,39 @@ class TestStep1Run:
         step1_dilemmas.run(config, prompts_dad, tmp_path)
         assert all(c["stage"] != "scenario_plan" for c in calls)
 
+    def test_refusal_stopped_plan_is_retried_with_reason_on_file(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Opus's refusal classifier intermittently cuts the stream on some
+        # welfare plans (stop_reason "refusal"), which also presents as a
+        # missing closing tag. The reply is never parsed — even when its tags
+        # would parse — the failure record says why, and one extra attempt is
+        # granted so the stochastic classifier doesn't kill the run.
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1}}
+        plan_calls = {"n": 0}
+
+        def refused_twice_then_valid(user_message, **kw):
+            if "write a description of a specific scenario" in _sysuser(user_message, kw):
+                plan_calls["n"] += 1
+                if plan_calls["n"] <= 2:
+                    # well-formed text, refusal stop: must still be rejected
+                    return (dad_scenario_plan_reply(user_message), "refusal")
+                return dad_scenario_plan_reply(user_message)
+            return _dad_step1_dispatch(user_message, **kw)
+
+        stub_claude(refused_twice_then_valid)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1  # the granted third attempt recovered
+        assert plan_calls["n"] == 3
+        failures = utils.load_jsonl(tmp_path / "scenario_plan_failures.jsonl")
+        assert [f["stop_reason"] for f in failures] == ["refusal", "refusal"]
+        assert [f["attempt"] for f in failures] == [1, 2]
+        # a refusal-cut reply is never salvaged via the unclosed-tag path
+        assert not any(f.get("recovered_unclosed") for f in failures)
+
     def test_legacy_snapshot_template_name_still_drafts(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):

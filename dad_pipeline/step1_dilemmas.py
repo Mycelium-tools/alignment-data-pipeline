@@ -484,18 +484,31 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 system_prompt, user_prompt = compose_scenarios.render_plan_prompt(
                     deal, plan_template)
                 failures = []
-                for attempt in (1, 2):
+                attempt, attempts_allowed = 0, 2
+                while attempt < attempts_allowed:
+                    attempt += 1
                     raw, stop_reason = api.call_claude(
                         user_message=user_prompt, system_prompt=system_prompt,
                         max_tokens=4000, model=plan_model,
                         stage="scenario_plan", item_id=deal["scenario_id"],
                         return_stop_reason=True)
-                    # The codebase invariant: truncated output is never used or
-                    # checkpointed, even when its tags happen to parse.
-                    if stop_reason == "max_tokens":
-                        failures.append({"scenario_id": deal["scenario_id"],
-                                         "attempt": attempt, "raw": raw,
-                                         "truncated": True})
+                    # The codebase invariant: output the API stopped short —
+                    # token cap, or Opus's refusal classifier cutting the
+                    # stream (seen intermittently on insect-welfare plans,
+                    # 2026-07-19) — is never parsed or checkpointed, even when
+                    # its tags happen to parse. Records carry the stop_reason
+                    # because the api.py console warning doesn't persist.
+                    if stop_reason in ("max_tokens", "refusal"):
+                        if stop_reason == "refusal":
+                            # the classifier is stochastic on the same prompt —
+                            # one extra attempt keeps the run from dying on it
+                            attempts_allowed = 3
+                        failure = {"scenario_id": deal["scenario_id"],
+                                   "attempt": attempt, "raw": raw,
+                                   "stop_reason": stop_reason}
+                        if stop_reason == "max_tokens":
+                            failure["truncated"] = True
+                        failures.append(failure)
                         continue
                     if compose_scenarios.is_incoherent(raw):
                         return None, raw, failures
@@ -514,10 +527,12 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                         if description:
                             failures.append({"scenario_id": deal["scenario_id"],
                                              "attempt": attempt, "raw": raw,
+                                             "stop_reason": stop_reason,
                                              "recovered_unclosed": True})
                             return description, None, failures
                     failures.append({"scenario_id": deal["scenario_id"],
-                                     "attempt": attempt, "raw": raw})
+                                     "attempt": attempt, "raw": raw,
+                                     "stop_reason": stop_reason})
                 return None, None, failures
 
             workers = int(config.get("workers", 1))
