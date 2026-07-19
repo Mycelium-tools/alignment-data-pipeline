@@ -27,8 +27,12 @@ python dad_pipeline/run.py --config config.yaml --label full-scale
 python sdf_pipeline/run.py --config config.yaml --resume --layer 3
 python dad_pipeline/run.py --config config.yaml --resume --step 3 --run-id 2026-07-01_14-30_dev
 
-# Evaluate outputs (latest symlink points at the most recent run)
-python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl
+# Evaluate outputs (latest symlink points at the most recent run).
+# DAD: corpus-level audit — prompt- and response-side diversity checks incl.
+# opening shapes, offline/free; --reasons adds the paid LLM reason pass.
+# (evals/score_dad_parked.py, the per-example rubric judge, is PARKED pending
+# a rubric redesign — see its docstring.)
+python evals/audit_dad.py --input outputs/dad/latest
 python evals/score_sdf.py --input outputs/sdf/latest/final/sdf_corpus.jsonl
 
 # Preference pairs: two responses per prompt (arms a/b), then blind human A/B rating

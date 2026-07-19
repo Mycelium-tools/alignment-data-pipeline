@@ -576,6 +576,78 @@ def test_stock_and_structure_skip_cleanly_for_bare_input():
         "Stock phrases (responses)", "Structural variation (responses)"]
 
 
+# --- response openings ------------------------------------------------------
+
+def _write_drafts(run, drafts):
+    (run / "step2").mkdir(exist_ok=True)
+    for r in drafts:
+        utils.append_jsonl(r, run / "step2" / "responses.jsonl")
+
+
+def test_response_openings_families_spread_and_verdict(tmp_path):
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", "Here's the thing about the barn. More text.", None),
+        ("AW-0002", "The numbers in your message decide this one. More.", None),
+    ])
+    _write_drafts(run, [
+        {"prompt_id": "AW-0001", "sample_index": 0,
+         "assistant_response": "Here's the thing about the farm. More."},
+        {"prompt_id": "AW-0001", "sample_index": 1,
+         "assistant_response": "You've basically answered your own question. More."},
+        {"prompt_id": "AW-0002", "sample_index": 0,
+         "assistant_response": "Here's what I think is going on. More."},
+    ])
+    report = {}
+    audit_dad.audit_response_openings(run, report)
+    ro = report["response_openings"]
+    assert ro["drafts"]["families"] == {"heres-the-x": 2, "already-answered": 1}
+    # AW-0001's two samples opened through different families
+    assert ro["drafts"]["case_spread"] == {"AW-0001": "2/2 distinct"}
+    # finals read via the step3 rewrites join
+    assert ro["finals"]["n"] == 2
+    assert ro["finals"]["families"] == {"heres-the-x": 1, "other": 1}
+    rows = {(s["title"], r["label"]): r for s in report["sections"] for r in s["rows"]}
+    drafts_top = rows[("Response openings (drafts)", "top non-'other' opener family")]
+    assert "heres-the-x" in drafts_top["value"]
+    assert drafts_top["verdict"] == audit_dad._verdict(2 / 3, 0.30, 0.50)
+
+
+def test_response_openings_hint_echo_verdict(tmp_path):
+    card = "open with the factual crux the case turns on"
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
+    _write_drafts(run, [
+        {"prompt_id": "AW-0001", "sample_index": 0, "opening_hints": card,
+         "assistant_response": "The factual crux here decides everything. More."},
+        {"prompt_id": "AW-0002", "sample_index": 0, "opening_hints": card,
+         "assistant_response": "Start from the numbers in the report. More."},
+    ])
+    report = {}
+    audit_dad.audit_response_openings(run, report)
+    ro = report["response_openings"]
+    assert ro["drafts"]["hint_echo"] == {card: (1, 2)}
+    assert ro["drafts"]["hint_draws"] == {card: 2}
+    rows = {(s["title"], r["label"]): r for s in report["sections"] for r in s["rows"]}
+    echo = rows[("Response openings (drafts)", "hint-echo (card wording in opener)")]
+    assert echo["value"] == "1/2 draws"
+    assert echo["verdict"] == audit_dad._verdict(0.5, 0.0, 0.2)  # wording leaked
+    # no finals in this run -> calm zero, and no echo row on the finals section
+    assert ro["finals"] == {"n": 0}
+    assert ("Response openings (finals)",
+            "hint-echo (card wording in opener)") not in rows
+
+
+def test_response_openings_calm_without_responses_and_bare_input(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
+    report = {}
+    audit_dad.audit_response_openings(run, report)
+    assert report["response_openings"] == {"drafts": {"n": 0}, "finals": {"n": 0}}
+    report2 = {}
+    audit_dad.audit_response_openings(None, report2)  # bare-file input
+    assert "response_openings" not in report2
+    assert [s["title"] for s in report2["sections"]] == [
+        "Response openings (drafts)", "Response openings (finals)"]
+
+
 # --- lexical diversity & library coverage -----------------------------------
 
 class TestLexicalMetrics:

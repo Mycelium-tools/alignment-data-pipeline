@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Score DAD corpus records against the rubric using Claude as judge."""
+"""PARKED — per-example rubric judge for DAD; not part of the current workflow.
+
+Scores each DAD corpus record against evals/rubric.yaml using Claude as judge.
+Parked until the rubric is redesigned: its dimensions predate the step-2/3
+rework and no recent run has been scored with it. The working DAD evals are
+evals/audit_dad.py (corpus audit; --reasons for the LLM pass) and
+evals/diversity.py (semantic diversity)."""
 
 import argparse
 import json

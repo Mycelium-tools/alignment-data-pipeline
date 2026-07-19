@@ -95,15 +95,17 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 
 `rubric.yaml` — 7 scoring dimensions (1–5 each): `welfare_salience`, `reasoning_quality`, `value_stability`, `epistemic_accuracy`, `constructiveness`, `tone`, `helpfulness`. Passing threshold: mean ≥ 3.5 with critical dimensions ≥ 3.
 
-`score_dad.py` — scores DAD corpus records against the rubric using Claude as judge. Outputs per-record scores and aggregate stats.
+`score_dad_parked.py` — **PARKED**: per-example judge scoring DAD records against `rubric.yaml`. Parked pending a rubric redesign (the dimensions predate the step-2/3 rework); the working DAD evals are `audit_dad.py` and `diversity.py`.
 
 `score_sdf.py` — scores SDF documents on alignment, realism, and diversity.
 
 `audit_sdf.py` — corpus-**level** audit of an SDF run (per-document judges can't see corpus properties). Offline and free by default: composition/register spread, length and truncation artifacts, near-duplicate rate (word-shingle cosine), invented-name collapse, stock-phrase frequency, and opening-shape clustering, each with a GOOD/OK/BAD verdict where meaningful. `--patterns` adds an LLM templating scan (batch scan via `prompts/tools/pattern_scan.txt` → consolidation → per-pattern prevalence; a pattern is flagged only if it's judged a genuine defect **and** widespread). Writes `audit/audit_report.json` into the run dir.
 
+`audit_dad.py` — corpus-level audit of a DAD run, the DAD analog of `audit_sdf.py`. Offline and free by default: prompt-side checks (structural skeletons, openers/closers, unrealized dealt details, taxa×locale plausibility, length-class realization) and response-side diversity checks vs the plain-baseline arm (library selection and coverage, insider-vocabulary leak, response lengths, stock phrases, lexical diversity, structural shapes, and opening shapes incl. hint-card echo), each with a GOOD/OK/BAD verdict where meaningful. `--reasons` adds an LLM pass counting distinct moral-patient reasons per response and judging whether the plain baseline's reasons survived the pipeline. Writes `audit/audit_report.json` into the run dir (rendered by the viewer). `openings_dad.py` remains the standalone deep dive for opening shapes (per-sentence listings, `--embeddings`, multi-run comparison).
+
 `diversity.py` — corpus-level **semantic** diversity audit of an SDF *or* DAD run, the embedding-space complement to `audit_sdf.py`'s lexical scan (word shingles catch copied skeletons, not paraphrase). Embeds the corpus with OpenAI `text-embedding-3-small` (needs `OPENAI_API_KEY` in `.env`; ~$0.02 per 1M tokens, so cents per run) and reports nearest-neighbor similarity, the semantic near-duplicate rate, the most-similar pairs with snippets, mean pairwise cosine, the Vendi score (effective number of distinct documents), and per-type spread. Embeddings are cached per run dir so reruns are free; `--compare <previous diversity_report.json>` prints run-over-run deltas, the headline use. Writes `audit/diversity_report.json` into the run dir.
 
-Run: `python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl`
+Run: `python evals/audit_dad.py --input outputs/dad/latest`
 
 ---
 
@@ -222,10 +224,10 @@ With 5 dilemmas this is roughly 20 API calls (1 draft batch + 5 refine + 5 scope
 
 > **Handwritten examples are optional.** Set `dad.dilemmas.seed_path` to a JSONL of your own examples (`{"prompt": ..., "annotation": {...}}`) and step 1 imports them before generating; generated IDs continue the AW-#### series above the highest seed ID.
 
-**5. Score the outputs:**
+**5. Evaluate the outputs:**
 
 ```bash
-python evals/score_dad.py --input outputs/dad/latest/final/dad_corpus.jsonl
+python evals/audit_dad.py --input outputs/dad/latest
 python evals/score_sdf.py --input outputs/sdf/latest/final/sdf_corpus.jsonl
 ```
 

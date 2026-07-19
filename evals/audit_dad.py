@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Corpus-level audit of DAD step-1 prompts: structural repetition and realization.
+"""Corpus-level audit of a DAD run: prompt-side repetition/realization plus the
+response-side diversity battery (lengths, phrases, structure, openings, library
+coverage), each vs the plain-baseline arm where one ran.
 
 The per-example step-1 checklist (``dad_pipeline/step1_dilemmas.checklist``) audits
 the ANNOTATION — the label the model wrote alongside each draft — not the shipped
@@ -890,6 +892,71 @@ def audit_structure(run_dir: Path | None, report: dict) -> None:
     report["structure"] = {"pipeline": p, "plain": b}
 
 
+# ---------------------------------------------------------------- response openings
+
+
+def audit_response_openings(run_dir: Path | None, report: dict) -> None:
+    """Opening-shape collapse in the responses, drafts and finals: opener
+    families, within-case spread, and hint-card wording echo — the checks
+    evals/openings_dad.py owns, rendered as audit sections so they reach
+    audit_report.json and the viewer (openings_dad remains the deep-dive tool:
+    per-sentence listing, --embeddings, multi-run comparison). Hint echo shows
+    on drafts only, where the hints ride — step 3 preserves openers."""
+    from evals.openings_dad import load_responses, stage_stats
+
+    out: dict = {}
+    for i, stage in enumerate(("drafts", "finals")):
+        if i:
+            print()
+        sec = _section(report, f"Response openings ({stage})")
+        if run_dir is None:
+            _row(sec, "openings report", "skipped", note="(bare-file input; pass a run dir)")
+            continue
+        rows = [r for r in load_responses(run_dir, stage) if r["text"].strip()]
+        if not rows:
+            _row(sec, "responses", "0", note=f"(no {stage} in this run — nothing to check)")
+            out[stage] = {"n": 0}
+            continue
+        stats = stage_stats(rows)
+        n = stats["n"]
+        counts = Counter(stats["families"])
+        # "other" is the healthy bucket — collapse is a NAMED family dominating.
+        non_other = {f: c for f, c in counts.items() if f != "other"}
+        worst_fam, worst_n = (max(non_other.items(), key=lambda kv: kv[1])
+                              if non_other else ("—", 0))
+        eff = effective_number(counts.values())
+
+        _row(sec, "responses scanned", str(n))
+        _row(sec, "families", ", ".join(f"{f} {c}" for f, c in counts.most_common()))
+        _row(sec, "top non-'other' opener family", f"{worst_fam} {worst_n}/{n} ({worst_n / n:.0%})",
+             _verdict(worst_n / n, 0.30, 0.50))
+        _row(sec, "effective families", f"{eff:.1f} of {len(counts)} distinct",
+             note="(exp-entropy: reads the whole spread, not just the top bucket)")
+        if stats["case_spread"]:
+            varied = sum(1 for v in stats["case_spread"].values() if not v.startswith("1/"))
+            _row(sec, "within-case spread",
+                 f"{varied}/{len(stats['case_spread'])} multi-sample cases open differently")
+            _detail(sec, ", ".join(f"{p} {v}" for p, v in stats["case_spread"].items()))
+        if stats["repeated_first3"]:
+            _row(sec, "repeated first-3-words", str(stats["repeated_first3"]))
+        draws_total = sum(stats["hint_draws"].values())
+        if draws_total:
+            echo_total = sum(e for e, _ in stats["hint_echo"].values())
+            _row(sec, "hint-echo (card wording in opener)", f"{echo_total}/{draws_total} draws",
+                 _verdict(echo_total / draws_total, 0.0, 0.2))
+            for c, (e, d) in stats["hint_echo"].items():
+                _detail(sec, f"{c!r} {e}/{d}")
+        out[stage] = {
+            "n": n, "families": stats["families"],
+            "top_family": stats["top_family"], "top_share": stats["top_share"],
+            "effective_families": round(eff, 2), "case_spread": stats["case_spread"],
+            "repeated_first3": stats["repeated_first3"],
+            "hint_echo": stats["hint_echo"], "hint_draws": stats["hint_draws"],
+        }
+    if run_dir is not None:
+        report["response_openings"] = out
+
+
 # ---------------------------------------------------------------- moral-patient reasons (LLM)
 
 _REASON_CONSOLIDATE_PROMPT = (
@@ -1183,6 +1250,8 @@ def main() -> None:
     audit_lexical(run_dir, report)
     print()
     audit_structure(run_dir, report)
+    print()
+    audit_response_openings(run_dir, report)
     print()
     audit_library_coverage(run_dir, report)  # response-diversity block: conceptual coverage
     print()
