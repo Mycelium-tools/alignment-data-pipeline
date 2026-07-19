@@ -109,7 +109,8 @@ TAXA = {
                           "urban / liminal wildlife (pigeons, rats, macaques)",
                           "amphibians (frogs, toads)",
                           "wild-animal suffering at scale (r-strategists, wild insects)",
-                          "endangered / conservation (elephants, pangolins, sea turtles)"),
+                          "endangered / conservation (elephants, pangolins, sea turtles)",
+                          "invasive / feral (cane toads, feral cats, introduced rodents)"),
     },
     "research": {
         "hint": "research animals (labs, testing, classroom dissection)",

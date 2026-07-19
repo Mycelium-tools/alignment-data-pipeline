@@ -121,8 +121,8 @@ class TestDealScenarios:
     def test_validate_catches_composer_variables_drift(self, tmp_path):
         variables = cs.DEFAULT_VARIABLES.read_text(encoding="utf-8")
         drifted = tmp_path / "variables.txt"
-        drifted.write_text(variables.replace("    claimed-non-sentient\n",
-                                             "    renamed-category\n"),
+        drifted.write_text(variables.replace("    0.095 :: claimed-non-sentient\n",
+                                             "    0.095 :: renamed-category\n"),
                            encoding="utf-8")
         with pytest.raises(ValueError, match="TAXA"):
             cs.deal_scenarios(4, random.Random(0), drifted)
