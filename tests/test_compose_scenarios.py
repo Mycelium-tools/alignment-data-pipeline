@@ -175,6 +175,41 @@ class TestRenderAndExtract:
         assert cs.extract_description("no tags anywhere") is None
         assert cs.extract_description("<scenario_description></scenario_description>") is None
 
+    def test_extract_description_unclosed_is_opt_in(self):
+        # The measured Opus behavior (~20% of plan attempts, 2026-07-19 n=40):
+        # complete planning block, opening tag, complete description, end of
+        # turn — no closing tag.
+        unclosed = ("<scenario_planning>notes</scenario_planning>\n"
+                    "<scenario_description>A complete situation, tag dropped.")
+        # default stays fail-closed; only the end_turn-gated call site opts in
+        assert cs.extract_description(unclosed) is None
+        assert cs.extract_description(unclosed, allow_unclosed=True) == \
+            "A complete situation, tag dropped."
+        # a closed pair still bounds both ends even with the flag on
+        closed = ("<scenario_description>Bounded.</scenario_description>\n"
+                  "Trailing chatter.")
+        assert cs.extract_description(closed, allow_unclosed=True) == "Bounded."
+        # extraction starts at the LAST opening tag, so an inline mention of
+        # the tag in the planning notes can't drag them into the spec
+        inline = ("<scenario_planning>next I write the <scenario_description>"
+                  " block</scenario_planning>\n"
+                  "<scenario_description>The real description.")
+        assert cs.extract_description(inline, allow_unclosed=True) == \
+            "The real description."
+
+    def test_extract_description_unclosed_stays_fail_closed_on_junk(self):
+        # INCOHERENT in an unclosed tail rejects even past is_incoherent's
+        # 2000-char window (long planning notes can push it out)
+        inc = (f"<scenario_planning>{'x' * 2100}</scenario_planning>\n"
+               "<scenario_description>INCOHERENT — no way to combine.")
+        assert not cs.is_incoherent(inc)  # the window miss the tail check covers
+        assert cs.extract_description(inc, allow_unclosed=True) is None
+        # empty tail and tagless replies still fail closed
+        assert cs.extract_description("<scenario_description>   ",
+                                      allow_unclosed=True) is None
+        assert cs.extract_description("no tags anywhere",
+                                      allow_unclosed=True) is None
+
     def test_scenario_block_carries_labels_and_description(self):
         p = cs.deal_scenarios(1, random.Random(3))[0]
         p["scenario_description"] = "The designed situation."
