@@ -135,17 +135,58 @@ def inline_word_diff_html(before: str, after: str) -> str:
 _AUDIT_BADGES = {"GOOD": "🟢", "OK": "🟠", "BAD": "🔴"}
 
 
+def _split_arm_value(value: str) -> tuple[str, str] | None:
+    """Split an audit ``pipeline X / plain Y`` value into (pipeline, plain).
+
+    Returns None when the value isn't arm-shaped. Handles both separators
+    audit_dad emits (``/ plain`` in most sections, ``· plain`` in the lexical
+    section, whose values contain their own slashes) and the pipeline-only case
+    (no baseline arm ran) as (pipeline, "")."""
+    v = (value or "").strip()
+    if not v.startswith("pipeline "):
+        return None
+    rest = v[len("pipeline "):]
+    for sep in (" / plain ", " · plain "):
+        i = rest.find(sep)
+        if i != -1:
+            return rest[:i].strip(), rest[i + len(sep):].strip()
+    return rest.strip(), ""  # pipeline-only (baseline arm absent)
+
+
 def audit_section_table(section: dict) -> list[dict]:
     """One corpus-audit report section (a ``sections`` entry written by
     evals/audit_dad.py) shaped as dataframe rows. Verdicts get a color badge;
     the verdict/note columns are omitted when the whole section has none, so
-    tables stay compact. Pure (no streamlit) so it stays testable."""
+    tables stay compact.
+
+    Genuine pipeline-vs-plain sections (at least half the rows carry both arms)
+    render the packed ``pipeline X / plain Y`` value as two columns so the arms
+    scan down instead of colliding in one cell; single-arm and non-arm sections
+    (openings, jargon summaries, diversity) keep one ``value`` column. Pure (no
+    streamlit) so it stays testable."""
     rows = section.get("rows") or []
     keep_verdict = any(r.get("verdict") for r in rows)
     keep_note = any(r.get("note") for r in rows)
+    splits = [_split_arm_value(r.get("value", "")) for r in rows]
+    arm_cols = bool(rows) and sum(1 for s in splits if s and s[1]) >= len(rows) / 2
     out = []
-    for r in rows:
-        row = {"check": r.get("label", ""), "value": r.get("value", "")}
+    for r, s in zip(rows, splits):
+        row = {"check": r.get("label", "")}
+        if arm_cols:
+            if s and s[1]:
+                row["pipeline"], row["plain"] = s
+            else:
+                # A single-value row inside a comparison section (e.g. a
+                # pipeline-only metric): place it on the arm its label names,
+                # else pipeline, and leave the other cell blank.
+                lab = r.get("label", "").lower()
+                val = r.get("value", "")
+                if "plain" in lab and "pipeline" not in lab:
+                    row["pipeline"], row["plain"] = "", val
+                else:
+                    row["pipeline"], row["plain"] = val, ""
+        else:
+            row["value"] = r.get("value", "")
         if keep_verdict:
             v = r.get("verdict")
             row["verdict"] = f"{_AUDIT_BADGES.get(v, '')} {v}".strip() if v else ""
@@ -153,6 +194,41 @@ def audit_section_table(section: dict) -> list[dict]:
             row["note"] = r.get("note", "")
         out.append(row)
     return out
+
+
+def audit_shape_chart_rows(structure: dict) -> list[dict]:
+    """Long-form rows for the response-shape frequency chart: one row per
+    (shape signature, arm) with its count, from report['structure']. Lets the
+    grouped bar chart replace the wall of ``pipeline 11x 10+ paras · bullets``
+    detail captions. Pure so it stays testable."""
+    rows = []
+    for arm_key, arm_col in (("plain", "plain Claude"), ("pipeline", "pipeline")):
+        shapes = ((structure or {}).get(arm_key) or {}).get("shapes") or {}
+        for shape, count in shapes.items():
+            rows.append({"shape": shape, "arm": arm_col, "count": count})
+    return rows
+
+
+def audit_stock_phrase_rows(stock_phrases: dict) -> list[dict]:
+    """Stock-phrase watchlist + discovered phrases as sortable rows
+    (phrase, origin, pipeline count, plain count), from report['stock_phrases'].
+    Phrases that never appear in either arm are dropped; rows are sorted by
+    pipeline count then plain count so the phrases the pipeline over-produces
+    sit on top. Pure so it stays testable."""
+    rows = []
+    for phrase, v in (stock_phrases.get("watch") or {}).items():
+        pipe, plain = v.get("pipeline", 0), v.get("plain", 0)
+        if pipe or plain:
+            rows.append({"phrase": phrase, "origin": v.get("origin", ""),
+                         "pipeline": pipe, "plain": plain})
+    for item in stock_phrases.get("new_pipeline") or []:
+        rows.append({"phrase": item["phrase"], "origin": "discovered (pipeline)",
+                     "pipeline": item["count"], "plain": 0})
+    for item in stock_phrases.get("new_plain") or []:
+        rows.append({"phrase": item["phrase"], "origin": "discovered (plain)",
+                     "pipeline": 0, "plain": item["count"]})
+    rows.sort(key=lambda r: (r["pipeline"], r["plain"]), reverse=True)
+    return rows
 
 
 # Fixed arm colors for the comparison charts: plain Claude wears Claude's

@@ -79,6 +79,92 @@ class TestAuditSectionTable:
     def test_empty_section_is_empty(self):
         assert rendering.audit_section_table({}) == []
 
+    def test_arm_comparison_section_splits_into_pipeline_plain_columns(self):
+        # a genuine pipeline-vs-plain section: value strings split into columns
+        sec = {"rows": [
+            {"label": "distinct shapes", "value": "pipeline 12/40 / plain 16/40",
+             "verdict": None, "note": ""},
+            {"label": "Self-BLEU", "value": "pipeline 0.71 · plain 0.55",
+             "verdict": None, "note": ""},  # the lexical section's '·' separator
+            {"label": "top shape share (pipeline)", "value": "28%",
+             "verdict": "GOOD", "note": "(10+ paras)"},  # pipeline-only single row
+        ]}
+        rows = rendering.audit_section_table(sec)
+        assert rows[0] == {"check": "distinct shapes", "pipeline": "12/40",
+                           "plain": "16/40", "verdict": "", "note": ""}
+        assert rows[1]["pipeline"] == "0.71" and rows[1]["plain"] == "0.55"
+        # the single-value pipeline-only row lands in the pipeline column
+        assert rows[2]["pipeline"] == "28%" and rows[2]["plain"] == ""
+        assert rows[2]["verdict"] == "🟢 GOOD"
+
+    def test_single_arm_section_keeps_one_value_column(self):
+        # response-openings-style: no plain arm → no split, keep 'value'
+        sec = {"rows": [
+            {"label": "responses scanned", "value": "40", "verdict": None, "note": ""},
+            {"label": "families", "value": "other 34, heres-the-x 1", "verdict": None, "note": ""},
+        ]}
+        rows = rendering.audit_section_table(sec)
+        assert "pipeline" not in rows[0] and rows[0]["value"] == "40"
+
+    def test_plain_only_single_row_lands_in_plain_column(self):
+        sec = {"rows": [
+            {"label": "check-back additions", "value": "pipeline 61 / plain 57",
+             "verdict": None, "note": ""},
+            {"label": "plain-baseline median chars", "value": "812",
+             "verdict": None, "note": ""},
+        ]}
+        rows = rendering.audit_section_table(sec)
+        assert rows[1]["plain"] == "812" and rows[1]["pipeline"] == ""
+
+
+class TestSplitArmValue:
+    def test_slash_separator(self):
+        assert rendering._split_arm_value("pipeline 12/40 / plain 16/40") == ("12/40", "16/40")
+
+    def test_middot_separator(self):
+        assert rendering._split_arm_value("pipeline 0.71 · plain 0.55") == ("0.71", "0.55")
+
+    def test_pipeline_only_when_no_baseline(self):
+        assert rendering._split_arm_value("pipeline 40") == ("40", "")
+
+    def test_non_arm_value_returns_none(self):
+        assert rendering._split_arm_value("28%") is None
+        assert rendering._split_arm_value("") is None
+
+
+class TestAuditShapeChartRows:
+    def test_long_form_rows_per_shape_and_arm(self):
+        structure = {"pipeline": {"shapes": {"3-5 paras": 30, "1-2 paras": 10}},
+                     "plain": {"shapes": {"3-5 paras": 25}}}
+        rows = rendering.audit_shape_chart_rows(structure)
+        assert {"shape": "3-5 paras", "arm": "pipeline", "count": 30} in rows
+        assert {"shape": "3-5 paras", "arm": "plain Claude", "count": 25} in rows
+        assert len(rows) == 3
+
+    def test_empty_structure_is_empty(self):
+        assert rendering.audit_shape_chart_rows({}) == []
+
+
+class TestAuditStockPhraseRows:
+    def test_watch_and_discovered_sorted_by_pipeline_count(self):
+        sp = {"n_pipeline": 40, "n_plain": 40,
+              "watch": {"i want to be": {"origin": "pipeline-origin", "pipeline": 8, "plain": 3},
+                        "here's the thing": {"origin": "plain-origin", "pipeline": 0, "plain": 5},
+                        "never appears": {"origin": "pipeline-origin", "pipeline": 0, "plain": 0}},
+              "new_pipeline": [{"phrase": "the quiet part", "count": 4}],
+              "new_plain": []}
+        rows = rendering.audit_stock_phrase_rows(sp)
+        # phrases that never appear in either arm are dropped
+        assert all(r["phrase"] != "never appears" for r in rows)
+        # sorted by pipeline count desc: 'i want to be' (8) first
+        assert rows[0]["phrase"] == "i want to be"
+        # discovered phrases carry a distinguishing origin
+        disc = next(r for r in rows if r["phrase"] == "the quiet part")
+        assert disc["origin"] == "discovered (pipeline)" and disc["pipeline"] == 4
+
+    def test_empty_is_empty(self):
+        assert rendering.audit_stock_phrase_rows({}) == []
+
 
 class TestAuditChartRows:
     def test_length_rows_wide_form_keeps_missing_plain_as_none(self):
