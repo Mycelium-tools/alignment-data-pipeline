@@ -107,6 +107,8 @@ The `Checkpoint` class saves completed IDs to disk after every API call, making 
 
 Run: `python evals/audit_dad.py --input outputs/dad/latest`
 
+For DAD runs the standard evals are automatic: every full `dad_pipeline/run.py` run finishes by launching `audit_dad.py --reasons` and `diversity.py` on its own run dir (`dad.evals.auto: false` in `config.yaml` to skip; an eval failure warns but never fails the run). The manual commands remain for re-runs, partial runs, and older run dirs.
+
 ---
 
 ## Setup
