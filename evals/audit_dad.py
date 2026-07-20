@@ -1105,6 +1105,10 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
     if run_dir is None:
         _skip(sec, report, "reason scan", note="(bare-file input; pass a run dir)")
         return
+    # This pass's calls log to the global eval cost log; snapshot before/after
+    # so the pass cost lands in the report (survives carry-forward, unlike the
+    # unscoped global log).
+    cost_before = api.get_total_cost()
     pipe = _final_by_prompt_id(run_dir)
     if not pipe:
         _skip(sec, report, "responses", "0", note="(no final corpus — nothing to scan)")
@@ -1242,8 +1246,12 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
              + (f"  ({surv_failures} judge failures)" if surv_failures else ""))
         survival = {"judged": judged, "failures": surv_failures, "added_total": added_total,
                     "dropped_share": round(drop_share, 3), **verdict_counts}
+    cost_usd = round(api.get_total_cost() - cost_before, 4)
+    _row(sec, "pass cost (LLM calls)", f"${cost_usd:.4f}",
+         note=f"(model {config.get('model')})")
     report["moral_patient_reasons"] = {
         "n": len(per_case), "failures": failures, "model": config.get("model"),
+        "cost_usd": cost_usd,
         "pipeline": p, "plain": b, "survival": survival, "per_case": per_case,
     }
 

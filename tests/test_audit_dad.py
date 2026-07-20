@@ -371,6 +371,10 @@ def test_reasons_scan_counts_density_and_corpus_distinct(tmp_path, stub_claude):
     assert rows["total unique reasons (batch)"]["value"] == \
         "pipeline 2 / plain 1 (+1 / +100.0%)"
     assert mpr["model"] == "test-model" and mpr["failures"] == 0
+    # the pass records its own cost (0.0 offline — no cost log), as a number and
+    # a display row, so the viewer can show what --reasons cost for this run
+    assert isinstance(mpr["cost_usd"], (int, float))
+    assert "pass cost (LLM calls)" in rows
     assert all(c["stage"] == "eval_audit_dad" for c in calls)
     # 2 extractions + 2 check-backs + 2 consolidations + 1 survival judge
     assert len(calls) == 7

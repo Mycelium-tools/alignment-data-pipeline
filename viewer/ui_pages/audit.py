@@ -87,6 +87,20 @@ if not sections:
 st.caption(f"{report.get('n_prompts', '?')} prompts audited · "
            f"`{Path(run.run_dir) / 'audit' / 'audit_report.json'}`")
 
+# Run cost — the pipeline calls that produced this run (from its own
+# cost_log.jsonl). The paid --reasons eval isn't billed here; its cost shows
+# inside the Moral-patient reasons section (it logs to the global eval log).
+run_cost = loader.total_cost(run.run_dir)
+cost_stages = loader.cost_by_stage(run.run_dir)
+if run_cost or cost_stages:
+    st.metric("Run cost (pipeline)", f"${run_cost:.2f}")
+    with st.expander("Cost by stage"):
+        st.dataframe(pd.DataFrame([
+            {"stage": stage, "calls": agg["calls"], "cost ($)": agg["cost_usd"],
+             "model(s)": ", ".join(agg["models"])}
+            for stage, agg in cost_stages.items()
+        ]), width="stretch", hide_index=True)
+
 # Per-record charts label records by their stable example gid (E-####) when
 # the run carries them; pre-gid runs keep the per-run prompt id.
 labels = loader.dad_example_labels(run.run_dir) if run.pipeline == "dad" else {}
@@ -144,6 +158,9 @@ def _render_reasons_section(section: dict) -> None:
         st.caption(gloss)
     mpr = report.get("moral_patient_reasons") or {}
     per_case = mpr.get("per_case") or {}
+    cost = mpr.get("cost_usd")
+    if cost is not None:
+        st.caption(f"Paid pass cost: ${cost:.4f} · model `{mpr.get('model') or '?'}`")
 
     chart_rows = rendering.audit_reason_chart_rows(per_case, labels)
     if chart_rows:
