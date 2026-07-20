@@ -1130,15 +1130,13 @@ def audit_lengths(run_dir: Path | None, report: dict) -> None:
          f"/ max {stats.get('max', '?')} | {stats.get('over_1000', '?')} over 1000", echo=False)
     by_class = stats.get("by_class") or {}
     if by_class:
-        from dad_pipeline.compose_scenarios import length_band
-        ordered = sorted(by_class, key=lambda c: length_band(c) or (0, 0))
+        # length is an instruction, not an enforced band — order by realized
+        # median and report the spread descriptively (no pass/fail).
+        ordered = sorted(by_class, key=lambda c: by_class[c][len(by_class[c]) // 2])
         for cls in ordered:
             vals = by_class[cls]
             _row(sec, cls, f"n={len(vals)}, chars {vals[0]}-{vals[-1]}, "
                            f"median {vals[len(vals) // 2]}", echo=False)
-        oob = stats.get("out_of_band") or []
-        _row(sec, "records outside their band", str(len(oob)),
-             "GOOD" if not oob else "BAD", echo=False)
 
 
 # ---------------------------------------------------------------- main

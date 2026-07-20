@@ -74,19 +74,18 @@ def _fake_run(tmp_path, drafts, finals=None):
     return run
 
 
-def test_prompt_length_report_assigned_vs_realized(tmp_path, capsys):
-    from dad_pipeline.compose_scenarios import _LEGACY_LENGTH_BANDS
-
+def test_prompt_length_report_is_descriptive_not_a_band_check(tmp_path, capsys):
+    # Length is an instruction, not an enforced band: the report describes the
+    # realized char spread per class and never flags anything as out of band.
     run = tmp_path / "run"
     (run / "step1").mkdir(parents=True)
-    lo, _hi = _LEGACY_LENGTH_BANDS["ramble"]
     records = [
-        {"prompt_id": "AW-0001", "length_class": "2-3-sentences",
+        {"prompt_id": "AW-0001", "length_class": "a short paragraph",
          "user_message": "Short and blunt. Two sentences."},
-        {"prompt_id": "AW-0002", "length_class": "ramble",
-         "user_message": "x" * (lo + 100)},                       # in band
-        {"prompt_id": "AW-0003", "length_class": "ramble",
-         "user_message": "way under the ramble band"},            # out of band
+        {"prompt_id": "AW-0002", "length_class": "a long unbroken ramble",
+         "user_message": "x" * 1200},
+        {"prompt_id": "AW-0003", "length_class": "a long unbroken ramble",
+         "user_message": "much shorter than a ramble, but not rejected"},
         {"prompt_id": "AW-0004", "user_message": "legacy record, no class"},
     ]
     for r in records:
@@ -94,9 +93,9 @@ def test_prompt_length_report_assigned_vs_realized(tmp_path, capsys):
 
     stats = openings_dad.prompt_length_report(run)
     assert stats["n"] == 4
-    assert sorted(stats["by_class"]) == ["2-3-sentences", "ramble"]
-    assert stats["out_of_band"] == [("ramble", len("way under the ramble band"))]
-    assert "outside band" in capsys.readouterr().out
+    assert sorted(stats["by_class"]) == ["a long unbroken ramble", "a short paragraph"]
+    assert "out_of_band" not in stats
+    assert "outside band" not in capsys.readouterr().out
 
 
 def test_prompt_length_report_pre_dice_run_is_calm(tmp_path, capsys):
