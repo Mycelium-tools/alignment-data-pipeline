@@ -355,7 +355,7 @@ class TestStep1Run:
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "gate": True, "refine": False, "gate": False}}
+                                      "count": 1, "gate": False, "refine": False}}
         draft_calls = {"n": 0}
 
         def flaky_draft(user_message, **kw):
