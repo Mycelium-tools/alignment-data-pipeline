@@ -20,5 +20,5 @@ Here is the scenario you will write:
 
 The user input should be written in the voice of {persona}. Set it in {cultural_setting}.
 Open the message {opening_move}. End it {closing_move}.
-
+{redraft_feedback}
 Now output only the simulated user input, inside <user_prompt>...</user_prompt> tags. It should be at most {length}.

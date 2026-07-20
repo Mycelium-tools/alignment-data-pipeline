@@ -14,6 +14,11 @@ sharpest signal that opener variety is real rather than case-driven).
 Offline and free by default. --embeddings adds a first-sentence semantic
 near-dup check via OpenAI embeddings (OPENAI_API_KEY; cents, cached).
 
+``evals/audit_dad.py`` renders these same checks (via ``stage_stats``) as
+"Response openings" sections of the run's audit report, so the one-command
+audit covers them; this standalone tool remains the deep dive — per-sentence
+listings, --embeddings, and side-by-side multi-run comparison.
+
 Usage:
     python evals/openings_dad.py --input outputs/dad/latest [--input <run> ...]
     python evals/openings_dad.py --input outputs/dad/latest --stage drafts
@@ -117,12 +122,11 @@ def load_responses(run_dir: Path, stage: str) -> list[dict]:
     return out
 
 
-def report(run_dir: Path, stage: str) -> dict:
-    """Print one stage's opening-shape report; return the stats for callers/tests."""
-    rows = [r for r in load_responses(run_dir, stage) if r["text"].strip()]
-    if not rows:
-        print(f"  [{stage}] no responses found")
-        return {"n": 0}
+def stage_stats(rows: list[dict]) -> dict:
+    """Aggregate one stage's responses (no printing): opener families,
+    within-case spread, repeated first-3-word runs, and hint-card echo. The
+    pure half of ``report``; ``evals/audit_dad.py`` renders these same numbers
+    as sections of the run's audit report."""
     sentences = [first_sentence(r["text"]) for r in rows]
     fams = [family_of(s) for s in sentences]
     counts = Counter(fams)
@@ -148,22 +152,35 @@ def report(run_dir: Path, stage: str) -> dict:
             if card_echoes(s, card):
                 echoes[card] += 1
 
-    print(f"  [{stage}] {len(rows)} responses | families: "
-          + ", ".join(f"{f} {n}" for f, n in counts.most_common())
-          + f" | top family {top_n}/{len(rows)}")
-    if case_spread:
-        print(f"    within-case spread: " + ", ".join(f"{p}: {v}" for p, v in case_spread.items()))
-    if repeated:
-        print(f"    repeated first-3-words: {repeated}")
-    if echoes:
-        print("    hint-echo (card wording in opener / times drawn): "
-              + ", ".join(f"{c!r} {echoes[c]}/{draws[c]}" for c in echoes))
-    for s, f in zip(sentences, fams):
-        print(f"      [{f:>22}] {s[:100]}")
-    return {"n": len(rows), "families": dict(counts), "top_family": top_fam,
-            "top_share": top_n / len(rows), "case_spread": case_spread,
+    return {"n": len(rows), "families": dict(counts), "fams": fams,
+            "top_family": top_fam, "top_share": top_n / len(rows),
+            "case_spread": case_spread, "repeated_first3": repeated,
             "hint_echo": {c: (echoes[c], draws[c]) for c in echoes},
-            "sentences": sentences}
+            "hint_draws": dict(draws), "sentences": sentences}
+
+
+def report(run_dir: Path, stage: str) -> dict:
+    """Print one stage's opening-shape report; return the stats for callers/tests."""
+    rows = [r for r in load_responses(run_dir, stage) if r["text"].strip()]
+    if not rows:
+        print(f"  [{stage}] no responses found")
+        return {"n": 0}
+    stats = stage_stats(rows)
+    counts = Counter(stats["families"])
+    print(f"  [{stage}] {stats['n']} responses | families: "
+          + ", ".join(f"{f} {n}" for f, n in counts.most_common())
+          + f" | top family {max(counts.values())}/{stats['n']}")
+    if stats["case_spread"]:
+        print("    within-case spread: "
+              + ", ".join(f"{p}: {v}" for p, v in stats["case_spread"].items()))
+    if stats["repeated_first3"]:
+        print(f"    repeated first-3-words: {stats['repeated_first3']}")
+    if stats["hint_echo"]:
+        print("    hint-echo (card wording in opener / times drawn): "
+              + ", ".join(f"{c!r} {e}/{d}" for c, (e, d) in stats["hint_echo"].items()))
+    for s, f in zip(stats["sentences"], stats["fams"]):
+        print(f"      [{f:>22}] {s[:100]}")
+    return stats
 
 
 def embedding_report(run_dir: Path, stage: str, threshold: float = 0.9) -> None:

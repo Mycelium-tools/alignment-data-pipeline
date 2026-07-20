@@ -32,7 +32,7 @@ The user {surface_form}.
 
 Culture / locale: the exchange is couched in {cultural_setting}.
 
-Technologically, the exchange concerns {frontier_frame}. The human user faces a concrete, present-tense decision.
+Technologically, the exchange concerns {frontier_frame}. The human user faces a concrete, present-tense decision.{archetype_clause}
 
 Now, based on these variables, consider the following questions and output a description of the scenario:
 1. What are some specific situations that could fit this combination of variables? Think of five different situations, and then choose any one of them other than the first that came to mind.

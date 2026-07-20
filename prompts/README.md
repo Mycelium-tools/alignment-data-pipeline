@@ -85,11 +85,17 @@ Key commitments: the user owns the dilemma (never an AI-agent scenario); every t
 
 **Output:** a JSON array, each `{"scenario_id", "prompt", "annotation"}`, with the prompt written to realize its scenario and the descriptive annotation fields completed. Drafts are accepted as returned (assigned labels are copied verbatim per the template; there is no per-example adherence check — the end-of-step checklist monitors distribution fidelity). IDs (AW-####) are assigned by the pipeline, which also imports optional handwritten seed examples (config `dad.dilemmas.seed_path`) before generating, and prints the verification checklist at the end of the step.
 
-### `dad/step1c_refine.txt` (sub-stage 1c — optional, on by default)
+### `dad/step1_gate.txt` (sub-stage 1c — optional, on by default)
 
 **Input:** the scenario, the 1b draft prompt, and its annotation (for context).
 
-**Output:** a rewritten prompt plus one-line notes, making the animal-welfare stake load-bearing and the situation coherent without setting the eventual response up to moralize. Rewrites the prompt text only (the annotation is untouched). Controlled by config `dad.dilemmas.refine`; the 1b draft is preserved (`draft_user_message`) and the before/after logged to `step1/refinements.jsonl`.
+**Output:** a pass/fail verdict — `{"pass", "failures"}` — never rewritten text. See the template for the checks it applies. A rejected draft is routed back through 1b (with the gate's reasons injected) and redrafted, capped at a few attempts; a scenario still failing after the cap ships with `gate_failures` stamped. Controlled by config `dad.dilemmas.gate`; verdicts are logged to `step1/gate.jsonl`.
+
+### `dad/step1c_refine.txt` (sub-stage 1d — optional, on by default)
+
+**Input:** the scenario description, the gate-passed 1b draft, and the dealt cards it must honor (surface form, visibility, attitude, opening move, closing move, persona, length).
+
+**Output:** editor notes in prose, then the rewritten user message inside `<revised_user_prompt>` tags — or `<unfixable>reason</unfixable>` when no rewrite can fix the draft (the scenario is then rejected like 1a's INCOHERENT, checkpointed to `step1/refine_rejects.jsonl`). The rewrite thins corpus tics without scrubbing human texture, keeps the user from handing the assistant its answer (calibrated to the dealt visibility), enforces the dealt cards, and checks leverage/pivot, coherence, and self-containedness. The gate REDRAFTS scenario-level failures from scratch; the refine REWRITES surface problems in place. Controlled by config `dad.dilemmas.refine`; before/after pairs are logged to `step1/refinements.jsonl`.
 
 ### `dad/reasoning_library.csv` (+ `reasoning_library_ABOUT.md`)
 
@@ -133,7 +139,7 @@ The template is deliberately minimal: the principles ARE the standard — the pr
 
 **Output:** a JSON quality report — `embodiment` (teach-why), `helpfulness`, `calibration`, `naturalness` (each 1-10), `self_contained` (boolean; any leakage is an automatic reject), plus the enforced-spec checks: `realized_direction` (judged blind from the response), `direction_match` (does it match the intended Direction? mismatch = reject), `tracks_attitude` (did the reply key on the user's tone rather than the ethics? true = reject), and `notes` naming any formulaic pattern.
 
-The final quality gate for DAD, mirroring what `sdf/layer5.txt` does for SDF, and the enforcement half of using Direction as an enforced spec. Not yet wired into `run.py` — run it manually (or via `evals/score_dad.py`) to spot-check step-3 output before handoff.
+The final quality gate for DAD, mirroring what `sdf/layer5.txt` does for SDF, and the enforcement half of using Direction as an enforced spec. Not yet wired into `run.py` — run it manually to spot-check step-3 output before handoff. (`evals/score_dad_parked.py`, the rubric-based judge, is PARKED pending a rubric redesign.)
 
 ## Corpus Tools
 

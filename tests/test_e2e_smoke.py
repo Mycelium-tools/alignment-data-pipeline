@@ -90,7 +90,7 @@ def test_sdf_resume_at_layer5_makes_no_calls(tiny_config_file, outputs_root, stu
 def _dad_dispatch(user_message, **kw):
     # The baseline control arm is the only DAD call with no system prompt
     # (every template splits into system + user halves) — and it must carry
-    # the finished 1c prompt verbatim.
+    # the finished (gate-passed, 1d-refined) prompt verbatim.
     if not (kw.get("system_prompt") or ""):
         assert user_message == "Refined user message."
         return "Plain baseline answer."
@@ -102,7 +102,9 @@ def _dad_dispatch(user_message, **kw):
         return dad_scenario_plan_reply(user_message)
     if "generate a fictional user input" in blob:  # step 1b: per-scenario draft
         return dad_scenario_reply(user_message)
-    if "rewrite a fictional user input" in blob:  # step 1c: latent rewrite
+    if "gate for dilemma prompts" in blob:  # step 1c: pass/fail quality gate
+        return json.dumps({"pass": True, "failures": []})
+    if "rewrite a fictional user input" in blob:  # step 1d: refine rewrite
         return "n\n<revised_user_prompt>Refined user message.</revised_user_prompt>"
     if "build the full map of the case" in blob:  # step 2a
         return json.dumps({"patients": "p", "goal": "g", "levers": "l", "cost": "c",
@@ -141,7 +143,9 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
     for record in corpus:
         assert set(record.keys()) == {"record_id", "messages"}
         assert [m["role"] for m in record["messages"]] == ["user", "assistant"]
-        assert record["messages"][0]["content"] == "Refined user message."  # 1c ran
+        # composed 1c/1d: the gate judged the draft, the refine rewrote it —
+        # the corpus carries the rewrite
+        assert record["messages"][0]["content"] == "Refined user message."
         assert record["messages"][1]["content"] == "Rewritten careful answer."
     # the baseline rode along: one record per prompt, never in the corpus,
     # and each one reached its 2b call as the advisory first take
@@ -152,9 +156,9 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
                      if "advisor responding to a user's dilemma" in (c["system_prompt"] or "")]
     assert len(respond_calls) == N_DAD_PROMPTS
     assert all("Plain baseline answer." in c["user_message"] for c in respond_calls)
-    # per prompt: scenario plan (1a) + draft (1b) + refine (1c)
+    # per prompt: scenario plan (1a) + draft (1b) + gate (1c) + refine (1d)
     # + baseline + scope (2a) + select (2a.5) + respond (2b) + rewrite (3)
-    assert len(calls) == 8 * N_DAD_PROMPTS
+    assert len(calls) == 9 * N_DAD_PROMPTS
 
 
 def test_dad_baseline_disabled_makes_no_baseline_calls(
@@ -171,7 +175,7 @@ def test_dad_baseline_disabled_makes_no_baseline_calls(
     run_dir = outputs_root / "dad" / "latest"
     assert not (run_dir / "baseline").exists()
     assert all(c["stage"] != "baseline_response" for c in calls)
-    assert len(calls) == 7 * N_DAD_PROMPTS  # everything else (incl. 1a/1b) untouched
+    assert len(calls) == 8 * N_DAD_PROMPTS  # everything else (incl. 1a/1b) untouched
 
 
 def test_dad_resume_at_step3_makes_no_calls(tiny_config_file, outputs_root, stub_claude, monkeypatch):
@@ -184,3 +188,100 @@ def test_dad_resume_at_step3_makes_no_calls(tiny_config_file, outputs_root, stub
     corpus = utils.load_jsonl(outputs_root / "dad" / "latest" / "final" / "dad_corpus.jsonl")
     assert len(corpus) == N_DAD_PROMPTS
     assert all(len(r["messages"]) == 2 for r in corpus)
+
+
+# --- DAD auto evals ------------------------------------------------------
+
+class _FakeCompleted:
+    def __init__(self, returncode=0):
+        self.returncode = returncode
+
+
+def _is_eval_launch(cmd):
+    return len(cmd) > 1 and str(cmd[1]).endswith((".py",)) and "evals" in str(cmd[1])
+
+
+@pytest.fixture
+def record_subprocess(monkeypatch):
+    """Intercept eval launches with a recorder (auto evals must never actually
+    spawn — they'd hit the real API from outside pytest-socket's reach).
+    Non-eval subprocess calls (the manifest's git rev-parse) pass through."""
+    launched = []
+    real_run = dad_run.subprocess.run
+
+    def fake_run(cmd, **kwargs):
+        if _is_eval_launch(cmd):
+            launched.append([str(part) for part in cmd])
+            return _FakeCompleted(0)
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(dad_run.subprocess, "run", fake_run)
+    return launched
+
+
+def _evals_on_config(tiny_config, tmp_path):
+    config = dict(tiny_config)
+    config["dad"] = {**tiny_config["dad"], "evals": {"auto": True}}
+    config_file = tmp_path / "config_evals_on.yaml"
+    config_file.write_text(yaml.safe_dump(config))
+    return config_file
+
+
+def test_dad_full_run_launches_both_evals(
+    tiny_config, outputs_root, stub_claude, monkeypatch, tmp_path, record_subprocess
+):
+    stub_claude(_dad_dispatch)
+    _run_main(monkeypatch, dad_run.main, _evals_on_config(tiny_config, tmp_path))
+
+    run_dir = (outputs_root / "dad" / "latest").resolve()
+    assert len(record_subprocess) == 2
+    audit_cmd, diversity_cmd = record_subprocess
+    assert audit_cmd[1].endswith("evals/audit_dad.py")
+    assert "--reasons" in audit_cmd
+    assert str(run_dir) in audit_cmd
+    assert diversity_cmd[1].endswith("evals/diversity.py")
+    assert str(run_dir) in diversity_cmd
+    # both point the eval at the same config the run used
+    assert "--config" in audit_cmd and "--config" in diversity_cmd
+
+
+def test_dad_auto_evals_off_launches_nothing(
+    tiny_config_file, outputs_root, stub_claude, monkeypatch, record_subprocess
+):
+    # tiny_config sets dad.evals.auto false — the committed default is on,
+    # asserted separately on the raw knob below
+    stub_claude(_dad_dispatch)
+    _run_main(monkeypatch, dad_run.main, tiny_config_file)
+    assert record_subprocess == []
+
+
+def test_auto_evals_knob_defaults_on():
+    assert dad_run.auto_evals_enabled({"dad": {}}) is True
+    assert dad_run.auto_evals_enabled({"dad": {"evals": {"auto": False}}}) is False
+
+
+def test_dad_partial_run_skips_evals(
+    tiny_config, outputs_root, stub_claude, monkeypatch, tmp_path, record_subprocess
+):
+    stub_claude(_dad_dispatch)
+    _run_main(monkeypatch, dad_run.main, _evals_on_config(tiny_config, tmp_path),
+              "--stop-after", "1")
+    assert record_subprocess == []
+
+
+def test_dad_eval_failure_does_not_fail_the_run(
+    tiny_config, outputs_root, stub_claude, monkeypatch, tmp_path
+):
+    real_run = dad_run.subprocess.run
+
+    def failing_run(cmd, **kwargs):
+        if _is_eval_launch(cmd):
+            return _FakeCompleted(1)
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(dad_run.subprocess, "run", failing_run)
+    stub_claude(_dad_dispatch)
+    _run_main(monkeypatch, dad_run.main, _evals_on_config(tiny_config, tmp_path))
+
+    corpus = utils.load_jsonl(outputs_root / "dad" / "latest" / "final" / "dad_corpus.jsonl")
+    assert len(corpus) == N_DAD_PROMPTS
