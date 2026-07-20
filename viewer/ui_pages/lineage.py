@@ -313,7 +313,11 @@ else:
                     # composed runs a passing draft goes on to the 1d refine;
                     # on gate-era runs it shipped directly.
                     d = lin.get("dilemma") or {}
-                    gate = lin.get("gate") or {}
+                    gate = lin.get("gate")
+                    if gate is None:
+                        st.caption("not run (dad.dilemmas.gate was off, or the "
+                                   "run predates the gate)")
+                        return
                     passed = gate.get("passed")
                     if passed is True:
                         st.success("Gate: PASSED — the draft went on to shipping/refine.")
@@ -325,10 +329,9 @@ else:
                                    "the draft shipped (raws in step1/gate_failures.jsonl)")
                     for f in (gate.get("failures") or d.get("gate_failures") or []):
                         st.write(f"- {f}")
-                if lin.get("gate") is not None:
-                    stage_expander("Step 1c — quality gate (pass/fail)",
-                                   "step1_gate", lin, step1c_output,
-                                   stats=("prompt_gate", scenario_id))
+                stage_expander("Step 1c — quality gate (pass/fail)",
+                               "step1_gate", lin, step1c_output,
+                               stats=("prompt_gate", scenario_id))
 
                 def step1d_output():
                     # 1d refine: the draft→refined rewrite (also the sole 1c
