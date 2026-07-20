@@ -524,10 +524,23 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             r.is_llm_call = False
             r.warnings.append("This run did not use the 1c review pass (dad.dilemmas.refine was off).")
             return r
+        # 2026-07 rework: single-scenario refine rendered exactly the way the
+        # pipeline renders it. Pre-rework snapshots keep the old template path.
+        refine_t = get_template(run_dir, commit, "step1c_refine.txt", pipeline)
+        if refine_t.text is not None:
+            r.template_sources.append(refine_t)
+            try:
+                r.system, r.user = compose_scenarios.render_refine_prompt(
+                    scenario, draft, refine_t.text)
+            except (KeyError, IndexError, ValueError) as e:
+                r.warnings.append(f"Template step1c_refine.txt did not format cleanly ({e!r}) — "
+                                  "template/record schema drift; showing raw template.")
+                r.user = refine_t.text
+            return r
         r.variables = {
             "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",
             "draft_prompt": draft,
-            # mirror refine_draft: claims are excluded from the 1c call
+            # mirror the pre-rework refine call: claims are excluded
             "annotation_block": format_annotation(
                 {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
         }

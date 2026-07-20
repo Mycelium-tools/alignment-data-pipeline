@@ -16,8 +16,8 @@ Structure the weights can't express lives HERE, as named constants:
   reserved ``{taxa_hint}`` / ``{taxa_subcategory}`` slots (same pattern as the
   SDF composer's SPECIES_EXAMPLES). Every ``{taxa_category}`` value must start
   with exactly one TAXA key — validated at deal time, tails reword freely.
-- LENGTH_BANDS: lenient char bands enforced at 1b acceptance; keys are
-  leading-words prefixes of the ``{length}`` values, validated the same way.
+- The dealt ``{length}`` register is an instruction to the model only — it is
+  not measured or enforced anywhere (we trust the model to honor it).
 - The sanctioned dependencies (trap -> hidden -> unaware), the secondary
   domain/goal coins, and the 12% domain cap.
   There are deliberately NO small-run presence floors: the weights alone
@@ -161,36 +161,21 @@ NONE_PREFIXES = {
     "frontier_frame": "the ordinary",
 }
 
-# Lenient char bands per {length} value, enforced at 1b acceptance. Bands catch
-# only egregious misses — a "two sentence" draft arriving as five paragraphs —
-# never judgment calls; those stay with 1c and the audits. Keys are PREFIXES of
-# the {length} values (leading words), so tails can be reworded freely; every
-# value must match exactly one band (validated at deal time).
-LENGTH_BANDS = {
-    # ceiling raised 700->950 (2026-07-18 n=30 probe): Opus writing three meaty
-    # sentences lands at 700-870 chars and re-rolling can't fix that
-    "one to three": (0, 950),
-    "a short paragraph": (100, 1500),
-    "one long paragraph": (250, 2600),
-    "two paragraphs": (400, 3500),
-    "a long unbroken ramble": (900, 10 ** 9),
-}
-# Pre-refactor runs stored short labels; keep their bands so a resumed old run
-# still gates 1b drafts.
-_LEGACY_LENGTH_BANDS = {
-    "2-3-sentences": (0, 700),
-    "short-paragraph": (100, 1500),
-    "long-paragraph": (250, 2600),
-    "two-paragraphs": (400, 3500),
-    "ramble": (900, 10 ** 9),
-}
-
 DESCRIPTION_TAG_RE = re.compile(
     r"<scenario_description>(.*?)</scenario_description>", re.DOTALL | re.IGNORECASE
 )
 DESCRIPTION_OPEN_TAG_RE = re.compile(r"<scenario_description>", re.IGNORECASE)
 USER_PROMPT_TAG_RE = re.compile(
     r"<user_prompt>(.*?)</user_prompt>", re.DOTALL | re.IGNORECASE
+)
+# 1c replies use a distinct tag so a rewrite can never be confused with the
+# draft it embeds; the plain 1b tag is accepted as a fallback (a model that
+# slips back to it is still returning its own rewrite, not the input).
+REVISED_PROMPT_TAG_RE = re.compile(
+    r"<revised_user_prompt>(.*?)</revised_user_prompt>", re.DOTALL | re.IGNORECASE
+)
+UNFIXABLE_TAG_RE = re.compile(
+    r"<unfixable>(.*?)</unfixable>", re.DOTALL | re.IGNORECASE
 )
 INCOHERENT_RE = re.compile(r"\bINCOHERENT\b")
 
@@ -212,30 +197,6 @@ def resolve_value(candidates, prefix: str, axis: str = "?") -> str:
 def load_axes(variables_path: Path = DEFAULT_VARIABLES):
     """Parse variables.txt into (values, weights), validating weight rules."""
     return matrix.split_weights(matrix.parse_variables(variables_path, reserved=RESERVED))
-
-
-def length_band(length_class: str | None) -> tuple[int, int] | None:
-    """The (lo, hi) char band for a dealt length value: legacy short labels
-    match exactly, current values match a LENGTH_BANDS key by leading-words
-    prefix. None when the class is unknown (callers fail open)."""
-    if not length_class:
-        return None
-    if length_class in _LEGACY_LENGTH_BANDS:
-        return _LEGACY_LENGTH_BANDS[length_class]
-    norm = length_class.strip().lower()
-    matches = [band for prefix, band in LENGTH_BANDS.items()
-               if norm.startswith(prefix.lower())]
-    return matches[0] if len(matches) == 1 else None
-
-
-def length_ok(text: str, length_class: str | None) -> bool:
-    """Lenient char-band gate for the dealt length value. Scenarios from runs
-    that predate the axis carry no length_class and always pass."""
-    band = length_band(length_class)
-    if band is None:
-        return True
-    lo, hi = band
-    return lo <= len(text.strip()) <= hi
 
 
 def taxa_for(taxa_category: str) -> dict:
@@ -283,13 +244,14 @@ def _validate(values: dict) -> None:
             taxa_for(v)
         except KeyError as exc:
             problems.append(f"{{taxa_category}}: {exc.args[0]} (TAXA)")
-    for v in values.get("length", ()):
-        if length_band(v) is None:
-            problems.append(f"{{length}}: no unique LENGTH_BANDS prefix matches {v!r}")
+    # {length} is an instruction to the model only — no band to validate against.
     # dependency / batch-rule / null pins, and the thin-domain checklist list
-    prefixes = {"visibility": ("hidden",),
-                "user_attitude": ("unaware",),
-                "surface_form": (TRAP_PREFIX,),
+    prefixes = {"visibility": ("hidden", "explicit"),
+                "user_attitude": ("unaware", "neutral"),
+                "surface_form": (TRAP_PREFIX, "explicitly asks"),
+                "opening_move": ("with a casual", "with the task"),
+                "closing_move": ("trailing off", "on a secondary"),
+                "persona": ("a stiffly formal",),
                 "domain": THIN_DOMAINS,
                 **{axis: (p,) for axis, p in NONE_PREFIXES.items()}}
     for axis, needed in prefixes.items():
@@ -309,8 +271,12 @@ def deal_scenarios(n: int, rng: random.Random,
                    variables_path: Path = DEFAULT_VARIABLES) -> list[dict]:
     """Stratified scenario deals, one per example. Axes are sampled
     independently (the anti-correlation rules hold by construction) except the
-    spec's two sanctioned dependencies: hidden→unaware, and the trap surface
-    form forcing hidden visibility."""
+    spec's sanctioned dependencies: hidden→unaware, the trap surface form
+    forcing hidden visibility, explicit remapping unaware→neutral (the
+    explicit slice is a user deliberately bringing the welfare question), and
+    two style-move remaps — casual opening→task-first under the formal-desk
+    persona, trailing-off closing→afterthought under the explicitly-asks
+    surface form (both are same-dimension contradictions, not tensions)."""
     if n <= 0:
         return []
     values, weights = load_axes(variables_path)
@@ -318,8 +284,16 @@ def deal_scenarios(n: int, rng: random.Random,
 
     # The structural rules' special values, resolved once per deal.
     hidden_vis = resolve_value(values["visibility"], "hidden", "visibility")
+    explicit_vis = resolve_value(values["visibility"], "explicit", "visibility")
     unaware_att = resolve_value(values["user_attitude"], "unaware", "user_attitude")
+    neutral_att = resolve_value(values["user_attitude"], "neutral", "user_attitude")
     trap_form = resolve_value(values["surface_form"], TRAP_PREFIX, "surface_form")
+    explicit_ask_form = resolve_value(values["surface_form"], "explicitly asks", "surface_form")
+    casual_open = resolve_value(values["opening_move"], "with a casual", "opening_move")
+    task_open = resolve_value(values["opening_move"], "with the task", "opening_move")
+    formal_persona = resolve_value(values["persona"], "a stiffly formal", "persona")
+    trailing_close = resolve_value(values["closing_move"], "trailing off", "closing_move")
+    afterthought_close = resolve_value(values["closing_move"], "on a secondary", "closing_move")
     none_vals = {axis: resolve_value(values[axis], p, axis)
                  for axis, p in NONE_PREFIXES.items()}
 
@@ -336,7 +310,15 @@ def deal_scenarios(n: int, rng: random.Random,
         raw = {name: decks[name][i] for name in axes}
         surface = raw["surface_form"]
         vis = hidden_vis if surface == trap_form else raw["visibility"]  # traps are hidden by construction
-        att = unaware_att if vis == hidden_vis else raw["user_attitude"]  # the one sanctioned dependency
+        att = unaware_att if vis == hidden_vis else raw["user_attitude"]
+        if vis == explicit_vis and att == unaware_att:
+            att = neutral_att  # the explicit slice deliberately brings the ethics question; unaware can't
+        opening = raw["opening_move"]
+        if opening == casual_open and raw["persona"] == formal_persona:
+            opening = task_open  # a customer-service-desk voice never opens "Okay so"
+        closing = raw["closing_move"]
+        if closing == trailing_close and surface == explicit_ask_form:
+            closing = afterthought_close  # the dealt explicit ask must survive the ending
 
         dom = [raw["domain"]]
         if rng.random() < SECONDARY_DOMAIN_P:
@@ -373,6 +355,8 @@ def deal_scenarios(n: int, rng: random.Random,
             "claim_pattern": raw["dilemma_structure"],
             "surface_form": surface,
             "length_class": raw["length"],
+            "opening_move": opening,
+            "closing_move": closing,
             "cultural_setting": (None if raw["cultural_setting"] == none_vals["cultural_setting"]
                                  else raw["cultural_setting"]),
             # the raw assignment, verbatim — what render_plan_prompt formats
@@ -473,6 +457,41 @@ def render_draft_prompt(scenario: dict, template: str) -> tuple[str | None, str]
         persona=persona,
         cultural_setting=cultural,
         length=scenario.get("length_class", ""),
+        opening_move=(scenario.get("opening_move") or raw.get("opening_move")
+                      or "however feels natural for the scenario"),
+        closing_move=(scenario.get("closing_move") or raw.get("closing_move")
+                      or "however feels natural for the scenario"),
+    )
+    return matrix.split_sections(rendered)
+
+
+def render_refine_prompt(scenario: dict, draft_text: str, template: str) -> tuple[str | None, str]:
+    """Render the step-1c refine prompt for ONE drafted scenario: (system, user).
+
+    Same slots as the 1b draft prompt plus the draft itself; a pre-plan legacy
+    scenario falls back to its rendered card, mirroring render_draft_prompt."""
+    raw = scenario.get("variables") or {}
+    persona = raw.get("persona") or scenario.get("persona") or DEFAULT_PERSONA
+    cultural = (raw.get("cultural_setting") or scenario.get("cultural_setting")
+                or "no particular location or culture")
+    def card(key: str) -> str:
+        # effective top-level value first (post dependency rules), then the raw
+        # deal; legacy pre-plan scenarios may carry neither
+        return (scenario.get(key) or raw.get(key)
+                or "(not recorded for this scenario; follow the scenario description)")
+
+    rendered = template.format(
+        scenario_description=(scenario.get("scenario_description")
+                              or render_scenario_block(scenario)),
+        draft_prompt=draft_text,
+        persona=persona,
+        cultural_setting=cultural,
+        length=scenario.get("length_class", ""),
+        surface_form=card("surface_form"),
+        visibility=card("visibility"),
+        user_attitude=card("user_attitude"),
+        opening_move=card("opening_move"),
+        closing_move=card("closing_move"),
     )
     return matrix.split_sections(rendered)
 

@@ -55,23 +55,11 @@ def dad_scenario_plan_reply(user_message: str) -> str:
 def dad_scenario_reply(user_message: str) -> str:
     """Echo a conforming step-1b reply for a rendered step1b_dilemmas.txt
     prompt: the drafted user message inside <user_prompt> tags (the template's
-    output contract), padded to clear the dealt length band. Kept here because
-    both the step-level and e2e DAD tests dispatch on it."""
-    # Derived, not hardcoded: the length bands live with the composer, and a
-    # drafted prompt must clear its lenient band to be accepted. The dealt
-    # length arrives in the prompt's closing line ("It should be <length>.").
-    from dad_pipeline.compose_scenarios import length_band
-
-    m = re.search(r"It should be (.+?)\.?\s*$", user_message.strip())
-    length_class = m.group(1) if m else None
-    prompt = "Drafted user message from the scenario description."
-    band = length_band(length_class)
-    if band is not None:
-        lo, _hi = band
-        filler = " The situation keeps going with believable texture."
-        while len(prompt) < lo + 40:
-            prompt += filler
-    return f"<user_prompt>{prompt}</user_prompt>"
+    output contract). Length is no longer measured or enforced, so a fixed
+    reply suffices. Kept here because both the step-level and e2e DAD tests
+    dispatch on it."""
+    return ("<user_prompt>Drafted user message from the scenario description. "
+            "The situation keeps going with believable texture.</user_prompt>")
 
 
 @pytest.fixture(autouse=True)

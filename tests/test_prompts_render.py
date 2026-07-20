@@ -56,9 +56,14 @@ TEMPLATE_KWARGS = [
     }),
     # step1b renders via compose_scenarios.render_draft_prompt (one scenario per call)
     ("dad/step1b_dilemmas.txt", {"scenario_description": "DESC-X", "persona": "PERSONA-X",
-                                 "cultural_setting": "CULTURE-X", "length": "LENGTH-X"}),
-    ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
-                              "annotation_block": "ANNOTATION-X"}),
+                                 "cultural_setting": "CULTURE-X", "length": "LENGTH-X",
+                                 "opening_move": "OPEN-X", "closing_move": "CLOSE-X"}),
+    # step1c renders via compose_scenarios.render_refine_prompt (one scenario per call)
+    ("dad/step1c_refine.txt", {"scenario_description": "DESC-X", "draft_prompt": "DRAFT-X",
+                               "persona": "PERSONA-X", "cultural_setting": "CULTURE-X",
+                               "length": "LENGTH-X", "surface_form": "FORM-X",
+                               "visibility": "VIS-X", "user_attitude": "ATT-X",
+                               "opening_move": "OPEN-X", "closing_move": "CLOSE-X"}),
     ("dad/step2_scope.txt", {"user_message": "USER-X"}),
     ("dad/step2_select.txt", {"trigger_index": "TRIGGER-INDEX-X", "scope_block": "SCOPE-X",
                               "user_message": "USER-X"}),

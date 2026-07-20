@@ -19,17 +19,22 @@
   fanned out via parallel_map. The prompt renders the plan's scenario
   description, the persona voice, and the dealt length register
   (prompts/dad/step1b_dilemmas.txt); the reply is the user message inside
-  <user_prompt> tags, extracted fail-closed and gated by the lenient length
-  band. 1b writes no annotation — the dealt labels ARE the design, and the
+  <user_prompt> tags, extracted fail-closed. The dealt length register is an
+  instruction only — never measured or enforced. 1b writes no annotation —
+  the dealt labels ARE the design, and the
   record's annotation is synthesized from the scenario. Accepted drafts are
   taken as returned; distribution fidelity is monitored by the corpus-level
   checklist instead.
 
 - Step 1c — prompt rewrite (optional; config dad.dilemmas.refine, on by
-  default): a second model call rewrites each 1b draft's prompt text per the
-  specifications in prompts/dad/step1_refine.txt. The 1b draft is kept on the
-  record (draft_user_message + refine_notes) and the before/after is logged
-  to step1/refinements.jsonl.
+  default): one review-and-rewrite call per draft (single-scenario, SDF
+  layer-4 style) per prompts/dad/step1c_refine.txt — editor notes in prose,
+  the rewritten message in <user_prompt> tags, extracted fail-closed. The 1b
+  draft is kept on the record (draft_user_message + refine_notes) and the
+  before/after is logged to step1/refinements.jsonl. A draft 1c judges
+  unfixable by rewriting alone (<unfixable> verdict) is a deliberate rejection
+  mirroring 1a's INCOHERENT: checkpointed to step1/refine_rejects.jsonl, never
+  retried, and the run ships fewer examples.
 
 The Part 4 checklist re-prints at the end as verification; thresholds are the
 spec's, enforcement stays human.
@@ -40,7 +45,6 @@ annotation and id); seeds carry no scenario. Generated IDs continue the
 AW-#### series above the highest existing ID, per the spec.
 """
 
-import json
 import random
 import re
 import sys
@@ -273,81 +277,53 @@ def print_checklist(examples: list[dict], save_path: Path | None = None,
         Path(save_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _salvage_objects(text: str) -> list:
-    """Extract top-level {...} objects one at a time via brace matching, so a
-    truncated or trailing-garbage array still yields its complete objects."""
-    objs, depth, start, in_str, esc = [], 0, None, False, False
-    for i, ch in enumerate(text):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0 and start is not None:
-                try:
-                    # strict=False: same control-char tolerance as extract_json,
-                    # so a salvageable object isn't dropped for a literal newline
-                    objs.append(json.loads(text[start:i + 1], strict=False))
-                except json.JSONDecodeError:
-                    pass
-                start = None
-    return objs
-
-
-def _parse_json_object(raw: str) -> dict | None:
-    """The reply's JSON object via the shared hardened parser, salvaging the
-    first complete top-level object when the container is broken."""
-    try:
-        return utils.extract_json_object(raw)
-    except json.JSONDecodeError:
-        objs = _salvage_objects(raw)
-        return objs[0] if objs else None
-
-
 MAX_REFINE_ATTEMPTS = 2
+# A scenario that fails to produce a usable draft this many times (a persistent
+# refusal, truncation, or tagless reply) is rejected rather than blocking the
+# whole run — the reject is checkpointed and the run ships fewer examples,
+# mirroring 1a INCOHERENT / 1c UNFIXABLE.
+MAX_DRAFT_ATTEMPTS = 4
 
 
-def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
+def refine_draft(scenario: dict, draft_text: str, template: str,
                  model: str | None = None) -> tuple[dict | None, list[dict]]:
-    """Step 1c: rewrite the 1b draft's PROMPT TEXT so it follows the specifications in prompts/dad/step1_refine.txt.
+    """Step 1c: one review-and-rewrite call for one drafted user message, per
+    prompts/dad/step1c_refine.txt (single-scenario, SDF layer-4 style).
 
-    Returns (refined, failures): an unusable reply is retried once with a
-    fresh call (same policy shape as 2a scoping); every unusable raw is
-    returned in `failures` for the main thread to persist to
-    step1/refine_failures.jsonl — a discarded raw is an undiagnosable failure.
-    refined is None when all attempts were unusable (caller keeps the 1b
-    draft and stamps refine_failed on the record)."""
-    system_prompt, user_prompt = utils.load_split_prompt(
-        prompts_dir / "step1_refine.txt",
-        scenario_block=format_scenario(scenario),
-        draft_prompt=str(draft.get("prompt", "")).strip(),
-        # Claims are step-3 scaffolding — kept out of 1c's view so the rewriter
-        # doesn't echo claim text into the user's message.
-        annotation_block=format_annotation(
-            {k: v for k, v in _normalize_annotation(draft.get("annotation") or {}).items()
-             if k != "claims"}),
-    )
+    The reply is the editor's notes in prose followed by the rewritten message
+    inside <user_prompt> tags, extracted fail-closed. Returns (refined,
+    failures): refined is {"prompt", "notes"} — notes are whatever preceded
+    the tags — or {"unfixable": reason} when the editor returned an
+    <unfixable> verdict instead of a rewrite (a judgment, not a failure: the
+    caller rejects the scenario), or None when every attempt was unusable
+    (truncated or tagless; the caller ships the 1b draft and stamps
+    refine_failed). Every unusable raw is returned in `failures` for the main
+    thread to persist to step1/refine_failures.jsonl — a discarded raw is an
+    undiagnosable failure."""
+    system_prompt, user_prompt = compose_scenarios.render_refine_prompt(
+        scenario, draft_text, template)
     failures = []
     pid = scenario.get("scenario_id")
     for attempt in range(1, MAX_REFINE_ATTEMPTS + 1):
-        raw = api.call_claude(user_message=user_prompt, system_prompt=system_prompt,
-                              max_tokens=4000, model=model,
-                              stage="prompt_refine", item_id=pid)
-        refined = _parse_json_object(raw)
-        if isinstance(refined, dict) and str(refined.get("prompt", "")).strip():
-            return ({"prompt": str(refined["prompt"]).strip(),
-                     "notes": str(refined.get("notes", "")).strip()}, failures)
+        raw, stop_reason = api.call_claude(
+            user_message=user_prompt, system_prompt=system_prompt,
+            max_tokens=4000, model=model,
+            stage="prompt_refine", item_id=pid, return_stop_reason=True)
+        if stop_reason == "max_tokens":
+            failures.append({"scenario_id": pid, "attempt": attempt, "raw": raw,
+                             "truncated": True})
+            if attempt < MAX_REFINE_ATTEMPTS:
+                print(f"    {pid}: refine attempt {attempt}/{MAX_REFINE_ATTEMPTS} "
+                      "truncated (max_tokens) — retrying with a fresh call.")
+            continue
+        un = compose_scenarios.UNFIXABLE_TAG_RE.search(raw or "")
+        if un and un.group(1).strip():
+            return ({"unfixable": un.group(1).strip()}, failures)
+        m = (compose_scenarios.REVISED_PROMPT_TAG_RE.search(raw or "")
+             or compose_scenarios.USER_PROMPT_TAG_RE.search(raw or ""))
+        if m and m.group(1).strip():
+            return ({"prompt": m.group(1).strip(),
+                     "notes": (raw[:m.start()].strip() or "(no notes)")}, failures)
         failures.append({"scenario_id": pid, "attempt": attempt, "raw": raw})
         if attempt < MAX_REFINE_ATTEMPTS:
             print(f"    {pid}: refine attempt {attempt}/{MAX_REFINE_ATTEMPTS} "
@@ -399,10 +375,36 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     # Step 1c: review-and-rewrite each draft. On by default (matches config.yaml
     # and CLAUDE.md); disable with dad.dilemmas.refine: false.
     refine_enabled = bool(cfg.get("refine", True))
-    if refine_enabled and not (prompts_dir / "step1_refine.txt").exists():
-        raise SystemExit("dad.dilemmas.refine is on but prompts/dad/step1_refine.txt is missing.")
+    refine_template_path = prompts_dir / "step1c_refine.txt"
+    if not refine_template_path.exists():
+        # runs snapshotted before the 2026-07 rename carry the old filename
+        legacy_refine = prompts_dir / "step1_refine.txt"
+        if legacy_refine.exists():
+            refine_template_path = legacy_refine
+    if refine_enabled:
+        if not refine_template_path.exists():
+            raise SystemExit("dad.dilemmas.refine is on but prompts/dad/step1c_refine.txt is missing.")
+        refine_template_text = refine_template_path.read_text(encoding="utf-8")
+        if "{annotation_block}" in refine_template_text:
+            raise SystemExit(
+                "This run's 1c template is the pre-rework version "
+                "({annotation_block}); the pipeline now refines one scenario "
+                "per call from its description. Finish the run on the pipeline "
+                "version that created it, or copy the current "
+                "prompts/dad/step1c_refine.txt into the run's inputs/prompts/ "
+                "snapshot.")
 
     examples = utils.load_jsonl(output_path)
+    # 1c UNFIXABLE verdicts are deliberate rejections (mirroring 1a INCOHERENT):
+    # the scenario is spent, never re-drafted, and ships no example.
+    refine_rejects_path = output_dir / "refine_rejects.jsonl"
+    refine_rejected = {r["scenario_id"]
+                       for r in utils.load_jsonl(refine_rejects_path)}
+    # 1b scenarios the drafter can't render after MAX_DRAFT_ATTEMPTS (persistent
+    # refusal or un-band-able output): rejected, checkpointed, skipped on resume.
+    draft_rejects_path = output_dir / "draft_rejects.jsonl"
+    draft_rejected = {r["scenario_id"]
+                      for r in utils.load_jsonl(draft_rejects_path)}
 
     # Optional handwritten seed examples, imported once ahead of generation
     seed_path = cfg.get("seed_path")
@@ -604,8 +606,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     # --- Step 1b: first attempt — one draft call per scenario, fanned out via
     # parallel_map (SDF layer-3 style: single scenario per context window). The
     # reply is the user message inside <user_prompt> tags, extracted
-    # fail-closed; truncated, tagless, or band-missing drafts are not
-    # checkpointed, so the scenario stays pending and the next pass retries it.
+    # fail-closed; truncated, tagless, or refused drafts are not checkpointed,
+    # so the scenario stays pending and the next pass retries it.
     draft_template_text = draft_template.read_text(encoding="utf-8")
     if "{scenarios_block}" in draft_template_text:
         raise SystemExit(
@@ -618,16 +620,19 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     accepted = {e.get("scenario_id") for e in examples if e.get("scenario_id")}
     workers = int(config.get("workers", 1))
     draft_model = config["dad"].get("prompt_draft_model")
+    draft_attempts: dict[str, int] = {}  # sid -> hard/length failures so far
     passes = 0
-    consecutive_dry_passes = 0
 
     while True:
-        pending = [p for p in scenarios if p["scenario_id"] not in accepted]
+        pending = [p for p in scenarios
+                   if p["scenario_id"] not in accepted
+                   and p["scenario_id"] not in refine_rejected
+                   and p["scenario_id"] not in draft_rejected]
         if not pending:
             break
         passes += 1
-        if passes > 8:
-            raise SystemExit(f"8 drafting passes with {len(pending)} scenarios "
+        if passes > 12:
+            raise SystemExit(f"12 drafting passes with {len(pending)} scenarios "
                              "still unfilled — inspect the model output.")
         print(f"  [1b] Pass {passes}: drafting {len(pending)} user prompts "
               f"({len(accepted)}/{len(scenarios)} scenarios filled)...")
@@ -642,7 +647,21 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                                    return_stop_reason=True)
 
         drafted: dict[str, str] = {}
-        hard_failure = False  # parse/truncation failure, as opposed to a length miss
+
+        def _note_failure(sid: str, reason: str) -> None:
+            """Count a failed attempt; reject the scenario once it exhausts its
+            budget so one un-draftable scenario never blocks the whole run. Every
+            hard failure counts as progress toward rejection, so the loop always
+            terminates (pending shrinks each pass); the 12-pass cap is the only
+            remaining backstop, for a broken template where nothing resolves."""
+            draft_attempts[sid] = draft_attempts.get(sid, 0) + 1
+            if draft_attempts[sid] >= MAX_DRAFT_ATTEMPTS:
+                utils.append_jsonl({"scenario_id": sid, "attempts": draft_attempts[sid],
+                                    "reason": reason}, draft_rejects_path)
+                draft_rejected.add(sid)
+                print(f"    {sid}: no usable draft after {draft_attempts[sid]} attempts "
+                      f"({reason}) — rejected; no example shipped.")
+
         for scenario, (raw, stop_reason) in zip(
                 pending, utils.parallel_map(_draft, pending, workers)):
             sid = scenario["scenario_id"]
@@ -652,34 +671,26 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                                     "truncated": True},
                                    output_dir / "draft_failures.jsonl")
                 print(f"    {sid}: draft truncated (max_tokens) — will retry.")
-                hard_failure = True
+                _note_failure(sid, "truncated")
+                continue
+            if stop_reason == "refusal":
+                utils.append_jsonl({"scenario_id": sid, "pass": passes, "raw": raw,
+                                    "refusal": True},
+                                   output_dir / "draft_failures.jsonl")
+                print(f"    {sid}: draft refused (stop_reason=refusal) — will retry.")
+                _note_failure(sid, "refusal")
                 continue
             text = compose_scenarios.extract_user_prompt(raw)
             if text is None:
                 utils.append_jsonl({"scenario_id": sid, "pass": passes, "raw": raw},
                                    output_dir / "draft_failures.jsonl")
                 print(f"    {sid}: no <user_prompt> tags in the draft reply — will retry.")
-                hard_failure = True
-                continue
-            if not compose_scenarios.length_ok(text, scenario.get("length_class")):
-                # a length miss is a retry, not a parse failure: no failure record
-                print(f"    {sid}: draft is {len(text)} chars, far off its dealt "
-                      f"length class ({scenario.get('length_class')!r}) — will retry.")
+                _note_failure(sid, "no <user_prompt> tags")
                 continue
             drafted[sid] = text
 
         if not drafted:
-            # Length-only misses are plain re-rolls, bounded by the 8-pass cap;
-            # the 3-strike abort exists for systematic parse/truncation failure
-            # (a broken template or model), where more passes can't help.
-            if hard_failure:
-                consecutive_dry_passes += 1
-                if consecutive_dry_passes >= 3:
-                    raise SystemExit("Three consecutive drafting passes produced nothing "
-                                     f"usable — inspect {output_dir / 'draft_failures.jsonl'} "
-                                     "and the template.")
             continue
-        consecutive_dry_passes = 0
 
         # --- Step 1c (optional): rewrite each drafted prompt. Refine calls fan
         # out (API call + parse only, per the parallel_map contract); record
@@ -690,9 +701,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         if refine_enabled:
             def _refine(scenario: dict) -> tuple[dict | None, list[dict]]:
                 print(f"    [1c] Refining {scenario['scenario_id']}...")
-                draft = {"prompt": drafted[scenario["scenario_id"]],
-                         "annotation": _annotation_from_scenario(scenario)}
-                return refine_draft(scenario, draft, prompts_dir,
+                return refine_draft(scenario, drafted[scenario["scenario_id"]],
+                                    refine_template_text,
                                     model=config["dad"].get("prompt_refine_model"))
 
             for scenario, (refined, failures) in zip(
@@ -708,6 +718,17 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             refine_failed = False
             if refine_enabled:
                 refined = refined_by_pid.get(pid)
+                if refined is not None and "unfixable" in refined:
+                    utils.append_jsonl({
+                        "scenario_id": pid,
+                        "scenario_gid": p.get("scenario_gid"),
+                        "draft_prompt": user_message,
+                        "reason": refined["unfixable"],
+                    }, refine_rejects_path)
+                    refine_rejected.add(pid)
+                    print(f"    {pid}: UNFIXABLE at 1c — {refined['unfixable']} "
+                          "(rejected; no example shipped).")
+                    continue
                 if refined is not None:
                     user_message, refine_notes = refined["prompt"], refined["notes"]
                 else:
@@ -755,6 +776,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             utils.append_jsonl(record, output_path)
         registry.save()
 
+    if draft_rejected:
+        print(f"  {len(draft_rejected)} scenario(s) rejected at 1b (undraftable after "
+              f"{MAX_DRAFT_ATTEMPTS} attempts — refusal or un-band-able; see "
+              f"{draft_rejects_path.name}).")
+    if refine_rejected:
+        print(f"  {len(refine_rejected)} draft(s) rejected as UNFIXABLE at 1c — this "
+              f"run ships fewer examples (rejections in {refine_rejects_path.name}).")
     print(f"  {len(examples)} dilemma prompts in {output_path}")
     print_checklist(examples, save_path=output_dir / "checklist.txt",
                     variables_path=variables_path)

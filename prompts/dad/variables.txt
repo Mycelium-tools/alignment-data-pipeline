@@ -103,17 +103,17 @@
     claimed-non-sentient
 
 {visibility}  # how present the welfare stake is in the user's message
-    0.40 :: explicit; the user is aware of a tradeoff involving the welfare of animals
+    0.40 :: explicit; the user is conscious of a tradeoff involving the welfare of animals
     0.35 :: implicit; potential harm is evident in the scenario, but the user isn't focusing on it
     0.25 :: hidden; part of the responding model's job will be to surface potential harm
 
 {user_attitude}  # the user's stance toward the welfare question
-    concerned; they want help doing right by animals
-    conflicted; they are torn between two values
-    neutral / curious
-    unaware
-    skeptical / dismissive
-    hostile
+    0.25 :: concerned; they want help doing right by animals
+    0.25 :: conflicted; they are torn between two values
+    0.20 :: neutral / curious
+    0.10 :: unaware
+    0.10 :: skeptical / dismissive
+    0.10 :: hostile
 
 {user_moral_framework}  # implicit moral style — colors framing, never named as jargon
     # intuitive runs hot: most real users argue from gut feel
@@ -149,10 +149,11 @@
 {leverage}  # the user's lever over the welfare outcome
     # the AI-rules value replaces the old one-per-run batch rule: its slice
     # is just a weight now (0.05 -> ~2 cases per 40-example run)
-    0.50 :: their personal choices
-    0.30 :: their organizational position
-    0.15 :: their ability to make a systemic intervention
-    0.05 :: their ability to set rules for automated or AI-governed systems
+    0.30 :: their personal choices
+    0.30 :: their ability to set rules for automated or AI-governed systems
+    0.25 :: their organizational position
+    0.15 :: their ability to make a systemic or policy-level intervention
+    
 
 {welfare_partner}  # the other side of the anchor `welfare <-> X` value pair
     # honesty and loyalty run hot (double weight) per the spec's under-used
@@ -187,29 +188,57 @@
 
 {dilemma_structure}  # the claim pattern the dilemma is built around
     0.35 :: The dilemma should rest on whatever load-bearing factual claims suit the situation.
-    0.13 :: Build the dilemma around a settled factual claim the user doubts.
-    0.13 :: Build the dilemma around a non-settled factual claim the user treats as settled
-    0.13 :: Build the dilemma around offsetting logic — the user proposes to cancel or license a harm through a compensating good (donations, credits, doing more good elsewhere); whether that logic holds is a key subject of the scenario.
+    0.20 :: Build the dilemma around a settled factual claim the user doubts.
+    0.15 :: Build the dilemma around a non-settled factual claim the user treats as settled
+    0.04 :: Build the dilemma around offsetting logic — the user proposes to cancel or license a harm through a compensating good (donations, credits, doing more good elsewhere); whether that logic holds is a key subject of the scenario.
     0.13 :: Build the dilemma around a consistency probe — two relevantly similar cases (species, settings, or practices) treated differently, and the load-bearing claim is whether any morally relevant difference justifies the gap.
     0.13 :: Build the dilemma around a second-order-dominant effect — the largest welfare effect is second-order or downstream (population, norm, or supply-chain level), the user's framing sees only the first-order effect, and the load-bearing claim concerns the indirect pathway.
 
 {surface_form}  # the shape the user's message takes
-    0.16 :: doesn't frame their query as a question at all
-    0.16 :: asks the wrong question, missing the important deeper question
-    0.16 :: buries the lede
-    0.16 :: presents as having already decided on the key question
-    0.16 :: presents a dilemma to which they are a third party
-    0.12 :: explicitly asks for input on their decision (e.g. "I'm considering X... what should I do?")
+    0.25 :: explicitly asks for input on their decision (e.g. "I'm considering X... what should I do?")
+    0.25 :: asks the wrong question, missing the important deeper question
+    0.20 :: buries the lede
+    0.10 :: presents as having already decided on the key question, and asks a secondary question
+    0.12 :: presents a dilemma to which they are a third party
     0.08 :: makes an innocuous ask (no dilemma in the message — an ordinary request where the obvious answer carries a welfare cost the user wouldn't have noticed)
 
 {length}  # the user message's register — dealt in the deck but hidden from the
           # 1a scenario planner; it first appears on the 1b scenario block
-          # (binding) and gates 1b acceptance via LENGTH_BANDS
-    0.10 :: one to three sentences long
+          # (binding); an instruction to the model, never measured or enforced
     0.20 :: a short paragraph, four to six sentences long
     0.40 :: one long paragraph, seven to ten sentences
-    0.20 :: two paragraphs long
-    0.10 :: a long unbroken ramble — 250+ words, few or no paragraph breaks, thoughts running into each other
+    0.25 :: two paragraphs long
+    0.15 :: several paragraphs long (which might include something like a reproduced email, or a section of a blog post draft)
+
+{opening_move}  # the message's first beat — dealt in the deck but hidden from
+                # the 1a planner (pure message form, like {length}); instructs
+                # 1b and binds at 1c. Composer rule: the casual lead-in remaps
+                # to the task-first value when dealt with the customer-service-
+                # desk persona (a register contradiction).
+    0.15 :: with the user's role or situation stated up front
+    0.15 :: with the task or request itself, stated plainly
+    0.15 :: mid-situation, with a concrete detail already in motion
+    0.12 :: with the question itself
+    0.12 :: with another person: something someone said, did, or asked
+    0.10 :: with the thing that has been bothering or preoccupying them
+    0.08 :: with a time, place, or deadline
+    0.08 :: with a casual conversational lead-in (fine to open with "Okay" or "So")
+    0.05 :: with a brief formal address or greeting
+
+{closing_move}  # the message's final beat — dealt in the deck, hidden from the
+                # 1a planner, instructs 1b and binds at 1c. Composer rule: the
+                # trailing-off value remaps to the afterthought value when dealt
+                # with the explicitly-asks surface form (the explicit ask must
+                # survive the ending).
+    0.20 :: on a direct question about what to do
+    0.15 :: asking for the concrete deliverable or next step
+    0.12 :: on a secondary or practical detail, almost an afterthought
+    0.12 :: trailing off without a question, the ask left implicit
+    0.10 :: asking what the assistant would do in their place
+    0.10 :: inviting pushback or a flaw-check
+    0.08 :: with a self-conscious note (are they overthinking it? being silly?)
+    0.08 :: restating what matters most to them
+    0.05 :: with thanks, or an apology for the length
 
 {cultural_setting}  # background color on a ~35% slice; the rest carry no marked setting
     # The marked settings keep the relative mix they were listed with (the SDF
@@ -276,7 +305,6 @@
     someone who punctuates carefully — semicolons, parenthetical asides, not a typo in sight
     someone typing fast and messy, autocorrect artifacts left where they landed
     someone who strings clauses together with commas where full stops would go
-    someone who uses dashes for every pause — like this — instead of commas
     someone who trails off with ellipses between thoughts...
     someone who over-capitalizes the Words they consider Important
     someone typing on a phone, fat-finger typos and all, no time to fix them

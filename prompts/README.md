@@ -85,7 +85,7 @@ Key commitments: the user owns the dilemma (never an AI-agent scenario); every t
 
 **Output:** a JSON array, each `{"scenario_id", "prompt", "annotation"}`, with the prompt written to realize its scenario and the descriptive annotation fields completed. Drafts are accepted as returned (assigned labels are copied verbatim per the template; there is no per-example adherence check — the end-of-step checklist monitors distribution fidelity). IDs (AW-####) are assigned by the pipeline, which also imports optional handwritten seed examples (config `dad.dilemmas.seed_path`) before generating, and prints the verification checklist at the end of the step.
 
-### `dad/step1_refine.txt` (sub-stage 1c — optional, on by default)
+### `dad/step1c_refine.txt` (sub-stage 1c — optional, on by default)
 
 **Input:** the scenario, the 1b draft prompt, and its annotation (for context).
 

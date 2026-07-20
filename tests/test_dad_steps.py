@@ -35,8 +35,8 @@ def _dad_step1_dispatch(user_message, **kw):
         return dad_scenario_plan_reply(user_message)
     if "generate a fictional user input" in blob:  # 1b single-scenario draft
         return dad_scenario_reply(user_message)
-    if "editor of dilemma prompts" in blob:  # 1c refine
-        return json.dumps({"prompt": "Refined user message.", "notes": "relocated the lever"})
+    if "rewrite a fictional user input" in blob:  # 1c refine
+        return "relocated the lever\n<revised_user_prompt>Refined user message.</revised_user_prompt>"
     raise AssertionError(f"Unrecognized step-1 prompt: {user_message[:80]!r}")
 
 
@@ -55,7 +55,7 @@ class TestStep1Run:
             assert e["annotation"]["visibility"] and e["annotation"]["leverage"]
             assert not e["annotation"].get("claims")
             assert e["taxa_subcategory"]
-            assert compose_scenarios.length_band(e["length_class"])  # stamped, has a band
+            assert e["length_class"]  # dealt register stamped on the record
             assert "scenario_deviations" not in e
             # stable content-keyed ids assigned alongside the per-run ids
             assert e["scenario_gid"].startswith("S-")
@@ -81,10 +81,12 @@ class TestStep1Run:
         assert len(draft_calls) == 2
         assert all("<scenario_description>" in c["user_message"] for c in draft_calls)
         assert {c["item_id"] for c in draft_calls} == {"S-001", "S-002"}
-        # the synthesized (dealt-labels) annotation reaches the 1c prompt
+        # the plan's description and the 1b draft both reach the 1c prompt
         refine_call = next(c["user_message"] for c in calls
-                           if "editor of dilemma prompts" in c["system_prompt"])
-        assert "Visibility:" in refine_call and "Leverage:" in refine_call
+                           if "rewrite a fictional user input" in c["system_prompt"])
+        assert "<scenario_description>" in refine_call
+        assert "<draft_prompt>" in refine_call
+        assert "Drafted user message" in refine_call
 
     def test_unusable_refine_is_retried_once_and_raw_kept(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -97,11 +99,11 @@ class TestStep1Run:
         def flaky_refine(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
                 return dad_scenario_plan_reply(user_message)
-            if "editor of dilemma prompts" in _sysuser(user_message, kw):
+            if "rewrite a fictional user input" in _sysuser(user_message, kw):
                 refine_calls["n"] += 1
                 if refine_calls["n"] == 1:
-                    return "not json at all"
-                return json.dumps({"prompt": "Refined user message.", "notes": "n"})
+                    return "no tags at all"
+                return "n\n<revised_user_prompt>Refined user message.</revised_user_prompt>"
             return dad_scenario_reply(user_message)
 
         calls = stub_claude(flaky_refine)
@@ -112,7 +114,7 @@ class TestStep1Run:
         assert "refine_failed" not in examples[0]
         failures = utils.load_jsonl(tmp_path / "refine_failures.jsonl")
         assert len(failures) == 1
-        assert failures[0]["attempt"] == 1 and failures[0]["raw"] == "not json at all"
+        assert failures[0]["attempt"] == 1 and failures[0]["raw"] == "no tags at all"
 
     def test_refine_unusable_after_retries_keeps_draft_and_stamps_record(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -124,8 +126,8 @@ class TestStep1Run:
         def bad_refine(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
                 return dad_scenario_plan_reply(user_message)
-            if "editor of dilemma prompts" in _sysuser(user_message, kw):
-                return "still not json"
+            if "rewrite a fictional user input" in _sysuser(user_message, kw):
+                return "still no tags"
             return dad_scenario_reply(user_message)
 
         calls = stub_claude(bad_refine)
@@ -139,42 +141,66 @@ class TestStep1Run:
         assert len(utils.load_jsonl(tmp_path / "refine_failures.jsonl")) == 2
         assert utils.load_jsonl(tmp_path / "refinements.jsonl") == []
 
-    def test_length_violating_draft_is_retried_not_checkpointed(
+    def test_unfixable_refine_rejects_scenario_and_resume_skips_it(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
-        # Pick a seed that deals a single scenario whose length class has a
-        # nonzero lower band, so an egregiously short draft must be rejected
-        # and re-drawn — and the reject is a retry, not a strike.
-        seed = next(
-            s for s in range(50)
-            if compose_scenarios.length_band(
-                compose_scenarios.deal_scenarios(1, random.Random(s))[0]["length_class"]
-            )[0] > 0
-        )
-        scen = compose_scenarios.deal_scenarios(1, random.Random(seed))[0]
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1,
-                                      "scenario_seed": seed, "refine": False}}
-        batch_calls = {"n": 0}
+                                      "count": 1}}
 
-        def short_then_valid(user_message, **kw):
+        def unfixable_refine(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
                 return dad_scenario_plan_reply(user_message)
-            batch_calls["n"] += 1
-            if batch_calls["n"] == 1:
-                return "<user_prompt>Too short.</user_prompt>"  # egregious band miss
+            if "rewrite a fictional user input" in _sysuser(user_message, kw):
+                return ("diagnosis: no lever\n"
+                        "<unfixable>the scenario gives the user no real lever</unfixable>")
             return dad_scenario_reply(user_message)
 
-        calls = stub_claude(short_then_valid)
+        calls = stub_claude(unfixable_refine)
         examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
 
-        assert len(calls) == 3  # 1 plan; the rejected draft cost one call, then the retry
+        # a verdict, not a failure: one refine attempt, no retries, no example
+        assert len(calls) == 3  # 1 plan + 1 draft + 1 refine
+        assert examples == []
+        assert utils.load_jsonl(tmp_path / "dilemmas.jsonl") == []
+        assert utils.load_jsonl(tmp_path / "refinements.jsonl") == []
+        assert utils.load_jsonl(tmp_path / "refine_failures.jsonl") == []
+        rejects = utils.load_jsonl(tmp_path / "refine_rejects.jsonl")
+        assert len(rejects) == 1
+        assert rejects[0]["scenario_id"] == "S-001"
+        assert rejects[0]["reason"] == "the scenario gives the user no real lever"
+        assert rejects[0]["draft_prompt"].startswith("Drafted user message")
+
+        # resume: the rejection is deliberate and spent — zero API calls
+        def no_calls_allowed(user_message, **kw):
+            raise AssertionError(f"resume made an API call: {user_message[:60]!r}")
+
+        resumed_calls = stub_claude(no_calls_allowed)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+        assert examples == []
+        assert resumed_calls == []
+        assert len(utils.load_jsonl(tmp_path / "refine_rejects.jsonl")) == 1
+
+    def test_off_length_draft_is_accepted_without_retry(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Length is no longer measured or enforced: even an egregiously short
+        # draft ships as-is on the first pass (we trust the model on register).
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1, "refine": False}}
+
+        def tiny_draft(user_message, **kw):
+            if "write a description of a specific scenario" in _sysuser(user_message, kw):
+                return dad_scenario_plan_reply(user_message)
+            return "<user_prompt>Too short.</user_prompt>"  # would have failed the old band
+
+        calls = stub_claude(tiny_draft)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(calls) == 2  # 1 plan + 1 draft, no re-roll
         assert len(examples) == 1
-        assert examples[0]["length_class"] == scen["length_class"]
-        assert compose_scenarios.length_ok(examples[0]["user_message"],
-                                           scen["length_class"])
-        # a length reject is not a parse failure: nothing lands in draft_failures
+        assert examples[0]["user_message"] == "Too short."
         assert utils.load_jsonl(tmp_path / "draft_failures.jsonl") == []
 
     def test_tagless_draft_raw_is_persisted_and_retried(
@@ -199,37 +225,43 @@ class TestStep1Run:
         assert len(failures) == 1
         assert failures[0]["raw"] == "no tags here" and failures[0]["pass"] == 1
 
-    def test_persistent_length_misses_hit_the_pass_cap_not_the_three_strike(
+    def test_refused_draft_is_rejected_after_budget_and_resume_skips_it(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
-        # A draft that keeps missing its length band is a plain re-roll — it
-        # must never trip the 3-strike abort (that's for parse/truncation
-        # failure); it runs to the 8-pass cap instead. Regression: the n=30
-        # probe (2026-07-18) aborted after 3 length-miss passes.
-        seed = next(
-            s for s in range(50)
-            if compose_scenarios.length_band(
-                compose_scenarios.deal_scenarios(1, random.Random(s))[0]["length_class"]
-            )[1] < 10 ** 6
-        )
+        # A drafting model that persistently refuses a scenario (stop_reason=
+        # 'refusal', the S-035 aggressive-fogging case) must reject that one
+        # scenario after MAX_DRAFT_ATTEMPTS, never block the run, and be skipped
+        # with zero API calls on resume.
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "scenario_seed": seed,
-                                      "refine": False}}
-        draft_calls = {"n": 0}
+                                      "count": 1, "refine": False}}
 
-        def always_too_long(user_message, **kw):
+        def always_refuses(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
                 return dad_scenario_plan_reply(user_message)
-            draft_calls["n"] += 1
-            return f"<user_prompt>{'x' * 20000}</user_prompt>"  # over every ceiling
+            return ("<user_prompt>I'm setting up the automated fogging", "refusal")
 
-        stub_claude(always_too_long)
-        with pytest.raises(SystemExit, match="8 drafting passes"):
-            step1_dilemmas.run(config, prompts_dad, tmp_path)
-        assert draft_calls["n"] == 8  # all eight passes ran; no early 3-strike
-        # length misses are re-rolls, never failure records
-        assert utils.load_jsonl(tmp_path / "draft_failures.jsonl") == []
+        calls = stub_claude(always_refuses)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert examples == []
+        # 1 plan + MAX_DRAFT_ATTEMPTS refused drafts, then rejection
+        assert len(calls) == 1 + step1_dilemmas.MAX_DRAFT_ATTEMPTS
+        rejects = utils.load_jsonl(tmp_path / "draft_rejects.jsonl")
+        assert len(rejects) == 1
+        assert rejects[0]["scenario_id"] == "S-001"
+        assert rejects[0]["reason"] == "refusal"
+        # refusal raws are also kept for diagnosis
+        failures = utils.load_jsonl(tmp_path / "draft_failures.jsonl")
+        assert len(failures) == step1_dilemmas.MAX_DRAFT_ATTEMPTS
+        assert all(f.get("refusal") for f in failures)
+
+        # resume: the rejection is spent — zero API calls, still no example
+        resumed = stub_claude(
+            lambda um, **kw: (_ for _ in ()).throw(
+                AssertionError(f"resume called the API: {um[:50]!r}")))
+        assert step1_dilemmas.run(config, prompts_dad, tmp_path) == []
+        assert resumed == []
 
     def test_checklist_uses_the_runs_variables_snapshot_not_the_repos(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -711,17 +743,34 @@ class TestStep2Run:
         scopes = utils.load_jsonl(tmp_path / "scopes.jsonl")
         assert step2_responses._valid_scope(scopes[0]["scope"])
 
-    def test_scope_unusable_after_max_attempts_stops_loudly(
+    def test_scope_unusable_after_max_attempts_rejects_prompt_not_run(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
+        # A persistently unusable scope (empty/refused/unparseable replies)
+        # rejects that ONE prompt — checkpointed, skipped on resume, run ships
+        # fewer examples — instead of aborting the whole run (the AW-0003
+        # empty-scope wall, 2026-07-19).
         def always_bad(user_message, **kw):
             assert "build the full map" in (kw.get("system_prompt") or "")  # must never reach 2b
             return "not json"
 
-        stub_claude(always_bad)
-        with pytest.raises(RuntimeError, match="unusable after"):
-            step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+        calls = stub_claude(always_bad)
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        assert results == []
+        assert len(calls) == step2_responses.MAX_SCOPE_ATTEMPTS
         assert utils.load_jsonl(tmp_path / "responses.jsonl") == []
+        rejects = utils.load_jsonl(tmp_path / "scope_rejects.jsonl")
+        assert len(rejects) == 1
+        assert rejects[0]["prompt_id"] == "AW-0001"
+
+        # resume: the rejection is spent — zero API calls, still no responses
+        resumed = stub_claude(
+            lambda um, **kw: (_ for _ in ()).throw(
+                AssertionError(f"resume called the API: {um[:50]!r}")))
+        assert step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()]) == []
+        assert resumed == []
+        assert len(utils.load_jsonl(tmp_path / "scope_rejects.jsonl")) == 1
 
     def test_resume_makes_no_calls(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         stub_claude(_dad_step2_dispatch)

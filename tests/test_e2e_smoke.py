@@ -102,8 +102,8 @@ def _dad_dispatch(user_message, **kw):
         return dad_scenario_plan_reply(user_message)
     if "generate a fictional user input" in blob:  # step 1b: per-scenario draft
         return dad_scenario_reply(user_message)
-    if "editor of dilemma prompts" in blob:  # step 1c: latent rewrite
-        return json.dumps({"prompt": "Refined user message.", "notes": "n"})
+    if "rewrite a fictional user input" in blob:  # step 1c: latent rewrite
+        return "n\n<revised_user_prompt>Refined user message.</revised_user_prompt>"
     if "build the full map of the case" in blob:  # step 2a
         return json.dumps({"patients": "p", "goal": "g", "levers": "l", "cost": "c",
                            "magnitude": "m", "upside": "u", "replaceability": "cf"})
