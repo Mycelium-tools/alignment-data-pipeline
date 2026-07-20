@@ -45,7 +45,8 @@ TEMPLATE_KWARGS = [
     ("dad/step1a_scenario.txt", {
         "domain": "DOMAIN-X", "user_goal": "GOAL-X", "taxa_hint": "TAXA-HINT-X",
         "taxa_subcategory": "TAXA-SUB-X", "secondary_domain_clause": "",
-        "secondary_goal_clause": "", "visibility": "VIS-X", "user_attitude": "ATT-X",
+        "secondary_goal_clause": "", "archetype_clause": "",
+        "visibility": "VIS-X", "user_attitude": "ATT-X",
         "user_moral_framework": "STYLE-X", "conflict": "CONFLICT-X",
         "severity": "SEV-X", "scope": "SCOPE-X",
         "user_stakes": "STAKES-X", "leverage": "LEV-X",
@@ -56,9 +57,10 @@ TEMPLATE_KWARGS = [
     }),
     # step1b renders via compose_scenarios.render_draft_prompt (one scenario per call)
     ("dad/step1b_dilemmas.txt", {"scenario_description": "DESC-X", "persona": "PERSONA-X",
-                                 "cultural_setting": "CULTURE-X", "length": "LENGTH-X"}),
-    ("dad/step1_refine.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
-                              "annotation_block": "ANNOTATION-X"}),
+                                 "cultural_setting": "CULTURE-X", "length": "LENGTH-X",
+                                 "redraft_feedback": ""}),
+    ("dad/step1_gate.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
+                            "annotation_block": "ANNOTATION-X"}),
     ("dad/step2_scope.txt", {"user_message": "USER-X"}),
     ("dad/step2_select.txt", {"trigger_index": "TRIGGER-INDEX-X", "scope_block": "SCOPE-X",
                               "user_message": "USER-X"}),

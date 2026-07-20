@@ -44,6 +44,38 @@ def _grouped_arm_chart(rows: list[dict], value_label: str) -> alt.Chart:
     )
 
 
+def _grouped_barh(df: pd.DataFrame, cat_field: str, cat_title: str) -> alt.Chart:
+    """Horizontal plain-vs-pipeline grouped bars, one group per category,
+    sorted by count. Backs the response-shape and stock-phrase frequency views
+    that replace the old wall of gray detail captions."""
+    return alt.Chart(df).mark_bar().encode(
+        y=alt.Y(f"{cat_field}:N", title=cat_title, sort="-x"),
+        yOffset=alt.YOffset("arm:N", sort=list(rendering.AUDIT_ARM_COLUMNS)),
+        x=alt.X("count:Q", title="responses"),
+        color=alt.Color("arm:N", title="", scale=alt.Scale(
+            domain=list(rendering.AUDIT_ARM_COLUMNS),
+            range=list(rendering.AUDIT_ARM_COLORS))),
+        tooltip=[alt.Tooltip(cat_field, title=cat_title or "phrase"), "arm",
+                 alt.Tooltip("count", title="count")],
+    )
+
+
+def _section_table(section: dict) -> None:
+    """Render one section's rows as a dataframe, with per-row notes moved below
+    it as captions — long notes truncate badly inside a stretched table."""
+    rows = rendering.audit_section_table(section)
+    if not rows:
+        return
+    notes = []
+    for r in rows:
+        note = r.pop("note", None)
+        if note:
+            notes.append((r.get("check", ""), note))
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    for check, note in notes:
+        st.caption(f"↳ **{check}** {note}")
+
+
 report = loader.load_audit(run.run_dir)
 if report is None:
     st.info("No corpus audit for this run yet. It is offline and free — generate it with:")
@@ -70,12 +102,14 @@ if batch_totals:
     st.caption("Summed over records where both arms exist; Δ % is relative to plain Claude.")
     st.dataframe(pd.DataFrame(batch_totals), width="stretch", hide_index=True)
 
+# Sections whose detail lines are replaced by a richer custom view below, so
+# the generic gray-caption dump is suppressed for them.
+_CUSTOM_DETAIL = ("Structural variation", "Stock phrases")
+
 for section in sections:
     title = section.get("title", "")
     st.subheader(title)
-    rows = rendering.audit_section_table(section)
-    if rows:
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    _section_table(section)
 
     if title.startswith("Response lengths"):
         chart_rows = rendering.audit_length_chart_rows(
@@ -120,8 +154,37 @@ for section in sections:
                     for reason in corpus:
                         st.markdown(f"- {reason}")
 
-    for line in section.get("detail", []):
-        st.caption(line)
+    if title.startswith("Structural variation"):
+        shape_rows = rendering.audit_shape_chart_rows(report.get("structure") or {})
+        if shape_rows:
+            st.caption("Response-shape frequency by arm (each shape = paragraph-count "
+                       "bucket + which structural elements it uses).")
+            st.altair_chart(_grouped_barh(pd.DataFrame(shape_rows), "shape", "shape"),
+                            use_container_width=True)
+
+    if title.startswith("Stock phrases"):
+        sp = report.get("stock_phrases") or {}
+        phrase_rows = rendering.audit_stock_phrase_rows(sp)
+        if phrase_rows:
+            n_pipe, n_plain = sp.get("n_pipeline") or 0, sp.get("n_plain") or 0
+            st.caption("Recurring phrases by arm — the pipeline-vs-plain gap is the "
+                       "training-data signal. Sorted by pipeline frequency.")
+            st.dataframe(pd.DataFrame(
+                [{"phrase": r["phrase"], "origin": r["origin"],
+                  "pipeline": f"{r['pipeline']}/{n_pipe}",
+                  "plain": f"{r['plain']}/{n_plain}"} for r in phrase_rows]),
+                width="stretch", hide_index=True)
+            top = phrase_rows[:12]
+            long = [{"phrase": r["phrase"], "arm": arm_col, "count": r[arm_key]}
+                    for r in top
+                    for arm_key, arm_col in (("plain", "plain Claude"),
+                                             ("pipeline", "pipeline"))]
+            st.altair_chart(_grouped_barh(pd.DataFrame(long), "phrase", ""),
+                            use_container_width=True)
+
+    if not title.startswith(_CUSTOM_DETAIL):
+        for line in section.get("detail", []):
+            st.caption(line)
 
 if "moral_patient_reasons" not in report:
     st.caption("Moral-patient reason extraction hasn't run for this report — add it "
@@ -140,9 +203,7 @@ else:
                "across runs using the same embedding model")
     for section in diversity.get("sections") or []:
         st.subheader(section.get("title", ""))
-        rows = rendering.audit_section_table(section)
-        if rows:
-            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        _section_table(section)
         for line in section.get("detail", []):
             st.caption(line)
 

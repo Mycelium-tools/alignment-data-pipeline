@@ -25,11 +25,19 @@
   taken as returned; distribution fidelity is monitored by the corpus-level
   checklist instead.
 
-- Step 1c — prompt rewrite (optional; config dad.dilemmas.refine, on by
-  default): a second model call rewrites each 1b draft's prompt text per the
-  specifications in prompts/dad/step1_refine.txt. The 1b draft is kept on the
-  record (draft_user_message + refine_notes) and the before/after is logged
-  to step1/refinements.jsonl.
+- Step 1c — quality gate (optional; config dad.dilemmas.gate, on by default;
+  legacy key `refine` still honored): a second model call JUDGES each 1b draft
+  against its scenario per prompts/dad/step1_gate.txt — pass/fail, never a
+  rewrite. The four checks are: the welfare stake is load-bearing, the draft
+  honors its dealt cards, the message is self-contained, the scene is
+  cohesive. A rejected scenario is routed back through the drafting loop with
+  the gate's reasons injected into the next attempt (so it redrafts away from
+  them), capped at MAX_GATE_REDRAFTS; a scenario still failing after the cap
+  ships with gate_failures stamped on its record. Because text is never
+  edited, the record's annotation stays true to the shipped prompt by
+  construction. Verdicts are logged to step1/gate.jsonl; unusable gate replies
+  (retried once) persist to step1/gate_failures.jsonl and fail open (ship the
+  draft — degraded gating costs a weak prompt, never a stalled run).
 
 The Part 4 checklist re-prints at the end as verification; thresholds are the
 spec's, enforcement stays human.
@@ -246,10 +254,25 @@ def checklist(examples: list[dict],
                     "all taxa categories present"
                     + (f" (missing: {', '.join(taxa_missing)})" if taxa_missing else "")))
 
+    # Archetypes: reserved cross-axis conjunctions (compose_scenarios.
+    # ARCHETYPES, live repo code like TAXA). Gated on the records carrying the
+    # field — runs that predate archetypes are never checked against them.
+    if any("archetype" in e for e in examples):
+        arch = Counter(e.get("archetype") for e in examples if e.get("archetype"))
+        for name, spec in compose_scenarios.ARCHETYPES.items():
+            expected = round(spec["share"] * n)
+            got = arch.get(name, 0)
+            out.append((got >= expected,
+                        f"archetype {name!r} present ({got}; dealt share expects {expected})"))
+        overwrites = sum(len(e.get("archetype_overwrites") or []) for e in examples)
+        out.append((overwrites == 0,
+                    f"archetype swaps preserved marginal shares ({overwrites} overwrites)"))
+
     # NOTE: the value-pair and claims checks retired with the 1b annotation —
-    # the load-bearing welfare guarantee is 1c's job (step1_refine.txt); the
-    # welfare-money and claim-pattern mixes are dealt by weight in variables.txt.
-    out.append((None, "welfare load-bearing in every prompt (1c's mandate) — review manually"))
+    # the load-bearing welfare guarantee is the 1c gate's job (step1_gate.txt,
+    # Check 1); the welfare-money and claim-pattern mixes are dealt by weight in
+    # variables.txt.
+    out.append((None, "welfare load-bearing in every prompt (1c gate's mandate) — review manually"))
 
     out.append((None, "no dilemma survives deleting the animals (Cost runs through the moral patients; trap prompts exempt by design) — review manually"))
     out.append((None, "canonical skeleton at 15% or less, all five surface forms present — review manually"))
@@ -315,44 +338,64 @@ def _parse_json_object(raw: str) -> dict | None:
         return objs[0] if objs else None
 
 
-MAX_REFINE_ATTEMPTS = 2
+MAX_GATE_ATTEMPTS = 2      # fresh retries when the gate's own reply is unparseable
+MAX_GATE_REDRAFTS = 3      # times a scenario is redrafted after a gate rejection
 
 
-def refine_draft(scenario: dict, draft: dict, prompts_dir: Path,
-                 model: str | None = None) -> tuple[dict | None, list[dict]]:
-    """Step 1c: rewrite the 1b draft's PROMPT TEXT so it follows the specifications in prompts/dad/step1_refine.txt.
+def gate_draft(scenario: dict, draft: dict, prompts_dir: Path,
+               model: str | None = None) -> tuple[bool | None, list[str], list[dict]]:
+    """Step 1c: JUDGE the 1b draft against its scenario per prompts/dad/step1_gate.txt.
+    Returns a pass/fail verdict — never a rewrite.
 
-    Returns (refined, failures): an unusable reply is retried once with a
-    fresh call (same policy shape as 2a scoping); every unusable raw is
-    returned in `failures` for the main thread to persist to
-    step1/refine_failures.jsonl — a discarded raw is an undiagnosable failure.
-    refined is None when all attempts were unusable (caller keeps the 1b
-    draft and stamps refine_failed on the record)."""
+    Returns (passed, failures, raw_failures):
+      passed        True/False verdict, or None when every attempt was unusable
+                    (caller then fail-opens and ships the draft).
+      failures      the gate's reasons (empty on pass; only meaningful with a
+                    True/False verdict).
+      raw_failures  unusable-reply raws for the main thread to persist to
+                    step1/gate_failures.jsonl — a discarded raw is an
+                    undiagnosable failure.
+    An unusable reply is retried once with a fresh call (same policy shape as
+    2a scoping)."""
     system_prompt, user_prompt = utils.load_split_prompt(
-        prompts_dir / "step1_refine.txt",
+        prompts_dir / "step1_gate.txt",
         scenario_block=format_scenario(scenario),
         draft_prompt=str(draft.get("prompt", "")).strip(),
-        # Claims are step-3 scaffolding — kept out of 1c's view so the rewriter
-        # doesn't echo claim text into the user's message.
+        # Claims are step-3 scaffolding — kept out of the gate's view for parity
+        # with the annotation the downstream steps see.
         annotation_block=format_annotation(
             {k: v for k, v in _normalize_annotation(draft.get("annotation") or {}).items()
              if k != "claims"}),
     )
-    failures = []
+    raw_failures = []
     pid = scenario.get("scenario_id")
-    for attempt in range(1, MAX_REFINE_ATTEMPTS + 1):
+    for attempt in range(1, MAX_GATE_ATTEMPTS + 1):
         raw = api.call_claude(user_message=user_prompt, system_prompt=system_prompt,
-                              max_tokens=4000, model=model,
-                              stage="prompt_refine", item_id=pid)
-        refined = _parse_json_object(raw)
-        if isinstance(refined, dict) and str(refined.get("prompt", "")).strip():
-            return ({"prompt": str(refined["prompt"]).strip(),
-                     "notes": str(refined.get("notes", "")).strip()}, failures)
-        failures.append({"scenario_id": pid, "attempt": attempt, "raw": raw})
-        if attempt < MAX_REFINE_ATTEMPTS:
-            print(f"    {pid}: refine attempt {attempt}/{MAX_REFINE_ATTEMPTS} "
+                              max_tokens=1000, model=model,
+                              stage="prompt_gate", item_id=pid)
+        verdict = _parse_json_object(raw)
+        if isinstance(verdict, dict) and "pass" in verdict:
+            failures = [str(f).strip() for f in (verdict.get("failures") or []) if str(f).strip()]
+            return (bool(verdict.get("pass")), failures, raw_failures)
+        raw_failures.append({"scenario_id": pid, "attempt": attempt, "raw": raw})
+        if attempt < MAX_GATE_ATTEMPTS:
+            print(f"    {pid}: gate attempt {attempt}/{MAX_GATE_ATTEMPTS} "
                   "unusable — retrying with a fresh call.")
-    return (None, failures)
+    return (None, [], raw_failures)
+
+
+def _redraft_feedback_block(failures: list[str]) -> str:
+    """The feedback a rejected scenario carries into its next 1b draft, so the
+    redraft fixes the gate's specific objections instead of blindly re-rolling.
+    Empty string on a first attempt (no prior rejection) — the template's
+    {redraft_feedback} slot then renders to nothing."""
+    if not failures:
+        return ""
+    reasons = "\n".join(f"- {r}" for r in failures)
+    return ("\nPRIOR ATTEMPT: an earlier draft of this prompt was rejected by a "
+            "quality check for the following reasons. Write a new version that "
+            "fixes them while still honoring the scenario and all instructions "
+            f"above:\n{reasons}\n")
 
 
 def _next_id(examples: list[dict], id_start: int) -> str:
@@ -382,7 +425,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
     output_path = output_dir / "dilemmas.jsonl"
     scenarios_path = output_dir / "scenarios.jsonl"
-    refinements_path = output_dir / "refinements.jsonl"
+    gate_path = output_dir / "gate.jsonl"
     # Stable content-keyed ids (scenario_gid / prompt_gid), shared across runs.
     registry = IdRegistry(_registry_path(output_dir))
 
@@ -396,11 +439,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             raise SystemExit(f"Draft template not found at {draft_template} — "
                              "the DAD pipeline cannot run without it.")
 
-    # Step 1c: review-and-rewrite each draft. On by default (matches config.yaml
-    # and CLAUDE.md); disable with dad.dilemmas.refine: false.
-    refine_enabled = bool(cfg.get("refine", True))
-    if refine_enabled and not (prompts_dir / "step1_refine.txt").exists():
-        raise SystemExit("dad.dilemmas.refine is on but prompts/dad/step1_refine.txt is missing.")
+    # Step 1c: pass/fail quality gate on each draft (never a rewrite). On by
+    # default (matches config.yaml and CLAUDE.md); disable with
+    # dad.dilemmas.gate: false. The legacy key `refine` is still honored so old
+    # configs keep gating.
+    gate_enabled = bool(cfg.get("gate", cfg.get("refine", True)))
+    if gate_enabled and not (prompts_dir / "step1_gate.txt").exists():
+        raise SystemExit("dad.dilemmas.gate is on but prompts/dad/step1_gate.txt is missing.")
 
     examples = utils.load_jsonl(output_path)
 
@@ -618,8 +663,15 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     accepted = {e.get("scenario_id") for e in examples if e.get("scenario_id")}
     workers = int(config.get("workers", 1))
     draft_model = config["dad"].get("prompt_draft_model")
+    gate_model = (config["dad"].get("prompt_gate_model")
+                  or config["dad"].get("prompt_refine_model"))
     passes = 0
     consecutive_dry_passes = 0
+    # Per-scenario gate bookkeeping across drafting passes: how many times a
+    # scenario has been gated (redraft cap), and the reasons its last rejection
+    # gave (injected into its next draft so the redraft fixes them).
+    gate_attempts: dict[str, int] = {}
+    gate_feedback: dict[str, list[str]] = {}
 
     while True:
         pending = [p for p in scenarios if p["scenario_id"] not in accepted]
@@ -633,9 +685,13 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
               f"({len(accepted)}/{len(scenarios)} scenarios filled)...")
 
         def _draft(scenario: dict) -> tuple[str, str]:
-            """One draft call (API only, per the parallel_map contract)."""
+            """One draft call (API only, per the parallel_map contract). A
+            scenario redrafted after a gate rejection carries the gate's
+            reasons in the {redraft_feedback} slot."""
             system_prompt, user_prompt = compose_scenarios.render_draft_prompt(
-                scenario, draft_template_text)
+                scenario, draft_template_text,
+                redraft_feedback=_redraft_feedback_block(
+                    gate_feedback.get(scenario["scenario_id"], [])))
             return api.call_claude(user_message=user_prompt, system_prompt=system_prompt,
                                    max_tokens=4000, model=draft_model,
                                    stage="prompt_draft", item_id=scenario["scenario_id"],
@@ -681,51 +737,69 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             continue
         consecutive_dry_passes = 0
 
-        # --- Step 1c (optional): rewrite each drafted prompt. Refine calls fan
-        # out (API call + parse only, per the parallel_map contract); record
-        # assembly below stays serial on the main thread so ID assignment and
-        # file writes keep input order.
+        # --- Step 1c (optional): GATE each drafted prompt (pass/fail; text is
+        # never edited). Gate calls fan out (API call + parse only, per the
+        # parallel_map contract); record assembly below stays serial on the
+        # main thread so ID assignment and file writes keep input order.
         newly_drafted = [p for p in pending if p["scenario_id"] in drafted]
-        refined_by_pid: dict[str, dict | None] = {}
-        if refine_enabled:
-            def _refine(scenario: dict) -> tuple[dict | None, list[dict]]:
-                print(f"    [1c] Refining {scenario['scenario_id']}...")
+        verdict_by_pid: dict[str, tuple[bool | None, list[str]]] = {}
+        if gate_enabled:
+            def _gate(scenario: dict) -> tuple[bool | None, list[str], list[dict]]:
+                print(f"    [1c gate] Judging {scenario['scenario_id']}...")
                 draft = {"prompt": drafted[scenario["scenario_id"]],
                          "annotation": _annotation_from_scenario(scenario)}
-                return refine_draft(scenario, draft, prompts_dir,
-                                    model=config["dad"].get("prompt_refine_model"))
+                return gate_draft(scenario, draft, prompts_dir, model=gate_model)
 
-            for scenario, (refined, failures) in zip(
-                    newly_drafted, utils.parallel_map(_refine, newly_drafted, workers)):
-                refined_by_pid[scenario["scenario_id"]] = refined
-                for f in failures:
-                    utils.append_jsonl(f, output_dir / "refine_failures.jsonl")
+            for scenario, (passed, failures, raw_failures) in zip(
+                    newly_drafted, utils.parallel_map(_gate, newly_drafted, workers)):
+                verdict_by_pid[scenario["scenario_id"]] = (passed, failures)
+                # Workers only call + parse; failure raws persist here on the
+                # main thread, in input order (the parallel_map contract).
+                for f in raw_failures:
+                    utils.append_jsonl(f, output_dir / "gate_failures.jsonl")
 
         for p in newly_drafted:
             pid = p["scenario_id"]
+            # Text is never edited after drafting, so the annotation stays true
+            # to the shipped prompt by construction.
             user_message = drafted[pid]
-            refine_notes = None
-            refine_failed = False
-            if refine_enabled:
-                refined = refined_by_pid.get(pid)
-                if refined is not None:
-                    user_message, refine_notes = refined["prompt"], refined["notes"]
-                else:
-                    # The load-bearing rewrite didn't happen: ship the 1b draft,
-                    # but stamp the record so the viewer (and any later audit)
-                    # can see which prompts skipped the 1c pass.
-                    refine_failed = True
-                    print(f"    {pid}: refine unusable after {MAX_REFINE_ATTEMPTS} attempts "
-                          "— keeping the 1b draft (refine_failed stamped, raws in "
-                          "refine_failures.jsonl).")
+            gate_failures = None
+
+            if gate_enabled:
+                passed, failures = verdict_by_pid.get(pid, (None, []))
+                gate_attempts[pid] = gate_attempts.get(pid, 0) + 1
+                # Log every verdict for provenance / the corpus audit.
+                utils.append_jsonl({"scenario_id": pid, "passed": passed,
+                                    "failures": failures, "attempt": gate_attempts[pid]},
+                                   gate_path)
+                if passed is False:
+                    if gate_attempts[pid] < MAX_GATE_REDRAFTS:
+                        # Reject: stash the reasons and leave the scenario out of
+                        # `accepted` so the while loop redrafts it (with the
+                        # reasons injected). Not a parse failure, so it must not
+                        # touch consecutive_dry_passes (mirrors the length reject).
+                        gate_feedback[pid] = failures
+                        print(f"    {pid}: gate rejected (attempt {gate_attempts[pid]}/"
+                              f"{MAX_GATE_REDRAFTS}) — will redraft. "
+                              f"Reasons: {'; '.join(failures) or '(none given)'}")
+                        continue
+                    # Out of redrafts: ship the last draft, stamped so it's visible.
+                    gate_failures = failures
+                    print(f"    {pid}: gate still failing after {MAX_GATE_REDRAFTS} "
+                          "redrafts — shipping the draft with gate_failures stamped.")
+                elif passed is None:
+                    # Gate reply unusable after retries: fail-open, ship the draft
+                    # (degraded gating costs a weak prompt, never a stalled run).
+                    print(f"    {pid}: gate unusable after {MAX_GATE_ATTEMPTS} attempts "
+                          "— shipping the draft (raws in gate_failures.jsonl).")
 
             record = {
                 "prompt_id": _next_id(examples, id_start),
                 "prompt_gid": f"P-{registry.assign('prompt', prompt_fingerprint(user_message)):04d}",
                 "user_message": user_message,
                 # 1b no longer writes an annotation; the dealt labels are the
-                # design, synthesized here for 1c context, the checklist, and
-                # the viewer.
+                # design, synthesized here for the gate, the checklist, and the
+                # viewer.
                 "annotation": _annotation_from_scenario(p),
                 "source": "generated",
                 "scenario_id": pid,
@@ -737,19 +811,12 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 "frontier_frame": p.get("frontier_frame"),
                 "length_class": p.get("length_class"),
                 "cultural_setting": p.get("cultural_setting"),
+                "archetype": p.get("archetype"),
+                **({"archetype_overwrites": p["archetype_overwrites"]}
+                   if p.get("archetype_overwrites") else {}),
             }
-            if refine_failed:
-                record["refine_failed"] = True
-            if refine_notes is not None:
-                # keep the 1b draft alongside the 1c-refined prompt for inspection
-                record["draft_user_message"] = drafted[pid]
-                record["refine_notes"] = refine_notes
-                utils.append_jsonl({
-                    "scenario_id": pid,
-                    "draft_prompt": drafted[pid],
-                    "refined_prompt": user_message,
-                    "notes": refine_notes,
-                }, refinements_path)
+            if gate_failures is not None:
+                record["gate_failures"] = gate_failures
             examples.append(record)
             accepted.add(pid)
             utils.append_jsonl(record, output_path)
