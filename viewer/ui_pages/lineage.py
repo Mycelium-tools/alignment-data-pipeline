@@ -161,14 +161,17 @@ def _call_stats_line(cost_stage: str, item_id: str | None) -> str | None:
 
 
 def stage_expander(title: str, stage: str, lineage: dict, output_fn,
-                   stats: tuple[str, str | None] | None = None):
+                   stats: tuple[str, str | None] | None = None,
+                   gid: str | None = None):
     """One stage: call stats, the rendered prompt, then the output it produced.
-    `stats` is (cost-log stage tag, item id) for the API call(s) behind the stage."""
+    `stats` is (cost-log stage tag, item id) for the API call(s) behind the
+    stage; `gid` is the stage output's stable cross-run id (S-/P-/R-/E-),
+    shown ahead of the stats."""
     with st.expander(f":blue[{title}]"):
-        if stats:
-            line = _call_stats_line(*stats)
-            if line:
-                st.caption(f":material/speed: {line}")
+        line = _call_stats_line(*stats) if stats else None
+        bits = [b for b in (gid, line) if b]
+        if bits:
+            st.caption(f":material/speed: {' · '.join(bits)}")
         rendered = rendering.render_prompt(run.pipeline, stage, run.run_dir, manifest, lineage)
         common.show_rendered_prompt(rendered, key=stage, show_run_warnings=False)
         st.markdown("##### Output at this stage")
@@ -227,14 +230,18 @@ else:
     doc_col, prompts_col = st.columns(2)
 
     with doc_col:
-        # Stable global ids as the headline (the per-run AW-####/S-### appear in
-        # the per-stage lineage below); classification tag small underneath.
+        # Stable global ids as the headline — the finished artifact's identity
+        # (example / prompt / response). The upstream ids (S-#### scenario,
+        # C-#### control) live on their stage expanders below, as do the
+        # per-run AW-####/S-### ids; classification tag small underneath.
         annotation = dilemma.get("annotation") or audit.get("annotation") or {}
         head = []
-        if dilemma.get("scenario_gid"):
-            head.append(f"scenario {dilemma['scenario_gid']}")
+        if audit.get("example_gid"):
+            head.append(f"example {audit['example_gid']}")
         if dilemma.get("prompt_gid"):
             head.append(f"prompt {dilemma['prompt_gid']}")
+        if audit.get("response_gid"):
+            head.append(f"response {audit['response_gid']}")
         st.subheader("  ·  ".join(head)
                      or str(dilemma.get("prompt_id") or audit.get("prompt_id") or selected_id))
         if lin.get("format") == "v2":
@@ -286,7 +293,8 @@ else:
                              if k not in ("scenario_description", "variables")},
                             key="s1a", label="dealt scenario")
                     stage_expander("Step 1a — scenario deal + plan", "step1a_plan", lin,
-                                   step1a_output, stats=("scenario_plan", scenario_id))
+                                   step1a_output, stats=("scenario_plan", scenario_id),
+                                   gid=sc.get("scenario_gid") or dilemma.get("scenario_gid"))
                 else:
                     with st.expander(":blue[Step 1a — scenario generation (sampled, no model call)]"):
                         if sc:
@@ -305,8 +313,9 @@ else:
                     st.code(d.get("draft_user_message") or d.get("user_message", ""),
                             language=None, wrap_lines=True)
                     common.json_block(d.get("annotation", {}), key="s1b_ann", label="annotation")
-                stage_expander("Step 1b — first attempt (draft)", "step1_dilemmas", lin, step1b_output,
-                               stats=("prompt_draft", scenario_id))
+                stage_expander("Step 1b — prompt draft", "step1_dilemmas", lin, step1b_output,
+                               stats=("prompt_draft", scenario_id),
+                               gid=dilemma.get("prompt_gid"))
 
                 def step1c_output():
                     d = lin.get("dilemma") or {}
@@ -396,11 +405,13 @@ else:
                                    lambda: common.json_block(lin.get("tension_tag"), key="s2tag",
                                                              label="tensions", expanded=True))
 
-                stage_expander("Step 2b — response from the reasoning library", "step2_respond", lin,
+                stage_expander("Step 2b — response draft (first take, scope, reasoning library)",
+                               "step2_respond", lin,
                                lambda: st.code((lin.get("response") or {}).get("assistant_response", ""),
                                                language=None, wrap_lines=True)
                                if lin.get("response") else st.caption("not reached"),
-                               stats=("response_draft", resp_item) if resp_item else None)
+                               stats=("response_draft", resp_item) if resp_item else None,
+                               gid=resp.get("response_gid"))
 
                 def step3_output():
                     if not audit:
@@ -410,7 +421,8 @@ else:
                                      "draft response", "rewritten response", key="s3")
                 stage_expander("Step 3 — rewrite against the distilled principles", "step3_rewrite", lin,
                                step3_output,
-                               stats=("constitution_rewrite", audit.get("response_id")) if audit else None)
+                               stats=("constitution_rewrite", audit.get("response_id")) if audit else None,
+                               gid=audit.get("example_gid"))
 
                 # Distinct moral-patient reasons — from the corpus audit's
                 # --reasons pass (a report file, not a pipeline stage; absent
@@ -443,8 +455,9 @@ else:
                     with st.expander(f":blue[Baseline — plain {base_model}, "
                                      "no system prompt (comparison only)]"):
                         line = _call_stats_line("baseline_response", pid)
-                        if line:
-                            st.caption(f":material/speed: {line}")
+                        bits = [b for b in (baseline_rec.get("plain_gid"), line) if b]
+                        if bits:
+                            st.caption(f":material/speed: {' · '.join(bits)}")
                         st.caption("Control arm: the step-1c user prompt (left panel) sent "
                                    "verbatim to a plain model — no system prompt, no reasoning "
                                    "library, no constitution. Read it against the pipeline's "

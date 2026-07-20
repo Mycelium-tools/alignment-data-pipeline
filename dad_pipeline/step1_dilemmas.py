@@ -60,7 +60,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from shared import api, utils
 from dad_pipeline import compose_scenarios
 from dad_pipeline.compose_scenarios import render_scenario_block as format_scenario  # noqa: F401 (viewer + 1c)
-from dad_pipeline.id_registry import IdRegistry, prompt_fingerprint, scenario_fingerprint
+from dad_pipeline.id_registry import (IdRegistry, prompt_fingerprint, registry_path,
+                                      scenario_fingerprint)
 
 _LIST_FIELDS = ("domain", "user_goal", "values_in_tension", "claims")
 _STR_FIELDS = ("moral_patients", "visibility", "user_attitude", "conflict",
@@ -407,17 +408,6 @@ def _next_id(examples: list[dict], id_start: int) -> str:
     return f"AW-{highest + 1:04d}"
 
 
-def _registry_path(output_dir: Path) -> Path:
-    """The stable-id registry lives at the dad-pipeline output root
-    (<outputs>/dad/id_registry.json), found by walking up to the `runs` dir.
-    Falls back to the output dir's parent for non-standard layouts (e.g. tests
-    passing a bare tmp step-1 dir), which keeps each test isolated."""
-    for anc in output_dir.parents:
-        if anc.name == "runs":
-            return anc.parent / "id_registry.json"
-    return output_dir / "id_registry.json"  # non-standard layout (tests): keep it local
-
-
 def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     cfg = config["dad"]["dilemmas"]
     target = int(cfg.get("count", 40))
@@ -427,7 +417,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     scenarios_path = output_dir / "scenarios.jsonl"
     gate_path = output_dir / "gate.jsonl"
     # Stable content-keyed ids (scenario_gid / prompt_gid), shared across runs.
-    registry = IdRegistry(_registry_path(output_dir))
+    registry = IdRegistry(registry_path(output_dir))
 
     draft_template = prompts_dir / "step1b_dilemmas.txt"
     if not draft_template.exists():
@@ -467,7 +457,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             seen_ids.add(pid)
             record = {
                 "prompt_id": pid,
-                "prompt_gid": f"P-{registry.assign('prompt', prompt_fingerprint(text)):04d}",
+                "prompt_gid": registry.gid("prompt", prompt_fingerprint(text)),
                 "user_message": text,
                 "annotation": _normalize_annotation(rec.get("annotation") or {}),
                 "source": "seed",
@@ -505,7 +495,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
             rng = random.Random(cfg.get("scenario_seed"))
             deals = compose_scenarios.deal_scenarios(target - len(examples), rng, variables_path)
             for p in deals:
-                p["scenario_gid"] = f"S-{registry.assign('scenario', scenario_fingerprint(p)):04d}"
+                p["scenario_gid"] = registry.gid("scenario", scenario_fingerprint(p))
                 utils.append_jsonl(p, deals_path)
             registry.save()
             print(f"  [1a deal] Dealt {len(deals)} stratified scenarios into {deals_path}")
@@ -795,7 +785,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
 
             record = {
                 "prompt_id": _next_id(examples, id_start),
-                "prompt_gid": f"P-{registry.assign('prompt', prompt_fingerprint(user_message)):04d}",
+                "prompt_gid": registry.gid("prompt", prompt_fingerprint(user_message)),
                 "user_message": user_message,
                 # 1b no longer writes an annotation; the dealt labels are the
                 # design, synthesized here for the gate, the checklist, and the

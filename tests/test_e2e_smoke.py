@@ -139,7 +139,9 @@ def test_dad_pipeline_end_to_end_offline(tiny_config_file, outputs_root, stub_cl
     corpus = utils.load_jsonl(run_dir / "final" / "dad_corpus.jsonl")
     assert len(corpus) == N_DAD_PROMPTS
     for record in corpus:
-        assert set(record.keys()) == {"record_id", "messages"}
+        assert set(record.keys()) == {"record_id", "example_gid", "response_gid", "messages"}
+        assert record["example_gid"].startswith("E-")
+        assert record["response_gid"].startswith("R-")
         assert [m["role"] for m in record["messages"]] == ["user", "assistant"]
         # the gate never rewrites: the shipped user message is the 1b draft
         assert record["messages"][0]["content"].startswith("Drafted user message")  # 1c gate passed

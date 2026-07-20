@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
+from dad_pipeline.id_registry import IdRegistry, registry_path, response_fingerprint
 
 
 def enabled(config: dict) -> bool:
@@ -28,6 +29,8 @@ def enabled(config: dict) -> bool:
 def run(config: dict, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
     output_path = output_dir / "baseline_responses.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
+    # Stable content-keyed control-arm ids (C-####), shared across runs.
+    registry = IdRegistry(registry_path(output_dir))
 
     existing = utils.load_jsonl(output_path)
     results = list(existing)
@@ -64,6 +67,7 @@ def run(config: dict, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
             continue
         record = {
             "prompt_id": pid,
+            "plain_gid": registry.gid("plain", response_fingerprint(response)),
             "user_message": d["user_message"],
             "baseline_response": response,
             "model": model or config.get("model"),
@@ -71,6 +75,7 @@ def run(config: dict, output_dir: Path, dilemmas: list[dict]) -> list[dict]:
         results.append(record)
         utils.append_jsonl(record, output_path)
         checkpoint.mark_done(pid)
+        registry.save()
 
     print(f"  Total baseline responses: {len(results)}.")
     return results

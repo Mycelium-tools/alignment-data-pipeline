@@ -1,6 +1,8 @@
 """Stable content-keyed id registry: assignment, reuse, persistence."""
 
-from dad_pipeline.id_registry import IdRegistry, prompt_fingerprint, scenario_fingerprint
+from dad_pipeline.id_registry import (IdRegistry, example_fingerprint, prompt_fingerprint,
+                                      registry_path, response_fingerprint,
+                                      scenario_fingerprint)
 
 
 def test_assigns_incrementing_ids_and_reuses_same_content(tmp_path):
@@ -41,3 +43,28 @@ def test_corrupt_registry_starts_fresh(tmp_path):
     path.write_text("not json{{")
     reg = IdRegistry(path)
     assert reg.assign("scenario", "fp") == 1
+
+
+def test_gid_formats_with_kind_prefix_and_reuses(tmp_path):
+    reg = IdRegistry(tmp_path / "id_registry.json")
+    assert reg.gid("response", "fp-A") == "R-0001"
+    assert reg.gid("plain", "fp-A") == "C-0001"    # separate id space per kind
+    assert reg.gid("example", "fp-A") == "E-0001"
+    assert reg.gid("response", "fp-A") == "R-0001"  # seen content keeps its id
+    assert reg.gid("response", "fp-B") == "R-0002"
+    assert reg.gid("scenario", "fp-A") == "S-0001"
+    assert reg.gid("prompt", "fp-A") == "P-0001"
+
+
+def test_response_and_example_fingerprints_normalize_whitespace():
+    assert response_fingerprint("a  b\n") == response_fingerprint("a b")
+    assert example_fingerprint("u ", "a\n") == example_fingerprint("u", "a")
+    # the pair is ordered — a swapped user/assistant is a different example
+    assert example_fingerprint("u", "a") != example_fingerprint("a", "u")
+
+
+def test_registry_path_walks_up_to_the_runs_root(tmp_path):
+    stage_dir = tmp_path / "outputs" / "dad" / "runs" / "2026-07-01_00-00_x" / "step2"
+    assert registry_path(stage_dir) == tmp_path / "outputs" / "dad" / "id_registry.json"
+    # non-standard layouts (bare tmp dirs in tests) keep the registry local
+    assert registry_path(tmp_path / "bare") == tmp_path / "bare" / "id_registry.json"
