@@ -50,6 +50,10 @@ dad:
   baseline:
     enabled: true            # unguided control response per dilemma (viewer comparison only; never trains)
     model: claude-opus-4-8   # plain call — no system prompt, the shipped user prompt verbatim
+  evals:
+    auto: true  # after every full run: evals/audit_dad.py --reasons + evals/diversity.py on the run dir
+                # (paid: ~$2 reasons pass on a 40-example run + embedding cents, logged to the global
+                # cost log; diversity needs GEMINI_API_KEY or OPENAI_API_KEY). false = run evals manually.
   dilemmas:
     count: 40         # total examples in step 1 (seed imports count toward this)
     id_start: 1       # AW-#### numbering floor; generation continues above any seed IDs

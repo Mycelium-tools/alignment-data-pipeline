@@ -293,6 +293,10 @@ def tiny_config(tmp_path):
                 "gate": True,
             },
             "responses": {"per_prompt": 1},
+            # default-on in real configs, but the auto evals are subprocesses —
+            # outside pytest-socket's reach — so the test config opts out; the
+            # knob itself is covered in test_e2e_smoke.py with subprocess mocked
+            "evals": {"auto": False},
         },
         "language_distribution": {"en": 1.0},
         "outputs": {"cost_log": str(tmp_path / "cost_log.jsonl")},

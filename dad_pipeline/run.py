@@ -17,6 +17,7 @@ never a training input. Toggled by dad.baseline.enabled.
 
 import argparse
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +30,42 @@ from dad_pipeline import (
     step2_responses,
     step3_rewrite,
 )
+
+
+def auto_evals_enabled(config: dict) -> bool:
+    """The post-run evals fire unless dad.evals.auto is explicitly false — a
+    config without the block (older configs, pared-down dev configs) gets them
+    by default (same convention as the baseline arm)."""
+    return bool((config["dad"].get("evals") or {}).get("auto", True))
+
+
+def run_auto_evals(run_dir: Path, config_path: str, root: Path) -> None:
+    """Standard post-run evals: the corpus audit with the paid --reasons pass,
+    then the embedding diversity audit. Each runs as a subprocess — the eval
+    scripts call api.init pointed at the global cost log, which would clobber
+    this process's run-scoped cost-log state if imported. The corpus is
+    already complete before these start, so a failing eval (missing
+    GEMINI_API_KEY, network blip) warns and never fails the run."""
+    config_abs = str(Path(config_path).resolve())
+    jobs = [
+        ("corpus audit + reasons pass",
+         [sys.executable, str(root / "evals" / "audit_dad.py"),
+          "--input", str(run_dir), "--reasons", "--config", config_abs]),
+        ("semantic diversity",
+         [sys.executable, str(root / "evals" / "diversity.py"),
+          "--input", str(run_dir), "--config", config_abs]),
+    ]
+    for name, cmd in jobs:
+        print(f"[Evals] Running {name}...")
+        try:
+            result = subprocess.run(cmd, cwd=root)
+        except OSError as exc:
+            print(f"  WARNING: {name} failed to launch ({exc}).")
+            continue
+        if result.returncode != 0:
+            print(f"  WARNING: {name} exited {result.returncode}; the run itself is "
+                  f"complete — re-run manually: {' '.join(cmd[1:])}")
+        print()
 
 
 def main() -> None:
@@ -125,6 +162,11 @@ def main() -> None:
         )
         print(f"  Running cost: ${api.get_total_cost():.4f}\n")
         print(f"=== Done. {len(final)} records in {final_dir / 'dad_corpus.jsonl'} ===")
+
+        # Standard evals ride at the end of every full run (dad.evals.auto).
+        # Partial runs (--stop-after 1/2) skip them: no final corpus to audit.
+        if final and auto_evals_enabled(config):
+            run_auto_evals(run_dir, args.config, root)
 
     total = api.get_total_cost()
     print(f"Total API cost this session: ${total:.4f}")
