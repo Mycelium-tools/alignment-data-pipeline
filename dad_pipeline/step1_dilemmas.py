@@ -489,15 +489,20 @@ def _registry_path(output_dir: Path) -> Path:
 def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     cfg = config["dad"]["dilemmas"]
     # Config-contract guard, BEFORE any API spend: `refine` used to be the 1c
-    # gate's legacy alias but now names the (unrelated) 1d rewrite stage — a
-    # config that sets refine without gate is written to the OLD semantics,
-    # and guessing would silently flip which stage it toggles.
-    if "refine" in cfg and "gate" not in cfg:
+    # gate's legacy alias but now names the (separate, also-paid) 1d rewrite
+    # stage. A config that sets exactly one of the two keys predates the split
+    # (or never considered the other stage): refine-without-gate would silently
+    # flip which stage the key toggles, and gate-without-refine would silently
+    # opt into a new paid call per example. Neither key set = current defaults
+    # (both on), documented in config.yaml.
+    if ("refine" in cfg) != ("gate" in cfg):
         raise SystemExit(
-            "dad.dilemmas.refine now controls the 1d rewrite stage, not the 1c "
-            "gate (its pre-2026-07-20 meaning). This config sets `refine` "
-            "without `gate` — set both keys explicitly to state which stages "
-            "you want (e.g. gate: true, refine: true).")
+            "dad.dilemmas now has two step-1 quality stages with separate "
+            "toggles: `gate` (1c pass/fail, redrafts rejects) and `refine` "
+            "(1d review-and-rewrite; before 2026-07-20 `refine` was the "
+            "gate's alias). This config sets exactly one of them — set both "
+            "keys explicitly to state which paid stages you want "
+            "(e.g. gate: true, refine: true).")
     target = int(cfg.get("count", 40))
     id_start = int(cfg.get("id_start", 1))
 

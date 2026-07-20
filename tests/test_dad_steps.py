@@ -312,17 +312,19 @@ class TestStep1Run:
         assert resumed_calls == []
         assert len(utils.load_jsonl(tmp_path / "refine_rejects.jsonl")) == 1
 
-    def test_legacy_refine_key_without_gate_is_refused_loudly(
-        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    @pytest.mark.parametrize("dropped", ["gate", "refine"])
+    def test_config_setting_exactly_one_quality_toggle_is_refused_loudly(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude, dropped
     ):
-        # `refine` was the gate's legacy alias; it now toggles the unrelated 1d
-        # stage. A config setting refine WITHOUT gate is written to the old
-        # semantics — guessing would silently flip which stage it controls, so
-        # the run refuses before any API spend.
+        # `refine` was the gate's legacy alias; it now toggles the separate 1d
+        # stage. A config setting exactly one of gate/refine predates the split:
+        # refine-without-gate would silently flip which stage the key controls,
+        # gate-without-refine would silently opt into a new paid call per
+        # example. Both directions refuse before any API spend.
         config = dict(tiny_config)
-        legacy = {k: v for k, v in tiny_config["dad"]["dilemmas"].items()
-                  if k != "gate"}
-        config["dad"] = {"dilemmas": {**legacy, "count": 1, "refine": False}}
+        one_key = {k: v for k, v in tiny_config["dad"]["dilemmas"].items()
+                   if k != dropped}
+        config["dad"] = {"dilemmas": {**one_key, "count": 1}}
         calls = stub_claude([])
         with pytest.raises(SystemExit, match="set both keys explicitly"):
             step1_dilemmas.run(config, prompts_dad, tmp_path)

@@ -278,7 +278,10 @@ def tiny_config(tmp_path):
                 # pinned so the sampled scenarios (and the fields the stub
                 # echoes back) are identical run to run
                 "scenario_seed": 7,
+                # both 1c/1d toggles explicit: the composer refuses configs
+                # that set exactly one (the era-migration ambiguity guard)
                 "gate": True,
+                "refine": True,
             },
             "responses": {"per_prompt": 1},
             # default-on in real configs, but the auto evals are subprocesses —

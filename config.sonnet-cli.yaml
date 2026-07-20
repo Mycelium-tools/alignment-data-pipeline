@@ -29,6 +29,7 @@ dad:
     seed_path: null
     scenario_seed: null
     gate: true
+    refine: true   # 1d review-and-rewrite (separate paid call; see config.yaml)
   responses:
     per_prompt: 1
 
