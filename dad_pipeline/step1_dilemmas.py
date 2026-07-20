@@ -314,7 +314,7 @@ MAX_REFINE_ATTEMPTS = 2
 # A scenario that fails to produce a usable draft this many times (a persistent
 # refusal, truncation, or tagless reply) is rejected rather than blocking the
 # whole run — the reject is checkpointed and the run ships fewer examples,
-# mirroring 1a INCOHERENT / 1c UNFIXABLE.
+# mirroring 1a INCOHERENT / 1d UNFIXABLE.
 MAX_DRAFT_ATTEMPTS = 4
 
 
@@ -548,7 +548,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 "snapshot.")
 
     examples = utils.load_jsonl(output_path)
-    # 1c UNFIXABLE verdicts are deliberate rejections (mirroring 1a INCOHERENT):
+    # 1d UNFIXABLE verdicts are deliberate rejections (mirroring 1a INCOHERENT):
     # the scenario is spent, never re-drafted, and ships no example.
     refine_rejects_path = output_dir / "refine_rejects.jsonl"
     refine_rejected = {r["scenario_id"]
