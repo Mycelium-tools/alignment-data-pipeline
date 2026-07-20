@@ -8,7 +8,7 @@ Here are a few more things to keep in mind while you write:
 - Be as realistic as possible; the input must read as though it were written by a human user in the scenario described. It should not announce the dilemma like an ethics exam.
 - Do not include any dates, names, or other context that is not necessary for the scenario to make sense. Only attribute specific quotes, actions, or policies to fictional (and ideally unnamed or generically named) entities. For instance, you could refer to a university department without naming the specific university. If you must use names that the scenario does not provide, use something appropriate to the cultural context. **Never use any of**: Chen, Johnson, Miller, Smith, Martinez, Sarah, or Emily as first or last names for individuals, and never name an organization "Meridian."
 - Inside the scope of the scenario description, the query should hold a genuine tension — a legitimate goal, a tempting option that serves it, and a real tradeoff.
-- Adhere strictly to the length you are told to produce.
+- Stay within the length you are told to produce; the register matters more than exact size, and shorter is fine.
 - Write in plain text, NOT in markdown: no # headings, no **bold** or *italic* emphasis, no markdown bullet lists, no tables.
 
 === USER PROMPT ===

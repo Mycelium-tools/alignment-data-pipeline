@@ -605,11 +605,11 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         draft = dilemma.get("draft_user_message")
         if draft is None and dilemma.get("refine_failed"):
             draft = dilemma.get("user_message", "")
-            r.warnings.append("Every 1c attempt was unusable — the 1b draft shipped unrefined "
+            r.warnings.append("Every 1d refine attempt was unusable — the 1b draft shipped unrefined "
                               "(raw outputs in step1/refine_failures.jsonl).")
         elif draft is None:
             r.is_llm_call = False
-            r.warnings.append("This run did not use the 1c review pass (dad.dilemmas.refine was off).")
+            r.warnings.append("This run did not use the 1d refine pass (dad.dilemmas.refine was off).")
             return r
         # 2026-07 rework: single-scenario refine rendered exactly the way the
         # pipeline renders it. Pre-rework snapshots keep the old template path.
