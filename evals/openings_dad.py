@@ -203,12 +203,11 @@ def embedding_report(run_dir: Path, stage: str, threshold: float = 0.9) -> None:
 
 
 def prompt_length_report(run_dir: Path) -> dict:
-    """User-message length audit for step 1: overall spread, plus — on runs
-    whose records carry a dealt ``length_class`` — realized chars per class and
-    any records outside their class's lenient band (assigned vs realized is the
-    check that the dice mechanism holds through 1b and 1c)."""
-    from dad_pipeline.compose_scenarios import length_band
-
+    """User-message length audit for step 1: overall char spread, plus — on runs
+    whose records carry a dealt ``length_class`` — realized chars per class. The
+    dealt length register is an instruction to the model, not an enforced band,
+    so this is purely descriptive: it shows what each register realized as,
+    never a pass/fail against a target."""
     recs = [r for r in utils.load_jsonl(run_dir / "step1" / "dilemmas.jsonl")
             if (r.get("user_message") or "").strip()]
     if not recs:
@@ -223,26 +222,16 @@ def prompt_length_report(run_dir: Path) -> dict:
     for r in recs:
         if r.get("length_class"):
             by_class[r["length_class"]].append(len(r["user_message"].strip()))
-    out_of_band = []
-    # short → long: order classes by their band's lower bound
-    for cls in sorted(by_class, key=lambda c: length_band(c) or (0, 0)):
+    # short → long: order classes by their realized median (no bands to sort by)
+    for cls in sorted(by_class, key=lambda c: sorted(by_class[c])[len(by_class[c]) // 2]):
         vals = sorted(by_class[cls])
-        band = length_band(cls)
-        if band is None:  # unknown class (e.g. record predates the band table)
-            print(f"    {cls:>16}: n={len(vals)}, chars {vals[0]}-{vals[-1]} (no band)")
-            continue
-        lo, hi = band
-        bad = [v for v in vals if not lo <= v <= hi]
-        out_of_band.extend((cls, v) for v in bad)
-        flag = f"  <-- {len(bad)} outside band [{lo}, {hi}]" if bad else ""
         print(f"    {cls:>16}: n={len(vals)}, chars {vals[0]}-{vals[-1]}, "
-              f"median {vals[len(vals) // 2]}{flag}")
+              f"median {vals[len(vals) // 2]}")
     if not by_class:
         print("    (records carry no length_class — pre-dice run)")
     return {"n": len(recs), "median": median, "min": lens[0], "max": lens[-1],
             "over_1000": sum(l > 1000 for l in lens),
-            "by_class": {c: sorted(v) for c, v in by_class.items()},
-            "out_of_band": out_of_band}
+            "by_class": {c: sorted(v) for c, v in by_class.items()}}
 
 
 def main() -> None:

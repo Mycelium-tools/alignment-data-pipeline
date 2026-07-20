@@ -263,3 +263,62 @@ class TestAuditSurvivalChartRows:
     def test_no_survival_anywhere_gives_empty(self):
         assert rendering.audit_survival_chart_rows({"AW-0001": {"plain": {}}}) == []
         assert len(rendering.AUDIT_SURVIVAL_CATEGORIES) == len(rendering.AUDIT_SURVIVAL_COLORS)
+
+
+class TestComposedGateRefineRendering:
+    """Composed 1c gate + 1d refine runs: BOTH stages must be renderable —
+    the gate must never short-circuit the refine view (the stage split's whole
+    point is that both calls are real, paid, and reviewable)."""
+
+    @staticmethod
+    def _composed_run(tmp_path):
+        import random
+        import shutil
+
+        from dad_pipeline import compose_scenarios as cs
+
+        run = tmp_path / "run"
+        (run / "inputs" / "prompts").mkdir(parents=True)
+        for name in ("step1_gate.txt", "step1c_refine.txt"):
+            shutil.copy(rendering.REPO_ROOT / "prompts" / "dad" / name
+                        if hasattr(rendering, "REPO_ROOT")
+                        else f"prompts/dad/{name}",
+                        run / "inputs" / "prompts" / name)
+        scenario = cs.deal_scenarios(1, random.Random(3))[0]
+        scenario["scenario_description"] = "A designed situation."
+        lineage = {
+            "scenario": scenario,
+            "gate": {"passed": True, "failures": [], "attempt": 1},
+            "dilemma": {
+                "scenario_id": scenario["scenario_id"],
+                "user_message": "Refined final text.",
+                "draft_user_message": "Judged draft text.",
+                "annotation": {"visibility": "explicit", "leverage": "their personal choices"},
+            },
+        }
+        manifest = {"manifest_version": 2, "git_commit": None}
+        return run, manifest, lineage
+
+    def test_gate_stage_renders_the_judged_draft(self, tmp_path):
+        run, manifest, lineage = self._composed_run(tmp_path)
+        r = rendering.render_prompt("dad", "step1_gate", run, manifest, lineage)
+        assert r.is_llm_call
+        # the gate judged the PRE-refine draft, not the shipped rewrite
+        assert "Judged draft text." in (r.user or "")
+        assert any("PASS" in w for w in r.warnings)
+
+    def test_refine_stage_renders_even_when_the_gate_ran(self, tmp_path):
+        # regression: the old single-stage view short-circuited to the gate
+        # whenever gate.jsonl had a record, hiding the refine call entirely
+        run, manifest, lineage = self._composed_run(tmp_path)
+        r = rendering.render_prompt("dad", "step1_refine", run, manifest, lineage)
+        assert r.is_llm_call
+        assert "Judged draft text." in (r.user or "")     # the draft under review
+        assert "<draft_prompt>" in (r.user or "")
+
+    def test_gate_stage_marks_not_run_on_pre_gate_lineage(self, tmp_path):
+        run, manifest, lineage = self._composed_run(tmp_path)
+        lineage["gate"] = None
+        r = rendering.render_prompt("dad", "step1_gate", run, manifest, lineage)
+        assert not r.is_llm_call
+        assert any("did not use the 1c gate" in w for w in r.warnings)

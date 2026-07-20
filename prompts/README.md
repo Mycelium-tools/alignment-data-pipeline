@@ -89,7 +89,13 @@ Key commitments: the user owns the dilemma (never an AI-agent scenario); every t
 
 **Input:** the scenario, the 1b draft prompt, and its annotation (for context).
 
-**Output:** a pass/fail verdict — `{"pass", "failures"}` — never rewritten text. See the template for the checks it applies. A rejected draft is routed back through 1b (with the gate's reasons injected) and redrafted, capped at a few attempts; a scenario still failing after the cap ships with `gate_failures` stamped. Controlled by config `dad.dilemmas.gate` (legacy key `refine` still honored); verdicts are logged to `step1/gate.jsonl`.
+**Output:** a pass/fail verdict — `{"pass", "failures"}` — never rewritten text. See the template for the checks it applies. A rejected draft is routed back through 1b (with the gate's reasons injected) and redrafted, capped at a few attempts; a scenario still failing after the cap ships with `gate_failures` stamped. Controlled by config `dad.dilemmas.gate`; verdicts are logged to `step1/gate.jsonl`.
+
+### `dad/step1c_refine.txt` (sub-stage 1d — optional, on by default)
+
+**Input:** the scenario description, the gate-passed 1b draft, and the dealt cards it must honor (surface form, visibility, attitude, opening move, closing move, persona, length).
+
+**Output:** editor notes in prose, then the rewritten user message inside `<revised_user_prompt>` tags — or `<unfixable>reason</unfixable>` when no rewrite can fix the draft (the scenario is then rejected like 1a's INCOHERENT, checkpointed to `step1/refine_rejects.jsonl`). The rewrite thins corpus tics without scrubbing human texture, keeps the user from handing the assistant its answer (calibrated to the dealt visibility), enforces the dealt cards, and checks leverage/pivot, coherence, and self-containedness. The gate REDRAFTS scenario-level failures from scratch; the refine REWRITES surface problems in place. Controlled by config `dad.dilemmas.refine`; before/after pairs are logged to `step1/refinements.jsonl`.
 
 ### `dad/reasoning_library.csv` (+ `reasoning_library_ABOUT.md`)
 

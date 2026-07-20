@@ -309,41 +309,49 @@ else:
                                stats=("prompt_draft", scenario_id))
 
                 def step1c_output():
+                    # 1c gate: pass/fail on the 1b draft, never a rewrite. On
+                    # composed runs a passing draft goes on to the 1d refine;
+                    # on gate-era runs it shipped directly.
                     d = lin.get("dilemma") or {}
                     gate = lin.get("gate")
-                    if gate is not None:
-                        # Gate-era runs (2026-07, superseded): 1c was a pass/fail
-                        # gate, not a rewrite — the shipped prompt is the 1b draft.
-                        passed = gate.get("passed")
-                        if passed is True:
-                            st.success("Gate: PASSED — the 1b draft shipped unchanged.")
-                        elif passed is False:
-                            st.error("Gate: FAILED after the redraft cap — shipped anyway, "
-                                     "flagged with gate_failures.")
-                        else:
-                            st.caption(":material/warning: gate reply unusable after retries — "
-                                       "the draft shipped (raws in step1/gate_failures.jsonl)")
-                        for f in (gate.get("failures") or d.get("gate_failures") or []):
-                            st.write(f"- {f}")
+                    if gate is None:
+                        st.caption("not run (dad.dilemmas.gate was off, or the "
+                                   "run predates the gate)")
                         return
-                    # Refine runs (current pipeline, and pre-gate legacy):
-                    # keep the draft→refined diff.
+                    passed = gate.get("passed")
+                    if passed is True:
+                        st.success("Gate: PASSED — the draft went on to shipping/refine.")
+                    elif passed is False:
+                        st.error("Gate: FAILED after the redraft cap — shipped anyway, "
+                                 "flagged with gate_failures.")
+                    else:
+                        st.caption(":material/warning: gate reply unusable after retries — "
+                                   "the draft shipped (raws in step1/gate_failures.jsonl)")
+                    for f in (gate.get("failures") or d.get("gate_failures") or []):
+                        st.write(f"- {f}")
+                stage_expander("Step 1c — quality gate (pass/fail)",
+                               "step1_gate", lin, step1c_output,
+                               stats=("prompt_gate", scenario_id))
+
+                def step1d_output():
+                    # 1d refine: the draft→refined rewrite (also the sole 1c
+                    # stage on pre-gate legacy runs).
+                    d = lin.get("dilemma") or {}
                     if d.get("refine_failed"):
                         st.caption(":material/warning: every refine attempt was unusable — "
                                    "the 1b draft shipped unrefined (raw outputs in "
                                    "step1/refine_failures.jsonl)")
                         return
                     if d.get("draft_user_message") is None:
-                        st.caption("not run (dad.dilemmas.gate/refine was off for this run)")
+                        st.caption("not run (dad.dilemmas.refine was off for this run)")
                         return
                     if d.get("refine_notes"):
                         st.info(f"Notes: {d['refine_notes']}")
                     common.show_diff(d["draft_user_message"], d.get("user_message", ""),
-                                     "1b draft", "1c refined", key="s1c")
-                gate_tag = "prompt_gate" if lin.get("gate") else "prompt_refine"
-                stage_expander("Step 1c — gate (pass/fail; legacy: review & rewrite)",
-                               "step1_refine", lin, step1c_output,
-                               stats=(gate_tag, scenario_id))
+                                     "1b draft", "refined", key="s1d")
+                stage_expander("Step 1d — refine (review & rewrite; legacy 1c)",
+                               "step1_refine", lin, step1d_output,
+                               stats=("prompt_refine", scenario_id))
 
                 scope_rec = lin.get("scope") or {}
                 sel_source = scope_rec.get("selection_source")

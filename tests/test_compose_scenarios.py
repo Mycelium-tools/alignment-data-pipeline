@@ -57,6 +57,14 @@ class TestDealScenarios:
         assert traps, "no trap forms dealt across 60 scenarios"
         assert all(p["visibility"] == HIDDEN and p["user_attitude"] == UNAWARE for p in traps)
 
+    def test_explicit_visibility_never_dealt_with_unaware(self):
+        explicit = cs.resolve_value(VALUES["visibility"], "explicit")
+        batch = [p for seed in range(6) for p in cs.deal_scenarios(10, random.Random(seed))]
+        explicit_atts = {p["user_attitude"] for p in batch if p["visibility"] == explicit}
+        assert UNAWARE not in explicit_atts
+        assert any(p["user_attitude"] == UNAWARE for p in batch), \
+            "unaware never dealt across 60 scenarios"
+
     def test_magnitude_joins_severity_and_scope(self):
         batch = cs.deal_scenarios(40, random.Random(5))
         for p in batch:
@@ -232,19 +240,43 @@ class TestRenderAndExtract:
         p["length_class"] = "2-3-sentences"
         assert "- Length: two to three sentences" in cs.render_scenario_block(p)
 
-    def test_length_ok_bands_are_lenient_and_fail_open_for_legacy(self):
-        ramble = next(v for v in VALUES["length"] if "ramble" in v)
-        short = next(v for v in VALUES["length"] if "sentences" in v and "paragraph" not in v)
-        assert not cs.length_ok("way too short", ramble)
-        assert not cs.length_ok("x" * 5000, short)
-        assert cs.length_ok("A blunt ask about the corridor?", short)
-        assert cs.length_ok("x" * 1200, ramble)
-        # legacy short labels keep their bands; unknown/missing classes pass
-        assert not cs.length_ok("way too short", "ramble")
-        assert cs.length_ok("anything", None)
-        assert cs.length_ok("anything", "unknown-class")
+    def test_style_moves_dealt_and_remapped_on_register_conflicts(self):
+        values, _ = cs.load_axes(cs.DEFAULT_VARIABLES)
+        casual = cs.resolve_value(values["opening_move"], "with a casual")
+        task = cs.resolve_value(values["opening_move"], "with the task")
+        formal = cs.resolve_value(values["persona"], "a stiffly formal")
+        trailing = cs.resolve_value(values["closing_move"], "trailing off")
+        after = cs.resolve_value(values["closing_move"], "on a secondary")
+        explicit_ask = cs.resolve_value(values["surface_form"], "explicitly asks")
 
+        # seed 9 deals the rare formal-persona x casual-open collision (S-005)
+        batch = [p for seed in (0, 1, 2, 9) for p in cs.deal_scenarios(40, random.Random(seed))]
+        assert all(p["opening_move"] and p["closing_move"] for p in batch)
+        open_hits = close_hits = 0
+        for p in batch:
+            raw = p["variables"]
+            if raw["persona"] == formal and raw["opening_move"] == casual:
+                open_hits += 1
+                assert p["opening_move"] == task  # remapped: formal desk never opens "Okay so"
+            if raw["surface_form"] == explicit_ask and raw["closing_move"] == trailing:
+                close_hits += 1
+                assert p["closing_move"] == after  # remapped: the explicit ask must survive
+        assert open_hits and close_hits, "no raw collisions dealt — rules untested (vacuous)"
+        # non-colliding deals keep their raw moves verbatim
+        assert any(p["opening_move"] == p["variables"]["opening_move"] for p in batch)
 
+    def test_refine_prompt_binds_the_dealt_cards(self, prompts_dad):
+        template = (prompts_dad / "step1c_refine.txt").read_text(encoding="utf-8")
+        p = cs.deal_scenarios(1, random.Random(7))[0]
+        p["scenario_description"] = "A scenario."
+        _system, user = cs.render_refine_prompt(p, "the draft", template)
+        for key in ("surface_form", "visibility", "user_attitude",
+                    "opening_move", "closing_move"):
+            assert p[key] in user
+        # legacy pre-plan scenarios carry no cards: fall back, don't KeyError
+        legacy = {"scenario_description": "Old scenario.", "length_class": ""}
+        _system, user = cs.render_refine_prompt(legacy, "the draft", template)
+        assert "(not recorded for this scenario" in user
 class TestArchetypes:
     """The reserved-slot mechanism: cross-axis conjunctions guaranteed a share
     of every run by trading cards between deals (compose_scenarios.ARCHETYPES).

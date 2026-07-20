@@ -569,36 +569,60 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.system, r.user = _format_split(tpl(draft_name), r.variables, r)
         return r
 
-    if stage == "step1_refine":
+    if stage == "step1_gate":
+        # 1c gate: pass/fail judgment on the 1b draft (text never edited). On
+        # composed runs the judged draft is draft_user_message (the pre-refine
+        # text); gate-era runs shipped the draft as user_message directly.
         dilemma = lineage.get("dilemma") or {}
         scenario = lineage.get("scenario") or {}
         gate = lineage.get("gate")
-        if gate is not None:
-            # Current pipeline: 1c is a pass/fail gate, not a rewrite — the draft
-            # it judged is the shipped user_message (text is never edited).
-            verdict = ("PASS" if gate.get("passed") is True
-                       else "FAIL" if gate.get("passed") is False else "unusable")
-            reasons = "; ".join(gate.get("failures") or [])
-            r.warnings.append(f"1c gate verdict: {verdict}" + (f" — {reasons}" if reasons else ""))
-            r.variables = {
-                "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",
-                "draft_prompt": dilemma.get("user_message", ""),
-                "annotation_block": format_annotation(
-                    {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
-            }
-            r.system, r.user = _format_split(tpl("step1_gate.txt"), r.variables, r)
+        if gate is None:
+            r.is_llm_call = False
+            r.warnings.append("This run did not use the 1c gate (dad.dilemmas.gate "
+                              "was off, or the run predates it).")
             return r
-        # 1c reviews the 1b draft; draft_user_message is present only when refine
-        # succeeded. refine_failed records made (and paid for) the call(s) but
-        # kept the 1b draft — which is then the stored user_message.
+        verdict = ("PASS" if gate.get("passed") is True
+                   else "FAIL" if gate.get("passed") is False else "unusable")
+        reasons = "; ".join(gate.get("failures") or [])
+        r.warnings.append(f"1c gate verdict: {verdict}" + (f" — {reasons}" if reasons else ""))
+        judged = dilemma.get("draft_user_message") or dilemma.get("user_message", "")
+        r.variables = {
+            "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",
+            "draft_prompt": judged,
+            "annotation_block": format_annotation(
+                {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
+        }
+        r.system, r.user = _format_split(tpl("step1_gate.txt"), r.variables, r)
+        return r
+
+    if stage == "step1_refine":
+        dilemma = lineage.get("dilemma") or {}
+        scenario = lineage.get("scenario") or {}
+        # 1d reviews the (gate-passed) 1b draft; draft_user_message is present
+        # only when refine succeeded. refine_failed records made (and paid for)
+        # the call(s) but kept the 1b draft — which is then the stored
+        # user_message.
         draft = dilemma.get("draft_user_message")
         if draft is None and dilemma.get("refine_failed"):
             draft = dilemma.get("user_message", "")
-            r.warnings.append("Every 1c attempt was unusable — the 1b draft shipped unrefined "
+            r.warnings.append("Every 1d refine attempt was unusable — the 1b draft shipped unrefined "
                               "(raw outputs in step1/refine_failures.jsonl).")
         elif draft is None:
             r.is_llm_call = False
-            r.warnings.append("This run did not use the 1c review pass (dad.dilemmas.refine was off).")
+            r.warnings.append("This run did not use the 1d refine pass (dad.dilemmas.refine was off).")
+            return r
+        # 2026-07 rework: single-scenario refine rendered exactly the way the
+        # pipeline renders it. Pre-rework snapshots keep the old template path.
+        refine_t = get_template(run_dir, commit, "step1c_refine.txt", pipeline)
+        if refine_t.text is not None:
+            r.template_sources.append(refine_t)
+            try:
+                r.system, r.user = compose_scenarios.render_refine_prompt(
+                    scenario, draft, refine_t.text)
+            except (KeyError, IndexError, ValueError) as e:
+                r.warnings.append(f"Template step1c_refine.txt did not format cleanly ({e!r}) — "
+                                  "template/record schema drift; showing raw template.")
+                r.user = refine_t.text
             return r
         r.variables = {
             "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",

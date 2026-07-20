@@ -81,6 +81,11 @@ _cc_demoted: str | None = None
 # the retried ClaudeCodeError path, so we don't match bare "rate limit" /
 # "limit reached" here.
 _LIMIT_PATTERN = re.compile(r"usage limit|spend limit", re.IGNORECASE)
+# The CLI's content-policy refusal (observed: "Claude Code is unable to respond
+# to this request, which appears to violate our Usage Policy"). Distinct from
+# the window-limit class: per-item, non-retryable, never a backend demotion.
+_REFUSAL_PATTERN = re.compile(r"usage policy|unable to respond to this request",
+                              re.IGNORECASE)
 
 # Claude Code treats an empty --system-prompt as unset and substitutes its own
 # agentic CLI prompt, which leaks tool/codebase behavior into generated text.
@@ -109,6 +114,16 @@ class UsageLimitExceeded(Exception):
 
 class ClaudeCodeError(Exception):
     """Transient claude_code backend failure; retried by tenacity."""
+
+
+class ClaudeCodeRefusal(Exception):
+    """The subscription path refused this request on content/policy grounds.
+
+    Not transient — retrying re-serves the same content — and not the
+    backend's health, so it must never demote an auto run. call_claude
+    converts it to the api leg's refusal shape (empty text,
+    stop_reason='refusal') so the callers' per-item rejection machinery
+    handles it like any other refusal."""
 
 
 def init(config_path: str = "config.yaml", cost_log_path: str | Path | None = None) -> None:
@@ -309,6 +324,8 @@ def _classify_claude_code_error(message: str) -> Exception:
             "Progress is checkpointed — wait for your usage window to reset, "
             "then continue this run with --resume."
         )
+    if _REFUSAL_PATTERN.search(message):
+        return ClaudeCodeRefusal(message)
     return ClaudeCodeError(message)
 
 
@@ -574,6 +591,19 @@ def call_claude(
                 system=full_system,
                 user_message=user_message,
             )
+        except ClaudeCodeRefusal as e:
+            # A content/policy refusal is per-item, not the backend's health:
+            # surface it exactly like the api leg's refusal (empty text,
+            # stop_reason='refusal') so the callers' per-item rejection
+            # machinery handles it. One refused item must never abort a run —
+            # or, under auto, demote the whole backend.
+            print(f"  WARNING: claude_code refused this request on policy grounds "
+                  f"(model {resolved_model}) — surfaced as stop_reason='refusal'. "
+                  f"{str(e).splitlines()[0][:160]}", file=sys.stderr)
+            _log_usage(resolved_model, 0, 0, cost_usd=0.0, stage=stage,
+                       item_id=item_id, duration_s=time.monotonic() - started,
+                       attempts=_attempt_state.n, backend="claude_code")
+            return ("", "refusal") if return_stop_reason else ""
         except (UsageLimitExceeded, ClaudeCodeError, RuntimeError) as e:
             if _backend != "auto":
                 raise

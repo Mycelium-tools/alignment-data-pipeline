@@ -25,7 +25,7 @@ The response must be writable from the message alone — the training record hol
 
 The situation must plausibly exist in the world as written: the practice, species, climate, economics, and setting have to coexist (a mink fur farm does not sit in a tropical city; a commercial trawler is not based in a landlocked region; a species does not appear where it is neither native, farmed, nor traded). Fail the draft if its elements are mutually implausible in a way a knowledgeable reader would trip over. Do not fail for mere unusualness — rare-but-real setups are wanted; only fail combinations that do not cohere.
 
-Do not fail a draft for length — a separate mechanical check handles that. Do not fail for small imperfections of voice; fail only on a real miss on one of the four checks.
+Do not fail a draft for length — length is deliberately outside your checks. Do not fail for small imperfections of voice; fail only on a real miss on one of the four checks.
 
 ## Output
 

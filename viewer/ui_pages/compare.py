@@ -173,20 +173,28 @@ else:
             d = lin.get("dilemma") or {}
             if stage == "step1_dilemmas":
                 return d.get("draft_user_message") or d.get("user_message"), None
-            if stage == "step1_refine":
+            if stage == "step1_gate":
+                # 1c gate: pass/fail on the 1b draft, never a rewrite. The text
+                # at this stage is the judged draft (pre-refine on composed
+                # runs); the verdict rides the note.
                 gate = lin.get("gate")
-                if gate is not None:
-                    # Gate run: no rewrite — the shipped text is the 1b draft.
-                    passed = gate.get("passed")
-                    verdict = ("gate: passed" if passed is True
-                               else "gate: FAILED, shipped anyway" if passed is False
-                               else "gate: unusable reply, shipped")
-                    reasons = "; ".join(gate.get("failures") or [])
-                    return d.get("user_message"), verdict + (f" — {reasons}" if reasons else "")
+                if gate is None:
+                    return None, "1c gate did not run for this record"
+                passed = gate.get("passed")
+                verdict = ("gate: passed" if passed is True
+                           else "gate: FAILED, shipped anyway" if passed is False
+                           else "gate: unusable reply, shipped")
+                reasons = "; ".join(gate.get("failures") or [])
+                judged = d.get("draft_user_message") or d.get("user_message")
+                return judged, verdict + (f" — {reasons}" if reasons else "")
+            if stage == "step1_refine":
+                # 1d refine: the rewrite (also the sole 1c stage on pre-gate
+                # legacy runs). The gate no longer short-circuits this view —
+                # on composed runs both stages ran and both must show.
                 if d.get("refine_failed"):
-                    return d.get("user_message"), "every 1c attempt was unusable — the 1b draft shipped"
+                    return d.get("user_message"), "every refine attempt was unusable — the 1b draft shipped"
                 if d.get("draft_user_message") is None:
-                    return None, "1c did not run for this record"
+                    return None, "refine did not run for this record"
                 note = f"notes: {d['refine_notes']}" if d.get("refine_notes") else None
                 return d.get("user_message"), note
             if stage == "step2_scope":
@@ -208,7 +216,8 @@ else:
         # page's prompt-then-output shape, diffed across the two runs.
         st.markdown("#### Stage by stage — inputs and outputs")
         stages = [("step1_dilemmas", "Step 1b — first attempt (draft)"),
-                  ("step1_refine", "Step 1c — review & rewrite"),
+                  ("step1_gate", "Step 1c — quality gate (pass/fail)"),
+                  ("step1_refine", "Step 1d — refine (review & rewrite)"),
                   ("step2_scope", "Step 2a — scope"),
                   ("step2_select", "Step 2a.5 — library selection"),
                   ("step2_respond", "Step 2b — response draft"),

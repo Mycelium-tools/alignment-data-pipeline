@@ -7,9 +7,11 @@ is human reference about the library, not read by the pipeline):
   the seven axes prompts/dad/step2_scope.txt defines (mirrored in _SCOPE_AXES
   below — keep the two in sync). A scope that fails to parse or is missing an
   axis is retried with a fresh call (raw outputs kept in
-  step2/scope_failures.jsonl); after MAX_SCOPE_ATTEMPTS the run stops rather
-  than generate a response over an empty scope, which would silently optimize
-  the wrong node.
+  step2/scope_failures.jsonl); after MAX_SCOPE_ATTEMPTS the prompt is rejected
+  (step2/scope_rejects.jsonl, skipped on resume, run ships fewer examples)
+  rather than generate a response over an empty scope, which would silently
+  optimize the wrong node — and rather than aborting the whole run over one
+  persistently refused prompt.
 - 2a.5 select: a dedicated retrieval call per prompt (step2_select.txt:
   trigger index + scope + user message → comma-separated entry ids; model
   dad.response_select_model falling back to response_scope_model, stage
@@ -188,9 +190,18 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
     # One work item per dilemma with anything left to do: derive an up-front
     # to-do (scope needed? which samples missing?) so completed work never
     # reaches a worker — resume stays free.
+    # Prompts whose scope stayed unusable across MAX_SCOPE_ATTEMPTS on a prior
+    # pass (persistent refusal/empty replies) are deliberate rejections — the
+    # prompt is spent, skipped on resume, and the run ships fewer examples
+    # (mirroring 1b draft rejects and 1a INCOHERENT).
+    scope_rejects_path = output_dir / "scope_rejects.jsonl"
+    scope_rejected = {r["prompt_id"] for r in utils.load_jsonl(scope_rejects_path)}
+
     pending = []
     for d in dilemmas:
         pid = d["prompt_id"]
+        if pid in scope_rejected:
+            continue
         need_scope = pid not in scopes
         missing_samples = [i for i in range(per_prompt)
                            if (pid, i) not in done_keys
@@ -334,13 +345,19 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
         if out["select_failure"] is not None:
             utils.append_jsonl(out["select_failure"], output_dir / "select_failures.jsonl")
         if out["scope_failed"]:
-            # Results already yielded are safely persisted; --resume retries the
-            # rest (in-flight work from other threads is deliberately not kept).
-            raise RuntimeError(
-                f"2a scope for {pid} unusable after {MAX_SCOPE_ATTEMPTS} attempts; "
-                f"raw outputs are in {output_dir / 'scope_failures.jsonl'}. "
-                "Refusing to generate over an empty scope — rerun with --resume to retry."
-            )
+            # A persistently unusable scope (empty/refused replies across
+            # MAX_SCOPE_ATTEMPTS) rejects this one prompt rather than aborting
+            # the run: checkpointed, skipped on resume, no response generated
+            # over an empty scope.
+            utils.append_jsonl({"prompt_id": pid,
+                                "attempts": MAX_SCOPE_ATTEMPTS,
+                                "reason": "scope unusable"},
+                               scope_rejects_path)
+            scope_rejected.add(pid)
+            print(f"    {pid}: scope unusable after {MAX_SCOPE_ATTEMPTS} attempts "
+                  f"— prompt rejected, no example shipped (raws in "
+                  f"{(output_dir / 'scope_failures.jsonl').name}).")
+            continue
         if out["scope_record"] is not None:
             scopes[pid] = out["scope_record"]
             utils.append_jsonl(out["scope_record"], scopes_path)
@@ -355,5 +372,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
             utils.append_jsonl(record, output_path)
             checkpoint.mark_done(f"{record['prompt_id']}_s{record['sample_index']}")
 
+    if scope_rejected:
+        print(f"  {len(scope_rejected)} prompt(s) rejected at 2a (scope unusable) — "
+              f"this run ships fewer examples (rejections in {scope_rejects_path.name}).")
     print(f"  Total responses: {len(results)}.")
     return results

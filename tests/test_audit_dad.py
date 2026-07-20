@@ -483,20 +483,19 @@ def test_locale_flags_recorded_as_detail_lines():
 
 
 def test_lengths_section_rows_added_without_reprinting(tmp_path, capsys):
-    from dad_pipeline.compose_scenarios import length_band
     msg = "Short. Two."
     run = _write_run(tmp_path, [
-        {"prompt_id": "AW-0001", "length_class": "2-3-sentences", "user_message": msg},
+        {"prompt_id": "AW-0001", "length_class": "a short paragraph", "user_message": msg},
     ])
     report = {}
     audit_dad.audit_lengths(run, report)
     sec = report["sections"][0]
     by_label = {r["label"]: r for r in sec["rows"]}
     assert by_label["prompt lengths"]["value"].startswith("1 prompts")
-    assert by_label["2-3-sentences"]["value"] == f"n=1, chars {len(msg)}-{len(msg)}, median {len(msg)}"
-    lo, hi = length_band("2-3-sentences")
-    expected = "GOOD" if lo <= len(msg) <= hi else "BAD"
-    assert by_label["records outside their band"]["verdict"] == expected
+    assert by_label["a short paragraph"]["value"] == (
+        f"n=1, chars {len(msg)}-{len(msg)}, median {len(msg)}")
+    # length is descriptive now: no band pass/fail row
+    assert "records outside their band" not in by_label
     # rows mirror prompt_length_report's own printing — they must not re-print
     assert capsys.readouterr().out.count("prompt lengths") == 1
 

@@ -383,6 +383,49 @@ class TestClassifyClaudeCodeError:
     def test_transient_error_is_retryable(self, message):
         assert isinstance(api._classify_claude_code_error(message), api.ClaudeCodeError)
 
+    def test_content_policy_refusal_is_a_refusal_not_an_error(self):
+        # The AW-0027-era wall: a per-item policy refusal must be neither
+        # retried (same content, same verdict) nor treated as backend death.
+        message = ("API Error: Claude Code is unable to respond to this request, "
+                   "which appears to violate our Usage Policy "
+                   "(https://www.anthropic.com/legal/aup). Try rephrasing.")
+        err = api._classify_claude_code_error(message)
+        assert isinstance(err, api.ClaudeCodeRefusal)
+        assert not isinstance(err, api.ClaudeCodeError)      # tenacity won't retry it
+        assert not isinstance(err, api.UsageLimitExceeded)   # and it isn't the window
+
+
+class TestClaudeCodeRefusalSurface:
+    def _init_cc(self, tiny_config, tmp_path, backend):
+        import yaml
+        tiny_config["backend"] = backend
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text(yaml.safe_dump(tiny_config))
+        api.init(str(cfg), cost_log_path=tmp_path / "cost.jsonl")
+
+    def test_refusal_surfaces_as_refusal_stop_reason(self, tiny_config, tmp_path, monkeypatch):
+        self._init_cc(tiny_config, tmp_path, "claude_code")
+
+        def refuse(**kw):
+            raise api.ClaudeCodeRefusal("violates our Usage Policy")
+
+        monkeypatch.setattr(api, "_call_claude_code_with_retry", refuse)
+        text, stop = api.call_claude(user_message="u", system_prompt="s",
+                                     max_tokens=100, return_stop_reason=True)
+        assert (text, stop) == ("", "refusal")
+
+    def test_refusal_never_demotes_the_auto_backend(self, tiny_config, tmp_path, monkeypatch):
+        self._init_cc(tiny_config, tmp_path, "auto")
+
+        def refuse(**kw):
+            raise api.ClaudeCodeRefusal("violates our Usage Policy")
+
+        monkeypatch.setattr(api, "_call_claude_code_with_retry", refuse)
+        text, stop = api.call_claude(user_message="u", system_prompt="s",
+                                     max_tokens=100, return_stop_reason=True)
+        assert (text, stop) == ("", "refusal")
+        assert api._cc_demoted is None  # per-item verdict, not backend health
+
 
 class TestResolveClaudeCodeSystem:
     def test_nonempty_system_passes_through_silently(self, capsys):
