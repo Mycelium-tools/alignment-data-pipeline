@@ -488,6 +488,16 @@ def _registry_path(output_dir: Path) -> Path:
 
 def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     cfg = config["dad"]["dilemmas"]
+    # Config-contract guard, BEFORE any API spend: `refine` used to be the 1c
+    # gate's legacy alias but now names the (unrelated) 1d rewrite stage — a
+    # config that sets refine without gate is written to the OLD semantics,
+    # and guessing would silently flip which stage it toggles.
+    if "refine" in cfg and "gate" not in cfg:
+        raise SystemExit(
+            "dad.dilemmas.refine now controls the 1d rewrite stage, not the 1c "
+            "gate (its pre-2026-07-20 meaning). This config sets `refine` "
+            "without `gate` — set both keys explicitly to state which stages "
+            "you want (e.g. gate: true, refine: true).")
     target = int(cfg.get("count", 40))
     id_start = int(cfg.get("id_start", 1))
 
@@ -509,7 +519,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                              "the DAD pipeline cannot run without it.")
 
     # Step 1c: pass/fail quality gate on each draft (never a rewrite). On by
-    # default; disable with dad.dilemmas.gate: false.
+    # default; disable with dad.dilemmas.gate: false (the refine-without-gate
+    # config ambiguity is refused at the top of run(), before any spend).
     gate_enabled = bool(cfg.get("gate", True))
     if gate_enabled and not (prompts_dir / "step1_gate.txt").exists():
         raise SystemExit("dad.dilemmas.gate is on but prompts/dad/step1_gate.txt is missing.")
@@ -762,8 +773,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     accepted = {e.get("scenario_id") for e in examples if e.get("scenario_id")}
     workers = int(config.get("workers", 1))
     draft_model = config["dad"].get("prompt_draft_model")
-    gate_model = (config["dad"].get("prompt_gate_model")
-                  or config["dad"].get("prompt_refine_model"))
+    # No fallback to prompt_refine_model: that knob now belongs to the 1d
+    # rewrite stage, and inheriting it here would silently retarget the gate
+    # when a user configures 1d.
+    gate_model = config["dad"].get("prompt_gate_model")
     draft_attempts: dict[str, int] = {}  # sid -> hard draft failures so far
     passes = 0
     # Per-scenario gate bookkeeping across drafting passes: how many times a

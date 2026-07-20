@@ -104,7 +104,7 @@ class TestStep1Run:
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "refine": False}}
+                                      "count": 1, "gate": True, "refine": False}}
         gate_calls = {"n": 0}
 
         def flaky_gate(user_message, **kw):
@@ -132,7 +132,7 @@ class TestStep1Run:
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "refine": False}}
+                                      "count": 1, "gate": True, "refine": False}}
 
         def bad_gate(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
@@ -160,7 +160,7 @@ class TestStep1Run:
         # redrafted with the gate's reasons injected into the next attempt.
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "refine": False}}
+                                      "count": 1, "gate": True, "refine": False}}
         gate_calls = {"n": 0}
 
         def reject_then_pass(user_message, **kw):
@@ -199,7 +199,7 @@ class TestStep1Run:
         # so the failure is visible — the loop must terminate, never SystemExit.
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "refine": False}}
+                                      "count": 1, "gate": True, "refine": False}}
 
         def always_reject(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
@@ -312,6 +312,22 @@ class TestStep1Run:
         assert resumed_calls == []
         assert len(utils.load_jsonl(tmp_path / "refine_rejects.jsonl")) == 1
 
+    def test_legacy_refine_key_without_gate_is_refused_loudly(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # `refine` was the gate's legacy alias; it now toggles the unrelated 1d
+        # stage. A config setting refine WITHOUT gate is written to the old
+        # semantics — guessing would silently flip which stage it controls, so
+        # the run refuses before any API spend.
+        config = dict(tiny_config)
+        legacy = {k: v for k, v in tiny_config["dad"]["dilemmas"].items()
+                  if k != "gate"}
+        config["dad"] = {"dilemmas": {**legacy, "count": 1, "refine": False}}
+        calls = stub_claude([])
+        with pytest.raises(SystemExit, match="set both keys explicitly"):
+            step1_dilemmas.run(config, prompts_dad, tmp_path)
+        assert calls == []  # refused before any spend
+
     def test_off_length_draft_is_accepted_without_retry(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
@@ -339,7 +355,7 @@ class TestStep1Run:
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "refine": False, "gate": False}}
+                                      "count": 1, "gate": True, "refine": False, "gate": False}}
         draft_calls = {"n": 0}
 
         def flaky_draft(user_message, **kw):
@@ -1342,11 +1358,22 @@ class TestPerStageModelKnobs:
             "constitution_rewrite_model": "m-3",
         }
 
+        config["dad"]["prompt_refine_model"] = "m-1d"
         calls = stub_claude(_dad_step1_dispatch)
         step1_dilemmas.run(config, prompts_dad, tmp_path / "step1")
         by_stage = {c["stage"]: c for c in calls}
         assert by_stage["prompt_draft"]["model"] == "m-1b"
         assert by_stage["prompt_gate"]["model"] == "m-1c"
+        assert by_stage["prompt_refine"]["model"] == "m-1d"
+
+        # the knobs are independent: prompt_refine_model configures 1d ONLY —
+        # the gate never inherits it (its pre-composition legacy fallback)
+        no_gate_knob = {k: v for k, v in config["dad"].items() if k != "prompt_gate_model"}
+        calls = stub_claude(_dad_step1_dispatch)
+        step1_dilemmas.run({**config, "dad": no_gate_knob}, prompts_dad, tmp_path / "step1b")
+        by_stage = {c["stage"]: c for c in calls}
+        assert by_stage["prompt_gate"]["model"] is None  # global, not m-1d
+        assert by_stage["prompt_refine"]["model"] == "m-1d"
 
         calls = stub_claude(_dad_step2_dispatch)
         step2_responses.run(config, prompts_dad, tmp_path / "step2", [_dilemma()])
