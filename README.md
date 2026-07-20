@@ -76,7 +76,7 @@ Run: `python dad_pipeline/run.py --config config.yaml --label dev`
 
 ## Prompts (`prompts/`)
 
-Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the SDF stages (the variables matrix + plan, draft, rewrite, score templates, each with labeled SYSTEM/USER sections); `prompts/dad/` covers the DAD sub-stages (scenario draft, refine, scope, respond, rewrite) plus the dilemma prompt spec and the reasoning library CSV. `prompts/README.md` documents each prompt in detail.
+Plain-text prompt templates with `{variable}` placeholders. `prompts/sdf/` covers the SDF stages (the variables matrix + plan, draft, rewrite, score templates, each with labeled SYSTEM/USER sections); `prompts/dad/` covers the DAD sub-stages (scenario plan, draft, gate, scope, respond, rewrite) plus the dilemma prompt spec and the reasoning library CSV. `prompts/README.md` documents each prompt in detail.
 
 ---
 
@@ -220,7 +220,7 @@ Then run:
 python dad_pipeline/run.py --config config.yaml
 ```
 
-With 5 dilemmas this is roughly 20 API calls (1 draft batch + 5 refine + 5 scope + 5 responses + 5 rewrites). Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
+With 5 dilemmas this is roughly 40 API calls (per dilemma: scenario plan, draft, gate, baseline, scope, library select, response, rewrite). Final output is `outputs/dad/latest/final/dad_corpus.jsonl`.
 
 > **Handwritten examples are optional.** Set `dad.dilemmas.seed_path` to a JSONL of your own examples (`{"prompt": ..., "annotation": {...}}`) and step 1 imports them before generating; generated IDs continue the AW-#### series above the highest seed ID.
 

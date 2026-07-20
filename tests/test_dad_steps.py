@@ -35,22 +35,24 @@ def _dad_step1_dispatch(user_message, **kw):
         return dad_scenario_plan_reply(user_message)
     if "generate a fictional user input" in blob:  # 1b single-scenario draft
         return dad_scenario_reply(user_message)
-    if "editor of dilemma prompts" in blob:  # 1c refine
-        return json.dumps({"prompt": "Refined user message.", "notes": "relocated the lever"})
+    if "gate for dilemma prompts" in blob:  # 1c gate — pass verdict
+        return json.dumps({"pass": True, "failures": []})
     raise AssertionError(f"Unrecognized step-1 prompt: {user_message[:80]!r}")
 
 
 class TestStep1Run:
-    def test_drafts_scenarios_and_refines(self, tiny_config, prompts_dad, tmp_path, stub_claude):
+    def test_drafts_scenarios_and_gates(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         calls = stub_claude(_dad_step1_dispatch)
         examples = step1_dilemmas.run(tiny_config, prompts_dad, tmp_path)
 
         assert len(examples) == 2
         assert [e["prompt_id"] for e in examples] == ["AW-0001", "AW-0002"]
         for e in examples:
-            assert e["user_message"] == "Refined user message."  # 1c output
-            # the stub pads drafts to their dealt length band, so match the stem
-            assert e["draft_user_message"].startswith("Drafted user message")
+            # the gate never rewrites: the shipped prompt is the 1b draft (the
+            # stub pads it to its dealt length band, so match the stem)
+            assert e["user_message"].startswith("Drafted user message")
+            assert "draft_user_message" not in e  # no rewrite → no before/after
+            assert "gate_failures" not in e        # passed the gate
             # 1b writes no annotation: the record's annotation is the dealt labels
             assert e["annotation"]["visibility"] and e["annotation"]["leverage"]
             assert not e["annotation"].get("claims")
@@ -60,8 +62,8 @@ class TestStep1Run:
             # stable content-keyed ids assigned alongside the per-run ids
             assert e["scenario_gid"].startswith("S-")
             assert e["prompt_gid"].startswith("P-")
-        # persisted artifacts: deals + planned scenarios (1a), dilemmas (1b/1c),
-        # refinements log, and the Part-4 checklist report
+        # persisted artifacts: deals + planned scenarios (1a), dilemmas (1b),
+        # gate verdicts (1c), and the Part-4 checklist report
         assert len(utils.load_jsonl(tmp_path / "scenario_deals.jsonl")) == 2
         scenarios = utils.load_jsonl(tmp_path / "scenarios.jsonl")
         assert len(scenarios) == 2
@@ -69,11 +71,13 @@ class TestStep1Run:
         assert all(s["scenario_description"] for s in scenarios)  # the plan ran
         assert (tmp_path / "id_registry.json").exists()  # registry persisted
         assert len(utils.load_jsonl(tmp_path / "dilemmas.jsonl")) == 2
-        assert len(utils.load_jsonl(tmp_path / "refinements.jsonl")) == 2
+        gate = utils.load_jsonl(tmp_path / "gate.jsonl")
+        assert len(gate) == 2 and all(g["passed"] is True for g in gate)
+        assert not (tmp_path / "refinements.jsonl").exists()  # rewriter is gone
         saved = (tmp_path / "checklist.txt").read_text()
         assert saved.startswith("Batch checklist (spec Part 4):")
         assert "load-bearing" in saved
-        # 2 plan calls + 2 single-scenario draft calls + 2 refine calls
+        # 2 plan calls + 2 single-scenario draft calls + 2 gate calls
         assert len(calls) == 6
         # the plan's description reaches each 1b drafting prompt, one per call
         draft_calls = [c for c in calls
@@ -81,63 +85,130 @@ class TestStep1Run:
         assert len(draft_calls) == 2
         assert all("<scenario_description>" in c["user_message"] for c in draft_calls)
         assert {c["item_id"] for c in draft_calls} == {"S-001", "S-002"}
-        # the synthesized (dealt-labels) annotation reaches the 1c prompt
-        refine_call = next(c["user_message"] for c in calls
-                           if "editor of dilemma prompts" in c["system_prompt"])
-        assert "Visibility:" in refine_call and "Leverage:" in refine_call
+        # the synthesized (dealt-labels) annotation reaches the gate prompt
+        gate_call = next(c["user_message"] for c in calls
+                         if "gate for dilemma prompts" in c["system_prompt"])
+        assert "Visibility:" in gate_call and "Leverage:" in gate_call
 
-    def test_unusable_refine_is_retried_once_and_raw_kept(
+    def test_unusable_gate_reply_is_retried_once_and_raw_kept(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
                                       "count": 1}}
-        refine_calls = {"n": 0}
+        gate_calls = {"n": 0}
 
-        def flaky_refine(user_message, **kw):
+        def flaky_gate(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
                 return dad_scenario_plan_reply(user_message)
-            if "editor of dilemma prompts" in _sysuser(user_message, kw):
-                refine_calls["n"] += 1
-                if refine_calls["n"] == 1:
+            if "gate for dilemma prompts" in _sysuser(user_message, kw):
+                gate_calls["n"] += 1
+                if gate_calls["n"] == 1:
                     return "not json at all"
-                return json.dumps({"prompt": "Refined user message.", "notes": "n"})
+                return json.dumps({"pass": True, "failures": []})
             return dad_scenario_reply(user_message)
 
-        calls = stub_claude(flaky_refine)
+        calls = stub_claude(flaky_gate)
         examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
 
-        assert len(calls) == 4  # 1 plan + 1 draft + 2 refine attempts
-        assert examples[0]["user_message"] == "Refined user message."
-        assert "refine_failed" not in examples[0]
-        failures = utils.load_jsonl(tmp_path / "refine_failures.jsonl")
+        assert len(calls) == 4  # 1 plan + 1 draft + 2 gate attempts
+        assert examples[0]["user_message"].startswith("Drafted user message")
+        assert "gate_failures" not in examples[0]  # passed on the retry
+        failures = utils.load_jsonl(tmp_path / "gate_failures.jsonl")
         assert len(failures) == 1
         assert failures[0]["attempt"] == 1 and failures[0]["raw"] == "not json at all"
 
-    def test_refine_unusable_after_retries_keeps_draft_and_stamps_record(
+    def test_gate_unusable_after_retries_ships_draft_fail_open(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
                                       "count": 1}}
 
-        def bad_refine(user_message, **kw):
+        def bad_gate(user_message, **kw):
             if "write a description of a specific scenario" in _sysuser(user_message, kw):
                 return dad_scenario_plan_reply(user_message)
-            if "editor of dilemma prompts" in _sysuser(user_message, kw):
+            if "gate for dilemma prompts" in _sysuser(user_message, kw):
                 return "still not json"
             return dad_scenario_reply(user_message)
 
-        calls = stub_claude(bad_refine)
+        calls = stub_claude(bad_gate)
         examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
 
-        assert len(calls) == 4  # 1 plan + 1 draft + MAX_REFINE_ATTEMPTS refine attempts
+        assert len(calls) == 4  # 1 plan + 1 draft + MAX_GATE_ATTEMPTS gate attempts
         e = examples[0]
-        assert e["refine_failed"] is True
-        assert e["user_message"].startswith("Drafted user message")  # 1b draft shipped
-        assert "draft_user_message" not in e  # only set when refine succeeded
-        assert len(utils.load_jsonl(tmp_path / "refine_failures.jsonl")) == 2
-        assert utils.load_jsonl(tmp_path / "refinements.jsonl") == []
+        # fail-open: an unusable verdict ships the 1b draft unstamped (a weak
+        # verdict is not a fail verdict), and the run does not stall
+        assert e["user_message"].startswith("Drafted user message")
+        assert "gate_failures" not in e
+        assert len(utils.load_jsonl(tmp_path / "gate_failures.jsonl")) == 2
+        assert utils.load_jsonl(tmp_path / "gate.jsonl")[-1]["passed"] is None
+
+    def test_gate_rejection_routes_scenario_back_for_redraft(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # A fail verdict discards the draft; the scenario stays pending and is
+        # redrafted with the gate's reasons injected into the next attempt.
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1}}
+        gate_calls = {"n": 0}
+
+        def reject_then_pass(user_message, **kw):
+            if "write a description of a specific scenario" in _sysuser(user_message, kw):
+                return dad_scenario_plan_reply(user_message)
+            if "gate for dilemma prompts" in _sysuser(user_message, kw):
+                gate_calls["n"] += 1
+                if gate_calls["n"] == 1:
+                    return json.dumps({"pass": False,
+                                       "failures": ["welfare not load-bearing"]})
+                return json.dumps({"pass": True, "failures": []})
+            return dad_scenario_reply(user_message)
+
+        calls = stub_claude(reject_then_pass)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1
+        assert "gate_failures" not in examples[0]  # the redraft passed
+        # plan + 1b + gate(fail) + 1b(redraft) + gate(pass)
+        assert len(calls) == 5
+        # the redraft carried the prior rejection reason into the draft prompt
+        second_draft = [c for c in calls
+                        if "generate a fictional user input" in (c["system_prompt"] or "")][1]
+        assert "welfare not load-bearing" in second_draft["user_message"]
+        assert "PRIOR ATTEMPT" in second_draft["user_message"]
+        # both verdicts logged, newest last
+        gate = utils.load_jsonl(tmp_path / "gate.jsonl")
+        assert [g["passed"] for g in gate] == [False, True]
+        # a gate rejection is not a parse failure — nothing lands in draft_failures
+        assert utils.load_jsonl(tmp_path / "draft_failures.jsonl") == []
+
+    def test_gate_rejection_cap_ships_last_draft_with_failures(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Gate always fails: after MAX_GATE_REDRAFTS the last draft ships, stamped
+        # so the failure is visible — the loop must terminate, never SystemExit.
+        config = dict(tiny_config)
+        config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
+                                      "count": 1}}
+
+        def always_reject(user_message, **kw):
+            if "write a description of a specific scenario" in _sysuser(user_message, kw):
+                return dad_scenario_plan_reply(user_message)
+            if "gate for dilemma prompts" in _sysuser(user_message, kw):
+                return json.dumps({"pass": False, "failures": ["still decorative"]})
+            return dad_scenario_reply(user_message)
+
+        calls = stub_claude(always_reject)
+        examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
+
+        assert len(examples) == 1
+        e = examples[0]
+        assert e["gate_failures"] == ["still decorative"]
+        assert e["user_message"].startswith("Drafted user message")  # last draft shipped
+        n = step1_dilemmas.MAX_GATE_REDRAFTS
+        assert len(calls) == 1 + 2 * n  # 1 plan + n × (1b draft + gate)
+        assert len(utils.load_jsonl(tmp_path / "gate.jsonl")) == n
 
     def test_length_violating_draft_is_retried_not_checkpointed(
         self, tiny_config, prompts_dad, tmp_path, stub_claude
@@ -155,7 +226,7 @@ class TestStep1Run:
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
                                       "count": 1,
-                                      "scenario_seed": seed, "refine": False}}
+                                      "scenario_seed": seed, "gate": False}}
         batch_calls = {"n": 0}
 
         def short_then_valid(user_message, **kw):
@@ -182,7 +253,7 @@ class TestStep1Run:
     ):
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "refine": False}}
+                                      "count": 1, "gate": False}}
         draft_calls = {"n": 0}
 
         def flaky_draft(user_message, **kw):
@@ -215,7 +286,7 @@ class TestStep1Run:
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
                                       "count": 1, "scenario_seed": seed,
-                                      "refine": False}}
+                                      "gate": False}}
         draft_calls = {"n": 0}
 
         def always_too_long(user_message, **kw):
@@ -275,7 +346,7 @@ class TestStep1Run:
         utils.append_jsonl(legacy_scenario, tmp_path / "scenarios.jsonl")
         config = dict(tiny_config)
         config["dad"] = {"dilemmas": {**tiny_config["dad"]["dilemmas"],
-                                      "count": 1, "refine": False}}
+                                      "count": 1, "gate": False}}
 
         calls = stub_claude(_dad_step1_dispatch)
         examples = step1_dilemmas.run(config, prompts_dad, tmp_path)
@@ -1015,7 +1086,7 @@ class TestPerStageModelKnobs:
         config["dad"] = {
             **tiny_config["dad"],
             "prompt_draft_model": "m-1b",
-            "prompt_refine_model": "m-1c",
+            "prompt_gate_model": "m-1c",
             "response_scope_model": "m-2a",
             "response_select_model": "m-2a5",
             "response_draft_model": "m-2b",
@@ -1026,7 +1097,7 @@ class TestPerStageModelKnobs:
         step1_dilemmas.run(config, prompts_dad, tmp_path / "step1")
         by_stage = {c["stage"]: c for c in calls}
         assert by_stage["prompt_draft"]["model"] == "m-1b"
-        assert by_stage["prompt_refine"]["model"] == "m-1c"
+        assert by_stage["prompt_gate"]["model"] == "m-1c"
 
         calls = stub_claude(_dad_step2_dispatch)
         step2_responses.run(config, prompts_dad, tmp_path / "step2", [_dilemma()])
@@ -1063,7 +1134,7 @@ class TestPerStageModelKnobs:
         assert draft_ids == scenario_ids
         by_stage = {c["stage"]: c for c in calls}
         assert by_stage["scenario_plan"]["item_id"] in scenario_ids
-        assert by_stage["prompt_refine"]["item_id"] in scenario_ids
+        assert by_stage["prompt_gate"]["item_id"] in scenario_ids
 
         calls = stub_claude(_dad_step2_dispatch)
         step2_responses.run(tiny_config, prompts_dad, tmp_path / "step2", [_dilemma()])

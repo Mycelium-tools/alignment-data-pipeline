@@ -571,16 +571,18 @@ def extract_description(plan: str) -> str | None:
 DEFAULT_PERSONA = "the person described in the scenario"
 
 
-def render_draft_prompt(scenario: dict, template: str) -> tuple[str | None, str]:
+def render_draft_prompt(scenario: dict, template: str,
+                        redraft_feedback: str = "") -> tuple[str | None, str]:
     """Render the step-1b draft prompt for ONE scenario: (system, user).
 
     The 1b template is single-scenario (SDF layer-3 style): it receives the
     plan's scenario description, the persona voice, and the dealt length
     register. A pre-plan legacy scenario (no scenario_description) falls back
     to its rendered card — the dealt labels ARE its scenario description —
-    so a resumed old run never drafts from an empty block. Any other
-    placeholder in the template raises KeyError — the render is the contract
-    check."""
+    so a resumed old run never drafts from an empty block. ``redraft_feedback``
+    fills the {redraft_feedback} slot on a gate-rejected redraft (empty on a
+    first attempt). Any other placeholder in the template raises KeyError —
+    the render is the contract check."""
     raw = scenario.get("variables") or {}
     persona = raw.get("persona") or scenario.get("persona") or DEFAULT_PERSONA
     # The RAW dealt value (not the None-mapped record field), so the axis's
@@ -593,6 +595,7 @@ def render_draft_prompt(scenario: dict, template: str) -> tuple[str | None, str]
         persona=persona,
         cultural_setting=cultural,
         length=scenario.get("length_class", ""),
+        redraft_feedback=redraft_feedback,
     )
     return matrix.split_sections(rendered)
 

@@ -527,7 +527,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.variables = {
             "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",
             "draft_prompt": draft,
-            # mirror refine_draft: claims are excluded from the 1c call
+            # the legacy 1c refine call excluded claims from its view
             "annotation_block": format_annotation(
                 {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
         }

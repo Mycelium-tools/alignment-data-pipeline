@@ -290,7 +290,7 @@ def tiny_config(tmp_path):
                 # pinned so the sampled scenarios (and the fields the stub
                 # echoes back) are identical run to run
                 "scenario_seed": 7,
-                "refine": True,
+                "gate": True,
             },
             "responses": {"per_prompt": 1},
         },
