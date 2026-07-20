@@ -97,6 +97,7 @@ def _write_dad_run(root, name, examples):
                     "annotation": ann, "scenario_gid": e.get("scenario_gid"),
                     "prompt_gid": e.get("prompt_gid")})
         rew.append({"record_id": rid, "prompt_id": e["prompt_id"], "sample_index": 0,
+                    "example_gid": e.get("example_gid"),
                     "user_message": e["user_message"], "annotation": ann,
                     "rewritten_response": resp, "draft_response": "draft"})
         fin.append({"record_id": rid,
@@ -173,6 +174,42 @@ class TestDadLineageBaseline:
     def test_runs_without_baseline_records_get_none(self, tmp_path):
         run = _write_dad_run(tmp_path, "A", [{"prompt_id": "AW-0001", "user_message": "U"}])
         assert loader.dad_lineage(run, "A-rec-0")["baseline"] is None
+
+
+class TestDadExampleLabels:
+    def test_maps_prompt_ids_to_example_gids_skipping_unlabeled(self, tmp_path):
+        run = _write_dad_run(tmp_path, "A", [
+            {"prompt_id": "AW-0001", "user_message": "u1", "example_gid": "E-0042"},
+            {"prompt_id": "AW-0002", "user_message": "u2"},  # pre-gid record
+        ])
+        assert loader.dad_example_labels(run) == {"AW-0001": "E-0042"}
+
+    def test_run_without_rewrites_gives_empty_map(self, tmp_path):
+        assert loader.dad_example_labels(tmp_path / "nothing") == {}
+
+
+class TestDadLibraryInfo:
+    def test_pulls_ids_and_moves_come_from_the_run_snapshot(self, tmp_path):
+        run = tmp_path / "run"
+        _write_jsonl(run / "step2" / "scopes.jsonl", [
+            {"prompt_id": "AW-0001", "entry_ids": ["C1", "T2"]},
+            {"prompt_id": "AW-0002"},  # pre-selection record: no entry_ids
+        ])
+        (run / "inputs" / "prompts").mkdir(parents=True)
+        (run / "inputs" / "prompts" / "reasoning_library.csv").write_text(
+            "id,category,claim,reasoning,trigger_condition,transferable_move\n"
+            'C1,Conduct,c,r,t,"move one"\n'
+            'T2,Topic,c,r,t,"move two"\n', encoding="utf-8")
+
+        pulls, ids, moves = loader.dad_library_info(run)
+
+        assert pulls == {"AW-0001": ["C1", "T2"]}
+        assert ids == ["C1", "T2"]
+        assert moves == {"C1": "move one", "T2": "move two"}
+
+    def test_empty_run_degrades_to_empty_pulls(self, tmp_path):
+        pulls, _ids, _moves = loader.dad_library_info(tmp_path / "nothing")
+        assert pulls == {}
 
 
 class TestLoadAudit:

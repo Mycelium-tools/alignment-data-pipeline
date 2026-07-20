@@ -237,12 +237,113 @@ def audit_stock_phrase_rows(stock_phrases: dict) -> list[dict]:
 AUDIT_ARM_COLUMNS = ("plain Claude", "pipeline")
 AUDIT_ARM_COLORS = ("#D97757", "#3FB366")
 
+# How the audit page buckets sections, in display order.
+AUDIT_GROUP_ORDER = ("prompt", "response", "library", "paid", "other")
 
-def audit_length_chart_rows(per_case: dict) -> list[dict]:
+# Fallback group + gloss by title prefix, for reports written before
+# evals/audit_dad.py stamped `group`/`gloss` on each section. New sections need
+# no entry here — the eval's fields win whenever present.
+AUDIT_SECTION_META = {
+    "Structural skeletons": ("prompt", "Do many user prompts share one plot skeleton "
+                             "(e.g. 'must produce something by a deadline')? 'other' is "
+                             "the healthy bucket."),
+    "Openers & closers": ("prompt", "Do the user prompts keep starting and ending the "
+                          "same way? Counts distinct first-three-words at each end."),
+    "Unrealized dealt details": ("prompt", "When a scenario was dealt a frontier frame, "
+                                 "does the shipped prompt actually mention it? A flag is "
+                                 "a prompt to eyeball, not a hard failure."),
+    "Locale / taxa plausibility": ("prompt", "Flags animal-practice × region pairings "
+                                   "that don't cohere (e.g. fur farming in the tropics)."),
+    "Length-class realization": ("prompt", "Each prompt was dealt a target length class "
+                                 "— did the shipped text land inside its band?"),
+    "Insider-vocabulary leak": ("response", "Academic/EA vocabulary leaking into "
+                                "user-facing replies. What the pipeline ADDS over plain "
+                                "Claude is scaffolding bleed, not model style."),
+    "Response lengths": ("response", "Are pipeline replies much longer than plain "
+                         "Claude's to the same prompts? The median ratio carries the "
+                         "verdict."),
+    "Stock phrases": ("response", "Recurring pet phrases across responses, in both "
+                      "arms. The pipeline-vs-plain gap is the training-data signal."),
+    "Lexical diversity": ("response", "How varied the wording is. Distinct-n = share of "
+                          "n-word runs used only once (higher = more varied); Self-BLEU "
+                          "= how much the corpus echoes itself (lower is better). "
+                          "Compare arms and runs, never absolutes."),
+    "Structural variation": ("response", "Does every reply take the same visual shape "
+                             "(paragraphs, bullets, headings)? Only visible over the set."),
+    "Response openings": ("response", "Do responses keep opening with the same move? "
+                          "'other' is the healthy bucket; hint-echo = parroting the "
+                          "opening-hint card's wording."),
+    "Reasoning-library selection": ("library", "How many reasoning-library rows the "
+                                    "retrieval call pulled per case; the full-library "
+                                    "fallback should be rare."),
+    "Reasoning-library coverage": ("library", "Which library entries this corpus ever "
+                                   "pulled. Never-selected entries are starved moves."),
+    "Moral-patient reasons": ("paid", "Paid LLM pass: does the pipeline widen the moral "
+                              "reasoning or just lengthen replies? 'Survival' = which of "
+                              "plain Claude's reasons the pipeline kept."),
+}
+
+
+def _audit_section_meta(section: dict) -> tuple[str, str]:
+    title = section.get("title", "")
+    for prefix, meta in AUDIT_SECTION_META.items():
+        if title.startswith(prefix):
+            return meta
+    return ("other", "")
+
+
+def audit_section_group(section: dict) -> str:
+    """The section's display bucket: the eval-stamped `group` field when
+    present, the title-prefix fallback for pre-field reports, 'other' for
+    unknown future sections (they still render, unbucketed)."""
+    return section.get("group") or _audit_section_meta(section)[0]
+
+
+def audit_section_gloss(section: dict) -> str:
+    """The plain-language line under a section title — eval-stamped `gloss`
+    first, title-prefix fallback for old reports, empty when unknown."""
+    return section.get("gloss") or _audit_section_meta(section)[1]
+
+
+_VERDICT_SEVERITY = {"BAD": 3, "OK": 2, "GOOD": 1}
+
+
+def audit_verdict_summary(report: dict) -> list[dict]:
+    """One row per section for the top-of-page overview, in report order:
+    the WORST verdict any row carries (BAD > OK > GOOD; None when the section
+    is purely informational), per-verdict counts, and whether the section was
+    skipped on this input (from report["skipped_sections"])."""
+    skipped_titles = {s.get("section") for s in report.get("skipped_sections") or []}
+    out = []
+    for sec in report.get("sections") or []:
+        counts = {"GOOD": 0, "OK": 0, "BAD": 0}
+        worst = None
+        for row in sec.get("rows") or []:
+            v = row.get("verdict")
+            if v in counts:
+                counts[v] += 1
+                if _VERDICT_SEVERITY[v] > _VERDICT_SEVERITY.get(worst, 0):
+                    worst = v
+        out.append({"section": sec.get("title", ""),
+                    "group": audit_section_group(sec),
+                    "worst": worst, "counts": counts,
+                    "skipped": sec.get("title") in skipped_titles})
+    return out
+
+
+def audit_record_label(pid: str, labels: dict | None) -> str:
+    """Display label for an audit per_case record: the stable example gid
+    (E-####) when the run carries one, else the per-run prompt id unchanged
+    (pre-gid runs)."""
+    return (labels or {}).get(pid, pid)
+
+
+def audit_length_chart_rows(per_case: dict, labels: dict | None = None) -> list[dict]:
     """Response-length per_case ({pid: {pipeline: chars, plain: chars|None}})
     as wide-form rows (one per record, one column per arm) so the chart can
-    pin each arm's color. Pure so it stays testable."""
-    return [{"record": pid,
+    pin each arm's color. `labels` maps prompt ids to display labels (the
+    example gids). Pure so it stays testable."""
+    return [{"record": audit_record_label(pid, labels),
              "plain Claude": per_case[pid].get("plain"),
              "pipeline": per_case[pid].get("pipeline") or 0}
             for pid in sorted(per_case)]
@@ -300,17 +401,67 @@ def audit_survival_groups(case: dict) -> list[tuple[str, list[str]]] | None:
     ]
 
 
-def audit_reason_chart_rows(per_case: dict) -> list[dict]:
+def audit_reason_chart_rows(per_case: dict, labels: dict | None = None) -> list[dict]:
     """Moral-patient-reasons per_case ({pid: {arm: {reasons, chars, ...}}})
     as wide-form rows (unique-reason counts, one column per arm). Fallback
     chart for reports without survival data."""
     rows = []
     for pid in sorted(per_case):
         plain, pipe = per_case[pid].get("plain"), per_case[pid].get("pipeline")
-        rows.append({"record": pid,
+        rows.append({"record": audit_record_label(pid, labels),
                      "plain Claude": len(plain["reasons"]) if plain else None,
                      "pipeline": len(pipe["reasons"]) if pipe else None})
     return rows
+
+
+# Library-retrieval marks ride the reason charts in a light blue that belongs
+# to neither arm (terracotta plain / green pipeline) — pulls are scaffolding
+# provenance, not reasons.
+AUDIT_PULL_COLOR = "#74A9CF"
+
+
+def audit_pull_count_rows(pulls: dict, labels: dict | None = None) -> list[dict]:
+    """Per-record library-pull rows ({pid: [entry ids]}) for the 2a.5 selection
+    section's bar chart: one row per record with the pull count and the joined
+    ids so the hover tooltip can show WHICH entries were pulled."""
+    return [{"record": audit_record_label(pid, labels),
+             "count": len(pulls[pid]),
+             "entries": ", ".join(pulls[pid])}
+            for pid in sorted(pulls)]
+
+
+def audit_pull_scatter_rows(per_case: dict, pulls: dict,
+                            labels: dict | None = None) -> list[dict]:
+    """Retrieval-width vs added-reasoning rows: one per record that has both a
+    survival judgment and a 2a.5 pull record — library rows pulled against the
+    reasons the pipeline ADDED beyond plain Claude. Backs the scatter that asks
+    whether wider retrieval drives new reasoning; the joined entry ids ride
+    along for the hover tooltip."""
+    rows = []
+    for pid in sorted(per_case):
+        surv = (per_case[pid] or {}).get("survival")
+        if not surv or pid not in pulls:
+            continue
+        rows.append({"record": audit_record_label(pid, labels),
+                     "pulled": len(pulls[pid]),
+                     "added": len(surv.get("added") or []),
+                     "entries": ", ".join(pulls[pid])})
+    return rows
+
+
+def audit_trigger_count_rows(pulls: dict, library_ids: list[str],
+                             moves: dict | None = None) -> list[dict]:
+    """Corpus-level trigger counts: one row per library entry, in library
+    order, counting the CASES that pulled it (per-case dedup, matching the
+    audit's coverage numbers). Never-pulled entries stay in with count 0 —
+    the gaps are the signal."""
+    fires: dict[str, int] = {}
+    for ids in pulls.values():
+        for eid in set(ids):
+            fires[eid] = fires.get(eid, 0) + 1
+    return [{"entry": eid, "cases": fires.get(eid, 0),
+             "move": (moves or {}).get(eid, "")}
+            for eid in library_ids]
 
 
 # Survival stacked chart: per record, plain-anchored reasons bucketed by their
@@ -323,7 +474,7 @@ AUDIT_SURVIVAL_CATEGORIES = ("✓ kept", "〜 weakened", "✗ dropped", "➕ add
 AUDIT_SURVIVAL_COLORS = ("#D97757", "#EFB09A", "#8F3E1F", "#3FB366")
 
 
-def audit_survival_chart_rows(per_case: dict) -> list[dict]:
+def audit_survival_chart_rows(per_case: dict, labels: dict | None = None) -> list[dict]:
     """Long-form rows for the stacked survival chart, one row per record ×
     category, each carrying the joined reason texts so the chart's hover
     tooltip can show WHICH reasons sit in the segment. Empty when no record
@@ -342,7 +493,8 @@ def audit_survival_chart_rows(per_case: dict) -> list[dict]:
         buckets["➕ added"] = [str(x) for x in surv.get("added") or []]
         for order, cat in enumerate(AUDIT_SURVIVAL_CATEGORIES):
             if buckets[cat]:
-                rows.append({"record": pid, "category": cat, "stack_order": order,
+                rows.append({"record": audit_record_label(pid, labels),
+                             "category": cat, "stack_order": order,
                              "count": len(buckets[cat]),
                              "reasons": " • ".join(buckets[cat])})
     return rows

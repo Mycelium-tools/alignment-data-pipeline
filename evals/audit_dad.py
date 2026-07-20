@@ -30,6 +30,7 @@ import argparse
 import json
 import math
 import re
+import statistics
 import sys
 from collections import Counter
 from pathlib import Path
@@ -70,11 +71,14 @@ def _fmt(label: str, value: str, verdict: str | None = None, note: str = "") -> 
 # Every printed line is also recorded into report["sections"] so the JSON file
 # carries the exact display rows (labels, values, verdicts, detail lines) the
 # terminal showed — the viewer's Corpus audit page renders from there rather
-# than duplicating the threshold logic above.
+# than duplicating the threshold logic above. Each section also carries a
+# `group` (prompt / response / library / paid — how the viewer buckets it) and
+# a plain-language `gloss` (what the check measures and why; stored in the
+# JSON for the viewer, not echoed to the terminal, where the docstrings serve).
 
 
-def _section(report: dict, title: str) -> dict:
-    sec: dict = {"title": title, "rows": []}
+def _section(report: dict, title: str, group: str = "", gloss: str = "") -> dict:
+    sec: dict = {"title": title, "group": group, "gloss": gloss, "rows": []}
     report.setdefault("sections", []).append(sec)
     print(f" {title}")
     return sec
@@ -91,6 +95,16 @@ def _detail(sec: dict, line: str, echo: bool = True) -> None:
     sec.setdefault("detail", []).append(line)
     if echo:
         print(f"      {line}")
+
+
+def _skip(sec: dict, report: dict, label: str, value: str = "skipped",
+          note: str = "", echo: bool = True) -> None:
+    """A section that can't run on this input: emit the standard row AND record
+    it in report["skipped_sections"], so the end-of-run summary (and the
+    viewer's verdict overview) can say WHY a section carries no verdicts."""
+    _row(sec, label, value, note=note, echo=echo)
+    report.setdefault("skipped_sections", []).append(
+        {"section": sec["title"], "reason": note.strip("()") if note else value})
 
 
 # ---------------------------------------------------------------- input resolution
@@ -149,7 +163,10 @@ def _skeleton_of(msg: str) -> str:
 
 
 def audit_skeletons(records: list[dict], report: dict) -> None:
-    sec = _section(report, "Structural skeletons")
+    sec = _section(report, "Structural skeletons", group="prompt",
+                   gloss="Do many user prompts share one plot skeleton (e.g. 'must "
+                         "produce something by a deadline')? 'other' is the healthy "
+                         "bucket — collapse is a named family dominating.")
     msgs = _messages(records)
     if not msgs:
         _row(sec, "prompts", "0")
@@ -200,7 +217,10 @@ def _last_sentence(msg: str) -> str:
 
 
 def audit_openers_closers(records: list[dict], report: dict) -> None:
-    sec = _section(report, "Openers & closers")
+    sec = _section(report, "Openers & closers", group="prompt",
+                   gloss="Do the user prompts keep starting and ending the same way? "
+                         "Counts distinct first-three-words at each end; repeats are "
+                         "listed.")
     msgs = _messages(records)
     if not msgs:
         _row(sec, "prompts", "0")
@@ -260,7 +280,11 @@ def _frame_keywords(frame: str) -> tuple | None:
 
 
 def audit_unrealized_details(records: list[dict], report: dict) -> None:
-    sec = _section(report, "Unrealized dealt details (frontier frame)")
+    sec = _section(report, "Unrealized dealt details (frontier frame)", group="prompt",
+                   gloss="When a scenario was dealt a frontier frame (space, gene "
+                         "editing, digital minds…), does the shipped prompt actually "
+                         "mention it? Keyword-based — a flag is a prompt to eyeball, "
+                         "not a hard failure.")
     dealt = [r for r in records
              if str(r.get("frontier_frame") or "").strip()
              and str(r.get("user_message") or "").strip()]
@@ -310,7 +334,9 @@ _LOCALE_TAXA_FLAGS = [
 
 
 def audit_locale_taxa(records: list[dict], report: dict) -> None:
-    sec = _section(report, "Locale / taxa plausibility")
+    sec = _section(report, "Locale / taxa plausibility", group="prompt",
+                   gloss="Flags animal-practice × region pairings that don't cohere "
+                         "(e.g. fur farming in the tropics).")
     flags = []
     for r in records:
         sub = str(r.get("taxa_subcategory") or "").lower()
@@ -334,40 +360,61 @@ def audit_locale_taxa(records: list[dict], report: dict) -> None:
 # ---------------------------------------------------------------- library selection
 
 
+def _run_library_ids(run_dir: Path) -> list[str]:
+    """All entry ids from the run's frozen library snapshot when present (so old
+    runs are judged against the library they actually ran with), else the repo's
+    live copy."""
+    from dad_pipeline import reasoning_library
+    lib_dir = run_dir / "inputs" / "prompts"
+    if not reasoning_library.resolve_path(lib_dir).exists():
+        lib_dir = Path(__file__).parent.parent / "prompts" / "dad"
+    return [str(e) for e in reasoning_library.all_ids(reasoning_library.load(lib_dir))]
+
+
+def _example_gids(run_dir: Path) -> dict:
+    """prompt_id -> stable example gid (E-####) from the step-3 rewrites, for
+    display labels; prompts without one keep their per-run id."""
+    out: dict = {}
+    for rw in utils.load_jsonl(run_dir / "step3" / "rewrites.jsonl"):
+        pid, gid = rw.get("prompt_id"), rw.get("example_gid")
+        if pid and gid:
+            out.setdefault(pid, gid)
+    return out
+
+
 def audit_library_selection(run_dir: Path | None, report: dict) -> None:
     """Step 2a.5 selection sizes: how many reasoning-library rows each case
     pulled. Reads step2/scopes.jsonl (entry_ids + selection_source); the target
     after the selective-prompt change is typical selections well under half the
     library, with the fail-open full-library fallback staying rare."""
-    sec = _section(report, "Reasoning-library selection (2a.5)")
+    sec = _section(report, "Reasoning-library selection (2a.5)", group="library",
+                   gloss="How many reasoning-library rows the retrieval call pulled "
+                         "per case. Healthy selection stays well under half the "
+                         "library; the fail-open full-library fallback should be rare.")
     if run_dir is None:
-        _row(sec, "selection report", "skipped", note="(bare-file input; pass a run dir)")
+        _skip(sec, report, "selection report", note="(bare-file input; pass a run dir)")
         return
     scopes = utils.load_jsonl(run_dir / "step2" / "scopes.jsonl")
     rows = [(str(s.get("prompt_id") or "?"), len(s.get("entry_ids") or []),
              s.get("selection_source")) for s in scopes if s.get("entry_ids") is not None]
     if not rows:
-        _row(sec, "scoped cases", "0", note="(no step 2 in this run — nothing to check)")
+        _skip(sec, report, "scoped cases", "0", note="(no step 2 in this run — nothing to check)")
         report["library_selection"] = {"n": 0}
         return
-    # Library size from the run's frozen prompt snapshot when present, so old
-    # runs are judged against the library they actually ran with.
-    from dad_pipeline import reasoning_library
-    lib_dir = run_dir / "inputs" / "prompts"
-    if not reasoning_library.resolve_path(lib_dir).exists():
-        lib_dir = Path(__file__).parent.parent / "prompts" / "dad"
-    total = len(reasoning_library.all_ids(reasoning_library.load(lib_dir)))
+    total = len(_run_library_ids(run_dir))
 
     sizes = sorted(n for _, n, _ in rows)
-    median = sizes[len(sizes) // 2]
+    median = statistics.median(sizes)
     fallbacks = sum(1 for _, _, src in rows if src == "full_library")
     share = median / total if total else 0.0
     _row(sec, "cases scoped", str(len(rows)))
-    _row(sec, "rows pulled (of library)", f"min {sizes[0]} / median {median} / max {sizes[-1]} of {total}",
+    _row(sec, "rows pulled (of library)",
+         f"min {sizes[0]} / median {median:g} / max {sizes[-1]} of {total}",
          _verdict(share, 0.50, 0.70))
     _row(sec, "full-library fallbacks", f"{fallbacks}/{len(rows)}",
          _verdict(fallbacks / len(rows), 0.0, 0.2))
-    _detail(sec, ", ".join(f"{pid} {n}" for pid, n, _ in rows))
+    gids = _example_gids(run_dir)
+    _detail(sec, ", ".join(f"{gids.get(pid, pid)} {n}" for pid, n, _ in rows))
     report["library_selection"] = {
         "n": len(rows), "library_size": total, "sizes": sizes,
         "median": median, "median_share": share, "fallbacks": fallbacks,
@@ -384,21 +431,20 @@ def audit_library_coverage(run_dir: Path | None, report: dict) -> None:
     concept space for responses, so never-selected entries are starved moves.
     Small runs starve entries naturally — judge at 40-example scale and watch
     the never-selected set shrink (or not) across runs."""
-    sec = _section(report, "Reasoning-library coverage")
+    sec = _section(report, "Reasoning-library coverage", group="library",
+                   gloss="Which library entries this corpus ever pulled. Never-"
+                         "selected entries are starved moves — meaningful at "
+                         "40-example scale, mostly sampling noise below.")
     if run_dir is None:
-        _row(sec, "coverage report", "skipped", note="(bare-file input; pass a run dir)")
+        _skip(sec, report, "coverage report", note="(bare-file input; pass a run dir)")
         return
     scopes = utils.load_jsonl(run_dir / "step2" / "scopes.jsonl")
     rows = [s for s in scopes if s.get("entry_ids") is not None]
     if not rows:
-        _row(sec, "scoped cases", "0", note="(no step 2 in this run — nothing to check)")
+        _skip(sec, report, "scoped cases", "0", note="(no step 2 in this run — nothing to check)")
         report["library_coverage"] = {"n_cases": 0}
         return
-    from dad_pipeline import reasoning_library
-    lib_dir = run_dir / "inputs" / "prompts"
-    if not reasoning_library.resolve_path(lib_dir).exists():
-        lib_dir = Path(__file__).parent.parent / "prompts" / "dad"
-    all_ids = [str(e) for e in reasoning_library.all_ids(reasoning_library.load(lib_dir))]
+    all_ids = _run_library_ids(run_dir)
 
     fires: Counter = Counter()
     for s in rows:
@@ -418,9 +464,18 @@ def audit_library_coverage(run_dir: Path | None, report: dict) -> None:
          note=("" if verdict else
                "(verdict attaches at 20+ cases — small runs starve entries naturally)"))
     _row(sec, "most-selected entry", f"{top_eid} in {top_c}/{len(rows)} cases")
-    _detail(sec, "fires: " + ", ".join(f"{e} {c}" for e, c in fires.most_common()))
+    # Detail lines are capped for terminal/page readability; report JSON keeps
+    # the full fires map and never-selected list.
+    top_fires = fires.most_common(10)
+    fires_line = "fires: " + ", ".join(f"{e} {c}" for e, c in top_fires)
+    if len(fires) > len(top_fires):
+        fires_line += f", … (+{len(fires) - len(top_fires)} more)"
+    _detail(sec, fires_line)
     if never:
-        _detail(sec, "never selected: " + ", ".join(never))
+        never_line = "never selected: " + ", ".join(never[:15])
+        if len(never) > 15:
+            never_line += f", … (+{len(never) - 15} more)"
+        _detail(sec, never_line)
     report["library_coverage"] = {
         "n_cases": len(rows), "library_size": len(all_ids), "used": len(used),
         "never_selected": never, "fires": dict(fires),
@@ -465,17 +520,6 @@ _JARGON_PATTERNS = [
 ]
 
 
-def _assistant_texts(run_dir: Path, rel: str, field_path) -> dict:
-    """{prompt_id or record_id: assistant text} from a run's final corpus or
-    baseline arm — empty when the file is absent (step-1-only runs)."""
-    out = {}
-    for r in utils.load_jsonl(run_dir / rel):
-        text = field_path(r)
-        if text:
-            out[r.get("record_id") or r.get("prompt_id")] = text
-    return out
-
-
 def _scan_jargon(texts: dict) -> tuple:
     counts, cases = {}, {}
     for t in texts.values():
@@ -492,18 +536,21 @@ def audit_jargon(run_dir: Path | None, report: dict) -> None:
     and — when the baseline arm ran — how much of it the pipeline ADDS over
     plain Claude (the real signal: terms present in the pipeline but not the
     plain answer are scaffolding bleed, not model style)."""
-    sec = _section(report, "Insider-vocabulary leak (responses)")
+    sec = _section(report, "Insider-vocabulary leak (responses)", group="response",
+                   gloss="Academic/EA vocabulary leaking into user-facing replies. "
+                         "What the pipeline ADDS over plain Claude is scaffolding "
+                         "bleed, not model style — that's the verdict-carrying number.")
     if run_dir is None:
-        _row(sec, "jargon report", "skipped", note="(bare-file input; pass a run dir)")
+        _skip(sec, report, "jargon report", note="(bare-file input; pass a run dir)")
         return
-    pipe = _assistant_texts(run_dir, "final/dad_corpus.jsonl",
-                            lambda r: (r.get("messages") or [{}, {}])[1].get("content", ""))
+    # Same prompt-keyed population as every other response section (the step3
+    # join), so counts are comparable across sections.
+    pipe = _final_by_prompt_id(run_dir)
     if not pipe:
-        _row(sec, "responses", "0", note="(no final corpus — nothing to scan)")
+        _skip(sec, report, "responses", "0", note="(no final corpus — nothing to scan)")
         report["jargon"] = {"n": 0}
         return
-    plain = _assistant_texts(run_dir, "baseline/baseline_responses.jsonl",
-                             lambda r: r.get("baseline_response", ""))
+    plain = _baseline_by_prompt_id(run_dir)
     p_counts, p_cases = _scan_jargon(pipe)
     b_counts, _ = _scan_jargon(plain) if plain else ({}, {})
     n = len(pipe)
@@ -553,31 +600,37 @@ def audit_response_lengths(run_dir: Path | None, report: dict) -> None:
     """Final response lengths vs the plain-baseline arm, per prompt. Length is
     a usability constraint (long replies stop getting read), so the median
     pipeline/plain ratio carries the verdict."""
-    sec = _section(report, "Response lengths (vs plain baseline)")
+    sec = _section(report, "Response lengths (vs plain baseline)", group="response",
+                   gloss="Are pipeline replies much longer than plain Claude's to the "
+                         "same prompts? Long replies stop getting read, so the median "
+                         "ratio carries the verdict — in both directions (a much "
+                         "shorter pipeline suggests truncation or over-compression).")
     if run_dir is None:
-        _row(sec, "length comparison", "skipped", note="(bare-file input; pass a run dir)")
+        _skip(sec, report, "length comparison", note="(bare-file input; pass a run dir)")
         return
     pipe = _final_by_prompt_id(run_dir)
     if not pipe:
-        _row(sec, "responses", "0", note="(no final corpus — nothing to measure)")
+        _skip(sec, report, "responses", "0", note="(no final corpus — nothing to measure)")
         report["response_lengths"] = {"n": 0}
         return
     plain = {pid: len(text) for pid, text in _baseline_by_prompt_id(run_dir).items()}
     per_case = {pid: {"pipeline": len(text), "plain": plain.get(pid)}
                 for pid, text in sorted(pipe.items())}
-    p_lens = sorted(v["pipeline"] for v in per_case.values())
-    p_median = p_lens[len(p_lens) // 2]
+    p_median = statistics.median(v["pipeline"] for v in per_case.values())
     _row(sec, "responses measured", str(len(per_case)))
-    _row(sec, "pipeline median chars", str(p_median))
+    _row(sec, "pipeline median chars", f"{p_median:g}")
     b_median = ratio = None
     both = [v["plain"] for v in per_case.values() if v["plain"]]
     if both:
-        b_lens = sorted(both)
-        b_median = b_lens[len(b_lens) // 2]
+        b_median = statistics.median(both)
         ratio = p_median / b_median if b_median else 0.0
-        _row(sec, "plain-baseline median chars", str(b_median))
-        _row(sec, "median length ratio (pipeline/plain)", f"{ratio:.2f}x",
-             _verdict(ratio, 1.5, 2.5))
+        _row(sec, "plain-baseline median chars", f"{b_median:g}")
+        verdict, note = _verdict(ratio, 1.5, 2.5), ""
+        if ratio < 0.8:  # the floor: suspiciously SHORT is not GOOD either
+            verdict = "OK"
+            note = "(pipeline shorter than plain — check truncation / over-compression)"
+        _row(sec, "median length ratio (pipeline/plain)", f"{ratio:.2f}x", verdict,
+             note=note)
         # batch totals over paired records only (both arms present)
         paired = [v for v in per_case.values() if v["plain"] is not None]
         pipe_t = sum(v["pipeline"] for v in paired)
@@ -643,13 +696,17 @@ def audit_stock_phrases(run_dir: Path | None, report: dict) -> None:
     """Cross-response phrase collapse in the shipped responses vs the plain
     baseline: the curated watchlist above (both arms' known tics), plus a
     data-driven discovery pass for NEW phrases recurring in this run."""
-    sec = _section(report, "Stock phrases (responses)")
+    sec = _section(report, "Stock phrases (responses)", group="response",
+                   gloss="Recurring pet phrases across responses, in both arms, plus "
+                         "a discovery pass for new ones. The pipeline-vs-plain gap is "
+                         "the training-data signal; plain Claude's own tics show what "
+                         "the pipeline suppresses or inherits.")
     if run_dir is None:
-        _row(sec, "phrase report", "skipped", note="(bare-file input; pass a run dir)")
+        _skip(sec, report, "phrase report", note="(bare-file input; pass a run dir)")
         return
     pipe = {k: _norm_text(v) for k, v in _final_by_prompt_id(run_dir).items()}
     if not pipe:
-        _row(sec, "responses", "0", note="(no final corpus — nothing to scan)")
+        _skip(sec, report, "responses", "0", note="(no final corpus — nothing to scan)")
         report["stock_phrases"] = {"n": 0}
         return
     plain = {k: _norm_text(v) for k, v in _baseline_by_prompt_id(run_dir).items()}
@@ -662,23 +719,32 @@ def audit_stock_phrases(run_dir: Path | None, report: dict) -> None:
         for ph in phrases:
             watch[ph] = {"origin": origin, "pipeline": hits(ph, pipe),
                          "plain": hits(ph, plain)}
-    worst_p = max((v["pipeline"] / len(pipe), ph) for ph, v in watch.items()
-                  if v["origin"] == "pipeline-origin")
     _row(sec, "responses scanned", f"pipeline {len(pipe)} / plain {len(plain)}")
-    _row(sec, "worst pipeline-origin phrase",
-         f"'{worst_p[1]}' {watch[worst_p[1]]['pipeline']}/{len(pipe)} ({worst_p[0]:.0%})",
-         _verdict(worst_p[0], 0.20, 0.40))
+    # max(default=None) so an emptied watchlist bucket degrades to no row
+    # instead of a crash.
+    worst_p = max(((v["pipeline"] / len(pipe), ph) for ph, v in watch.items()
+                   if v["origin"] == "pipeline-origin"), default=None)
+    if worst_p:
+        _row(sec, "worst pipeline-origin phrase",
+             f"'{worst_p[1]}' {watch[worst_p[1]]['pipeline']}/{len(pipe)} ({worst_p[0]:.0%})",
+             _verdict(worst_p[0], 0.20, 0.40))
     if plain:
-        worst_b = max((v["plain"] / len(plain), ph) for ph, v in watch.items()
-                      if v["origin"] == "plain-origin")
-        _row(sec, "worst plain-origin phrase (plain arm)",
-             f"'{worst_b[1]}' {watch[worst_b[1]]['plain']}/{len(plain)} ({worst_b[0]:.0%})")
-    for origin in ("pipeline-origin", "plain-origin"):
-        for ph, v in watch.items():
-            if v["origin"] == origin and (v["pipeline"] or v["plain"]):
-                _detail(sec, f"[{origin.split('-')[0]:>8}] {ph:<22} "
-                             f"pipeline {v['pipeline']}/{len(pipe)}"
-                             + (f", plain {v['plain']}/{len(plain)}" if plain else ""))
+        worst_b = max(((v["plain"] / len(plain), ph) for ph, v in watch.items()
+                       if v["origin"] == "plain-origin"), default=None)
+        if worst_b:
+            _row(sec, "worst plain-origin phrase (plain arm)",
+                 f"'{worst_b[1]}' {watch[worst_b[1]]['plain']}/{len(plain)} ({worst_b[0]:.0%})")
+    # Watchlist detail is capped for readability: phrases recurring (>=2 hits in
+    # an arm), at most 12 lines; the full counts stay in report["stock_phrases"].
+    eligible = [(origin, ph, v) for origin in ("pipeline-origin", "plain-origin")
+                for ph, v in watch.items()
+                if v["origin"] == origin and (v["pipeline"] >= 2 or v["plain"] >= 2)]
+    for origin, ph, v in eligible[:12]:
+        _detail(sec, f"[{origin.split('-')[0]:>8}] {ph:<22} "
+                     f"pipeline {v['pipeline']}/{len(pipe)}"
+                     + (f", plain {v['plain']}/{len(plain)}" if plain else ""))
+    if len(eligible) > 12:
+        _detail(sec, f"… (+{len(eligible) - 12} more recurring watch phrases)")
 
     # Discovery: phrases recurring in >=30% of one arm with a >=20-point lead
     # over the other, not already covered by the watchlist. Candidates for the
@@ -779,13 +845,17 @@ def audit_lexical(run_dir: Path | None, report: dict) -> None:
     baseline: Distinct-1/2/3 (higher = more varied wording) and Self-BLEU
     (higher = the corpus echoes itself). Informational — the arm differential
     and the run-over-run trend are the signal, not the absolute values."""
-    sec = _section(report, "Lexical diversity (responses)")
+    sec = _section(report, "Lexical diversity (responses)", group="response",
+                   gloss="How varied the wording is across the corpus. Distinct-n = "
+                         "share of n-word runs used only once (higher = more varied); "
+                         "Self-BLEU = how much the corpus echoes itself (lower is "
+                         "better). Compare arms and runs, never absolute values.")
     if run_dir is None:
-        _row(sec, "lexical report", "skipped", note="(bare-file input; pass a run dir)")
+        _skip(sec, report, "lexical report", note="(bare-file input; pass a run dir)")
         return
     pipe = list(_final_by_prompt_id(run_dir).values())
     if not pipe:
-        _row(sec, "responses", "0", note="(no final corpus — nothing to measure)")
+        _skip(sec, report, "responses", "0", note="(no final corpus — nothing to measure)")
         report["lexical"] = {"n": 0}
         return
     plain = list(_baseline_by_prompt_id(run_dir).values())
@@ -840,13 +910,16 @@ def audit_structure(run_dir: Path | None, report: dict) -> None:
     """Structural variation of the shipped responses vs the plain baseline:
     distinct shape signatures, the top shape's share (the collapse metric),
     and per-element usage rates."""
-    sec = _section(report, "Structural variation (responses)")
+    sec = _section(report, "Structural variation (responses)", group="response",
+                   gloss="Does every reply take the same visual shape (paragraph "
+                         "count, bullets, headings, closing question)? Collapse is "
+                         "invisible per-response — it only shows over the set.")
     if run_dir is None:
-        _row(sec, "structure report", "skipped", note="(bare-file input; pass a run dir)")
+        _skip(sec, report, "structure report", note="(bare-file input; pass a run dir)")
         return
     pipe = _final_by_prompt_id(run_dir)
     if not pipe:
-        _row(sec, "responses", "0", note="(no final corpus — nothing to scan)")
+        _skip(sec, report, "responses", "0", note="(no final corpus — nothing to scan)")
         report["structure"] = {"n": 0}
         return
     plain = _baseline_by_prompt_id(run_dir)
@@ -887,8 +960,12 @@ def audit_structure(run_dir: Path | None, report: dict) -> None:
     _row(sec, "numbered lists", pair("numbered"))
     _row(sec, "headings / bold leads", pair("headed"))
     _row(sec, "ends with a question", pair("ends_question"))
-    for shape, c in Counter(p["shapes"]).most_common():
+    # capped for readability; the full shape map stays in report["structure"]
+    top_shapes = Counter(p["shapes"]).most_common(8)
+    for shape, c in top_shapes:
         _detail(sec, f"pipeline {c}x  {shape}")
+    if len(p["shapes"]) > len(top_shapes):
+        _detail(sec, f"… (+{len(p['shapes']) - len(top_shapes)} more shapes)")
     report["structure"] = {"pipeline": p, "plain": b}
 
 
@@ -908,13 +985,18 @@ def audit_response_openings(run_dir: Path | None, report: dict) -> None:
     for i, stage in enumerate(("drafts", "finals")):
         if i:
             print()
-        sec = _section(report, f"Response openings ({stage})")
+        sec = _section(report, f"Response openings ({stage})", group="response",
+                       gloss="Do responses keep opening with the same move? Families "
+                             "are known tics; 'other' is the healthy bucket. Hint-echo "
+                             "= a response parroting its opening-hint card's wording "
+                             "(drafts only — that's where the hints ride).")
         if run_dir is None:
-            _row(sec, "openings report", "skipped", note="(bare-file input; pass a run dir)")
+            _skip(sec, report, "openings report", note="(bare-file input; pass a run dir)")
             continue
         rows = [r for r in load_responses(run_dir, stage) if r["text"].strip()]
         if not rows:
-            _row(sec, "responses", "0", note=f"(no {stage} in this run — nothing to check)")
+            _skip(sec, report, "responses", "0",
+                  note=f"(no {stage} in this run — nothing to check)")
             out[stage] = {"n": 0}
             continue
         stats = stage_stats(rows)
@@ -1014,13 +1096,18 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
     1,000 response characters."""
     from shared import api
 
-    sec = _section(report, "Moral-patient reasons (LLM)")
+    sec = _section(report, "Moral-patient reasons (LLM)", group="paid",
+                   gloss="Paid LLM pass: does the pipeline widen the moral reasoning "
+                         "or just lengthen replies? Counts distinct reasons appealing "
+                         "to someone's interests in both arms; 'survival' asks which "
+                         "of plain Claude's reasons the pipeline kept, weakened, or "
+                         "dropped, judged against the full pipeline response text.")
     if run_dir is None:
-        _row(sec, "reason scan", "skipped", note="(bare-file input; pass a run dir)")
+        _skip(sec, report, "reason scan", note="(bare-file input; pass a run dir)")
         return
     pipe = _final_by_prompt_id(run_dir)
     if not pipe:
-        _row(sec, "responses", "0", note="(no final corpus — nothing to scan)")
+        _skip(sec, report, "responses", "0", note="(no final corpus — nothing to scan)")
         report["moral_patient_reasons"] = {"n": 0}
         return
     plain = _baseline_by_prompt_id(run_dir)
@@ -1180,9 +1267,11 @@ def carry_forward_reasons(old_report: dict, report: dict) -> bool:
 
 
 def audit_lengths(run_dir: Path | None, report: dict) -> None:
-    sec = _section(report, "Length-class realization")
+    sec = _section(report, "Length-class realization", group="prompt",
+                   gloss="Each prompt was dealt a target length class at 1a — did the "
+                         "shipped text land inside its class's character band?")
     if run_dir is None:
-        _row(sec, "length report", "skipped", note="(bare-file input; pass a run dir)")
+        _skip(sec, report, "length report", note="(bare-file input; pass a run dir)")
         return
     from evals.openings_dad import prompt_length_report
     stats = prompt_length_report(run_dir)
@@ -1190,7 +1279,7 @@ def audit_lengths(run_dir: Path | None, report: dict) -> None:
     # prompt_length_report owns the terminal printing for this section; mirror
     # its numbers into rows without echoing so the output stays unchanged.
     if not stats.get("n"):
-        _row(sec, "prompts", "0", echo=False)
+        _skip(sec, report, "prompts", "0", echo=False)
         return
     _row(sec, "prompt lengths",
          f"{stats['n']} prompts | chars min {stats.get('min', '?')} / median {stats['median']} "
@@ -1231,6 +1320,9 @@ def main() -> None:
 
     print(f"=== DAD prompt audit: {args.input} ({len(records)} prompts) ===\n")
     report: dict = {"input": str(args.input), "n_prompts": len(records)}
+    # Sections run grouped — prompt side, then response side, then the
+    # reasoning library, then the paid pass — so terminal, JSON, and the
+    # viewer's grouping all agree.
     audit_skeletons(records, report)
     print()
     audit_openers_closers(records, report)
@@ -1239,7 +1331,7 @@ def main() -> None:
     print()
     audit_locale_taxa(records, report)
     print()
-    audit_library_selection(run_dir, report)
+    audit_lengths(run_dir, report)
     print()
     audit_jargon(run_dir, report)
     print()
@@ -1253,7 +1345,9 @@ def main() -> None:
     print()
     audit_response_openings(run_dir, report)
     print()
-    audit_library_coverage(run_dir, report)  # response-diversity block: conceptual coverage
+    audit_library_selection(run_dir, report)
+    print()
+    audit_library_coverage(run_dir, report)
     print()
     out = report_dir / "audit_report.json"
     if args.reasons:
@@ -1269,7 +1363,11 @@ def main() -> None:
         if carry_forward_reasons(old_report, report):
             print(" Moral-patient reasons (LLM) — carried forward from the previous "
                   "report (re-run with --reasons to refresh)\n")
-    audit_lengths(run_dir, report)
+
+    skipped = report.get("skipped_sections") or []
+    if skipped:
+        print(" Skipped sections: "
+              + "; ".join(f"{s['section']} ({s['reason']})" for s in skipped))
 
     utils.ensure_dir(report_dir)
     with open(out, "w", encoding="utf-8") as f:
