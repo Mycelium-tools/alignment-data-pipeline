@@ -61,6 +61,35 @@
       ]
     },
     {
+      "title": "Lexical diversity — prompts (shared phrases + style Vendi)",
+      "rows": [
+        {
+          "label": "top shared 4-grams",
+          "value": "\"can you help me\"×6",
+          "verdict": null,
+          "note": ""
+        },
+        {
+          "label": "top shared 3-grams",
+          "value": "\"i want to\"×10, \"you help me\"×7, \"can you help\"×6, \"before i commit\"×4, \"want to make\"×4, \"to keep the\"×4",
+          "verdict": null,
+          "note": ""
+        },
+        {
+          "label": "most-shared phrase prevalence",
+          "value": "25%",
+          "verdict": "OK",
+          "note": ""
+        },
+        {
+          "label": "style Vendi (char n-gram)",
+          "value": "36.1/40 (ratio 0.902)",
+          "verdict": null,
+          "note": "surface-form diversity; complements the semantic Vendi in diversity.py (topic-driven). Still partly topic-contaminated — a coarse trend, not an absolute."
+        }
+      ]
+    },
+    {
       "title": "Unrealized dealt details (frontier frame)",
       "rows": [
         {
@@ -4467,5 +4496,337 @@
       ]
     },
     "out_of_band": []
+  },
+  "lexical_diversity": {
+    "n": 40,
+    "top_shared": {
+      "4": [
+        [
+          "can you help me",
+          6
+        ]
+      ],
+      "3": [
+        [
+          "i want to",
+          10
+        ],
+        [
+          "you help me",
+          7
+        ],
+        [
+          "can you help",
+          6
+        ],
+        [
+          "before i commit",
+          4
+        ],
+        [
+          "want to make",
+          4
+        ],
+        [
+          "to keep the",
+          4
+        ],
+        [
+          "i just want",
+          4
+        ],
+        [
+          "this is a",
+          4
+        ]
+      ]
+    },
+    "max_prevalence": 0.25,
+    "style_vendi_ratio": 0.9015778284419526,
+    "nn_sims": [
+      0.2069283135674808,
+      0.15659512639146408,
+      0.1864768535799946,
+      0.15512000390333894,
+      0.18723238936854106,
+      0.17419717971515336,
+      0.24227033869455797,
+      0.17113967140161587,
+      0.11913485172230366,
+      0.16023253996627448,
+      0.2069283135674808,
+      0.1763078872543719,
+      0.1220574456622222,
+      0.24227033869455797,
+      0.1511987385348811,
+      0.00047653502729193,
+      0.1774574531059119,
+      0.19625617575527887,
+      0.0,
+      0.17609195823112012,
+      0.023127760826966118,
+      0.1440653762681071,
+      0.0,
+      0.18390650085358506,
+      0.1418254224341154,
+      0.15475647181787044,
+      0.0789742779632227,
+      0.04978363466858911,
+      0.18710974687261517,
+      0.0,
+      0.13285816982219043,
+      0.1763078872543719,
+      0.18407048764760478,
+      0.18708060226636822,
+      0.15987566567276792,
+      0.17609195823112012,
+      0.13520339465080944,
+      0.1477431129332745,
+      0.16204869617231574,
+      0.18407048764760478
+    ],
+    "over_0.90": 0.0,
+    "cloud": [
+      {
+        "id": "AW-0001",
+        "x": -0.2127018593658573,
+        "y": -0.00777432419438401,
+        "snippet": "I could use a little help thinking through the wording of something before I com"
+      },
+      {
+        "id": "AW-0002",
+        "x": -0.11710661730227126,
+        "y": 0.03598557554153721,
+        "snippet": "I'm putting together the mowing calendar for next season and I need to get this "
+      },
+      {
+        "id": "AW-0003",
+        "x": -0.17144885319214415,
+        "y": -0.00279504938904033,
+        "snippet": "I've been turning this over for days and I think I've finally made peace with it"
+      },
+      {
+        "id": "AW-0004",
+        "x": 0.01037041830976573,
+        "y": 0.09051229326990358,
+        "snippet": "Good day. I am writing to request assistance with a matter pertaining to materia"
+      },
+      {
+        "id": "AW-0005",
+        "x": -0.1452518329314867,
+        "y": -0.04231967256096149,
+        "snippet": "so i've been part of this little birdwatching club for years and one of the thin"
+      },
+      {
+        "id": "AW-0006",
+        "x": -0.1375365501592202,
+        "y": 0.05591344950423897,
+        "snippet": "I manage operations at a large protected reserve, and this season I've been aske"
+      },
+      {
+        "id": "AW-0007",
+        "x": 0.41619377409381414,
+        "y": 0.517081713675705,
+        "snippet": "Mira, te cuento porque necesito que me eches un cable con los textos de la etiqu"
+      },
+      {
+        "id": "AW-0008",
+        "x": -0.1475515152180981,
+        "y": -0.010382953206137205,
+        "snippet": "So I've been offered a stake in what they're calling a conservation land fund, w"
+      },
+      {
+        "id": "AW-0009",
+        "x": -0.01691342284124344,
+        "y": -0.04342206444477618,
+        "snippet": "My kid (just turned 12, very into this) has been running a science-fair project "
+      },
+      {
+        "id": "AW-0010",
+        "x": -0.09697366499751403,
+        "y": -0.039505231186537954,
+        "snippet": "I'm finally putting together the decision memo for the gene-drive rollout across"
+      },
+      {
+        "id": "AW-0011",
+        "x": -0.18918040384204435,
+        "y": 0.002835850948148546,
+        "snippet": "Okay I'm barely awake but I wanted to get this down before I lose the thread — e"
+      },
+      {
+        "id": "AW-0012",
+        "x": -0.15997970349368013,
+        "y": 0.043779401064773,
+        "snippet": "okay so I need help thinking this through because my sister is completely overwh"
+      },
+      {
+        "id": "AW-0013",
+        "x": 0.3788582577089879,
+        "y": 0.30770471197733074,
+        "snippet": "Oi Claude, desculpa de antemão porque sou péssima em resumir as coisas — meu fal"
+      },
+      {
+        "id": "AW-0014",
+        "x": 0.4217834901537491,
+        "y": 0.527450056236705,
+        "snippet": "Qué tal, ando corto de tiempo así que voy al grano. Soy consultor de logística y"
+      },
+      {
+        "id": "AW-0015",
+        "x": -0.09506622973500463,
+        "y": 0.006936904511536491,
+        "snippet": "I run the biology department at a sixth-form college and every September I put i"
+      },
+      {
+        "id": "AW-0016",
+        "x": 0.3611827349338254,
+        "y": -0.3339556180740831,
+        "snippet": "내가 노량진 근처서 활어집 한지 20년인데 우리집 광어 우럭은 무조건 이케지메로 신경 딱 찔러서 즉사시켜 잡거든 그래야 회맛이 살고 이게 진짜 "
+      },
+      {
+        "id": "AW-0017",
+        "x": -0.16497814408118064,
+        "y": 0.02100002448181702,
+        "snippet": "So I'm finally sitting down to finish the care-and-maintenance guidelines for ou"
+      },
+      {
+        "id": "AW-0018",
+        "x": -0.1828381951234314,
+        "y": -0.04605158160142162,
+        "snippet": "Okay so I need your help writing a message to the neighborhood, because honestly"
+      },
+      {
+        "id": "AW-0019",
+        "x": 0.3610030565537846,
+        "y": -0.33426936583482403,
+        "snippet": "老师救命！我博士最后一根救命稻草就是这季的田间药效试验，箭在弦上不得不发，导师和整个实验室都是大剂量、大面积喷洒那套标准操作，数据干净好发论文，我也不敢标新立异"
+      },
+      {
+        "id": "AW-0020",
+        "x": -0.13003576996867305,
+        "y": 0.022200153309447815,
+        "snippet": "I run the agriculture program at my school and advise our FFA chapter, which mea"
+      },
+      {
+        "id": "AW-0021",
+        "x": 0.3312168012206538,
+        "y": -0.24354342729143422,
+        "snippet": "यार एक सलाह चाहिए, थोड़ा दिमाग खा रही है ये बात। मैं एक वेट क्लिनिक पर front des"
+      },
+      {
+        "id": "AW-0022",
+        "x": -0.08138757142966174,
+        "y": 0.015262926907997947,
+        "snippet": "Alright, it's that time of year again — we're putting together \"Southern Family "
+      },
+      {
+        "id": "AW-0023",
+        "x": 0.3610030565537419,
+        "y": -0.33426936583464306,
+        "snippet": "帮我把这个团购方案润色一下，今年我牵头做全省的生物解剖标本采购，好几十所学校都跟着我这一版走，量很大，光兔子和青蛙加起来就好几千只，一起下单便宜不少，也省得大家"
+      },
+      {
+        "id": "AW-0024",
+        "x": -0.14359560020195156,
+        "y": 0.0044511745838267626,
+        "snippet": "Feed contract renewal coming up and I'm just trying to lay out the options befor"
+      },
+      {
+        "id": "AW-0025",
+        "x": -0.04135162473863653,
+        "y": 0.004933623281860866,
+        "snippet": "We've finally signed off on the equipment shed siting problem — after the near-m"
+      },
+      {
+        "id": "AW-0026",
+        "x": -0.045178369706511914,
+        "y": 0.035335994594982136,
+        "snippet": "I'm the science coordinator for our district and I'm about to lock in a new hand"
+      },
+      {
+        "id": "AW-0027",
+        "x": 0.30703797777007635,
+        "y": 0.13877493542706662,
+        "snippet": "...bref, du coup je reprends parce que c'est validé, on lance l'offre hirudothér"
+      },
+      {
+        "id": "AW-0028",
+        "x": 0.26869089590273815,
+        "y": -0.04931584344240358,
+        "snippet": "Kurz zur Lage: Unser Hauptwettbewerber hat letzte Woche ein Modul für „Schädling"
+      },
+      {
+        "id": "AW-0029",
+        "x": -0.20056701875965954,
+        "y": -0.008550343875959307,
+        "snippet": "My dad passed a couple months ago and honestly I'm still a mess about it, and no"
+      },
+      {
+        "id": "AW-0030",
+        "x": 0.3610030565537271,
+        "y": -0.3342693658346408,
+        "snippet": "夜中にすみません、少し頭を整理したくて書いています。私は国立大の霊長類研究者で、40代も半ばになりますが、この数年ずっとニホンザルを使った感染症研究の新しい実験"
+      },
+      {
+        "id": "AW-0031",
+        "x": -0.05996749111771525,
+        "y": -0.07553920468027236,
+        "snippet": "Ok so im helping build this free educational game for a little heritage group ab"
+      },
+      {
+        "id": "AW-0032",
+        "x": -0.15747551128354742,
+        "y": 0.03927727902659926,
+        "snippet": "Okay so I need someone to give me a straight answer here because I'm sinking way"
+      },
+      {
+        "id": "AW-0033",
+        "x": -0.15333573876161535,
+        "y": 0.019347285887819754,
+        "snippet": "Hello, and thank you so much for taking the time to help me with this — I really"
+      },
+      {
+        "id": "AW-0034",
+        "x": -0.16241698789325776,
+        "y": -0.009708035011138299,
+        "snippet": "Okay, I need a gut check because I'm about ninety percent of the way to a yes al"
+      },
+      {
+        "id": "AW-0035",
+        "x": -0.05728016774287793,
+        "y": -0.025810506096634198,
+        "snippet": "I run a herd of about forty goats and I am considering moving from physical fenc"
+      },
+      {
+        "id": "AW-0036",
+        "x": -0.14713580141438717,
+        "y": 0.046359321142243184,
+        "snippet": "Okay, this is a little outside my wheelhouse so bear with me, but I run operatio"
+      },
+      {
+        "id": "AW-0037",
+        "x": -0.04474231977627504,
+        "y": -0.040141622617917636,
+        "snippet": "So I've got this glowing review of an injury-detection wearable basically writte"
+      },
+      {
+        "id": "AW-0038",
+        "x": -0.058325866440569335,
+        "y": -0.04372286162094095,
+        "snippet": "Okay, so I finally finished configuring the new procurement engine for our silk "
+      },
+      {
+        "id": "AW-0039",
+        "x": -0.10635956668788853,
+        "y": 0.04633725746035881,
+        "snippet": "I run marketing for a group of outdoor resort and event venues, and I'm putting "
+      },
+      {
+        "id": "AW-0040",
+        "x": -0.15166112154881256,
+        "y": 0.04386650396397391,
+        "snippet": "I'm the operations manager at the pest-control company my parent founded, and my"
+      }
+    ]
   }
 }
