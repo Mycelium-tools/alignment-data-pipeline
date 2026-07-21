@@ -190,6 +190,115 @@ class TestAuditChartRows:
         assert len(rendering.AUDIT_ARM_COLUMNS) == len(rendering.AUDIT_ARM_COLORS)
         assert rendering.AUDIT_ARM_COLUMNS[0] == "plain Claude"
 
+    def test_pull_count_rows_carry_counts_and_joined_entry_ids(self):
+        pulls = {"AW-0002": ["C1", "M5", "T3"], "AW-0001": ["C3"]}
+        rows = rendering.audit_pull_count_rows(pulls, {"AW-0001": "E-0042"})
+        # sorted by prompt id, labeled like the other per-record chart rows
+        assert rows == [
+            {"record": "E-0042", "count": 1, "entries": "C3"},
+            {"record": "AW-0002", "count": 3, "entries": "C1, M5, T3"},
+        ]
+
+    def test_pull_scatter_pairs_pull_width_with_added_reasons(self):
+        per_case = {
+            "AW-0001": {"survival": {"anchored": [], "added": ["n1", "n2"]}},
+            "AW-0002": {"survival": {"anchored": [], "added": []}},
+            "AW-0003": {"survival": {"anchored": [], "added": ["n3"]}},  # no pull record
+            "AW-0004": {},  # no survival judgment
+        }
+        pulls = {"AW-0001": ["C1", "M5", "T3"], "AW-0002": ["C3"], "AW-0004": ["C1"]}
+        rows = rendering.audit_pull_scatter_rows(per_case, pulls, {"AW-0001": "E-0042"})
+        # only records with BOTH a survival judgment and a pull record plot
+        assert rows == [
+            {"record": "E-0042", "pulled": 3, "added": 2, "entries": "C1, M5, T3"},
+            {"record": "AW-0002", "pulled": 1, "added": 0, "entries": "C3"},
+        ]
+
+    def test_trigger_counts_dedupe_per_case_and_keep_zero_entries(self):
+        pulls = {"AW-0001": ["C1", "C1", "T3"], "AW-0002": ["C1"]}
+        rows = rendering.audit_trigger_count_rows(
+            pulls, ["C1", "M5", "T3"], {"C1": "move one", "M5": "move five"})
+        # library order, per-case dedup (C1 fired in 2 CASES, not 3 pulls),
+        # never-pulled entries stay in at zero
+        assert rows == [
+            {"entry": "C1", "cases": 2, "move": "move one"},
+            {"entry": "M5", "cases": 0, "move": "move five"},
+            {"entry": "T3", "cases": 1, "move": ""},
+        ]
+
+    def test_labels_map_records_to_example_gids_with_fallback(self):
+        # per_case stays keyed by prompt_id; labels swap in the stable example
+        # gid for display, and unmapped ids (pre-gid runs) pass through
+        labels = {"AW-0001": "E-0042"}
+        per_case = {"AW-0001": {"pipeline": 300, "plain": None},
+                    "AW-0002": {"pipeline": 500, "plain": 200}}
+        rows = rendering.audit_length_chart_rows(per_case, labels)
+        assert [r["record"] for r in rows] == ["E-0042", "AW-0002"]
+        reason_case = {"AW-0001": {"plain": {"reasons": ["a"]}, "pipeline": None}}
+        assert rendering.audit_reason_chart_rows(reason_case, labels)[0]["record"] == "E-0042"
+        surv_case = {"AW-0001": {"survival": {"anchored": [
+            {"reason": "a", "verdict": "kept"}], "added": []}}}
+        assert rendering.audit_survival_chart_rows(surv_case, labels)[0]["record"] == "E-0042"
+        assert rendering.audit_record_label("AW-0009", labels) == "AW-0009"
+        assert rendering.audit_record_label("AW-0009", None) == "AW-0009"
+
+
+class TestAuditSectionMeta:
+    # Every section title the current audit emits must resolve through the
+    # title fallback (old reports carry no group/gloss fields).
+    CURRENT_TITLES = [
+        "Structural skeletons", "Openers & closers",
+        "Unrealized dealt details (frontier frame)", "Locale / taxa plausibility",
+        "Length-class realization", "Insider-vocabulary leak (responses)",
+        "Response lengths (vs plain baseline)", "Stock phrases (responses)",
+        "Lexical diversity (responses)", "Structural variation (responses)",
+        "Response openings (drafts)", "Response openings (finals)",
+        "Reasoning-library selection (2a.5)", "Reasoning-library coverage",
+        "Moral-patient reasons (LLM)",
+    ]
+
+    def test_field_wins_over_title_fallback(self):
+        sec = {"title": "Response lengths (vs plain baseline)",
+               "group": "paid", "gloss": "custom"}
+        assert rendering.audit_section_group(sec) == "paid"
+        assert rendering.audit_section_gloss(sec) == "custom"
+
+    def test_title_fallback_covers_every_current_section(self):
+        for title in self.CURRENT_TITLES:
+            sec = {"title": title}
+            assert rendering.audit_section_group(sec) in rendering.AUDIT_GROUP_ORDER[:-1], title
+            assert rendering.audit_section_gloss(sec), title
+
+    def test_unknown_sections_degrade_to_other(self):
+        sec = {"title": "Some future check"}
+        assert rendering.audit_section_group(sec) == "other"
+        assert rendering.audit_section_gloss(sec) == ""
+
+
+class TestAuditVerdictSummary:
+    def test_worst_verdict_counts_and_report_order(self):
+        report = {"sections": [
+            {"title": "A", "group": "prompt", "rows": [
+                {"verdict": "GOOD"}, {"verdict": "OK"}, {"verdict": None}]},
+            {"title": "B", "group": "response", "rows": [
+                {"verdict": "GOOD"}, {"verdict": "BAD"}, {"verdict": "OK"}]},
+            {"title": "C", "group": "prompt", "rows": [{"verdict": None}]},
+        ]}
+        rows = rendering.audit_verdict_summary(report)
+        assert [r["section"] for r in rows] == ["A", "B", "C"]
+        assert rows[0]["worst"] == "OK" and rows[0]["counts"] == {"GOOD": 1, "OK": 1, "BAD": 0}
+        assert rows[1]["worst"] == "BAD"
+        assert rows[2]["worst"] is None  # purely informational section
+
+    def test_skipped_sections_are_flagged(self):
+        report = {"sections": [{"title": "A", "rows": [{"verdict": None}]}],
+                  "skipped_sections": [{"section": "A", "reason": "bare-file input"}]}
+        rows = rendering.audit_verdict_summary(report)
+        assert rows[0]["skipped"] is True
+
+    def test_empty_report_gives_empty_summary(self):
+        assert rendering.audit_verdict_summary({}) == []
+
 
 class TestAuditSurvivalGroups:
     def test_reasons_bucketed_by_verdict_plus_added(self):

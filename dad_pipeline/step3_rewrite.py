@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils, constitution_loader
+from dad_pipeline.id_registry import IdRegistry, example_fingerprint, registry_path
 
 
 def run(
@@ -28,6 +29,9 @@ def run(
     audit_path = output_dir / "rewrites.jsonl"
     final_path = final_dir / "dad_corpus.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
+    # Stable content-keyed example ids (E-####: the finished user/assistant
+    # pair), shared across runs; response_gid (R-####) rides in from step 2.
+    registry = IdRegistry(registry_path(output_dir))
 
     constitution_dir = utils.resolve_constitution_dir(prompts_dir)
     try:
@@ -100,7 +104,10 @@ def run(
         # Full audit record (includes the annotation + retrieval trail for inspection)
         audit_record = {
             "record_id": record_id,
+            "example_gid": registry.gid(
+                "example", example_fingerprint(resp["user_message"], rewritten)),
             "response_id": rid,
+            "response_gid": resp.get("response_gid"),
             "prompt_id": resp["prompt_id"],
             "sample_index": resp.get("sample_index", 0),
             "tensions": resp.get("tensions", []),
@@ -112,15 +119,20 @@ def run(
         }
         results.append(audit_record)
         utils.append_jsonl(audit_record, audit_path)
+        registry.save()
         checkpoint.mark_done(rid)
         done_response_ids.add(rid)
 
-    # Write final training-ready corpus — ONLY user + assistant messages, nothing else
+    # Write final training-ready corpus — user + assistant messages plus the
+    # stable ids (lineage keys, stripped with record_id at export; never text
+    # the model trains on)
     utils.ensure_dir(final_dir)
     final_records = []
     for r in results:
         final_records.append({
             "record_id": r["record_id"],
+            "example_gid": r.get("example_gid"),
+            "response_gid": r.get("response_gid"),
             "messages": [
                 {"role": "user", "content": r["user_message"]},
                 {"role": "assistant", "content": r["rewritten_response"]},

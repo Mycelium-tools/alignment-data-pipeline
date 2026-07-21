@@ -935,6 +935,12 @@ class TestStep2Run:
         assert len(results) == 1
         assert results[0]["assistant_response"] == "Draft response."
         assert results[0]["scope"]["replaceability"] == "realistic baseline"
+        # stable content-keyed response id, minted from the local registry and
+        # persisted on the stored record too
+        assert results[0]["response_gid"] == "R-0001"
+        stored = utils.load_jsonl(tmp_path / "responses.jsonl")
+        assert stored[0]["response_gid"] == "R-0001"
+        assert (tmp_path / "id_registry.json").exists()
         assert len(calls) == 3  # scope + select + response
         # the scope map and the user message both reach the response prompt
         respond_call = calls[2]["user_message"]
@@ -1208,7 +1214,8 @@ class TestStep2Run:
 
 def _response_record(rid="resp-1"):
     return {
-        "response_id": rid, "prompt_id": "AW-0001", "sample_index": 0,
+        "response_id": rid, "response_gid": "R-0007",
+        "prompt_id": "AW-0001", "sample_index": 0,
         "user_message": "User dilemma text.", "assistant_response": "Draft response.",
         "annotation": {"direction": "Mixed", "claims": []},
     }
@@ -1224,10 +1231,17 @@ class TestStep3Run:
         )
 
         assert len(final) == 1
-        # training records carry ONLY user + assistant messages
-        assert set(final[0].keys()) == {"record_id", "messages"}
+        # training records carry the user + assistant messages plus lineage
+        # ids only — no annotation, scope, or library scaffolding
+        assert set(final[0].keys()) == {"record_id", "example_gid", "response_gid", "messages"}
         assert [m["role"] for m in final[0]["messages"]] == ["user", "assistant"]
         assert final[0]["messages"][1]["content"] == "Rewritten careful answer."
+        # the stable example id is minted here; the response id rides in from step 2
+        assert final[0]["example_gid"] == "E-0001"
+        assert final[0]["response_gid"] == "R-0007"
+        audit = utils.load_jsonl(tmp_path / "step3" / "rewrites.jsonl")
+        assert audit[0]["example_gid"] == "E-0001"
+        assert audit[0]["response_gid"] == "R-0007"
         # the distilled principles reach the rewrite prompt; the annotation
         # deliberately does not (it anchors nothing after step 1)
         assert "CONSTITUTION PRINCIPLES" in calls[0]["system_prompt"]
@@ -1314,6 +1328,8 @@ class TestBaselineRun:
         rec = results[0]
         assert rec["prompt_id"] == "AW-0001"
         assert rec["baseline_response"] == "Plain model answer."
+        # stable content-keyed control-arm id (own C- id space)
+        assert rec["plain_gid"] == "C-0001"
         # the whole point of the control arm: NO system prompt, and the 1c
         # user prompt reaches the model verbatim
         assert calls[0]["system_prompt"] == ""

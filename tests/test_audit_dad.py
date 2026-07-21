@@ -178,6 +178,24 @@ def test_library_selection_reports_sizes_and_fallbacks(tmp_path):
     assert ls["per_case"] == {"AW-0001": 3, "AW-0002": total}
 
 
+def test_library_selection_detail_uses_example_gids_when_available(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
+    (run / "step2").mkdir()
+    for s in ({"prompt_id": "AW-0001", "entry_ids": ["C1"], "selection_source": "select"},
+              {"prompt_id": "AW-0002", "entry_ids": ["C1", "M1"], "selection_source": "select"}):
+        utils.append_jsonl(s, run / "step2" / "scopes.jsonl")
+    (run / "step3").mkdir()
+    utils.append_jsonl({"record_id": "r1", "prompt_id": "AW-0001", "example_gid": "E-0042"},
+                       run / "step3" / "rewrites.jsonl")
+
+    report = {}
+    audit_dad.audit_library_selection(run, report)
+    # labeled by the stable example gid where one exists, per-run id otherwise
+    assert report["sections"][0]["detail"] == ["E-0042 1, AW-0002 2"]
+    # per_case stays keyed by prompt_id — it is the join key downstream
+    assert report["library_selection"]["per_case"] == {"AW-0001": 1, "AW-0002": 2}
+
+
 def test_library_selection_calm_without_step2(tmp_path):
     run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
     report = {}
@@ -189,23 +207,15 @@ def test_library_selection_calm_without_step2(tmp_path):
 
 
 def test_jargon_scan_counts_and_compares_to_baseline(tmp_path):
-    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
-    (run / "final").mkdir()
-    (run / "baseline").mkdir()
-    # pipeline responses carry insider vocab; the plain baseline carries less
-    corpus = [
-        {"record_id": "r1", "messages": [{"role": "user", "content": "u"},
-         {"role": "assistant", "content": "The counterfactual moral weight here is high; valenced experience matters."}]},
-        {"record_id": "r2", "messages": [{"role": "user", "content": "u"},
-         {"role": "assistant", "content": "Consider the counterfactual and the objective function."}]},
-    ]
-    for c in corpus:
-        utils.append_jsonl(c, run / "final" / "dad_corpus.jsonl")
-    utils.append_jsonl({"prompt_id": "AW-0001", "baseline_response": "A plain kind answer with no jargon."},
-                       run / "baseline" / "baseline_responses.jsonl")
-    utils.append_jsonl({"prompt_id": "AW-0002", "baseline_response": "Weigh the counterfactual once."},
-                       run / "baseline" / "baseline_responses.jsonl")
-
+    # pipeline responses carry insider vocab; the plain baseline carries less.
+    # Built through the step3 join — jargon scans the same prompt-keyed
+    # population as every other response section.
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", "The counterfactual moral weight here is high; valenced experience matters.",
+         "A plain kind answer with no jargon."),
+        ("AW-0002", "Consider the counterfactual and the objective function.",
+         "Weigh the counterfactual once."),
+    ])
     report = {}
     audit_dad.audit_jargon(run, report)
     j = report["jargon"]
@@ -221,11 +231,10 @@ def test_jargon_scan_counts_and_compares_to_baseline(tmp_path):
 
 
 def test_jargon_scan_avoids_plain_word_false_positives(tmp_path):
-    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
-    (run / "final").mkdir()
-    utils.append_jsonl({"record_id": "r1", "messages": [{"role": "user", "content": "u"},
-        {"role": "assistant", "content": "Only marginally worse, a neglected corner, the sentient dog suffered."}]},
-        run / "final" / "dad_corpus.jsonl")
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", "Only marginally worse, a neglected corner, the sentient dog suffered.",
+         None),
+    ])
     report = {}
     audit_dad.audit_jargon(run, report)
     # "marginally", "neglected", "sentient", "suffered" are plain usage — not flagged
@@ -288,11 +297,12 @@ def test_response_lengths_compare_to_baseline(tmp_path):
     audit_dad.audit_response_lengths(run, report)
     rl = report["response_lengths"]
     assert rl["per_case"]["AW-0001"] == {"pipeline": 300, "plain": 100}
-    assert rl["pipeline_median"] == 500 and rl["plain_median"] == 200
-    assert rl["median_ratio"] == 2.5
+    # true median (statistics.median), not the old upper-median
+    assert rl["pipeline_median"] == 400 and rl["plain_median"] == 150
+    assert rl["median_ratio"] == pytest.approx(400 / 150)
     rows = {r["label"]: r for r in report["sections"][0]["rows"]}
     assert rows["median length ratio (pipeline/plain)"]["verdict"] == \
-        audit_dad._verdict(2.5, 1.5, 2.5)
+        audit_dad._verdict(400 / 150, 1.5, 2.5)
     # batch totals: 800 pipeline vs 300 plain -> +500, +166.7%
     assert rows["total chars (batch)"]["value"] == \
         "pipeline 800 / plain 300 (+500 / +166.7%)"
@@ -305,6 +315,18 @@ def test_response_lengths_without_baseline_still_report_pipeline(tmp_path):
     rl = report["response_lengths"]
     assert rl["pipeline_median"] == 300
     assert rl["median_ratio"] is None and rl["per_case"]["AW-0001"]["plain"] is None
+
+
+def test_response_lengths_floor_flags_suspiciously_short_pipeline(tmp_path):
+    # ratio < 0.8: a pipeline much SHORTER than plain is not GOOD — it hints at
+    # truncation or over-compression, so the verdict floors at OK with a note
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "x" * 100, "y" * 300)])
+    report = {}
+    audit_dad.audit_response_lengths(run, report)
+    rows = {r["label"]: r for r in report["sections"][0]["rows"]}
+    row = rows["median length ratio (pipeline/plain)"]
+    assert row["verdict"] == "OK"
+    assert "shorter than plain" in row["note"]
 
 
 def _reasons_dispatch(consolidation='["fish distress", "worker livelihoods"]',
@@ -349,6 +371,10 @@ def test_reasons_scan_counts_density_and_corpus_distinct(tmp_path, stub_claude):
     assert rows["total unique reasons (batch)"]["value"] == \
         "pipeline 2 / plain 1 (+1 / +100.0%)"
     assert mpr["model"] == "test-model" and mpr["failures"] == 0
+    # the pass records its own cost (0.0 offline — no cost log), as a number and
+    # a display row, so the viewer can show what --reasons cost for this run
+    assert isinstance(mpr["cost_usd"], (int, float))
+    assert "pass cost (LLM calls)" in rows
     assert all(c["stage"] == "eval_audit_dad" for c in calls)
     # 2 extractions + 2 check-backs + 2 consolidations + 1 survival judge
     assert len(calls) == 7
@@ -470,6 +496,51 @@ def test_sections_accumulate_in_run_order():
         "Structural skeletons", "Openers & closers", "Locale / taxa plausibility"]
 
 
+def test_every_section_carries_a_group_and_a_gloss(tmp_path):
+    # group buckets the viewer's layout; gloss is the plain-language line under
+    # each section title. New sections must ship both.
+    records = [{"prompt_id": "AW-0001", "user_message": "My cat sleeps a lot."}]
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "A reply.", "Plain.")])
+    report = {}
+    audit_dad.audit_skeletons(records, report)
+    audit_dad.audit_openers_closers(records, report)
+    audit_dad.audit_unrealized_details(records, report)
+    audit_dad.audit_locale_taxa(records, report)
+    audit_dad.audit_lengths(run, report)
+    audit_dad.audit_jargon(run, report)
+    audit_dad.audit_response_lengths(run, report)
+    audit_dad.audit_stock_phrases(run, report)
+    audit_dad.audit_lexical(run, report)
+    audit_dad.audit_structure(run, report)
+    audit_dad.audit_response_openings(run, report)
+    audit_dad.audit_library_selection(run, report)
+    audit_dad.audit_library_coverage(run, report)
+    for sec in report["sections"]:
+        assert sec["group"] in ("prompt", "response", "library", "paid"), sec["title"]
+        assert sec["gloss"], sec["title"]
+    groups = {s["title"]: s["group"] for s in report["sections"]}
+    assert groups["Structural skeletons"] == "prompt"
+    assert groups["Insider-vocabulary leak (responses)"] == "response"
+    assert groups["Reasoning-library selection (2a.5)"] == "library"
+
+
+def test_skipped_sections_are_recorded_for_bare_file_input():
+    # bare-file input (run_dir=None): every run-dir section records WHY it
+    # carries no verdicts, and the summary data lands in the report
+    report = {}
+    audit_dad.audit_jargon(None, report)
+    audit_dad.audit_response_lengths(None, report)
+    audit_dad.audit_library_selection(None, report)
+    skipped = report["skipped_sections"]
+    assert [s["section"] for s in skipped] == [
+        "Insider-vocabulary leak (responses)",
+        "Response lengths (vs plain baseline)",
+        "Reasoning-library selection (2a.5)"]
+    assert all("bare-file input" in s["reason"] for s in skipped)
+    # the skip rows themselves are unchanged (value 'skipped', note intact)
+    assert all(sec["rows"][0]["value"] == "skipped" for sec in report["sections"])
+
+
 def test_locale_flags_recorded_as_detail_lines():
     records = [
         {"prompt_id": "AW-0001", "taxa_subcategory": "fur animals (mink, foxes)",
@@ -545,6 +616,38 @@ def test_stock_phrases_discovery_finds_new_engram(tmp_path):
     assert any(novel in g or g in novel for g in new_p)
     # and it is reported as a detail line, not silently stored
     assert any("new" in d and "quiet part" in d for d in report["sections"][0]["detail"])
+
+
+def test_stock_phrases_empty_watchlist_bucket_degrades_to_no_row(tmp_path, monkeypatch):
+    # an emptied origin bucket (e.g. after a watchlist prune) must not crash —
+    # the worst-phrase rows simply don't emit
+    monkeypatch.setattr(audit_dad, "_STOCK_PHRASES",
+                        {"pipeline-origin": [], "plain-origin": []})
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "Some reply.", "Plain.")])
+    report = {}
+    audit_dad.audit_stock_phrases(run, report)
+    labels = [r["label"] for r in report["sections"][0]["rows"]]
+    assert "responses scanned" in labels
+    assert "worst pipeline-origin phrase" not in labels
+    assert "worst plain-origin phrase (plain arm)" not in labels
+
+
+def test_stock_phrases_watchlist_detail_capped_at_recurring_12(tmp_path):
+    # every pipeline-origin watch phrase fires in both responses (>=2 hits each)
+    # -> more than 12 eligible lines -> capped at 12 plus a remainder line
+    all_phrases = ". ".join(audit_dad._STOCK_PHRASES["pipeline-origin"]) + "."
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", all_phrases, "Plain."), ("AW-0002", all_phrases, "Plain too."),
+    ])
+    report = {}
+    audit_dad.audit_stock_phrases(run, report)
+    detail = report["sections"][0].get("detail") or []
+    watch_lines = [d for d in detail if d.startswith("[")]
+    assert len(watch_lines) == 12
+    assert any(d.startswith("… (+") for d in detail)
+    # the report JSON still carries every phrase's counts uncapped
+    assert len(report["stock_phrases"]["watch"]) == sum(
+        len(v) for v in audit_dad._STOCK_PHRASES.values())
 
 
 def test_structure_shapes_and_collapse_verdict(tmp_path):
@@ -725,6 +828,27 @@ def test_library_coverage_verdict_attaches_at_scale(tmp_path):
     rows = {r["label"]: r for r in report["sections"][0]["rows"]}
     assert rows["coverage (selected at least once)"]["verdict"] == \
         audit_dad._verdict(1.0, 0.85, 0.60, higher_better=True)
+
+
+def test_library_coverage_detail_lines_are_capped(tmp_path):
+    from dad_pipeline import reasoning_library
+    all_ids = [str(e) for e in reasoning_library.all_ids(reasoning_library.load("prompts/dad"))]
+    assert len(all_ids) > 25, "cap test needs a library bigger than both caps"
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "hi"}])
+    (run / "step2").mkdir()
+    # one case fires 11 entries (> the 10-line fires cap); the rest are never
+    # selected (> the 15-id cap)
+    utils.append_jsonl({"prompt_id": "AW-0001", "entry_ids": all_ids[:11]},
+                       run / "step2" / "scopes.jsonl")
+    report = {}
+    audit_dad.audit_library_coverage(run, report)
+    detail = report["sections"][0]["detail"]
+    fires_line = next(d for d in detail if d.startswith("fires:"))
+    never_line = next(d for d in detail if d.startswith("never selected:"))
+    assert "(+1 more)" in fires_line                      # 11 fired, 10 shown
+    assert f"(+{len(all_ids) - 11 - 15} more)" in never_line
+    # the report JSON keeps the full picture uncapped
+    assert len(report["library_coverage"]["never_selected"]) == len(all_ids) - 11
 
 
 def test_library_coverage_calm_without_step2(tmp_path):

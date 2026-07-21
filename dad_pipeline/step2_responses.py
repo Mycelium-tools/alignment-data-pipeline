@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from shared import api, utils
 from dad_pipeline import reasoning_library
+from dad_pipeline.id_registry import IdRegistry, registry_path, response_fingerprint
 
 MAX_SCOPE_ATTEMPTS = 3
 
@@ -175,6 +176,10 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
     scopes_path = output_dir / "scopes.jsonl"
     output_path = output_dir / "responses.jsonl"
     checkpoint = utils.Checkpoint(output_dir / "_checkpoint.json")
+    # Stable content-keyed response ids (R-####), shared across runs. Assigned
+    # on the main thread only (the registry is not thread-safe) and saved with
+    # every write batch, so a crash never orphans an id already on a record.
+    registry = IdRegistry(registry_path(output_dir))
 
     # Drop unusable scopes on load so a resumed run re-derives them instead of
     # reusing a checkpointed parse failure (pre-fix runs persisted {} scopes).
@@ -324,6 +329,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
 
             out["responses"].append({
                 "response_id": str(uuid.uuid4()),
+                "response_gid": None,  # assigned on the main thread (registry)
                 "prompt_id": pid,
                 "sample_index": sample_index,
                 "user_message": d["user_message"],
@@ -367,10 +373,14 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
         for skip in out["skips"]:
             print(skip)
         for record in out["responses"]:
+            record["response_gid"] = registry.gid(
+                "response", response_fingerprint(record["assistant_response"]))
             results.append(record)
             done_keys.add((record["prompt_id"], record["sample_index"]))
             utils.append_jsonl(record, output_path)
             checkpoint.mark_done(f"{record['prompt_id']}_s{record['sample_index']}")
+        if out["responses"]:
+            registry.save()
 
     if scope_rejected:
         print(f"  {len(scope_rejected)} prompt(s) rejected at 2a (scope unusable) — "

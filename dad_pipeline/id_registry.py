@@ -1,12 +1,22 @@
-"""Stable, content-keyed global ids for scenarios and prompts.
+"""Stable, content-keyed global ids for the things the pipeline produces.
 
-The per-run ids — scenario_id (S-###) and prompt_id (AW-####) — reset every run
-and are unique only within a run, so they can't identify "the same scenario/
-prompt" across runs. This registry adds a *stable* id alongside them:
-scenario_gid / prompt_gid, which counts up globally and is reused whenever the
-same content appears again. That lets the compare viewer align the same
-scenario or prompt across runs (e.g. reuse a scenario set, vary the prompt
-templates, and compare). Additive — the per-run ids are untouched.
+The per-run ids — scenario_id (S-###), prompt_id (AW-####), response_id /
+record_id (uuids) — reset every run (or are unreadable), so they can't identify
+"the same thing" across runs. This registry adds a *stable* id alongside them,
+one kind per artifact, each counting up globally and reused whenever the same
+content appears again:
+
+- scenario_gid  S-####  the dealt scenario (categorical shape, pre-prompt)
+- prompt_gid    P-####  the shipped user message (exact wording)
+- response_gid  R-####  one pipeline response (step-2 draft text; the id
+                        survives the step-3 rewrite — same response, revised)
+- plain_gid     C-####  one plain-Claude control response (baseline text)
+- example_gid   E-####  one finished training example (user message + final
+                        rewritten response pair)
+
+That lets the viewer and the audits align/sort the same artifact across runs.
+Additive — the per-run ids are untouched. `backfill_gids.py` labels historical
+runs (from the first S-/P- run onward) with the newer kinds.
 
 The registry is a git-tracked JSON file shared across runs (one id space); in
 tests it lives under the tmp output root, so it never touches the real one.
@@ -34,12 +44,37 @@ def prompt_fingerprint(user_message: str) -> str:
     return _fingerprint(" ".join((user_message or "").split()))
 
 
-class IdRegistry:
-    """Maps a content fingerprint to a stable integer per kind ('scenario' /
-    'prompt'). New content gets max+1; seen content keeps its number; numbers
-    never reset across runs. Persisted as JSON."""
+def response_fingerprint(text: str) -> str:
+    """Hash of a whitespace-normalized response text (pipeline draft or plain
+    baseline — the kind keeps their id spaces separate)."""
+    return _fingerprint(" ".join((text or "").split()))
 
-    KINDS = ("scenario", "prompt")
+
+def example_fingerprint(user_message: str, assistant_message: str) -> str:
+    """Hash of a whitespace-normalized (user, assistant) training pair."""
+    return _fingerprint([" ".join((user_message or "").split()),
+                         " ".join((assistant_message or "").split())])
+
+
+def registry_path(output_dir: Path) -> Path:
+    """The registry lives at the dad-pipeline output root
+    (<outputs>/dad/id_registry.json), found by walking up to the `runs` dir.
+    Falls back to the output dir itself for non-standard layouts (e.g. tests
+    passing a bare tmp stage dir), which keeps each test isolated."""
+    for anc in Path(output_dir).parents:
+        if anc.name == "runs":
+            return anc.parent / "id_registry.json"
+    return Path(output_dir) / "id_registry.json"
+
+
+class IdRegistry:
+    """Maps a content fingerprint to a stable integer per kind. New content
+    gets max+1; seen content keeps its number; numbers never reset across
+    runs. Persisted as JSON."""
+
+    KINDS = ("scenario", "prompt", "response", "plain", "example")
+    PREFIXES = {"scenario": "S", "prompt": "P", "response": "R",
+                "plain": "C", "example": "E"}
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -62,6 +97,10 @@ class IdRegistry:
         if fingerprint not in table:
             table[fingerprint] = max(table.values(), default=0) + 1
         return table[fingerprint]
+
+    def gid(self, kind: str, fingerprint: str) -> str:
+        """The formatted stable id for this content, e.g. 'R-0012'."""
+        return f"{self.PREFIXES[kind]}-{self.assign(kind, fingerprint):04d}"
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
