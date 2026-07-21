@@ -19,6 +19,16 @@ diversity in meaning-space:
   Spread: per-type intra-group cosine and the similarity between type
   centroids, when records carry a `type_id` (SDF).
 
+SCOPE — this measures MEANING/topic diversity, NOT lexical/structural. "Similar"
+here is embedding cosine, so two prompts that share templated phrasing ("So
+I...", "gut-check", "can you help me") but different topics embed far apart and
+count as fully distinct. For a shared-scenario set (e.g. the same DAD scenarios
+drafted two ways) the Vendi is ~fixed regardless of surface phrasing — it tells
+you about topic coverage (a 1a/scenario property), not about writing
+fingerprints. For lexical/structural diversity use the offline checks in
+evals/audit_dad.py (openers/closers, structural skeletons, and the
+over-represented-n-gram + style-Vendi section), which read surface form.
+
 Absolute numbers depend on the embedding model and on the corpus sharing one
 broad topic BY DESIGN, so the headline use is comparing runs: rerun after a
 pipeline change and diff with --compare. Verdict thresholds are provisional
@@ -120,7 +130,10 @@ def record_text(rec: dict) -> str:
 
 
 def record_id(rec: dict, index: int) -> str:
-    return rec.get("doc_id") or rec.get("record_id") or f"row{index}"
+    # DAD finals: the stable example gid (E-####) beats the uuid record_id
+    # for anything a human reads (pair lists, cloud hover)
+    return (rec.get("doc_id") or rec.get("example_gid")
+            or rec.get("record_id") or f"row{index}")
 
 
 def stride_sample(items: list, cap: int) -> list:

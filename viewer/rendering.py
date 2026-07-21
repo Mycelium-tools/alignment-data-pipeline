@@ -19,7 +19,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dad_pipeline import compose_scenarios, reasoning_library
-from dad_pipeline.step1_dilemmas import format_annotation, format_scenario
+from dad_pipeline.step1_dilemmas import format_scenario_cards, format_scenario, dealt_cards
 from shared import matrix
 from dad_pipeline.step2_responses import SELECT_CALL_SOURCES, format_scope
 from shared import constitution_loader
@@ -209,22 +209,25 @@ def audit_shape_chart_rows(structure: dict) -> list[dict]:
     return rows
 
 
-def audit_stock_phrase_rows(stock_phrases: dict) -> list[dict]:
-    """Stock-phrase watchlist + discovered phrases as sortable rows
-    (phrase, origin, pipeline count, plain count), from report['stock_phrases'].
-    Phrases that never appear in either arm are dropped; rows are sorted by
-    pipeline count then plain count so the phrases the pipeline over-produces
-    sit on top. Pure so it stays testable."""
+def audit_tracked_tic_rows(tracked_tics: dict) -> list[dict]:
+    """Tracked-tic watchlist counts as sortable rows (phrase, origin, pipeline
+    count, plain count), from report['tracked_tics']. Phrases that never appear
+    in either arm are dropped; rows are sorted by pipeline count then plain count
+    so the phrases the pipeline over-produces sit on top. (New-phrase discovery
+    lives in report['tic_candidates'], surfaced via evals/review_tics.py.) Pure
+    so it stays testable."""
     rows = []
-    for phrase, v in (stock_phrases.get("watch") or {}).items():
+    for phrase, v in (tracked_tics.get("watch") or {}).items():
         pipe, plain = v.get("pipeline", 0), v.get("plain", 0)
         if pipe or plain:
             rows.append({"phrase": phrase, "origin": v.get("origin", ""),
                          "pipeline": pipe, "plain": plain})
-    for item in stock_phrases.get("new_pipeline") or []:
+    # Legacy pre-tics reports (report['stock_phrases']) carried inline-discovered
+    # phrases; keep rendering them so old committed/local runs stay readable.
+    for item in tracked_tics.get("new_pipeline") or []:
         rows.append({"phrase": item["phrase"], "origin": "discovered (pipeline)",
                      "pipeline": item["count"], "plain": 0})
-    for item in stock_phrases.get("new_plain") or []:
+    for item in tracked_tics.get("new_plain") or []:
         rows.append({"phrase": item["phrase"], "origin": "discovered (plain)",
                      "pipeline": 0, "plain": item["count"]})
     rows.sort(key=lambda r: (r["pipeline"], r["plain"]), reverse=True)
@@ -500,6 +503,43 @@ def audit_survival_chart_rows(per_case: dict, labels: dict | None = None) -> lis
     return rows
 
 
+def audit_alternative_chart_rows(moves_per_case: dict) -> list[dict]:
+    """Humane-alternatives per_case counts as wide-form rows (one column per
+    arm) for the grouped bar. Anchored on plain's alternatives: plain offered =
+    all anchored; pipeline offered = kept+weakened (plain's that survived) +
+    added. Pure so it stays testable."""
+    rows = []
+    for pid in sorted(moves_per_case):
+        alt = (moves_per_case[pid] or {}).get("alternatives") or {}
+        anch = alt.get("anchored") or []
+        kept_weak = sum(1 for a in anch if a.get("verdict") in ("kept", "weakened"))
+        rows.append({"record": pid,
+                     "plain Claude": len(anch),
+                     "pipeline": kept_weak + len(alt.get("added") or [])})
+    return rows
+
+
+def audit_alternative_groups(alt: dict) -> list | None:
+    """One record's alternatives as verdict groups — plain's alternatives
+    bucketed kept/weakened/dropped (judged against the pipeline response) plus
+    the pipeline's added ones, mirroring audit_survival_groups. None when the
+    record carries no alternatives data. Pure so it stays testable."""
+    anch, added = alt.get("anchored"), alt.get("added")
+    if anch is None and added is None:
+        return None
+    buckets: dict = {"kept": [], "weakened": [], "dropped": []}
+    for a in anch or []:
+        if a.get("verdict") in buckets:
+            buckets[a["verdict"]].append(str(a.get("alternative")))
+    added_l = [str(x) for x in added or []]
+    return [
+        (f"✓ Kept by the pipeline ({len(buckets['kept'])})", buckets["kept"]),
+        (f"〜 Weakened ({len(buckets['weakened'])})", buckets["weakened"]),
+        (f"✗ Dropped ({len(buckets['dropped'])})", buckets["dropped"]),
+        (f"➕ Added by the pipeline ({len(added_l)})", added_l),
+    ]
+
+
 def list_templates(run_dir: Path, git_commit: str | None, pipeline: str) -> list[Template]:
     """Every template file relevant to a run (for the run-detail Prompts tab)."""
     names = []
@@ -741,8 +781,8 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         r.variables = {
             "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",
             "draft_prompt": judged,
-            "annotation_block": format_annotation(
-                {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
+            "annotation_block": format_scenario_cards(
+                {k: v for k, v in dealt_cards(dilemma).items() if k != "claims"}),
         }
         gate_t = tpl("step1c_gate.txt")
         if gate_t.text is None:  # pre-renumbering snapshots
@@ -785,8 +825,8 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "scenario_block": format_scenario(scenario) if scenario else "(scenario record not found)",
             "draft_prompt": draft,
             # the legacy 1c refine call excluded claims from its view
-            "annotation_block": format_annotation(
-                {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
+            "annotation_block": format_scenario_cards(
+                {k: v for k, v in dealt_cards(dilemma).items() if k != "claims"}),
         }
         r.system, r.user = _format_split(tpl("step1_refine.txt"), r.variables, r)
         return r
@@ -798,11 +838,11 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             r.warnings.append("This run has no scope stage (predates the step-2 scoping pass).")
             return r
         response = lineage.get("response") or {}
-        annotation = response.get("annotation") or dilemma.get("annotation") or {}
+        annotation = dealt_cards(response) or dealt_cards(dilemma)
         scope_t = tpl("step2_scope.txt")
         r.variables = {
             "user_message": response.get("user_message") or dilemma.get("user_message", ""),
-            "annotation_block": format_annotation(annotation),
+            "annotation_block": format_scenario_cards(annotation),
         }
         # Only the scope-time-selection era's snapshots reference the trigger
         # index (selection has since moved to its own step2_select call) —
@@ -873,7 +913,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
         ids = (response.get("entry_ids") or tag.get("entry_ids")
                or response.get("principle_ids") or tag.get("principle_ids") or [])
         block = reasoning_library.format_entries(library, ids) if library else ""
-        annotation = (response.get("annotation") or (lineage.get("dilemma") or {}).get("annotation") or {})
+        annotation = dealt_cards(response) or dealt_cards(lineage.get("dilemma") or {})
         r.variables = {
             # the plain-model baseline reaches 2b as the advisory first take
             # (current runs) or as the fused draft_reply (fused-era snapshots);
@@ -889,7 +929,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "scope_block": format_scope((lineage.get("scope") or {}).get("scope") or {}),
             # older snapshots' templates used these instead of {library_block}
             "entries_block": block,
-            "annotation_block": format_annotation(annotation),
+            "annotation_block": format_scenario_cards(annotation),
             "principles_block": block,
             "user_message": user_message,
             # runs since the entry-shape sampling store the draw on the response
@@ -915,7 +955,7 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             constitution_loader.parse_principles(principles_t.text)) if principles_t.text else ""
         r.variables = {
             "principles_block": principles_block,
-            "annotation_block": format_annotation(audit.get("annotation") or {}),
+            "annotation_block": format_scenario_cards(dealt_cards(audit)),
             "user_message": audit.get("user_message", ""),
             "draft_response": audit.get("draft_response", ""),
         }

@@ -210,6 +210,94 @@ ARCHETYPES = {
                   "reverse, and the welfare of the animals it would affect "
                   "appears nowhere in the user's framing.",
     },
+    # A first-person consumption decision — what the user personally buys,
+    # wears, or eats. The run otherwise almost never surfaces the individual-
+    # consumer frame (fur, cosmetics, leather, diet), so an archetype reserves
+    # it. Kept a small slice (0.05): many consumption asks are not real
+    # dilemmas. Visibility and scope are left free — hidden deals become the
+    # oblivious "never examined it" case (via the trap -> hidden -> unaware
+    # override), while explicit/implicit deals carry the agonized ones.
+    "personal-consumption": {
+        "share": 0.05,
+        "axes": {
+            "leverage": ("their personal choices",),
+            "domain": ("consumer choice", "food & cooking", "fashion / clothing",
+                       "personal care / cosmetics"),
+            "user_stakes": ("low", "medium"),
+            "user_attitude": ("conflicted", "concerned", "unaware", "skeptical"),
+            "user_moral_framework": ("virtue", "care"),
+        },
+        "clause": "Design note: this is a first-person consumption decision — "
+                  "what the user personally buys, wears, or eats (e.g. fur, "
+                  "leather, wool, down, silk, cosmetics or products tested on "
+                  "animals, a dietary choice). It may be an agonized tradeoff "
+                  "the user is fully aware of, a habit they have never "
+                  "examined, or a choice they doubt even matters. Center what "
+                  "kind of person they want to be, and weigh the many hidden "
+                  "lives behind the product against a small, real personal "
+                  "cost or preference.",
+    },
+    # A user who personally holds a policy lever — the decision on their desk
+    # sets rules affecting animals beyond any single case. The natural
+    # conjunction (systemic leverage x a policy-hosting domain narrowed to an
+    # actual policymaker by the clause) is rare enough that a 40-example run
+    # essentially never contains one. Only leverage is constrained hard; the
+    # domain pool is everything EXCEPT the personal-sphere domains (the user's
+    # career, family, friendship, personal money, health, grief), where an
+    # institutional decision can't coherently live — policy dilemmas mostly
+    # live inside a subject domain (a fisheries quota, a cosmetics-testing
+    # ban, ritual-slaughter rules), not in "public policy" in the abstract.
+    "policymaker-lever": {
+        "share": 0.05,
+        "axes": {
+            "leverage": ("their ability to make a systemic",),
+            "domain": ("public policy / law", "business / investing",
+                       "procurement", "marketing", "AI / product development",
+                       "research", "agriculture / aquaculture",
+                       "veterinary / medicine", "food & cooking",
+                       "consumer choice", "fashion / clothing",
+                       "personal care / cosmetics", "companion animal care",
+                       "wildlife management", "education / parenting",
+                       "religion / culture", "journalism / media",
+                       "volunteering / advocacy", "technology"),
+        },
+        "clause": "Design note: the user personally holds a policy lever — a "
+                  "regulator, ministry or agency official, legislator or "
+                  "their staffer, municipal council member, or standards-body "
+                  "member. Build the scenario around the institutional "
+                  "decision on their desk, with the ordinary pressures of the "
+                  "role (precedent, stakeholders, political cost, incomplete "
+                  "evidence) in play.",
+    },
+    # A user with FINAL authority over a company practice — owner, founder,
+    # CEO, family-business head: no higher approval needed, no "policy says"
+    # excuse, whether the practice changes is genuinely their call. The
+    # organizational-position lever itself is common (25% of deals), so unlike
+    # the other archetypes this one guarantees a flavor, not a rare
+    # conjunction — the clause pins top-of-the-org authority that the lever
+    # card alone doesn't distinguish from a middle manager. Small share:
+    # a floor of one such case per full run.
+    "executive-authority": {
+        "share": 0.02,
+        "axes": {
+            "leverage": ("their organizational position",),
+            "domain": ("business / investing", "procurement", "marketing",
+                       "AI / product development", "research",
+                       "agriculture / aquaculture", "veterinary / medicine",
+                       "food & cooking", "fashion / clothing",
+                       "personal care / cosmetics", "companion animal care",
+                       "wildlife management", "journalism / media",
+                       "technology"),
+        },
+        "clause": "Design note: the user has final authority over the "
+                  "practice in question — a founder, owner, CEO, or "
+                  "family-business head whose sign-off IS the decision. No "
+                  "higher approval is needed and no external policy binds "
+                  "them; whether the practice changes is genuinely their "
+                  "call, with the ordinary pressures of ownership (margins, "
+                  "payroll, investors or family expectations, competitive "
+                  "pressure) in play.",
+    },
 }
 
 # variables.txt values with special roles, all found by case-insensitive

@@ -51,6 +51,69 @@ def _grouped_arm_chart(rows: list[dict], value_label: str) -> alt.Chart:
     )
 
 
+def _grouped_barh(df: pd.DataFrame, cat_field: str, cat_title: str) -> alt.Chart:
+    """Horizontal plain-vs-pipeline grouped bars, one group per category,
+    sorted by count. Backs the tracked-tic frequency view that replaces the
+    old wall of gray detail captions."""
+    return alt.Chart(df).mark_bar().encode(
+        y=alt.Y(f"{cat_field}:N", title=cat_title, sort="-x"),
+        yOffset=alt.YOffset("arm:N", sort=list(rendering.AUDIT_ARM_COLUMNS)),
+        x=alt.X("count:Q", title="responses"),
+        color=alt.Color("arm:N", title="", scale=alt.Scale(
+            domain=list(rendering.AUDIT_ARM_COLUMNS),
+            range=list(rendering.AUDIT_ARM_COLORS))),
+        tooltip=[alt.Tooltip(cat_field, title=cat_title or "phrase"), "arm",
+                 alt.Tooltip("count", title="count")],
+    )
+
+
+# --- shared redundancy/spread/cloud charts, used by BOTH the semantic and the
+# lexical diversity sections (same visuals, different feature space) -----------
+
+def _nn_hist(sims: list, rule_at: float, x_title: str) -> alt.Chart:
+    bars = alt.Chart(pd.DataFrame({"sim": sims})).mark_bar(color="#4C78A8").encode(
+        x=alt.X("sim:Q", bin=alt.Bin(maxbins=20), title=x_title, scale=alt.Scale(domain=[0, 1])),
+        y=alt.Y("count()", title="records"))
+    rule = alt.Chart(pd.DataFrame({"x": [rule_at]})).mark_rule(
+        strokeDash=[5, 3], color="#E5484D").encode(x="x:Q")
+    return (bars + rule).properties(height=210)
+
+
+def _cluster_bars(sizes: list) -> alt.Chart:
+    df = pd.DataFrame({"cluster (sorted)": range(1, len(sizes) + 1), "size": sizes})
+    return alt.Chart(df).mark_bar(color="#3FB366").encode(
+        x=alt.X("cluster (sorted):O", axis=alt.Axis(labels=len(sizes) <= 12)),
+        y="size:Q").properties(height=210)
+
+
+def _cloud_scatter(cloud: list) -> alt.Chart:
+    return alt.Chart(pd.DataFrame(cloud)).mark_circle(size=70, color="#D97757").encode(
+        x=alt.X("x:Q", title="PC1", axis=alt.Axis(labels=False, ticks=False)),
+        y=alt.Y("y:Q", title="PC2", axis=alt.Axis(labels=False, ticks=False)),
+        tooltip=[alt.Tooltip("id", title="record"), alt.Tooltip("snippet", title="text")],
+    ).properties(height=210)
+
+
+def _shared_phrase_bars(top_shared: dict) -> alt.Chart | None:
+    """Horizontal bar of the most over-represented phrases (n-gram → #prompts
+    sharing it) — the lexical section's interpretable counterpart to the
+    semantic cluster/cloud charts, naming the fingerprints directly."""
+    rows = []
+    for order in ("4", "3"):
+        for phrase, count in (top_shared.get(order) or []):
+            rows.append({"phrase": phrase, "prompts": count, "n-gram": f"{order}-gram"})
+    if not rows:
+        return None
+    df = pd.DataFrame(rows).drop_duplicates("phrase").nlargest(12, "prompts")
+    return alt.Chart(df).mark_bar(color="#8B5CF6").encode(
+        y=alt.Y("phrase:N", title="", sort="-x"),
+        x=alt.X("prompts:Q", title="prompts sharing it"),
+        tooltip=[alt.Tooltip("phrase", title="phrase"),
+                 alt.Tooltip("prompts", title="# prompts"),
+                 alt.Tooltip("n-gram", title="length")],
+    ).properties(height=210)
+
+
 def _section_table(section: dict) -> None:
     """Render one section's rows as a dataframe, with per-row notes moved below
     it as captions — long notes truncate badly inside a stretched table."""
@@ -101,9 +164,30 @@ if run_cost or cost_stages:
             for stage, agg in cost_stages.items()
         ]), width="stretch", hide_index=True)
 
-# Per-record charts label records by their stable example gid (E-####) when
-# the run carries them; pre-gid runs keep the per-run prompt id.
-labels = loader.dad_example_labels(run.run_dir) if run.pipeline == "dad" else {}
+# prompt_id -> this run's stable gids, so the per-case audit charts and
+# breakdowns label by the record they're about — responses by R-####, the
+# finished example by E-#### — not the per-run prompt id. Loaded once from
+# the run's rewrites.
+_gids_by_pid = ({r.get("prompt_id"): {"response": r.get("response_gid"),
+                                      "example": r.get("example_gid")}
+                 for r in loader.load_stage(run.run_dir, "dad", "step3_rewrites")
+                 if r.get("prompt_id")} if run.pipeline == "dad" else {})
+
+
+def _label_responses(rows: list[dict], key: str = "record") -> list[dict]:
+    """Relabel a per-case chart's id (prompt_id) with its response gid (R-####)
+    so response-level charts read in stable ids; unmapped ids stay as-is."""
+    for row in rows:
+        row[key] = (_gids_by_pid.get(row[key]) or {}).get("response") or row[key]
+    return rows
+
+
+def _resp_label(pid: str) -> str:
+    """Stable-id label for one record's picker entry (response R-#### · example
+    E-####); the per-run prompt_id only shows when a record has no gids."""
+    gids = _gids_by_pid.get(pid) or {}
+    ids = [gids.get("response"), gids.get("example")]
+    return " · ".join(x for x in ids if x) or pid
 
 
 def _slug(title: str) -> str:
@@ -114,6 +198,13 @@ def _slug(title: str) -> str:
 # Sections measured by the eval but deliberately not displayed on this page
 # (their data stays in the report JSON and the terminal output).
 _NOT_DISPLAYED = ("Structural variation",)
+# Alternatives + stance ride the same paid pass as the reasons section; they
+# render right after it so the judge's outputs read together.
+_PAID_COMPANIONS = ("Humane alternatives", "Response stance")
+# Sections whose detail lines are replaced by a richer custom view below, so
+# the generic gray-caption dump is suppressed for them. "Stock phrases" is the
+# legacy pre-tics name; old reports keep it.
+_CUSTOM_DETAIL = ("Tracked tics", "Stock phrases")
 
 summary = rendering.audit_verdict_summary(report)
 if summary:
@@ -144,7 +235,7 @@ if batch_totals:
 
 # The reasoning-library retrieval picture (per-record 2a.5 pulls, all entry
 # ids, id -> transferable move) — rides the reasons chart, the per-record
-# expanders, and the trigger-count toggle.
+# breakdowns, and the trigger-count toggle.
 pulls, library_ids, lib_moves = (loader.dad_library_info(run.run_dir)
                                  if run.pipeline == "dad" else ({}, [], {}))
 
@@ -162,11 +253,11 @@ def _render_reasons_section(section: dict) -> None:
     if cost is not None:
         st.caption(f"Paid pass cost: ${cost:.4f} · model `{mpr.get('model') or '?'}`")
 
-    chart_rows = rendering.audit_reason_chart_rows(per_case, labels)
+    chart_rows = _label_responses(rendering.audit_reason_chart_rows(per_case))
     if chart_rows:
         st.altair_chart(_grouped_arm_chart(chart_rows, "unique reasons"),
                         use_container_width=True)
-    surv_rows = rendering.audit_survival_chart_rows(per_case, labels)
+    surv_rows = _label_responses(rendering.audit_survival_chart_rows(per_case))
     if surv_rows:
         # Stacked survival chart — hover a segment to see WHICH reasons
         # sit in it. Bottom three segments sum to the plain arm's count.
@@ -188,7 +279,7 @@ def _render_reasons_section(section: dict) -> None:
 
     # Third chart: library rows pulled per record, right under the two reason
     # charts so per-record retrieval width reads in the same glance.
-    pull_rows = rendering.audit_pull_count_rows(pulls, labels)
+    pull_rows = _label_responses(rendering.audit_pull_count_rows(pulls))
     if pull_rows:
         st.caption("Library rows pulled at 2a.5 per record — hover a bar for "
                    "which entries.")
@@ -207,17 +298,26 @@ def _render_reasons_section(section: dict) -> None:
     for line in section.get("detail", []):
         st.caption(line)
 
-    for pid in sorted(per_case):
-        label = rendering.audit_record_label(pid, labels)
-        with st.expander(f"{label} — reasons kept / dropped / added (plain vs pipeline)"):
-            common.show_reason_comparison(per_case[pid])
-            entry_ids = pulls.get(pid) or []
-            # Folded behind its own toggle (expanders can't nest): the pulled
-            # rows are context, not the comparison the expander is opened for.
+    # Collapse the per-response breakdowns under one drop-down with a picker
+    # inside it (Streamlit forbids nested expanders) — saves the vertical
+    # space of one expander per response. Each is labelled by its stable ids
+    # (response R-#### · example E-####) so it matches the charts above and
+    # the lineage dropdown.
+    pids = sorted(per_case)
+    if pids:
+        with st.expander(f"Per-response reason breakdowns ({len(pids)})", expanded=False):
+            choice = st.selectbox("Response", pids, format_func=_resp_label,
+                                  key="reasons_percase_pick")
+            st.caption(f"{_resp_label(choice)} — reasons kept / weakened / dropped / "
+                       "added (plain vs pipeline)")
+            common.show_reason_comparison(per_case[choice])
+            entry_ids = pulls.get(choice) or []
+            # Folded behind its own toggle: the pulled rows are context, not
+            # the comparison the drop-down is opened for.
             if entry_ids and st.toggle(
                     f"Library entries pulled at 2a.5 ({len(entry_ids)}) — "
                     "id + transferable move",
-                    value=False, key=f"lib_pulls_{pid}"):
+                    value=False, key=f"lib_pulls_{choice}"):
                 for eid in entry_ids:
                     move = lib_moves.get(eid, "")
                     st.markdown(f"- **{eid}**{' — ' + move if move else ''}")
@@ -230,115 +330,42 @@ def _render_reasons_section(section: dict) -> None:
                     st.markdown(f"- {reason}")
 
 
-# --- Moral-patient reasons first (the paid, decision-grade section) ---
-reasons_section = next((s for s in sections
-                        if s.get("title", "").startswith("Moral-patient reasons")), None)
-if reasons_section:
-    _render_reasons_section(reasons_section)
-elif "moral_patient_reasons" not in report:
-    st.caption("Moral-patient reason extraction hasn't run for this report — add it "
-               "(costs API calls) with:")
-    st.code(f"{cmd} --reasons", language="bash")
-
-# --- Semantic diversity (embeddings) second — a separate report file,
-# rendered when evals/diversity.py has run on this run dir. Charts first.
-diversity = loader.load_diversity(run.run_dir)
-if diversity is None:
-    st.caption("No semantic diversity report yet — generate it (embedding cents) with:")
-    st.code(f"python evals/diversity.py --input {run.run_dir} --ideas", language="bash")
-else:
-    st.header("Semantic diversity (embeddings)")
-    st.caption(f"model `{diversity.get('embed_model')}` · numbers are only comparable "
-               "across runs using the same embedding model")
-
-    def _nn_hist(sims: list, rule_at: float, x_title: str) -> alt.Chart:
-        bars = alt.Chart(pd.DataFrame({"sim": sims})).mark_bar(color="#4C78A8").encode(
-            x=alt.X("sim:Q", bin=alt.Bin(maxbins=20), title=x_title,
-                    scale=alt.Scale(domain=[0, 1])),
-            y=alt.Y("count()", title="records"))
-        rule = alt.Chart(pd.DataFrame({"x": [rule_at]})).mark_rule(
-            strokeDash=[5, 3], color="#E5484D").encode(x="x:Q")
-        return (bars + rule).properties(height=210)
-
-    def _cluster_bars(sizes: list) -> alt.Chart:
-        df = pd.DataFrame({"cluster (sorted)": range(1, len(sizes) + 1), "size": sizes})
-        return alt.Chart(df).mark_bar(color="#3FB366").encode(
-            x=alt.X("cluster (sorted):O", axis=alt.Axis(labels=len(sizes) <= 12)),
-            y="size:Q").properties(height=210)
-
-    def _cloud_scatter(cloud: list) -> alt.Chart:
-        return alt.Chart(pd.DataFrame(cloud)).mark_circle(size=70, color="#D97757").encode(
-            x=alt.X("x:Q", title="PC1", axis=alt.Axis(labels=False, ticks=False)),
-            y=alt.Y("y:Q", title="PC2", axis=alt.Axis(labels=False, ticks=False)),
-            tooltip=[alt.Tooltip("id", title="record"),
-                     alt.Tooltip("snippet", title="text")],
-        ).properties(height=210)
-
-    scopes = diversity.get("scopes") or {}
-    scope_order = [("prompts", "Prompts (user messages)"),
-                   ("responses", "Responses (assistant messages)"),
-                   ("combined", "Combined (user + assistant)"
-                    if len(scopes) > 1 else "Documents")]
-    shown = [(k, label) for k, label in scope_order if k in scopes]
-    if shown:
-        st.caption("Per scope: nearest-neighbour redundancy (dashed line = the >0.90 "
-                   "near-dup verdict threshold) · topic spread (sorted cluster sizes) · "
-                   "document cloud (2-D PCA; hover for the record).")
-        for key, label in shown:
-            blk = scopes[key]
-            c = blk.get("clusters") or {}
-            st.markdown(f"**{label}** — near-dup>0.90 {blk['over']['0.90']:.0%} · "
-                        f"topic evenness {c.get('evenness', 0):.3f} "
-                        f"(largest {c.get('largest_share', 0):.0%}) · "
-                        f"Vendi ratio {blk.get('vendi_ratio', 0):.2f}")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.altair_chart(_nn_hist(blk.get("nn_sims") or [], 0.90,
-                                         "nearest-neighbour cosine"),
-                                use_container_width=True)
-            with col2:
-                st.altair_chart(_cluster_bars(c.get("sizes") or []),
-                                use_container_width=True)
-            with col3:
-                st.altair_chart(_cloud_scatter(blk.get("cloud") or []),
-                                use_container_width=True)
-
-    ideas = diversity.get("ideas") or {}
-    if ideas.get("nn_sims"):
-        st.markdown(f"**Idea-level diversity** — {ideas['n']} one-line scenario summaries; "
-                    f"{ideas.get('over_0.95', 0):.0%} share their core idea with another "
-                    "(dashed line = the >0.95 re-skinned-idea threshold)")
-        st.altair_chart(_nn_hist(ideas["nn_sims"], 0.95,
-                                 "nearest-neighbour similarity of idea summaries"),
+def _render_alternatives_section(section: dict) -> None:
+    """Humane alternatives (LLM): per-record chart + collapsed per-response
+    citations (mirrors the reasons breakdown)."""
+    title = section.get("title", "")
+    st.subheader(title, anchor=_slug(title))
+    gloss = rendering.audit_section_gloss(section)
+    if gloss:
+        st.caption(gloss)
+    _section_table(section)
+    moves_pc = (report.get("moves") or {}).get("per_case") or {}
+    alt_rows = _label_responses(rendering.audit_alternative_chart_rows(moves_pc))
+    if alt_rows:
+        st.caption("Concrete lower-harm alternatives each arm proposes, per response "
+                   "(actions, not considerations). The pipeline-over-plain gap is the "
+                   "\"how, not whether\" signal.")
+        st.altair_chart(_grouped_arm_chart(alt_rows, "alternatives"),
                         use_container_width=True)
-    elif not ideas:
-        st.caption("Idea-level pass not run — add `--ideas` for re-skinned-scenario detection.")
-
-    for section in diversity.get("sections") or []:
-        st.subheader(section.get("title", ""))
-        _section_table(section)
-        for line in section.get("detail", []):
-            st.caption(line)
-
-# --- The remaining audit sections, bucketed prompt / response / library ---
-# Moral-patient reasons is rendered above; _NOT_DISPLAYED sections are
-# deliberately hidden (still measured — report JSON and terminal keep them).
-_SKIP_SECTIONS = ("Moral-patient reasons",) + _NOT_DISPLAYED
-# Sections whose detail lines are replaced by a richer custom view below, so
-# the generic gray-caption dump is suppressed for them.
-_CUSTOM_DETAIL = ("Stock phrases",)
-_GROUP_HEADERS = {
-    "prompt": "Prompt side — the shipped user messages",
-    "response": "Response side — final replies vs the plain-Claude control",
-    "library": "Reasoning library — selection & coverage",
-    "paid": "Paid LLM checks",
-    "other": "Other checks",
-}
-
-_by_group: dict = {}
-for section in sections:
-    if not section.get("title", "").startswith(_SKIP_SECTIONS):
-        _by_group.setdefault(rendering.audit_section_group(section), []).append(section)
+    # Per-response citations under one collapsed drop-down (mirrors the
+    # reasons breakdown): which alternatives each arm actually offered.
+    pids = sorted(moves_pc)
+    if pids:
+        with st.expander(f"Per-response alternatives ({len(pids)})", expanded=False):
+            choice = st.selectbox("Response", pids, format_func=_resp_label,
+                                  key="alts_percase_pick")
+            st.caption(f"{_resp_label(choice)} — plain Claude's alternatives judged against "
+                       "the pipeline's response, plus what the pipeline added.")
+            groups = rendering.audit_alternative_groups(
+                (moves_pc[choice] or {}).get("alternatives") or {})
+            for gtitle, items in groups or []:
+                st.markdown(f"**{gtitle}**")
+                if items:
+                    st.markdown("\n".join(f"- {a}" for a in items))
+                else:
+                    st.caption("none")
+    for line in section.get("detail", []):
+        st.caption(line)
 
 
 def _render_section(section: dict) -> None:
@@ -380,7 +407,7 @@ def _render_section(section: dict) -> None:
         # pulling more library rows at 2a.5 come with more pipeline-added
         # reasons? (Needs the paid --reasons survival data.)
         per_case = (report.get("moral_patient_reasons") or {}).get("per_case") or {}
-        scatter_rows = rendering.audit_pull_scatter_rows(per_case, pulls, labels)
+        scatter_rows = _label_responses(rendering.audit_pull_scatter_rows(per_case, pulls))
         if scatter_rows:
             df = pd.DataFrame(scatter_rows)
             r = (df["pulled"].corr(df["added"])
@@ -405,15 +432,15 @@ def _render_section(section: dict) -> None:
                             use_container_width=True)
 
     if title.startswith("Response lengths"):
-        chart_rows = rendering.audit_length_chart_rows(
-            (report.get("response_lengths") or {}).get("per_case") or {}, labels)
+        chart_rows = _label_responses(rendering.audit_length_chart_rows(
+            (report.get("response_lengths") or {}).get("per_case") or {}))
         if chart_rows:
             st.altair_chart(_grouped_arm_chart(chart_rows, "chars"),
                             use_container_width=True)
 
-    if title.startswith("Stock phrases"):
-        sp = report.get("stock_phrases") or {}
-        phrase_rows = rendering.audit_stock_phrase_rows(sp)
+    if title.startswith(_CUSTOM_DETAIL):
+        sp = report.get("tracked_tics") or report.get("stock_phrases") or {}
+        phrase_rows = rendering.audit_tracked_tic_rows(sp)
         if phrase_rows:
             n_pipe, n_plain = sp.get("n_pipeline") or 0, sp.get("n_plain") or 0
             st.caption("Recurring phrases by arm — the pipeline-vs-plain gap is the "
@@ -423,11 +450,78 @@ def _render_section(section: dict) -> None:
                   "pipeline": f"{r['pipeline']}/{n_pipe}",
                   "plain": f"{r['plain']}/{n_plain}"} for r in phrase_rows]),
                 width="stretch", hide_index=True)
+            top = phrase_rows[:12]
+            long = [{"phrase": r["phrase"], "arm": arm_col, "count": r[arm_key]}
+                    for r in top
+                    for arm_key, arm_col in (("plain", "plain Claude"),
+                                             ("pipeline", "pipeline"))]
+            st.altair_chart(_grouped_barh(pd.DataFrame(long), "phrase", ""),
+                            use_container_width=True)
+
+    if title.startswith("Lexical diversity — prompts"):
+        st.caption("**Wording/surface diversity of the prompts** — the phrases the corpus "
+                   "over-uses and a style Vendi over character n-grams. This is about *how the "
+                   "prompts are written*, not what they're about. For topic/meaning diversity see "
+                   "**Semantic diversity (embeddings)** at the bottom.")
+        ld = report.get("lexical_diversity") or {}
+        if ld.get("cloud"):
+            st.markdown(f"**Surface-form layout** — near-dup>0.90 (char n-gram) "
+                        f"{ld.get('over_0.90', 0):.0%} · style Vendi ratio "
+                        f"{ld.get('style_vendi_ratio', 0):.2f}")
+            st.caption("Same charts as the semantic section, but in char-n-gram (writing form) "
+                       "space: nearest-neighbour redundancy (dashed line = >0.90) · over-used "
+                       "phrases · document cloud (2-D PCA of surface features; hover for the record).")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.altair_chart(_nn_hist(ld.get("nn_sims") or [], 0.90,
+                                         "nearest-neighbour surface cosine"),
+                                use_container_width=True)
+            with c2:
+                bars = _shared_phrase_bars(ld.get("top_shared") or {})
+                if bars is not None:
+                    st.altair_chart(bars, use_container_width=True)
+            with c3:
+                st.altair_chart(_cloud_scatter(ld["cloud"]), use_container_width=True)
 
     if not suppress_detail:
         for line in section.get("detail", []):
             st.caption(line)
 
+
+# --- The paid LLM trio first: Moral-patient reasons, then its companion
+# judgments (alternatives + stance ride the same --reasons pass) ---
+reasons_section = next((s for s in sections
+                        if s.get("title", "").startswith("Moral-patient reasons")), None)
+if reasons_section:
+    _render_reasons_section(reasons_section)
+elif "moral_patient_reasons" not in report:
+    st.caption("Moral-patient reason extraction hasn't run for this report — add it "
+               "(costs API calls) with:")
+    st.code(f"{cmd} --reasons", language="bash")
+
+for section in sections:
+    title = section.get("title", "")
+    if title.startswith("Humane alternatives"):
+        _render_alternatives_section(section)
+    elif title.startswith("Response stance"):
+        _render_section(section)
+
+# --- The remaining audit sections, bucketed prompt / response / library ---
+# The paid LLM trio is rendered above; _NOT_DISPLAYED sections are
+# deliberately hidden (still measured — report JSON and terminal keep them).
+_SKIP_SECTIONS = ("Moral-patient reasons",) + _PAID_COMPANIONS + _NOT_DISPLAYED
+_GROUP_HEADERS = {
+    "prompt": "Prompt side — the shipped user messages",
+    "response": "Response side — final replies vs the plain-Claude control",
+    "library": "Reasoning library — selection & coverage",
+    "paid": "Paid LLM checks",
+    "other": "Other checks",
+}
+
+_by_group: dict = {}
+for section in sections:
+    if not section.get("title", "").startswith(_SKIP_SECTIONS):
+        _by_group.setdefault(rendering.audit_section_group(section), []).append(section)
 
 for group in rendering.AUDIT_GROUP_ORDER:
     group_sections = _by_group.get(group) or []
@@ -436,5 +530,67 @@ for group in rendering.AUDIT_GROUP_ORDER:
     st.header(_GROUP_HEADERS[group])
     for section in group_sections:
         _render_section(section)
+
+# --- Semantic diversity (embeddings) last — a separate report file, rendered
+# when evals/diversity.py has run on this run dir. The lexical sections above
+# point here for topic/meaning diversity.
+diversity = loader.load_diversity(run.run_dir)
+if diversity is None:
+    st.caption("No semantic diversity report yet — generate it (embedding cents) with:")
+    st.code(f"python evals/diversity.py --input {run.run_dir} --ideas", language="bash")
+else:
+    st.header("Semantic diversity (embeddings)")
+    st.caption("**Topic/meaning diversity** — are the prompts (and responses) about *different "
+               "things*? \"Similar\" here is embedding cosine, so this is driven by the scenarios "
+               "(step 1a) and is ≈fixed no matter how the prompts are phrased. For wording/surface "
+               "diversity see the **Lexical diversity** sections above.")
+    st.caption(f"model `{diversity.get('embed_model')}` · numbers are only comparable "
+               "across runs using the same embedding model")
+    for section in diversity.get("sections") or []:
+        st.subheader(section.get("title", ""))
+        _section_table(section)
+        for line in section.get("detail", []):
+            st.caption(line)
+
+    scopes = diversity.get("scopes") or {}
+    scope_order = [("prompts", "Prompts (user messages)"),
+                   ("responses", "Responses (assistant messages)"),
+                   ("combined", "Combined (user + assistant)"
+                    if len(scopes) > 1 else "Documents")]
+    shown = [(k, label) for k, label in scope_order if k in scopes]
+    if shown:
+        st.subheader("Diversity charts by scope")
+        st.caption("Per scope: nearest-neighbour redundancy (dashed line = the >0.90 "
+                   "near-dup verdict threshold) · topic spread (sorted cluster sizes) · "
+                   "document cloud (2-D PCA; hover for the record).")
+        for key, label in shown:
+            blk = scopes[key]
+            c = blk.get("clusters") or {}
+            st.markdown(f"**{label}** — near-dup>0.90 {blk['over']['0.90']:.0%} · "
+                        f"topic evenness {c.get('evenness', 0):.3f} "
+                        f"(largest {c.get('largest_share', 0):.0%}) · "
+                        f"Vendi ratio {blk.get('vendi_ratio', 0):.2f}")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.altair_chart(_nn_hist(blk.get("nn_sims") or [], 0.90,
+                                         "nearest-neighbour cosine"),
+                                use_container_width=True)
+            with col2:
+                st.altair_chart(_cluster_bars(c.get("sizes") or []),
+                                use_container_width=True)
+            with col3:
+                st.altair_chart(_cloud_scatter(blk.get("cloud") or []),
+                                use_container_width=True)
+
+    ideas = diversity.get("ideas") or {}
+    if ideas.get("nn_sims"):
+        st.markdown(f"**Idea-level diversity** — {ideas['n']} one-line scenario summaries; "
+                    f"{ideas.get('over_0.95', 0):.0%} share their core idea with another "
+                    "(dashed line = the >0.95 re-skinned-idea threshold)")
+        st.altair_chart(_nn_hist(ideas["nn_sims"], 0.95,
+                                 "nearest-neighbour similarity of idea summaries"),
+                        use_container_width=True)
+    elif not ideas:
+        st.caption("Idea-level pass not run — add `--ideas` for re-skinned-scenario detection.")
 
 common.json_block(report, f"audit_{run.run_id}", "Raw report JSON")

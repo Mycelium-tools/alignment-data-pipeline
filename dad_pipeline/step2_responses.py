@@ -333,7 +333,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
                 "prompt_id": pid,
                 "sample_index": sample_index,
                 "user_message": d["user_message"],
-                "annotation": d.get("annotation", {}),
+                "scenario_cards": d.get("scenario_cards") or d.get("annotation") or {},
                 "scope": scope,
                 "entry_ids": entry_ids,
                 # the entry-shape draw this call actually saw — provenance for

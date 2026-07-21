@@ -565,7 +565,7 @@ def _dad_examples(run_dir: Path) -> list[DadExample]:
             prompt_gid=dilemma.get("prompt_gid"),
             sample_index=audit.get("sample_index", 0),
             user_message=user_message,
-            goal=dad_goal_label(audit.get("annotation"), user_message),
+            goal=dad_goal_label(audit.get("scenario_cards") or audit.get("annotation"), user_message),
             scenario_gid=dilemma.get("scenario_gid"),
             response=response,
             has_final=has_final,

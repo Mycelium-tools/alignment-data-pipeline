@@ -145,25 +145,63 @@ class TestAuditShapeChartRows:
         assert rendering.audit_shape_chart_rows({}) == []
 
 
-class TestAuditStockPhraseRows:
-    def test_watch_and_discovered_sorted_by_pipeline_count(self):
-        sp = {"n_pipeline": 40, "n_plain": 40,
+class TestAuditTrackedTicRows:
+    def test_watch_counts_sorted_by_pipeline_count(self):
+        tt = {"n_pipeline": 40, "n_plain": 40,
               "watch": {"i want to be": {"origin": "pipeline-origin", "pipeline": 8, "plain": 3},
                         "here's the thing": {"origin": "plain-origin", "pipeline": 0, "plain": 5},
-                        "never appears": {"origin": "pipeline-origin", "pipeline": 0, "plain": 0}},
-              "new_pipeline": [{"phrase": "the quiet part", "count": 4}],
-              "new_plain": []}
-        rows = rendering.audit_stock_phrase_rows(sp)
+                        "never appears": {"origin": "pipeline-origin", "pipeline": 0, "plain": 0}}}
+        rows = rendering.audit_tracked_tic_rows(tt)
         # phrases that never appear in either arm are dropped
         assert all(r["phrase"] != "never appears" for r in rows)
         # sorted by pipeline count desc: 'i want to be' (8) first
         assert rows[0]["phrase"] == "i want to be"
-        # discovered phrases carry a distinguishing origin
-        disc = next(r for r in rows if r["phrase"] == "the quiet part")
-        assert disc["origin"] == "discovered (pipeline)" and disc["pipeline"] == 4
 
     def test_empty_is_empty(self):
-        assert rendering.audit_stock_phrase_rows({}) == []
+        assert rendering.audit_tracked_tic_rows({}) == []
+
+
+class TestAuditLibraryAndAlternativeRows:
+    def test_alternative_chart_rows_counts_from_anchored_and_added(self):
+        mv = {"AW-0002": {"alternatives": {"anchored": [{"alternative": "a", "verdict": "kept"}],
+                                           "added": ["b"]}},
+              "AW-0001": {"alternatives": {"anchored": [], "added": ["x"]}}}
+        rows = rendering.audit_alternative_chart_rows(mv)
+        # plain = all anchored; pipeline = kept/weakened + added
+        assert rows[0] == {"record": "AW-0001", "plain Claude": 0, "pipeline": 1}
+        assert rows[1] == {"record": "AW-0002", "plain Claude": 1, "pipeline": 2}
+
+    def test_alternative_groups_buckets_kept_weakened_dropped_added(self):
+        alt = {"anchored": [{"alternative": "use farmed", "verdict": "kept"},
+                            {"alternative": "vague plan", "verdict": "weakened"},
+                            {"alternative": "ask vet", "verdict": "dropped"}],
+               "added": ["reword the placard"]}
+        groups = rendering.audit_alternative_groups(alt)
+        assert [g[0].split(" (")[0] for g in groups] == [
+            "✓ Kept by the pipeline", "〜 Weakened", "✗ Dropped", "➕ Added by the pipeline"]
+        assert groups[0][1] == ["use farmed"] and groups[3][1] == ["reword the placard"]
+        assert rendering.audit_alternative_groups({}) is None
+
+    def test_trigger_count_rows_dedup_library_order_and_zeros(self):
+        pulls = {"p1": ["C1", "C1", "C2"], "p2": ["C1"]}  # per-case dedup
+        rows = rendering.audit_trigger_count_rows(pulls, ["C1", "C2", "C3"], {"C1": "move1"})
+        assert rows == [{"entry": "C1", "cases": 2, "move": "move1"},
+                        {"entry": "C2", "cases": 1, "move": ""},
+                        {"entry": "C3", "cases": 0, "move": ""}]  # never-pulled stays, count 0
+
+    def test_pull_scatter_rows_needs_both_survival_and_pull(self):
+        per_case = {"p1": {"survival": {"added": ["r1", "r2"]}},
+                    "p2": {"survival": {"added": []}},
+                    "p3": {}}  # no survival -> excluded
+        pulls = {"p1": ["C1", "C2", "C3"], "p2": ["C1"]}
+        rows = rendering.audit_pull_scatter_rows(per_case, pulls)
+        assert {r["record"] for r in rows} == {"p1", "p2"}
+        r1 = next(r for r in rows if r["record"] == "p1")
+        assert r1["pulled"] == 3 and r1["added"] == 2
+
+    def test_pull_count_rows(self):
+        assert rendering.audit_pull_count_rows({"p1": ["C1", "C2"]}) == \
+            [{"record": "p1", "count": 2, "entries": "C1, C2"}]
 
 
 class TestAuditChartRows:

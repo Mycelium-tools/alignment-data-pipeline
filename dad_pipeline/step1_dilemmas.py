@@ -29,8 +29,10 @@
 - Step 1c — quality gate (optional; config dad.dilemmas.gate, on by default):
   a model call JUDGES each 1b draft against its scenario per
   prompts/dad/step1c_gate.txt — pass/fail, never a rewrite. The four checks:
-  the welfare stake is load-bearing, the draft honors its dealt cards, the
-  message is self-contained, the scene is cohesive. A rejected scenario is
+  the welfare stake is load-bearing, the message is self-contained, the scene
+  is cohesive, and the message reads like a real person wrote it (the
+  card-adherence check was deliberately dropped — see 9f65553; distribution
+  fidelity is the corpus checklist's job). A rejected scenario is
   routed back through the drafting loop with the gate's reasons injected into
   the next attempt (so it redrafts away from them), capped at
   MAX_GATE_REDRAFTS; a scenario still failing after the cap ships with
@@ -89,29 +91,52 @@ _STR_FIELDS = ("moral_patients", "visibility", "user_attitude", "conflict",
 def _canon_domain(label: str, domain_by_part: dict) -> str:
     return domain_by_part.get(str(label).strip().lower(), str(label).strip())
 
-def _annotation_from_scenario(p: dict) -> dict:
-    """The record's annotation, synthesized from the scenario's dealt labels.
+def _scenario_cards_from_deal(p: dict) -> dict:
+    """The record's scenario_cards: the full set of dealt categorical cards,
+    copied from the scenario deal.
 
-    1b no longer writes an annotation (its reply is the user message alone);
-    the deal IS the design, so the labels are copied from the scenario for 1c
-    context, the checklist tallies, and the viewer. The old creative fields
-    (dilemma_anatomy, values_in_tension, moral_patients, claims) exist only on
-    records from pre-rework runs."""
-    return _normalize_annotation({
+    The deal IS the design (1b writes no write-up), so these are the DEALT
+    labels — NOT a check of what the drafted text realized. Consumed by the
+    Part-4 checklist tally and the viewer. Renamed from 'annotation' (2026-07):
+    it was never a write-up, just the cards. Records from before the rename
+    persist the field as 'annotation' (and may carry legacy write-up fields
+    dilemma_anatomy/values_in_tension/moral_patients/claims); readers fall back
+    via dealt_cards() and format_scenario_cards() still renders those."""
+    return _normalize_scenario_cards({
         "domain": list(p.get("domain") or []),
         "user_goal": list(p.get("user_goal") or []),
+        "taxa_category": p.get("taxa_category", ""),
+        "taxa_subcategory": p.get("taxa_subcategory", ""),
         "visibility": p.get("visibility", ""),
         "user_attitude": p.get("user_attitude", ""),
+        "user_moral_framework": p.get("user_moral_framework", ""),
         "conflict": p.get("conflict", ""),
         "welfare_magnitude": p.get("welfare_magnitude", ""),
         "user_stakes": p.get("user_stakes", ""),
         "leverage": p.get("leverage", ""),
+        "anchor_value_pair": p.get("anchor_value_pair", ""),
+        "secondary_value_pair": p.get("secondary_value_pair", ""),
+        "claim_pattern": p.get("claim_pattern", ""),
+        "surface_form": p.get("surface_form", ""),
+        "frontier_frame": p.get("frontier_frame", ""),
+        "length_class": p.get("length_class", ""),
+        "cultural_setting": p.get("cultural_setting", ""),
+        "archetype": p.get("archetype", ""),
     })
 
 
-def format_annotation(annotation: dict) -> str:
-    """Human-readable annotation block, embedded in the step 3/4 prompts (and
-    re-rendered by the viewer — keep in sync with viewer/rendering.py)."""
+def dealt_cards(rec: dict) -> dict:
+    """The dealt cards for a record, reading the current 'scenario_cards' key
+    and falling back to the pre-rename 'annotation' key so committed old runs
+    still tally and render. Public so the viewer reads records the same way."""
+    return rec.get("scenario_cards") or rec.get("annotation") or {}
+
+
+def format_scenario_cards(annotation: dict) -> str:
+    """Human-readable render of a record's scenario_cards (the dealt cards),
+    used by the viewer. Also renders the legacy write-up fields (dilemma_anatomy,
+    values_in_tension, moral_patients, claims, direction) when present, so old
+    'annotation'-era records still display fully. (Formerly format_annotation.)"""
     anatomy = annotation.get("dilemma_anatomy") or {}
     lines = [
         f"Domain: {', '.join(annotation.get('domain') or [])}",
@@ -141,7 +166,7 @@ def format_annotation(annotation: dict) -> str:
     return "\n".join(lines)
 
 
-def _normalize_annotation(annotation: dict) -> dict:
+def _normalize_scenario_cards(annotation: dict) -> dict:
     out = dict(annotation)
     for f in _LIST_FIELDS:
         v = out.get(f)
@@ -180,7 +205,7 @@ def coverage_tally(examples: list[dict], axes: dict | None = None) -> dict:
         axes = compose_scenarios.load_axes()[0]
     domain_by_part = {p.strip().lower(): d for d in axes.get("domain", ())
                       for p in (d, *d.split("/"))}
-    ann = [e.get("annotation") or {} for e in examples]
+    ann = [dealt_cards(e) for e in examples]
     return {
         "n": len(examples),
         "conflict": Counter(_canon_label(a.get("conflict"), axes.get("conflict", ())) or "?" for a in ann),
@@ -234,9 +259,9 @@ def checklist(examples: list[dict],
 
     hidden_aware = sum(
         1 for e in examples
-        if _canon_label((e.get("annotation") or {}).get("visibility"),
+        if _canon_label(dealt_cards(e).get("visibility"),
                         ax_values.get("visibility", ())) == hidden_value
-        and _canon_label((e.get("annotation") or {}).get("user_attitude"),
+        and _canon_label(dealt_cards(e).get("user_attitude"),
                          ax_values.get("user_attitude", ())) != unaware_value)
     out.append((hidden_aware == 0, f"hidden entails unaware attitude ({hidden_aware} violations)"))
 
@@ -426,15 +451,13 @@ def gate_draft(scenario: dict, draft: dict, prompts_dir: Path,
                     undiagnosable failure.
     An unusable reply is retried once with a fresh call (same policy shape as
     2a scoping)."""
+    # The restored gate reads the scenario block + the draft only. The old
+    # annotation block was dropped (it duplicated the dealt cards already in the
+    # scenario block, and the on-scenario/adherence check that used it is gone).
     system_prompt, user_prompt = utils.load_split_prompt(
         _gate_template_path(prompts_dir),
         scenario_block=format_scenario(scenario),
         draft_prompt=str(draft.get("prompt", "")).strip(),
-        # Claims are step-3 scaffolding — kept out of the gate's view for parity
-        # with the annotation the downstream steps see.
-        annotation_block=format_annotation(
-            {k: v for k, v in _normalize_annotation(draft.get("annotation") or {}).items()
-             if k != "claims"}),
     )
     raw_failures = []
     pid = scenario.get("scenario_id")
@@ -588,7 +611,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 "prompt_id": pid,
                 "prompt_gid": registry.gid("prompt", prompt_fingerprint(text)),
                 "user_message": text,
-                "annotation": _normalize_annotation(rec.get("annotation") or {}),
+                "scenario_cards": _normalize_scenario_cards(
+                    rec.get("scenario_cards") or rec.get("annotation") or {}),
                 "source": "seed",
                 "batch": None,
             }
@@ -876,8 +900,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
         if gate_enabled:
             def _gate(scenario: dict) -> tuple[bool | None, list[str], list[dict]]:
                 print(f"    [1c gate] Judging {scenario['scenario_id']}...")
-                draft = {"prompt": drafted[scenario["scenario_id"]],
-                         "annotation": _annotation_from_scenario(scenario)}
+                draft = {"prompt": drafted[scenario["scenario_id"]]}
                 return gate_draft(scenario, draft, prompts_dir, model=gate_model)
 
             for scenario, (passed, failures, raw_failures) in zip(
@@ -974,10 +997,9 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
                 "prompt_id": _next_id(examples, id_start),
                 "prompt_gid": registry.gid("prompt", prompt_fingerprint(user_message)),
                 "user_message": user_message,
-                # 1b no longer writes an annotation; the dealt labels are the
-                # design, synthesized here for the gate, the checklist, and the
-                # viewer.
-                "annotation": _annotation_from_scenario(p),
+                # 1b writes no write-up; the dealt cards ARE the design, copied
+                # here (as scenario_cards) for the checklist and the viewer.
+                "scenario_cards": _scenario_cards_from_deal(p),
                 "source": "generated",
                 "scenario_id": pid,
                 "scenario_gid": p.get("scenario_gid"),

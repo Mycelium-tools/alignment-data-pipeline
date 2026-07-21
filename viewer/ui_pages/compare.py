@@ -91,7 +91,7 @@ else:
     KEY_LABELS = {
         "user_message": "user message  (same prompt → compare responses)",
         "scenario_id": "scenario id  (same scenario → compare prompts too)",
-        "prompt_id": "AW-#### id  (positional — may pair unrelated prompts)",
+        "prompt_id": "per-run prompt id  (positional — may pair unrelated prompts)",
     }
     have_scen = loader.run_has_scenario_ids(run_a.run_dir) and loader.run_has_scenario_ids(run_b.run_dir)
     key_options = [k for k in loader.DAD_MATCH_KEYS if k != "scenario_id" or have_scen]
@@ -128,9 +128,9 @@ else:
         )
         m = matched[idx]
         a, b = m.a, m.b
-        gid_a = f" ({a.prompt_gid})" if a.prompt_gid else ""
-        gid_b = f" ({b.prompt_gid})" if b.prompt_gid else ""
-        st.caption(f"A `{a.prompt_id}`{gid_a}  ·  B `{b.prompt_id}`{gid_b}  ·  "
+        # Stable prompt gids (P-####) as the visible identity; the per-run
+        # prompt_id only shows for pre-gid runs.
+        st.caption(f"A `{a.prompt_gid or a.prompt_id}`  ·  B `{b.prompt_gid or b.prompt_id}`  ·  "
                    + ("✓ same user prompt" if m.same_prompt
                       else "⚠ **different user prompt** — matched on "
                            f"{key_by.replace('_', ' ')}, but the prompts differ"))
@@ -270,11 +270,11 @@ else:
             with ca:
                 st.markdown(f"**Only in A: {run_a_id}**")
                 for ex in sorted(only_a, key=lambda e: e.goal.lower()):
-                    st.caption(f"`{ex.prompt_id}` — {ex.goal}")
+                    st.caption(f"`{ex.prompt_gid or ex.prompt_id}` — {ex.goal}")
             with cb:
                 st.markdown(f"**Only in B: {run_b_id}**")
                 for ex in sorted(only_b, key=lambda e: e.goal.lower()):
-                    st.caption(f"`{ex.prompt_id}` — {ex.goal}")
+                    st.caption(f"`{ex.prompt_gid or ex.prompt_id}` — {ex.goal}")
 
 # --- Template-level differences (bottom): the authored prompt/constitution FILES,
 # before any per-example substitution. Distinct from per-example "Inputs by stage"
