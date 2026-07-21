@@ -301,6 +301,81 @@ class TestArchetypes:
                        "user_attitude": p["user_attitude"]}.get(axis, p["variables"][axis])
                 assert got in allowed, f"{p['scenario_id']} {p['archetype']} {axis}: {got!r}"
 
+    def test_personal_consumption_carries_the_consumer_intent(self):
+        # The personal-consumption archetype exists to surface first-person
+        # buy/wear/eat dilemmas framed as identity ("what kind of person am
+        # I") — the individual-consumer slice the run otherwise misses. Guard
+        # that intent, not just generic axis satisfaction: every dealt case
+        # must sit in a consumer domain with an identity framework and the
+        # user's own choices as the lever. Expectations derive from the spec.
+        spec = cs.ARCHETYPES["personal-consumption"]
+        n = 40
+        batch = cs.deal_scenarios(n, random.Random(0))
+        deals = [p for p in batch if p["archetype"] == "personal-consumption"]
+        assert len(deals) == round(spec["share"] * n) >= 1  # it actually fires
+
+        domain_ok = {cs.resolve_value(VALUES["domain"], px, "domain")
+                     for px in spec["axes"]["domain"]}
+        framework_ok = {cs.resolve_value(VALUES["user_moral_framework"], px,
+                                         "user_moral_framework")
+                        for px in spec["axes"]["user_moral_framework"]}
+        lever_ok = {cs.resolve_value(VALUES["leverage"], px, "leverage")
+                    for px in spec["axes"]["leverage"]}
+        for p in deals:
+            assert p["variables"]["domain"] in domain_ok
+            assert p["variables"]["user_moral_framework"] in framework_ok
+            assert p["variables"]["leverage"] in lever_ok
+
+    def test_policymaker_lever_carries_the_institutional_intent(self):
+        # The policymaker-lever archetype exists to surface users who
+        # personally hold a policy lever — the systemic-leverage x
+        # policy-hosting-domain conjunction a run essentially never deals
+        # naturally. Guard that intent: every dealt case must carry the
+        # systemic lever in a non-personal-sphere domain. Expectations derive
+        # from the spec.
+        spec = cs.ARCHETYPES["policymaker-lever"]
+        n = 40
+        batch = cs.deal_scenarios(n, random.Random(0))
+        deals = [p for p in batch if p["archetype"] == "policymaker-lever"]
+        assert len(deals) == round(spec["share"] * n) >= 1  # it actually fires
+
+        domain_ok = {cs.resolve_value(VALUES["domain"], px, "domain")
+                     for px in spec["axes"]["domain"]}
+        lever_ok = {cs.resolve_value(VALUES["leverage"], px, "leverage")
+                    for px in spec["axes"]["leverage"]}
+        # the domain pool is exclusion-based: the personal-sphere domains
+        # must NOT be reachable
+        personal_sphere = {"the user's career", "family / relationships",
+                           "friendship / community", "finance / personal money",
+                           "health / fitness", "grief / memory"}
+        assert domain_ok == set(VALUES["domain"]) - personal_sphere
+        for p in deals:
+            assert p["variables"]["domain"] in domain_ok
+            assert p["variables"]["leverage"] in lever_ok
+
+    def test_executive_authority_carries_the_final_say_intent(self):
+        # The executive-authority archetype guarantees a flavor, not a rare
+        # conjunction: a user whose organizational position is FINAL authority
+        # (owner/CEO — the clause pins it) in a commercial domain. Guard that
+        # every dealt case carries the org-position lever in a commercial
+        # domain, and that the share fills the cap exactly (raising the cap
+        # is a deliberate decision, not a drive-by).
+        spec = cs.ARCHETYPES["executive-authority"]
+        n = 40
+        batch = cs.deal_scenarios(n, random.Random(0))
+        deals = [p for p in batch if p["archetype"] == "executive-authority"]
+        assert len(deals) == round(spec["share"] * n) >= 1  # it actually fires
+
+        domain_ok = {cs.resolve_value(VALUES["domain"], px, "domain")
+                     for px in spec["axes"]["domain"]}
+        lever_ok = {cs.resolve_value(VALUES["leverage"], px, "leverage")
+                    for px in spec["axes"]["leverage"]}
+        for p in deals:
+            assert p["variables"]["domain"] in domain_ok
+            assert p["variables"]["leverage"] in lever_ok
+        total = sum(s["share"] for s in cs.ARCHETYPES.values())
+        assert total <= cs.ARCHETYPE_TOTAL_CAP
+
     def test_swaps_preserve_every_axis_marginal(self, monkeypatch):
         # same seed with archetypes disabled: per-axis counts must be identical
         # (cards are traded between deals, never re-printed) — and the real

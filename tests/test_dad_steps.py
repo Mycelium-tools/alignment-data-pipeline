@@ -56,9 +56,9 @@ class TestStep1Run:
             assert e["user_message"] == "Refined user message."
             assert e["draft_user_message"].startswith("Drafted user message")
             assert "gate_failures" not in e        # passed the gate
-            # 1b writes no annotation: the record's annotation is the dealt labels
-            assert e["annotation"]["visibility"] and e["annotation"]["leverage"]
-            assert not e["annotation"].get("claims")
+            # 1b writes no write-up: the record's scenario_cards are the dealt cards
+            assert e["scenario_cards"]["visibility"] and e["scenario_cards"]["leverage"]
+            assert not e["scenario_cards"].get("claims")
             assert e["taxa_subcategory"]
             assert e["length_class"]  # dealt register stamped on the record
             assert "scenario_deviations" not in e
@@ -88,7 +88,8 @@ class TestStep1Run:
         assert len(draft_calls) == 2
         assert all("<scenario_description>" in c["user_message"] for c in draft_calls)
         assert {c["item_id"] for c in draft_calls} == {"S-001", "S-002"}
-        # the synthesized (dealt-labels) annotation reaches the gate prompt
+        # the dealt cards reach the gate via the scenario block (the separate
+        # annotation block was dropped in the restored 4-check gate)
         gate_call = next(c["user_message"] for c in calls
                          if "gate for dilemma prompts" in c["system_prompt"])
         assert "Visibility:" in gate_call and "Leverage:" in gate_call

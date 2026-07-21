@@ -82,7 +82,7 @@ def run(
     for out in utils.parallel_map(rewrite_response, pending, workers):
         resp, rewritten, stop_reason = out["resp"], out["rewritten"], out["stop_reason"]
         rid = resp["response_id"]
-        annotation = resp.get("annotation") or {}
+        scenario_cards = resp.get("scenario_cards") or resp.get("annotation") or {}
 
         # A truncated (max_tokens), empty, or transcript-echoed rewrite must
         # never become a training record. Skip it without checkpointing so a
@@ -115,7 +115,7 @@ def run(
             "user_message": resp["user_message"],
             "draft_response": resp["assistant_response"],
             "rewritten_response": rewritten,
-            "annotation": annotation,
+            "scenario_cards": scenario_cards,
         }
         results.append(audit_record)
         utils.append_jsonl(audit_record, audit_path)

@@ -57,30 +57,33 @@
 #   python dad_pipeline/compose_scenarios.py --n 10 --seed 0
 
 {domain}  # where the dilemma lives; a 30% coin adds a second domain
-    # wildlife management runs deliberately hot (~1.8x even); the rest stay even
-    0.042 :: the user's career
-    0.042 :: business / investing
-    0.042 :: procurement
-    0.042 :: marketing
-    0.042 :: AI / product development
-    0.042 :: research
-    0.042 :: public policy / law
-    0.042 :: agriculture / aquaculture
-    0.042 :: veterinary / medicine
-    0.042 :: food & cooking
-    0.042 :: consumer choice
-    0.042 :: companion animal care
+    # wildlife management runs deliberately hot (~2x even); the rest stay even.
+    # 24 even domains at 0.0385 + wildlife 0.076 = 1.0.
+    0.0385 :: the user's career
+    0.0385 :: business / investing
+    0.0385 :: procurement
+    0.0385 :: marketing
+    0.0385 :: AI / product development
+    0.0385 :: research
+    0.0385 :: public policy / law
+    0.0385 :: agriculture / aquaculture
+    0.0385 :: veterinary / medicine
+    0.0385 :: food & cooking
+    0.0385 :: consumer choice
+    0.0385 :: fashion / clothing
+    0.0385 :: personal care / cosmetics
+    0.0385 :: companion animal care
     0.076 :: wildlife management
-    0.042 :: family / relationships
-    0.042 :: friendship / community
-    0.042 :: education / parenting
-    0.042 :: religion / culture
-    0.042 :: journalism / media
-    0.042 :: finance / personal money
-    0.042 :: volunteering / advocacy
-    0.042 :: health / fitness
-    0.042 :: grief / memory
-    0.042 :: technology
+    0.0385 :: family / relationships
+    0.0385 :: friendship / community
+    0.0385 :: education / parenting
+    0.0385 :: religion / culture
+    0.0385 :: journalism / media
+    0.0385 :: finance / personal money
+    0.0385 :: volunteering / advocacy
+    0.0385 :: health / fitness
+    0.0385 :: grief / memory
+    0.0385 :: technology
 
 {user_goal}  # what the user comes to the AI for; a 30% coin adds a second goal
     information
@@ -214,10 +217,10 @@
 {length}  # the user message's register — dealt in the deck but hidden from the
           # 1a scenario planner; it first appears on the 1b scenario block
           # (binding); an instruction to the model, never measured or enforced
+    0.15 :: one to three sentences long
     0.20 :: a short paragraph, four to six sentences long
     0.40 :: one long paragraph, seven to ten sentences
     0.25 :: two paragraphs long
-    0.15 :: several paragraphs long (which might include something like a reproduced email, or a section of a blog post draft)
 
 {opening_move}  # the message's first beat — dealt in the deck but hidden from
                 # the 1a planner (pure message form, like {length}); instructs

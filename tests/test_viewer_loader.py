@@ -232,3 +232,18 @@ class TestLoadDiversity:
         (tmp_path / "audit" / "diversity_report.json").write_text(
             json.dumps({"embed_model": "m", "sections": []}), encoding="utf-8")
         assert loader.load_diversity(tmp_path)["embed_model"] == "m"
+
+
+def test_dad_library_info_pulls_and_repo_library_fallback(tmp_path):
+    # scopes give per-prompt pulls; with no snapshotted library the loader falls
+    # back to the repo library, so ids/moves come from the real CSV.
+    run = tmp_path / "run"
+    (run / "step2").mkdir(parents=True)
+    (run / "step2" / "scopes.jsonl").write_text(
+        json.dumps({"prompt_id": "AW-0001", "entry_ids": ["C1", "C4"]}) + "\n"
+        + json.dumps({"prompt_id": "AW-0002", "entry_ids": []}) + "\n",  # no entries -> excluded
+        encoding="utf-8")
+    pulls, ids, moves = loader.dad_library_info(run)
+    assert pulls == {"AW-0001": ["C1", "C4"]}          # empty-pull case dropped
+    assert "C1" in ids and "C4" in ids                 # from repo library fallback
+    assert moves.get("C1")                             # transferable move text present

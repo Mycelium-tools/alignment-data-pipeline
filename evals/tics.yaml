@@ -1,0 +1,60 @@
+# Tracked tics (watchlist) + ignore-list for the DAD phrase-tic audit
+# (evals/audit_dad.py). "Tracked tics" are confirmed recurring phrases the audit
+# counts every run; the ignore-list is dismissed candidates.
+#
+# WHY A DATA FILE: the audit counts these every run, and the review workflow
+# (evals/review_tics.py) appends to them — keeping them out of Python source so
+# a review can promote/dismiss a candidate without editing code.
+#
+# THE LOOP: each audit run writes candidate phrases to
+# <run>/audit/tic_candidates.jsonl (rare-in-English AND over-represented, per
+# the wordfreq screen). `review_tics.py list` aggregates those across committed
+# runs and shows the ones NOT already here; a human (via Claude Code) then runs
+# `review_tics.py promote <phrase> --family <f>` or `... ignore <phrase>`, which
+# appends below. Promoted phrases get counted every run; ignored ones stop being
+# surfaced.
+#
+# origin: "pipeline-origin" = a tic the pipeline produces (the training-data
+# signal); "plain-origin" = a tic plain Claude has too (inherited, tracked for
+# contrast). family is a free-text grouping shown during review.
+
+watch:
+  pipeline-origin:
+    - {phrase: "genuinely yours", family: agency-ownership}
+    - {phrase: "cuts both ways", family: idiom-structure}
+    - {phrase: "you're deciding", family: agency-ownership}
+    - {phrase: "yours to", family: agency-ownership}
+    - {phrase: "is yours", family: agency-ownership}
+    - {phrase: "you're the one", family: agency-ownership}
+    - {phrase: "the one who", family: agency-ownership}
+    - {phrase: "is your call", family: agency-ownership}
+    - {phrase: "i want to be", family: performed-candor}
+    - {phrase: "straight with you", family: performed-candor}
+    - {phrase: "be honest about", family: performed-candor}
+    - {phrase: "gut check", family: performed-candor}
+    - {phrase: "overthinking", family: performed-candor}
+    - {phrase: "better than i do", family: epistemic-deference}
+    - {phrase: "on the table", family: idiom-structure}
+    - {phrase: "start with the", family: idiom-structure}
+    - {phrase: "why this matters", family: idiom-structure}
+    - {phrase: "genuinely unsettled", family: calibration-register}
+    - {phrase: "genuinely uncertain", family: calibration-register}
+    - {phrase: "the welfare question", family: calibration-register}
+    - {phrase: "capacity to suffer", family: calibration-register}
+  plain-origin:
+    - {phrase: "here's the thing"}
+    - {phrase: "the fact that"}
+    - {phrase: "the part i'd"}
+    - {phrase: "push back on"}
+    - {phrase: "you already know"}
+    - {phrase: "a few things"}
+    - {phrase: "want to flag"}
+    - {phrase: "what i'd actually"}
+
+# Dismissed candidates — surfaced once, judged not worth watching. Never
+# re-surfaced by review_tics.py. Add via `review_tics.py ignore <phrase>`.
+ignore:
+  - {phrase: "yours you", reason: "sentence-boundary artifact of the agency 'yours' phrasing"}
+  - {phrase: "of suffering", reason: "welfare subject vocabulary, not a tic"}
+  - {phrase: "the animals", reason: "welfare subject vocabulary, not a tic"}
+  - {phrase: "an animal", reason: "welfare subject vocabulary, not a tic"}

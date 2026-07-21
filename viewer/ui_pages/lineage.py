@@ -9,6 +9,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from dad_pipeline import step2_responses
+from dad_pipeline.step1_dilemmas import dealt_cards
 from viewer import loader, rendering
 from viewer.ui_pages import common
 
@@ -70,7 +71,7 @@ if run.pipeline == "dad" and not finals:
         for d in dilemmas:
             pid = d.get("prompt_id")
             options.append(pid)
-            labels[pid] = _goal_label(d.get("annotation"), d.get("user_message"))
+            labels[pid] = _goal_label(dealt_cards(d), d.get("user_message"))
         selected_id = _pick_document(options, labels, "prompt")
     else:
         st.info("No dilemmas generated in this run yet.")
@@ -116,11 +117,19 @@ else:
         sort_key = lambda rec: audits.get(rec.get("record_id"), {}).get("injection_used", "")
         st.caption("Dropdown labels: *user message — injection (from the response sampling step)*")
     else:
-        # Current-format runs: label each record by its annotated goal — the
-        # axes and the full prompt live in the step expanders, not the dropdown.
+        # Current-format runs: label each record with its stable ids then the
+        # goal — "E-#### · P-#### · R-#### · <goal>". Every id the corpus audit
+        # can reference is here (example E-, prompt P-, response R-), so a graph
+        # or reasons row flagged by any of them is easy to find. prompt_gid (P-)
+        # isn't on the final/rewrite record, so join it from step 1.
         keep = lambda audit: True
         suffix = None
         sort_key = lambda rec: str(audits.get(rec.get("record_id"), {}).get("prompt_id", ""))
+        pgid_by_pid = {d.get("prompt_id"): d.get("prompt_gid")
+                       for d in loader.load_stage(run.run_dir, "dad", "step1_dilemmas")
+                       if d.get("prompt_id")}
+        st.caption("Dropdown labels: *example E- · prompt P- · response R- — goal* "
+                   "(these stable ids match the corpus audit).")
 
     options, labels = [], {}
     for rec in sorted(finals, key=sort_key):
@@ -132,7 +141,12 @@ else:
         if suffix:
             labels[rec["record_id"]] = f"{_doc_title(user_msg)}   —   {suffix(audit)}"
         else:
-            labels[rec["record_id"]] = _goal_label(audit.get("annotation"), user_msg)
+            goal = _goal_label(dealt_cards(audit), user_msg)
+            ids = [rec.get("example_gid") or audit.get("example_gid"),
+                   pgid_by_pid.get(audit.get("prompt_id")),
+                   rec.get("response_gid") or audit.get("response_gid")]
+            prefix = " · ".join(x for x in ids if x)
+            labels[rec["record_id"]] = f"{prefix} · {goal}" if prefix else goal
 
     selected_id = _pick_document(options, labels, "record")
 
@@ -234,7 +248,7 @@ else:
         # (example / prompt / response). The upstream ids (S-#### scenario,
         # C-#### control) live on their stage expanders below, as do the
         # per-run AW-####/S-### ids; classification tag small underneath.
-        annotation = dilemma.get("annotation") or audit.get("annotation") or {}
+        annotation = dealt_cards(dilemma) or dealt_cards(audit)
         head = []
         if audit.get("example_gid"):
             head.append(f"example {audit['example_gid']}")
@@ -267,7 +281,7 @@ else:
                 # Incomplete run: no final response yet — show the dilemma prompt itself.
                 st.markdown("**user** *(dilemma prompt — no response generated yet)*")
                 st.code(dilemma.get("user_message", ""), language=None, wrap_lines=True)
-                common.json_block(dilemma.get("annotation", {}), key="doc_ann", label="annotation")
+                common.json_block(dealt_cards(dilemma), key="doc_ann", label="scenario cards")
 
     with prompts_col:
         st.subheader("Prompts")
@@ -312,7 +326,7 @@ else:
                     # the 1b draft is draft_user_message when 1c ran, else the stored user_message
                     st.code(d.get("draft_user_message") or d.get("user_message", ""),
                             language=None, wrap_lines=True)
-                    common.json_block(d.get("annotation", {}), key="s1b_ann", label="annotation")
+                    common.json_block(dealt_cards(d), key="s1b_ann", label="scenario cards")
                 stage_expander("Step 1b — prompt draft", "step1_dilemmas", lin, step1b_output,
                                stats=("prompt_draft", scenario_id),
                                gid=dilemma.get("prompt_gid"))
