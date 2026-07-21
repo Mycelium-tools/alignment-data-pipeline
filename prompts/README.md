@@ -85,13 +85,13 @@ Key commitments: the user owns the dilemma (never an AI-agent scenario); every t
 
 **Output:** a JSON array, each `{"scenario_id", "prompt", "annotation"}`, with the prompt written to realize its scenario and the descriptive annotation fields completed. Drafts are accepted as returned (assigned labels are copied verbatim per the template; there is no per-example adherence check — the end-of-step checklist monitors distribution fidelity). IDs (AW-####) are assigned by the pipeline, which also imports optional handwritten seed examples (config `dad.dilemmas.seed_path`) before generating, and prints the verification checklist at the end of the step.
 
-### `dad/step1_gate.txt` (sub-stage 1c — optional, on by default)
+### `dad/step1c_gate.txt` (sub-stage 1c — optional, on by default)
 
 **Input:** the scenario, the 1b draft prompt, and its annotation (for context).
 
 **Output:** a pass/fail verdict — `{"pass", "failures"}` — never rewritten text. See the template for the checks it applies. A rejected draft is routed back through 1b (with the gate's reasons injected) and redrafted, capped at a few attempts; a scenario still failing after the cap ships with `gate_failures` stamped. Controlled by config `dad.dilemmas.gate`; verdicts are logged to `step1/gate.jsonl`.
 
-### `dad/step1c_refine.txt` (sub-stage 1d — optional, on by default)
+### `dad/step1d_refine.txt` (sub-stage 1d — optional, on by default)
 
 **Input:** the scenario description, the gate-passed 1b draft, and the dealt cards it must honor (surface form, visibility, attitude, opening move, closing move, persona, length).
 

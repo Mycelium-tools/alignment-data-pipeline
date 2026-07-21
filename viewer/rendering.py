@@ -592,7 +592,10 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "annotation_block": format_annotation(
                 {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
         }
-        r.system, r.user = _format_split(tpl("step1_gate.txt"), r.variables, r)
+        gate_t = tpl("step1c_gate.txt")
+        if gate_t.text is None:  # pre-renumbering snapshots
+            gate_t = tpl("step1_gate.txt")
+        r.system, r.user = _format_split(gate_t, r.variables, r)
         return r
 
     if stage == "step1_refine":
@@ -613,14 +616,16 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             return r
         # 2026-07 rework: single-scenario refine rendered exactly the way the
         # pipeline renders it. Pre-rework snapshots keep the old template path.
-        refine_t = get_template(run_dir, commit, "step1c_refine.txt", pipeline)
+        refine_t = get_template(run_dir, commit, "step1d_refine.txt", pipeline)
+        if refine_t.text is None:  # pre-renumbering snapshots (runs A/B/C era)
+            refine_t = get_template(run_dir, commit, "step1c_refine.txt", pipeline)
         if refine_t.text is not None:
             r.template_sources.append(refine_t)
             try:
                 r.system, r.user = compose_scenarios.render_refine_prompt(
                     scenario, draft, refine_t.text)
             except (KeyError, IndexError, ValueError) as e:
-                r.warnings.append(f"Template step1c_refine.txt did not format cleanly ({e!r}) — "
+                r.warnings.append(f"Template {refine_t.name} did not format cleanly ({e!r}) — "
                                   "template/record schema drift; showing raw template.")
                 r.user = refine_t.text
             return r
