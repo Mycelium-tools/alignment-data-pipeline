@@ -279,7 +279,7 @@ class TestComposedGateRefineRendering:
 
         run = tmp_path / "run"
         (run / "inputs" / "prompts").mkdir(parents=True)
-        for name in ("step1_gate.txt", "step1d_refine.txt"):
+        for name in ("step1c_gate.txt", "step1d_refine.txt"):
             shutil.copy(rendering.REPO_ROOT / "prompts" / "dad" / name
                         if hasattr(rendering, "REPO_ROOT")
                         else f"prompts/dad/{name}",

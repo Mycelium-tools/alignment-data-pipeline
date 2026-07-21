@@ -721,6 +721,22 @@ class TestStep1Run:
         examples = step1_dilemmas.run(tiny_config, legacy_prompts, tmp_path / "out")
         assert len(examples) == 2
 
+    def test_legacy_gate_template_name_still_gates(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # Runs snapshotted before the gate template gained its stage letter
+        # carry step1_gate.txt in inputs/prompts; --resume must keep gating.
+        import shutil
+        legacy_prompts = tmp_path / "prompts"
+        shutil.copytree(prompts_dad, legacy_prompts)
+        (legacy_prompts / "step1c_gate.txt").rename(legacy_prompts / "step1_gate.txt")
+
+        stub_claude(_dad_step1_dispatch)
+        examples = step1_dilemmas.run(tiny_config, legacy_prompts, tmp_path / "out")
+        assert len(examples) == 2
+        gate = utils.load_jsonl(tmp_path / "out" / "gate.jsonl")
+        assert len(gate) == 2 and all(g["passed"] is True for g in gate)
+
     @pytest.mark.parametrize("legacy_name", ["step1c_refine.txt", "step1_refine.txt"])
     def test_legacy_refine_template_names_still_refine(
         self, tiny_config, prompts_dad, tmp_path, stub_claude, legacy_name

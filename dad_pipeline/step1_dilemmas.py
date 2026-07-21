@@ -28,7 +28,7 @@
 
 - Step 1c — quality gate (optional; config dad.dilemmas.gate, on by default):
   a model call JUDGES each 1b draft against its scenario per
-  prompts/dad/step1_gate.txt — pass/fail, never a rewrite. The four checks:
+  prompts/dad/step1c_gate.txt — pass/fail, never a rewrite. The four checks:
   the welfare stake is load-bearing, the draft honors its dealt cards, the
   message is self-contained, the scene is cohesive. A rejected scenario is
   routed back through the drafting loop with the gate's reasons injected into
@@ -283,7 +283,7 @@ def checklist(examples: list[dict],
                     f"archetype swaps preserved marginal shares ({overwrites} overwrites)"))
 
     # NOTE: the value-pair and claims checks retired with the 1b annotation —
-    # the load-bearing welfare guarantee is the 1c gate's job (step1_gate.txt,
+    # the load-bearing welfare guarantee is the 1c gate's job (step1c_gate.txt,
     # Check 1); the welfare-money and claim-pattern mixes are dealt by weight in
     # variables.txt.
     out.append((None, "welfare load-bearing in every prompt (1c gate's mandate) — review manually"))
@@ -412,7 +412,7 @@ MAX_GATE_REDRAFTS = 3      # times a scenario is redrafted after a gate rejectio
 
 def gate_draft(scenario: dict, draft: dict, prompts_dir: Path,
                model: str | None = None) -> tuple[bool | None, list[str], list[dict]]:
-    """Step 1c: JUDGE the 1b draft against its scenario per prompts/dad/step1_gate.txt.
+    """Step 1c: JUDGE the 1b draft against its scenario per prompts/dad/step1c_gate.txt.
     Returns a pass/fail verdict — never a rewrite.
 
     Returns (passed, failures, raw_failures):
@@ -426,7 +426,7 @@ def gate_draft(scenario: dict, draft: dict, prompts_dir: Path,
     An unusable reply is retried once with a fresh call (same policy shape as
     2a scoping)."""
     system_prompt, user_prompt = utils.load_split_prompt(
-        prompts_dir / "step1_gate.txt",
+        _gate_template_path(prompts_dir),
         scenario_block=format_scenario(scenario),
         draft_prompt=str(draft.get("prompt", "")).strip(),
         # Claims are step-3 scaffolding — kept out of the gate's view for parity
@@ -464,6 +464,17 @@ def _redraft_feedback_block(failures: list[str]) -> str:
             "quality check for the following reasons. Write a new version that "
             "fixes them while still honoring the scenario and all instructions "
             f"above:\n{reasons}\n")
+
+
+def _gate_template_path(prompts_dir: Path) -> Path:
+    """The 1c gate template: step1c_gate.txt, falling back to the
+    pre-renumbering step1_gate.txt carried by earlier run snapshots."""
+    path = prompts_dir / "step1c_gate.txt"
+    if not path.exists():
+        legacy = prompts_dir / "step1_gate.txt"
+        if legacy.exists():
+            return legacy
+    return path
 
 
 def _next_id(examples: list[dict], id_start: int) -> str:
@@ -527,8 +538,8 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     # default; disable with dad.dilemmas.gate: false (the refine-without-gate
     # config ambiguity is refused at the top of run(), before any spend).
     gate_enabled = bool(cfg.get("gate", True))
-    if gate_enabled and not (prompts_dir / "step1_gate.txt").exists():
-        raise SystemExit("dad.dilemmas.gate is on but prompts/dad/step1_gate.txt is missing.")
+    if gate_enabled and not _gate_template_path(prompts_dir).exists():
+        raise SystemExit("dad.dilemmas.gate is on but prompts/dad/step1c_gate.txt is missing.")
 
     # Step 1d: review-and-rewrite each gate-passed draft. On by default;
     # disable with dad.dilemmas.refine: false.

@@ -592,7 +592,10 @@ def render_prompt(pipeline: str, stage: str, run_dir: Path, manifest: dict, line
             "annotation_block": format_annotation(
                 {k: v for k, v in (dilemma.get("annotation") or {}).items() if k != "claims"}),
         }
-        r.system, r.user = _format_split(tpl("step1_gate.txt"), r.variables, r)
+        gate_t = tpl("step1c_gate.txt")
+        if gate_t.text is None:  # pre-renumbering snapshots
+            gate_t = tpl("step1_gate.txt")
+        r.system, r.user = _format_split(gate_t, r.variables, r)
         return r
 
     if stage == "step1_refine":
