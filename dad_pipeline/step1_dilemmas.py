@@ -29,8 +29,10 @@
 - Step 1c — quality gate (optional; config dad.dilemmas.gate, on by default):
   a model call JUDGES each 1b draft against its scenario per
   prompts/dad/step1c_gate.txt — pass/fail, never a rewrite. The four checks:
-  the welfare stake is load-bearing, the draft honors its dealt cards, the
-  message is self-contained, the scene is cohesive. A rejected scenario is
+  the welfare stake is load-bearing, the message is self-contained, the scene
+  is cohesive, and the message reads like a real person wrote it (the
+  card-adherence check was deliberately dropped — see 9f65553; distribution
+  fidelity is the corpus checklist's job). A rejected scenario is
   routed back through the drafting loop with the gate's reasons injected into
   the next attempt (so it redrafts away from them), capped at
   MAX_GATE_REDRAFTS; a scenario still failing after the cap ships with
