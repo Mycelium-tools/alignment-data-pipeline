@@ -91,7 +91,7 @@ Key commitments: the user owns the dilemma (never an AI-agent scenario); every t
 
 **Output:** a pass/fail verdict — `{"pass", "failures"}` — never rewritten text. See the template for the checks it applies. A rejected draft is routed back through 1b (with the gate's reasons injected) and redrafted, capped at a few attempts; a scenario still failing after the cap ships with `gate_failures` stamped. Controlled by config `dad.dilemmas.gate`; verdicts are logged to `step1/gate.jsonl`.
 
-### `dad/step1c_refine.txt` (sub-stage 1d — optional, on by default)
+### `dad/step1d_refine.txt` (sub-stage 1d — optional, on by default)
 
 **Input:** the scenario description, the gate-passed 1b draft, and the dealt cards it must honor (surface form, visibility, attitude, opening move, closing move, persona, length).
 

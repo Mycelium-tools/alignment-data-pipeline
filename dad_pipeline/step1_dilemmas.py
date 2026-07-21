@@ -41,7 +41,7 @@
 
 - Step 1d — prompt refine (optional; config dad.dilemmas.refine, on by
   default; runs on gate-passed drafts): one review-and-rewrite call per draft
-  (single-scenario, SDF layer-4 style) per prompts/dad/step1c_refine.txt —
+  (single-scenario, SDF layer-4 style) per prompts/dad/step1d_refine.txt —
   editor notes in prose, the rewritten message in <revised_user_prompt> tags,
   extracted fail-closed, with the dealt surface form / visibility / attitude /
   opening / closing bound as cards. The 1b draft is kept on the record
@@ -320,8 +320,8 @@ MAX_DRAFT_ATTEMPTS = 4
 
 def refine_draft(scenario: dict, draft_text: str, template: str,
                  model: str | None = None) -> tuple[dict | None, list[dict]]:
-    """Step 1c: one review-and-rewrite call for one drafted user message, per
-    prompts/dad/step1c_refine.txt (single-scenario, SDF layer-4 style).
+    """Step 1d: one review-and-rewrite call for one drafted user message, per
+    prompts/dad/step1d_refine.txt (single-scenario, SDF layer-4 style).
 
     The reply is the editor's notes in prose followed by the rewritten message
     inside <user_prompt> tags, extracted fail-closed. Returns (refined,
@@ -533,23 +533,26 @@ def run(config: dict, prompts_dir: Path, output_dir: Path) -> list[dict]:
     # Step 1d: review-and-rewrite each gate-passed draft. On by default;
     # disable with dad.dilemmas.refine: false.
     refine_enabled = bool(cfg.get("refine", True))
-    refine_template_path = prompts_dir / "step1c_refine.txt"
-    if not refine_template_path.exists():
-        # runs snapshotted before the 2026-07 rename carry the old filename
-        legacy_refine = prompts_dir / "step1_refine.txt"
+    # legacy chain: runs snapshotted before the 1d renumbering carry
+    # step1c_refine.txt; pre-rework runs carry step1_refine.txt
+    refine_template_path = prompts_dir / "step1d_refine.txt"
+    for legacy_name in ("step1c_refine.txt", "step1_refine.txt"):
+        if refine_template_path.exists():
+            break
+        legacy_refine = prompts_dir / legacy_name
         if legacy_refine.exists():
             refine_template_path = legacy_refine
     if refine_enabled:
         if not refine_template_path.exists():
-            raise SystemExit("dad.dilemmas.refine is on but prompts/dad/step1c_refine.txt is missing.")
+            raise SystemExit("dad.dilemmas.refine is on but prompts/dad/step1d_refine.txt is missing.")
         refine_template_text = refine_template_path.read_text(encoding="utf-8")
         if "{annotation_block}" in refine_template_text:
             raise SystemExit(
-                "This run's 1c template is the pre-rework version "
+                "This run's refine template is the pre-rework version "
                 "({annotation_block}); the pipeline now refines one scenario "
                 "per call from its description. Finish the run on the pipeline "
                 "version that created it, or copy the current "
-                "prompts/dad/step1c_refine.txt into the run's inputs/prompts/ "
+                "prompts/dad/step1d_refine.txt into the run's inputs/prompts/ "
                 "snapshot.")
 
     examples = utils.load_jsonl(output_path)

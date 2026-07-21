@@ -266,7 +266,7 @@ class TestRenderAndExtract:
         assert any(p["opening_move"] == p["variables"]["opening_move"] for p in batch)
 
     def test_refine_prompt_binds_the_dealt_cards(self, prompts_dad):
-        template = (prompts_dad / "step1c_refine.txt").read_text(encoding="utf-8")
+        template = (prompts_dad / "step1d_refine.txt").read_text(encoding="utf-8")
         p = cs.deal_scenarios(1, random.Random(7))[0]
         p["scenario_description"] = "A scenario."
         _system, user = cs.render_refine_prompt(p, "the draft", template)

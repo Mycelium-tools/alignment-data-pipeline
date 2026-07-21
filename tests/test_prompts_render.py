@@ -63,7 +63,7 @@ TEMPLATE_KWARGS = [
     ("dad/step1_gate.txt", {"scenario_block": "SCENARIO-BLOCK-X", "draft_prompt": "DRAFT-X",
                             "annotation_block": "ANNOTATION-X"}),
     # step1c refine renders via compose_scenarios.render_refine_prompt (one scenario per call)
-    ("dad/step1c_refine.txt", {"scenario_description": "DESC-X", "draft_prompt": "DRAFT-X",
+    ("dad/step1d_refine.txt", {"scenario_description": "DESC-X", "draft_prompt": "DRAFT-X",
                                "persona": "PERSONA-X", "cultural_setting": "CULTURE-X",
                                "length": "LENGTH-X", "surface_form": "FORM-X",
                                "visibility": "VIS-X", "user_attitude": "ATT-X",
