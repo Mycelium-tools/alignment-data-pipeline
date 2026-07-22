@@ -21,27 +21,103 @@
 # has become a fixed END-position sign-off, not that it appears at all).
 
 moves:
+  # PRECISION (2026-07-22 recall/precision pass): the old "\\bbundl" caught
+  # literal product bundles ("blended bundle", "add-on or bundle", "heater to
+  # the bundle"), and bare "two (...)things" caught list openers ("two things
+  # follow", "two things shape the draft") that are not the move. Patterns now
+  # require the decision-splitting sense: a split verb (bundle/fuse/fold/lump/
+  # conflate/disentangle as a verb on the user's choice) or an adjective-marked
+  # "two different/separate (questions|decisions|...)". A response may exhibit
+  # BOTH this and quote-back-overreach — the counts are independent by design.
+  #
+  # LOWER BOUND, NOT A TARGET (2026-07-22): this move is base-model-native and
+  # pervasive — a broad-net sweep put its true prevalence near ~45% of the
+  # corpus, in endless wordings that shade into ordinary "here are two
+  # considerations" structure, so any tightenable pattern set catches only a
+  # fraction. It is tracked here to KNOW the phenomenon's floor, not to drive
+  # it down: matched reruns showed prompt hints aimed at reducing it merely
+  # rephrased it into forms the ruler misses (strict count fell while broad
+  # prevalence held), and it is usually the correct move (M8). Read this count
+  # as "at least this many," and do not optimize against it.
   - name: unbundling
     description: "splits a bundled choice into separable parts ('you're conflating X and Y; pull them apart')"
     patterns:
-      - "\\bbundl"
-      - "\\bconflat"
-      - "\\bdisentangl"
-      - "\\buntangl"
-      - "two (different |separate |)(questions|things|issues|decisions|choices)"
-      - "separate (the|these|two|out) "
-      - "pull(ing)? (these|them|the two|apart)"
-      - "these are (two |)(different|separate) (questions|things|issues)"
+      - "(you'?ve|you have|you're|been) bundl"
+      - "bundl\\w+ (it|them|two|these|into|together)"
+      - "as one bundle|received this as one bundle|one bundle —"
+      - "\\bconflat|\\bdisentangl|\\buntangl|\\bunbundl"
+      - "two (different|separate|distinct) (questions|things|issues|decisions|choices|levers|claims)"
+      - "(separate|separating) the two (questions|decisions|issues|things|levers|claims|choices)"
+      - "pull\\w* (apart|the two|them apart)|come apart cleanly|comes apart"
+      - "(fused|folded|lumped|lumping) (it |them |two |)?(into|together)"
+      - "(questions|decisions|things|claims|levers) (you'?ve|you have|you're) (fused|folded|bundled|lumped)"
+      - "the thing you'?ve fused"
+      - "really two (questions|things|decisions)"
 
+  # The ANNOUNCEMENT sub-move: naming the split as a performed move ("you've
+  # bundled two decisions", "let me pull these apart") rather than just carrying
+  # it out. Split out so the step-2b presentation-only note can be measured —
+  # its goal is to lower THIS while leaving `unbundling` (the substantive move,
+  # usually correct per M8) intact. Strict subset of unbundling by construction.
+  # RECALL (2026-07-22): widened to the "run together / weighing as one" family
+  # the first set missed (e.g. "two things you've run together are worth
+  # answering separately", "the two things you've been weighing as one") — see
+  # the unbundling lower-bound note; the announcement is the crisp, bounded part
+  # of that family and the only sub-signal worth counting precisely.
+  - name: unbundling-announcement
+    description: "announces the split as a move ('you've bundled two decisions', 'let me pull these apart')"
+    patterns:
+      - "(you'?ve|you have|you're) (bundled|fused|folded|lumped|conflated|combined)"
+      - "let me (separate|pull|untangle|disentangle|unbundle|pry|tease)"
+      - "worth (pulling apart|separating|untangling|unbundling|teasing apart)"
+      - "(i'?d|i would|let's) (separate|pull apart|untangle|disentangle|unbundle)"
+      - "so (i'?d |let me |)separate the two"
+      - "(run|rolled|welded|stitched|merged|blurred|collapsed|jammed|mashed|folded|lumped|bundled|fused) [\\w ]{0,20}into one"
+      - "(you'?ve|you have|you're|they'?ve|framing has|framing's|has|have) (run|rolled|welded|stitched|merged|blurred|collapsed|jammed|mashed) [\\w ]{0,15}together"
+      - "(weighing|weighed|treating|treated) (it |them |these |those )?as one"
+
+  # RECALL (2026-07-22 pass): the old set caught only "doing a lot of work",
+  # "doing more work than", "carrying more weight". It missed the common
+  # variants — "doing heavy lifting", "doing the work of X", "doing quiet/real/
+  # enormous work", "the phrase doing the most work" (no "is"), "carrying a lot
+  # of weight", "carrying more than it can hold". The bare "load[- ]bearing"
+  # also over-caught substantive uses ("endpoints where animals are genuinely
+  # load-bearing"); it now requires a framing noun nearby (the load-bearing
+  # WORD/assumption/move), which is the quote-back sense.
   - name: quote-back-overreach
     description: "quotes a user word/phrase and says it is carrying too much weight"
     patterns:
-      - "doing a lot of (the |)work"
-      - "doing more work than"
-      - "carrying more weight"
+      - "doing (a lot of |the |some |more |most |real |serious |enormous |quiet |heavy )([\\w']+ ){0,2}work\\b"
+      - "doing the work of"
+      - "\\bheavy lifting\\b"
+      - "(phrase|word|line|term|framing|claim|assumption|sentence|move) (that is |that's |)doing (the |a |)(most |real |heavy |quiet |)work"
+      - "carrying (a lot of |more |the )weight"
+      - "carrying more (weight )?than it (can|should)"
+      - "carrying more than it (can|should)"
       - "more weight than it (can|should)"
-      - "load[- ]bearing"
-      - "(word|phrase|line|framing|term) is doing"
+      - "weight than it can (hold|bear|carry|take)"
+      - "(word|phrase|line|framing|term|assumption|claim|sentence|belief|premise|rationale|move) (is |that's |that is )(doing|carrying)"
+      - "(word|phrase|line|term|framing|sentence) ['\"][^'\"]{1,40}['\"] (is |that's |that is |are )(doing|carrying)"
+      - "load bearing (word|phrase|line|framing|term|assumption|claim|sentence|belief|premise|rationale|move|beam)"
+      - "(word|phrase|line|framing|term|assumption|claim|sentence|belief|premise|rationale|move)[\\w ,]{0,14}\\bload bearing\\b"
+
+  # Tracks the "announce a conceptual distinction as the move" shape ("the key
+  # distinction is X vs Y", "both can be true") — a sibling of unbundling that
+  # names the distinction rather than a decision split. Kept as a phenomenon
+  # watch (see the unbundling lower-bound note above); the step-2 distinction
+  # hints it originally accompanied were removed 2026-07-22 after they showed no
+  # effect on frequency or diversity. Watches only announce-shapes NOT already
+  # covered by unbundling/unbundling-announcement (their "comes apart" and
+  # "two different things" patterns are deliberately not repeated here).
+  - name: distinction-drawing
+    description: "announces a conceptual distinction as the move itself ('the key distinction is X vs Y', 'both can be true')"
+    patterns:
+      - "the (key|real|important|crucial) distinction"
+      - "\\bdistinguish (between|the|that|what)"
+      - "worth distinguishing"
+      - "both (things |of these |)can be true"
+      - "is not the same (thing |)as"
+      - "(that's|that is) a (different|separate) question"
 
   - name: autonomy-coda
     description: "closes by handing the decision back ('the call is yours')"

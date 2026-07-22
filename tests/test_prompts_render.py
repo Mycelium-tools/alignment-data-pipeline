@@ -75,6 +75,7 @@ TEMPLATE_KWARGS = [
         "library_block": "LIBRARY-X", "scope_block": "SCOPE-X", "user_message": "USER-X",
         "first_take": "FIRST-TAKE-X",
         "opening_hints": "HINT-X; HINT-Y; HINT-Z",
+        "quote_back_hints": "QB-X; QB-Y; QB-Z",
     }),
     ("dad/step3_rewrite.txt", {
         "principles_block": "PRINCIPLES-X",

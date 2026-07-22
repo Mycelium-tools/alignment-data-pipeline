@@ -960,6 +960,19 @@ class TestStep2Run:
         # different samples of one case draw different hints — the within-case
         # variety the mechanism exists to create
         assert hints != step2_responses.sample_opening_hints("AW-0001", 1)
+        # the quote-back menu rides the same contract: sampled deterministically
+        # from the response identity, sent in the 2b USER prompt, stored on the
+        # record for the viewer's re-render
+        for sampler, menu, key in [
+            (step2_responses.sample_quote_back_hints,
+             step2_responses.QUOTE_BACK_HINTS, "quote_back_hints"),
+        ]:
+            drawn = sampler("AW-0001", 0)
+            assert drawn in calls[2]["user_message"]
+            assert results[0][key] == drawn
+            for h in drawn.split("; "):
+                assert h in menu
+            assert drawn != sampler("AW-0001", 1)
 
     def test_unusable_scope_retries_and_keeps_raws(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         attempts = {"n": 0}

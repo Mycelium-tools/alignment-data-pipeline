@@ -437,9 +437,95 @@ def test_load_moves_compiles_patterns():
     moves = audit_dad.load_moves()
     assert moves and all(m["patterns"] for m in moves)
     names = {m["name"] for m in moves}
-    assert {"unbundling", "autonomy-coda", "quote-back-overreach"} <= names
+    assert {"unbundling", "unbundling-announcement", "autonomy-coda",
+            "quote-back-overreach"} <= names
     # the coda is position-scoped to the response close
     assert next(m for m in moves if m["name"] == "autonomy-coda")["where"] == "closing"
+
+
+def _exhibits(move_name, text):
+    """Whether `text` exhibits the named move, via the audit's own matcher."""
+    move = next(m for m in audit_dad.load_moves() if m["name"] == move_name)
+    return audit_dad._exhibits_move(move, audit_dad._norm_text(text))
+
+
+def test_unbundling_precision_rejects_product_bundles_and_list_openers():
+    # the 2026-07-22 precision pass: literal product "bundles" and bare
+    # "two things ..." list openers are NOT the splitting move
+    for fp in [
+        "Blended bundle — your real premium tier.",
+        "Physical as core, digital as an add-on or bundle.",
+        "The real fix is adding the heater to the bundle before you ship.",
+        "Two things follow that are worth the few minutes they cost.",
+        "Two things shape the real draft here.",
+    ]:
+        assert not _exhibits("unbundling", fp), fp
+
+
+def test_unbundling_recall_catches_the_split_move():
+    for pos in [
+        "you've bundled two questions that have different answers",
+        "two decisions you've bundled into one",
+        "so let me pull apart two questions you've fused into one",
+        "worth separating the two decisions you've folded together",
+        "there are really two questions here, and they come apart cleanly",
+    ]:
+        assert _exhibits("unbundling", pos), pos
+
+
+def test_quote_back_recall_catches_wording_variants():
+    # the recall pass: variants the old 3-pattern set missed
+    for pos in [
+        'The phrase doing the most work in your message is "never given us a lick of trouble."',
+        '"Noticeably more" is doing heavy lifting in your framing.',
+        '"More expensive" is carrying a lot of weight in your head.',
+        '"consistency" was doing the work of "cheapest."',
+        "the load-bearing word in your memo is \"consistency\"",
+        "it's carrying more than it can hold",
+        # quoted term sitting between the noun and the verb (the E-0173 gap)
+        "look at what the word \"harmonize\" is doing in your memo",
+    ]:
+        assert _exhibits("quote-back-overreach", pos), pos
+
+
+def test_quote_back_precision_spares_substantive_load_bearing():
+    # "load-bearing" used substantively (not to flag a user's phrase) must not
+    # count — this was the over-catch the framing-noun requirement fixes
+    for neg in [
+        "Endpoints where animals are genuinely load-bearing need the most scrutiny.",
+        "Retain animal confirmation only for the specifically identified load-bearing endpoints.",
+    ]:
+        assert not _exhibits("quote-back-overreach", neg), neg
+
+
+def test_unbundling_announcement_is_subset_of_the_move():
+    # the announcement fires on the performed-move phrasing; the substantive
+    # split without announcement does not
+    assert _exhibits("unbundling-announcement", "you've bundled two decisions into one")
+    assert _exhibits("unbundling-announcement", "so let me pull these apart first")
+    # separation carried out without announcing it -> move yes, announcement no
+    quiet = "there are really two questions here, and they come apart cleanly"
+    assert _exhibits("unbundling", quiet)
+    assert not _exhibits("unbundling-announcement", quiet)
+
+
+def test_unbundling_announcement_catches_run_together_family():
+    # 2026-07-22 recall widen: the "run together / weighing as one" announcements
+    # the first pattern set missed
+    for pos in [
+        "Two things you've run together are worth answering separately.",
+        "So I'd take the two things you've run together and handle them differently.",
+        "separate two things your framing has run together",
+        "Now the two things you've been weighing as one.",
+        "you've rolled two decisions into one",
+    ]:
+        assert _exhibits("unbundling-announcement", pos), pos
+    # precision guard: ordinary phrasing that isn't the announcement move
+    for neg in [
+        "the whole team can run together on this",
+        "weighing the options as one factor among several",
+    ]:
+        assert not _exhibits("unbundling-announcement", neg), neg
 
 
 def test_rhetorical_moves_counts_and_flags_dominant(tmp_path):

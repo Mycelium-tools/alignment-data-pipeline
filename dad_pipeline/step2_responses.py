@@ -80,6 +80,53 @@ def sample_opening_hints(prompt_id: str, sample_index: int) -> str:
     rng = random.Random(f"openings:{prompt_id}_s{sample_index}")
     return "; ".join(rng.sample(OPENING_HINTS, _HINTS_PER_RESPONSE))
 
+
+# Quote-back SUBSTITUTES sampled into each 2b call ({quote_back_hints} in the
+# template), SELF-GATING. The quote-back move ("'X' is doing a lot of work" /
+# "carrying more weight than it can") is a DEVICE wrapping a goal — push back on
+# an assumption the user over-relies on — so genuine substitutes exist that
+# reach the goal WITHOUT quoting a phrase back and labelling its weight.
+# Offering them where a quote-back would otherwise fire is what can actually
+# lower the move's frequency, not merely reword it (an earlier undifferentiated
+# menu, half of it unbundling variants, raised unbundling to 35% and left
+# quote-back flat — that failure is why the two moves are now split). Contains
+# NO quote-back vocabulary ("doing work", "carrying weight", "load-bearing",
+# "the phrase X"): a v1 menu that used "load-bearing" seeded it into the output.
+# Code-level sampling, not a "vary it" instruction, for the OPENING_HINTS reason.
+#
+# Unbundling/conflation (splitting a fused decision or two run-together
+# questions) is NOT steered here: it is a base-model-native reasoning move that
+# appears in ~45% of responses in endless wordings and shades continuously into
+# ordinary "here are two considerations" structure. Matched-offender-15 reruns
+# (2026-07-22) showed a dedicated distinction note neither reduced the move
+# (its apparent drops were rephrasing into forms the audit ruler could not see —
+# broad-net prevalence held ~7→9→9) nor increased its diversity (already at the
+# lexical ceiling), so the note and its hint menu were removed. The phenomenon
+# is still tracked descriptively in evals/moves.yaml (a lower bound), not
+# targeted in generation. See the reasoning-move audit notes there.
+QUOTE_BACK_HINTS = [
+    "state the competing fact plainly and let it stand on its own",
+    "follow the user's assumption to the outcome it produces, so the gap shows itself",
+    "ask what the belief actually rests on",
+    "supply the piece of information the assumption skips over",
+    "test the assumption against a concrete case where it fails",
+    "grant the user's point, then show where it stops holding",
+    "grant the fact the user is leaning on in full, then show it leaves the real question open",
+    "restate the strongest version of the user's point, then locate exactly where the conclusion outruns it",
+    "credit what the user's motive gets right, then address on its own terms whether it excuses the act",
+]
+_QUOTE_BACK_HINTS_PER_RESPONSE = 3
+
+
+def sample_quote_back_hints(prompt_id: str, sample_index: int) -> str:
+    """The '; '-joined quote-back substitutes for one response, deterministic in
+    the response's identity (same reproducibility contract as the opening
+    hints). Self-gated in the template — inert unless the reply would otherwise
+    push back on an over-relied-upon assumption."""
+    rng = random.Random(f"quoteback:{prompt_id}_s{sample_index}")
+    return "; ".join(rng.sample(QUOTE_BACK_HINTS, _QUOTE_BACK_HINTS_PER_RESPONSE))
+
+
 # selection_source values meaning "a dedicated selection API call happened for
 # this record" — the single source of truth the viewer keys its 2a.5 rendering
 # on ("select": the standing call; "repair": its miss-only precursor;
@@ -306,6 +353,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
             suffix = f" (sample {sample_index + 1}/{per_prompt})" if per_prompt > 1 else ""
             print(f"  Generating response for {pid}{suffix}...")
             opening_hints = sample_opening_hints(pid, sample_index)
+            quote_back_hints = sample_quote_back_hints(pid, sample_index)
             respond_system, respond_user = utils.load_split_prompt(
                 prompts_dir / "step2_respond.txt",
                 library_block=library_block,
@@ -313,6 +361,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
                 user_message=d["user_message"],
                 first_take=first_take_by_pid.get(pid, ""),
                 opening_hints=opening_hints,
+                quote_back_hints=quote_back_hints,
             )
             response, stop_reason = api.call_claude(
                 user_message=respond_user, system_prompt=respond_system,
@@ -345,6 +394,7 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
                 # the entry-shape draw this call actually saw — provenance for
                 # the viewer's prompt re-render (and for eyeballing hint uptake)
                 "opening_hints": opening_hints,
+                "quote_back_hints": quote_back_hints,
                 "assistant_response": response,
             })
         return out
