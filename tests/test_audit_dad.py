@@ -854,29 +854,33 @@ def test_carry_forward_keeps_paid_reasons_on_offline_rerun():
 
 def test_tracked_tics_watchlist_counts_both_arms(tmp_path):
     run = _write_run_with_responses(tmp_path, [
-        ("AW-0001", "You’re the one who signs it.\n\nMore text here.",  # curly quote
-         "Here's the thing about the barn."),
-        ("AW-0002", "You're the one deciding.\n\nOther text.", "Plain reply."),
+        ("AW-0001", "Let me be straight with you about the barn.\n\nMore text here.",
+         "I'd push back on that framing."),
+        ("AW-0002", "To be straight with you, it's close.\n\nOther text.", "Plain reply."),
     ])
     report = {}
     audit_dad.audit_tracked_tics(run, report)
     watch = report["tracked_tics"]["watch"]
-    assert watch["you're the one"] == {"origin": "pipeline-origin", "pipeline": 2, "plain": 0}
-    assert watch["here's the thing"] == {"origin": "plain-origin", "pipeline": 0, "plain": 1}
+    assert watch["straight with you"] == {"origin": "pipeline-origin", "pipeline": 2, "plain": 0}
+    assert watch["push back on"] == {"origin": "plain-origin", "pipeline": 0, "plain": 1}
     rows = {r["label"]: r for r in report["sections"][0]["rows"]}
     # worst pipeline-origin phrase at 2/2 -> derived verdict
     assert rows["worst pipeline-origin phrase"]["verdict"] == audit_dad._verdict(1.0, 0.20, 0.40)
-    assert "you're the one" in rows["worst pipeline-origin phrase"]["value"]
+    assert "straight with you" in rows["worst pipeline-origin phrase"]["value"]
 
 
 def test_load_tic_lists_reads_watch_and_ignore():
-    # Derived from the real evals/tics.yaml — asserts the loader shape
-    # and that the known tics we promoted are present, not hardcoded counts.
+    # Derived from the real evals/tics.yaml — asserts the loader shape and that
+    # kept register tics are present, not hardcoded counts.
     watch, ignore = audit_dad.load_tic_lists()
-    assert "you're the one" in watch["pipeline-origin"]
-    assert "gut check" in watch["pipeline-origin"]        # promoted known tic
-    assert "here's the thing" in watch["plain-origin"]
+    assert "gut check" in watch["pipeline-origin"]          # kept performed-candor tic
+    assert "the welfare question" in watch["pipeline-origin"]
+    assert "push back on" in watch["plain-origin"]          # kept plain-origin tic
     assert isinstance(ignore, set)
+    # autonomy-coda phrasings + "cuts both ways" were demoted to ignore once
+    # they became tracked rhetorical moves, so the phrase audit stops double-
+    # counting them and the candidate queue won't re-surface them.
+    assert {"you're the one", "yours to", "cuts both ways"} <= ignore
 
 
 def test_tic_candidates_surfaces_rare_over_represented_phrase(tmp_path):
