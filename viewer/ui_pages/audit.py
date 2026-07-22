@@ -200,7 +200,7 @@ def _slug(title: str) -> str:
 _NOT_DISPLAYED = ("Structural variation",)
 # Alternatives + stance ride the same paid pass as the reasons section; they
 # render right after it so the judge's outputs read together.
-_PAID_COMPANIONS = ("Humane alternatives", "Response stance")
+_PAID_COMPANIONS = ("Humane alternatives", "Response stance", "Reasoning-composition")
 # Sections whose detail lines are replaced by a richer custom view below, so
 # the generic gray-caption dump is suppressed for them. "Stock phrases" is the
 # legacy pre-tics name; old reports keep it.
@@ -469,19 +469,59 @@ def _render_section(section: dict) -> None:
                         f"{ld.get('over_0.90', 0):.0%} · style Vendi ratio "
                         f"{ld.get('style_vendi_ratio', 0):.2f}")
             st.caption("Same charts as the semantic section, but in char-n-gram (writing form) "
-                       "space: nearest-neighbour redundancy (dashed line = >0.90) · over-used "
-                       "phrases · document cloud (2-D PCA of surface features; hover for the record).")
-            c1, c2, c3 = st.columns(3)
+                       "space: nearest-neighbour redundancy (dashed line = >0.90) · document "
+                       "cloud (2-D PCA of surface features; hover for the record). The over-used "
+                       "phrase list is demoted (mostly common English) — see the **Style "
+                       "fingerprint** section for curated tic/move reuse.")
+            c1, c2 = st.columns(2)
             with c1:
                 st.altair_chart(_nn_hist(ld.get("nn_sims") or [], 0.90,
                                          "nearest-neighbour surface cosine"),
                                 use_container_width=True)
             with c2:
-                bars = _shared_phrase_bars(ld.get("top_shared") or {})
-                if bars is not None:
-                    st.altair_chart(bars, use_container_width=True)
-            with c3:
                 st.altair_chart(_cloud_scatter(ld["cloud"]), use_container_width=True)
+
+    if title.startswith("Style fingerprint"):
+        fp = (report.get("style_fingerprint") or {}).get("pipeline") or {}
+        if fp.get("points"):
+            st.caption("Each dot is one response in curated-feature space (tracked tics + "
+                       "rhetorical moves — no common words); dots that overlap share a "
+                       "tic/move fingerprint. Dashed line on the histogram = near-twin >0.95.")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.altair_chart(_nn_hist([p["nn"] for p in fp["points"]], 0.95,
+                                         "nearest-neighbour fingerprint cosine"),
+                                use_container_width=True)
+            with c2:
+                st.altair_chart(_cloud_scatter(
+                    [{"id": p["id"], "x": p["x"], "y": p["y"],
+                      "snippet": ", ".join(p["features"]) or "(no tics/moves)"}
+                     for p in fp["points"]]), use_container_width=True)
+
+    if title.startswith("Reasoning-composition"):
+        rc = report.get("reason_composition") or {}
+        pt = (rc.get("pipeline") or {})
+        if pt.get("points"):
+            st.caption("Each response's mix of reason TYPES as a point (2-D PCA); dots that "
+                       "overlap reason in the same shape. Bars: mean share of each reason type "
+                       "(which reasoning moves the corpus leans on, and which are thin).")
+            share = (pt.get("mean_share") or {})
+            bar_rows = [{"reason type": t, "mean share": share[t]}
+                        for t in (rc.get("types") or []) if share.get(t)]
+            c1, c2 = st.columns(2)
+            with c1:
+                if bar_rows:
+                    st.altair_chart(alt.Chart(pd.DataFrame(bar_rows)).mark_bar(
+                        color="#4C78A8").encode(
+                        x=alt.X("mean share:Q", axis=alt.Axis(format="%")),
+                        y=alt.Y("reason type:N", sort="-x", title=""),
+                        tooltip=["reason type", alt.Tooltip("mean share:Q", format=".0%")],
+                    ).properties(height=210), use_container_width=True)
+            with c2:
+                st.altair_chart(_cloud_scatter(
+                    [{"id": p["id"], "x": p["x"], "y": p["y"],
+                      "snippet": ", ".join(f"{k} {v:.0%}" for k, v in (p.get("comp") or {}).items())}
+                     for p in pt["points"]]), use_container_width=True)
 
     if not suppress_detail:
         for line in section.get("detail", []):
@@ -504,6 +544,8 @@ for section in sections:
     if title.startswith("Humane alternatives"):
         _render_alternatives_section(section)
     elif title.startswith("Response stance"):
+        _render_section(section)
+    elif title.startswith("Reasoning-composition"):
         _render_section(section)
 
 # --- The remaining audit sections, bucketed prompt / response / library ---

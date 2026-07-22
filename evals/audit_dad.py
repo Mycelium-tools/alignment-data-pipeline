@@ -951,6 +951,103 @@ def audit_rhetorical_moves(run_dir: Path | None, report: dict) -> None:
     report["rhetorical_moves"] = {"n_pipeline": np_, "n_plain": nb, "moves": per_move}
 
 
+# ---------------------------------------------------------------- style fingerprint
+# The diversity engine (Vendi + nearest-neighbour cosine + 2-D PCA cloud) run
+# over a CURATED feature space instead of raw n-grams: each response is a vector
+# over the tracked tics (tics.yaml) + rhetorical moves (moves.yaml) it exhibits.
+# No common words in the space at all — only the distinctive signal we already
+# chose to track — so it answers "which responses share a style fingerprint"
+# without the common-phrase noise that makes raw-n-gram diversity low-signal.
+
+def _style_feature_names() -> list[str]:
+    watch, _ = load_tic_lists()
+    tics = [ph for phrases in watch.values() for ph in phrases]
+    moves = [m["name"] for m in load_moves()]
+    return [f"tic:{t}" for t in tics] + [f"move:{m}" for m in moves]
+
+
+def _style_matrix(texts: dict) -> tuple[list[str], np.ndarray, list[list[str]]]:
+    """(ordered prompt_ids, binary feature matrix, per-row active-feature names)
+    over tracked tics + rhetorical moves, on hyphen-normalized response text."""
+    watch, _ = load_tic_lists()
+    tic_phrases = [ph for phrases in watch.values() for ph in phrases]
+    moves = load_moves()
+    names = [f"tic:{t}" for t in tic_phrases] + [f"move:{m['name']}" for m in moves]
+    pids = sorted(texts)
+    rows, active = [], []
+    for pid in pids:
+        t = texts[pid]
+        vec = [1.0 if ph in t else 0.0 for ph in tic_phrases]
+        vec += [1.0 if _exhibits_move(m, t) else 0.0 for m in moves]
+        rows.append(vec)
+        active.append([names[i] for i, v in enumerate(vec) if v])
+    return pids, np.array(rows, dtype=float) if rows else np.zeros((0, len(names))), active
+
+
+def _l2_rows(X: np.ndarray) -> np.ndarray:
+    return X / np.clip(np.linalg.norm(X, axis=1, keepdims=True), 1e-9, None)
+
+
+def audit_style_fingerprint(run_dir: Path | None, report: dict) -> None:
+    """Offline: cluster responses by the curated {tracked tics + rhetorical
+    moves} they exhibit. A homogenization read on argumentative/stylistic
+    REPERTOIRE — low effective count or many near-twins means responses share
+    one fingerprint. Uses only curated signal, so it dodges the common-word
+    noise of raw-n-gram diversity."""
+    sec = _section(report, "Style fingerprint (tics + moves)", group="response",
+                   gloss="Diversity of the argumentative/stylistic REPERTOIRE: each "
+                         "response as the set of tracked tics + rhetorical moves it "
+                         "uses (curated features, no common words). Vendi = effective "
+                         "number of distinct fingerprints; near-twins share the same "
+                         "tic/move combination. A homogenization signal, not a fault.")
+    if run_dir is None:
+        _skip(sec, report, "fingerprint", note="(bare-file input; pass a run dir)")
+        return
+    pipe = {k: _norm_text(v) for k, v in _final_by_prompt_id(run_dir).items()}
+    if not pipe:
+        _skip(sec, report, "responses", "0", note="(no final corpus — nothing to scan)")
+        report["style_fingerprint"] = {"n_pipeline": 0}
+        return
+    plain = {k: _norm_text(v) for k, v in _baseline_by_prompt_id(run_dir).items()}
+
+    def arm_geometry(texts: dict) -> dict | None:
+        if not texts:
+            return None
+        pids, X, active = _style_matrix(texts)
+        Xn = _l2_rows(X)
+        vendi = _vendi_from_matrix(Xn) if len(pids) else 0.0
+        nn, coords = _lexical_geometry(Xn) if len(pids) else ([], np.zeros((0, 2)))
+        names = _style_feature_names()
+        prevalence = {names[i]: int((X[:, i] > 0).sum()) for i in range(len(names))}
+        return {
+            "n": len(pids), "vendi": round(vendi, 2),
+            "near_twins": sum(1 for s in nn if s >= 0.95),
+            "prevalence": {k: v for k, v in prevalence.items() if v},
+            "points": [{"id": _disp_id(report, pids[i]),
+                        "x": float(coords[i, 0]), "y": float(coords[i, 1]),
+                        "nn": round(float(nn[i]), 3), "features": active[i]}
+                       for i in range(len(pids))],
+        }
+
+    p, b = arm_geometry(pipe), arm_geometry(plain)
+    _row(sec, "responses scanned", f"pipeline {p['n'] if p else 0}"
+         + (f" / plain {b['n']}" if b else ""))
+    _row(sec, "distinct fingerprints (Vendi)",
+         f"pipeline {p['vendi']}" + (f" / plain {b['vendi']}" if b else ""),
+         note="(effective # of distinct tic/move combinations; higher = more varied)")
+    _row(sec, "responses with a near-twin (>=0.95)",
+         f"pipeline {p['near_twins']}/{p['n']}"
+         + (f" / plain {b['near_twins']}/{b['n']}" if b else ""))
+    # Which curated features are most widespread (the fingerprint's backbone).
+    topf = sorted(p["prevalence"].items(), key=lambda kv: -kv[1])[:6]
+    if topf:
+        _detail(sec, "most common features: "
+                + ", ".join(f"{name} {c}/{p['n']}" for name, c in topf))
+    report["style_fingerprint"] = {"n_pipeline": p["n"] if p else 0,
+                                   "n_plain": b["n"] if b else 0,
+                                   "pipeline": p, "plain": b}
+
+
 def audit_move_candidates(run_dir: Path | None, config: dict, report: dict) -> None:
     """Paid discovery pass (rides with --reasons): one LLM call surfaces NEW
     recurring argument moves not yet in moves.yaml — the review queue for the
@@ -1403,6 +1500,68 @@ def _reason_str(x) -> str:
     return str(x).strip()
 
 
+def _composition_arm(per_case: dict, arm: str, report: dict) -> dict | None:
+    """Geometry over one arm's per-response reason-type mix: each response is a
+    composition vector over REASON_TYPES (fractions), fed to the same Vendi +
+    nearest-neighbour + PCA engine the lexical section uses. None if no typed
+    responses for this arm."""
+    entries = [(pid, per_case[pid][arm]) for pid in sorted(per_case)
+               if arm in per_case[pid] and per_case[pid][arm].get("type_hist")]
+    if not entries:
+        return None
+    pids = [pid for pid, _ in entries]
+    M = np.array([[e["type_hist"].get(t, 0) for t in REASON_TYPES] for _, e in entries], float)
+    comp = M / np.clip(M.sum(axis=1, keepdims=True), 1, None)
+    Xn = _l2_rows(comp)
+    vendi = _vendi_from_matrix(Xn)
+    nn, coords = _lexical_geometry(Xn)
+    return {
+        "n": len(pids), "vendi": round(vendi, 2),
+        "near_twins": sum(1 for s in nn if s >= 0.95),
+        "prevalence": {t: int((M[:, i] > 0).sum()) for i, t in enumerate(REASON_TYPES)},
+        "mean_share": {t: round(float(comp[:, i].mean()), 3) for i, t in enumerate(REASON_TYPES)},
+        "points": [{"id": _disp_id(report, pids[i]), "x": float(coords[i, 0]),
+                    "y": float(coords[i, 1]), "nn": round(float(nn[i]), 3),
+                    "comp": {t: round(float(comp[i, j]), 2)
+                             for j, t in enumerate(REASON_TYPES) if comp[i, j]}}
+                   for i in range(len(pids))],
+    }
+
+
+def _emit_reason_composition(per_case: dict, report: dict) -> None:
+    """Candidate-D section: does the pipeline reason in diverse SHAPES, or do
+    responses collapse onto the same reason-type mix? Offline (types were
+    classified per response in the extract pass)."""
+    sec = _section(report, "Reasoning-composition diversity (LLM)", group="paid",
+                   gloss="INTERNAL DEV SIGNAL (rides the paid --reasons pass). Each "
+                         "response's mix of reason TYPES (direct / second-order / "
+                         "sentience / …) as a composition vector, run through the Vendi + "
+                         "cloud engine. Answers whether the corpus reasons in varied "
+                         "shapes or collapses onto one mix; the mean-share bars show "
+                         "which reasoning types are underused. Ceiling is ~7 types, so "
+                         "read a low Vendi as skew, not as a 0–N diversity score.")
+    p = _composition_arm(per_case, "pipeline", report)
+    b = _composition_arm(per_case, "plain", report)
+    if not p:
+        _skip(sec, report, "composition", note="(no typed responses — needs the reasons pass)")
+        report["reason_composition"] = {"n": 0}
+        return
+    _row(sec, "responses typed", f"pipeline {p['n']}" + (f" / plain {b['n']}" if b else ""))
+    _row(sec, "distinct reasoning-mix profiles (Vendi)",
+         f"pipeline {p['vendi']}" + (f" / plain {b['vendi']}" if b else ""),
+         note="(effective # of distinct reason-type mixes; ceiling ~7 types)")
+    _row(sec, "responses with a near-twin (>=0.95)",
+         f"pipeline {p['near_twins']}/{p['n']}"
+         + (f" / plain {b['near_twins']}/{b['n']}" if b else ""))
+    _detail(sec, "reasoning mix (pipeline mean share): "
+            + ", ".join(f"{t} {p['mean_share'][t]:.0%}"
+                        for t in REASON_TYPES if p["mean_share"].get(t)))
+    thin = [t for t in REASON_TYPES if 0 < p["mean_share"].get(t, 0) < 0.05]
+    if thin:
+        _detail(sec, "underused reasoning types (<5% share): " + ", ".join(thin))
+    report["reason_composition"] = {"types": list(REASON_TYPES), "pipeline": p, "plain": b}
+
+
 def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
     """LLM pass (--reasons): distinct reasons appealing to a moral patient's
     interests (animal or not), per response, for the pipeline arm and the plain
@@ -1447,7 +1606,7 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
             reasons = utils.extract_json_array(
                 api.call_claude(user_message=prompt, stage="eval_audit_dad"))
         except Exception:
-            return pid, arm, None, 0
+            return pid, arm, None, 0, {}
         uniq = list(dict.fromkeys(_reason_str(r) for r in reasons if _reason_str(r)))
         try:
             extra = utils.extract_json_array(api.call_claude(
@@ -1459,17 +1618,24 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
             extra = []  # check-back is best-effort; the extraction still counts
         missed = [_reason_str(r) for r in extra
                   if _reason_str(r) and _reason_str(r) not in uniq]
-        return pid, arm, uniq + missed, len(missed)
+        reasons = uniq + missed
+        # Type each reason PER RESPONSE (one call) so the composition section can
+        # measure reasoning-shape diversity across responses; the corpus-level
+        # type histogram is derived by summing these, no separate call.
+        type_hist = _classify_reason_types(reasons, api) if reasons else {}
+        return pid, arm, reasons, len(missed), type_hist
 
     per_case: dict = {}
     failures = 0
-    for pid, arm, reasons, cb_added in utils.parallel_map(extract, items, config.get("workers", 1)):
+    for pid, arm, reasons, cb_added, type_hist in utils.parallel_map(
+            extract, items, config.get("workers", 1)):
         if reasons is None:
             failures += 1
             continue
         text = pipe[pid] if arm == "pipeline" else plain[pid]
         per_case.setdefault(pid, {})[arm] = {
             "reasons": reasons, "chars": len(text), "checkback_added": cb_added,
+            "type_hist": type_hist,
             "density_per_1k": round(len(reasons) / len(text) * 1000, 2) if text else 0.0,
         }
 
@@ -1522,9 +1688,15 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
                 stage="eval_audit_dad"))]
         except Exception:
             distinct = sorted(set(all_reasons))  # exact-match fallback
+        # Corpus-level type histogram is summed from the per-response typing
+        # (done in extract) — no separate classification call.
+        reason_types: dict = {}
+        for e in entries:
+            for t, c in (e.get("type_hist") or {}).items():
+                reason_types[t] = reason_types.get(t, 0) + c
         return {"n": len(entries), "mean_unique": round(sum(counts) / len(counts), 2),
                 "corpus_distinct": len(distinct), "corpus_reasons": distinct,
-                "reason_types": _classify_reason_types(distinct, api),
+                "reason_types": reason_types,
                 "density_per_1k": round(sum(counts) / chars * 1000, 2) if chars else 0.0}
 
     p, b = arm_summary("pipeline"), arm_summary("plain")
@@ -1612,6 +1784,10 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
         "cost_usd": cost_usd,
         "pipeline": p, "plain": b, "survival": survival, "per_case": per_case,
     }
+
+    # Reasoning-composition diversity (candidate D): geometry over per-response
+    # reason-type mixes — offline, from the typing already done in extract().
+    _emit_reason_composition(per_case, report)
 
     # ---- Moves: harm-reducing ALTERNATIVES + STANCE, pipeline vs plain ----
     # Not reasons (considerations) — the practical actions a response proposes
@@ -1743,6 +1919,8 @@ def carry_forward_reasons(old_report: dict, report: dict) -> bool:
     report["moral_patient_reasons"] = old
     if old_report.get("moves"):
         report["moves"] = old_report["moves"]
+    if old_report.get("reason_composition"):
+        report["reason_composition"] = old_report["reason_composition"]
     # Re-stamp the carried per-case data with THIS run's gid map, so an offline
     # re-run gives the paid sections stable gids without re-paying the LLM pass
     # (reports written before gid tagging carry none otherwise).
@@ -1757,7 +1935,8 @@ def carry_forward_reasons(old_report: dict, report: dict) -> bool:
     if old_cands is not None:
         report.setdefault("rhetorical_moves", {})["llm_candidates"] = old_cands
     carried_titles = ("Moral-patient reasons (LLM)", "Humane alternatives (LLM)",
-                      "Response stance (LLM)", "Rhetorical-move candidates (LLM)")
+                      "Response stance (LLM)", "Rhetorical-move candidates (LLM)",
+                      "Reasoning-composition diversity (LLM)")
     for s in old_report.get("sections") or []:
         if s.get("title") in carried_titles:
             report.setdefault("sections", []).append(s)
@@ -1844,10 +2023,17 @@ def _char_tfidf(msgs: list[str]) -> np.ndarray:
 
 def _vendi_from_matrix(X: np.ndarray) -> float:
     """Vendi score of an L2-normalized matrix — exp of the von-Neumann entropy
-    of X·Xᵀ/n (same math as evals/diversity.py vendi_score)."""
+    of X·Xᵀ/n (same math as evals/diversity.py vendi_score). Returns 0.0 for an
+    empty or all-zero matrix (no signal — e.g. an arm exhibiting no tracked
+    feature at all), so the caller never propagates a NaN."""
     n = len(X)
+    if n == 0:
+        return 0.0
     ev = np.clip(np.linalg.eigvalsh((X @ X.T) / n), 0.0, None)
-    ev = ev / ev.sum()
+    total = ev.sum()
+    if total <= 0:
+        return 0.0
+    ev = ev / total
     nz = ev[ev > 1e-12]
     return float(np.exp(-(nz * np.log(nz)).sum()))
 
@@ -1902,9 +2088,14 @@ def audit_lexical_diversity(records: list[dict], report: dict) -> None:
         top[order] = shared[:8]
         if shared:
             worst = max(worst, shared[0][1] / n)
-        _row(sec, f"top shared {order}-grams",
-             ", ".join(f'"{g}"×{c}' for g, c in shared[:6]) or "(none in >=10% of prompts)")
-    _row(sec, "most-shared phrase prevalence", f"{worst:.0%}", _verdict(worst, 0.15, 0.30))
+        # Demoted to detail: the shared-phrase list is mostly common English
+        # ("i want to", "so why do we") — low signal, kept for reference only.
+        # The curated style-fingerprint section (tics + moves) is the meaningful
+        # phrase-reuse read.
+        _detail(sec, f"top shared {order}-grams: "
+                + (", ".join(f'"{g}"×{c}' for g, c in shared[:6]) or "(none in >=10% of prompts)"))
+    _row(sec, "most-shared phrase prevalence", f"{worst:.0%}",
+         note="(informational — common phrasing, not flagged; see the style-fingerprint section)")
     X = _char_tfidf(msgs)
     sv = _vendi_from_matrix(X)
     _row(sec, "style Vendi (char n-gram)", f"{sv:.1f}/{n} (ratio {sv / n:.3f})",
@@ -2095,6 +2286,8 @@ def main() -> None:
     audit_tracked_tics(run_dir, report)
     print()
     audit_rhetorical_moves(run_dir, report)
+    print()
+    audit_style_fingerprint(run_dir, report)
     print()
     audit_tic_candidates(records, run_dir, report)
     print()

@@ -517,6 +517,51 @@ def test_move_candidates_surfaces_new_moves(tmp_path, stub_claude):
     assert rows["candidate new moves"]["value"] == "1"
 
 
+def test_style_fingerprint_curated_features_and_geometry(tmp_path):
+    # curated features = tracked tics + rhetorical moves; two responses sharing
+    # the same tic+move combo are near-twins, a third with neither is distinct
+    coda = " In the end, the decision is yours."   # autonomy-coda (closing)
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", "You're bundling two questions here. " * 3 + coda, "p1"),  # unbundling + coda
+        ("AW-0002", "You're bundling two things together. " * 3 + coda, "p2"),  # unbundling + coda
+        ("AW-0003", "A plain direct answer with nothing notable at all here.", "p3"),  # neither
+    ])
+    report = {}
+    audit_dad.audit_style_fingerprint(run, report)
+    fp = report["style_fingerprint"]["pipeline"]
+    assert fp["n"] == 3
+    # the two combo-sharing responses are near-twins; the bare one isn't
+    assert fp["near_twins"] >= 2
+    feats = {f for pt in fp["points"] for f in pt["features"]}
+    assert "move:unbundling" in feats and "move:autonomy-coda" in feats
+
+
+def test_style_fingerprint_calm_without_final_corpus(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "u"}])
+    report = {}
+    audit_dad.audit_style_fingerprint(run, report)
+    assert report["style_fingerprint"] == {"n_pipeline": 0}
+
+
+def test_reason_composition_from_per_response_types():
+    # _emit_reason_composition builds geometry from per-response type_hists:
+    # two responses with the same mix are near-twins; mean-share + prevalence
+    # come straight off the histograms (no API call)
+    per_case = {
+        "AW-0001": {"pipeline": {"type_hist": {"direct": 2, "second-order": 1}}},
+        "AW-0002": {"pipeline": {"type_hist": {"direct": 2, "second-order": 1}}},
+        "AW-0003": {"pipeline": {"type_hist": {"consistency": 3}}},
+    }
+    report = {"gid_map": {}}
+    audit_dad._emit_reason_composition(per_case, report)
+    rc = report["reason_composition"]["pipeline"]
+    assert rc["n"] == 3
+    assert rc["near_twins"] >= 2                    # the two identical mixes
+    assert rc["prevalence"]["direct"] == 2 and rc["prevalence"]["consistency"] == 1
+    rows = {r["label"]: r for s in report["sections"] for r in s["rows"]}
+    assert "distinct reasoning-mix profiles (Vendi)" in rows
+
+
 def test_move_candidates_calm_on_bad_json(tmp_path, stub_claude):
     run = _write_run_with_responses(tmp_path, [("AW-0001", "resp one", "plain one")])
     report = {}
