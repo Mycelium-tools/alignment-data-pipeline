@@ -862,6 +862,7 @@ def load_moves(path: Path = _MOVES_MAP_PATH) -> list[dict]:
         out.append({
             "name": m.get("name") or "?",
             "description": m.get("description") or "",
+            "example": m.get("example") or "",
             "where": m.get("where") or "anywhere",
             "patterns": [re.compile(p, re.I) for p in (m.get("patterns") or [])],
         })
@@ -906,7 +907,8 @@ def audit_rhetorical_moves(run_dir: Path | None, report: dict) -> None:
     if run_dir is None:
         _skip(sec, report, "moves scan", note="(bare-file input; pass a run dir)")
         return
-    pipe = {k: _norm_text(v) for k, v in _final_by_prompt_id(run_dir).items()}
+    pipe_raw = _final_by_prompt_id(run_dir)
+    pipe = {k: _norm_text(v) for k, v in pipe_raw.items()}
     if not pipe:
         _skip(sec, report, "responses", "0", note="(no final corpus — nothing to scan)")
         report["rhetorical_moves"] = {"n_pipeline": 0}
@@ -915,12 +917,26 @@ def audit_rhetorical_moves(run_dir: Path | None, report: dict) -> None:
     moves = load_moves()
     np_, nb = len(pipe), len(plain)
 
+    def _live_snippet(m, pids):
+        """One real matched sentence from this corpus, so a reader sees what the
+        move actually looks like here (alongside the curated moves.yaml example)."""
+        for pid in pids:
+            for s in re.split(r"(?<=[.!?])\s+", pipe_raw.get(pid, "")):
+                if _exhibits_move(m, _norm_text(s)):
+                    return s.strip()[:200]
+        return ""
+
     per_move: dict = {}
     for m in moves:
         p_hits = [pid for pid, t in pipe.items() if _exhibits_move(m, t)]
         b_hits = [pid for pid, t in plain.items() if _exhibits_move(m, t)]
         per_move[m["name"]] = {
             "description": m["description"], "where": m["where"],
+            # curated illustration (moves.yaml) + a real instance from this run,
+            # so "what is a precedent-escalation / cuts-both-ways?" is answerable
+            # from the report alone
+            "example": m.get("example", ""),
+            "example_live": _live_snippet(m, p_hits),
             "pipeline": len(p_hits), "plain": len(b_hits),
             "pipeline_share": round(len(p_hits) / np_, 3),
             "plain_share": round(len(b_hits) / nb, 3) if nb else None,
@@ -943,6 +959,16 @@ def audit_rhetorical_moves(run_dir: Path | None, report: dict) -> None:
         where_note = " · matched in the closing only" if d["where"] == "closing" else ""
         _row(sec, name, val, _verdict(share, 0.30, 0.50),
              note=(d["description"] or "") + where_note)
+    # What each move looks like: the curated example, plus a real instance from
+    # this corpus where one fired — so precedent-escalation, cuts-both-ways, etc.
+    # are legible without reading moves.yaml.
+    _detail(sec, "what these look like:")
+    for name, d in ranked:
+        ex = d.get("example") or ""
+        line = f'  {name} — e.g. "{ex}"' if ex else f"  {name}"
+        if d.get("example_live"):
+            line += f'  ·  seen here: "{d["example_live"]}"'
+        _detail(sec, line)
     dominant = [name for name, d in ranked if d["pipeline_share"] > 0.50]
     if dominant:
         _detail(sec, "dominant moves (>50%): " + ", ".join(dominant))
@@ -2241,6 +2267,70 @@ def audit_tic_candidates(records: list[dict], run_dir: Path | None, report: dict
     report["tic_candidates"] = {"response": resp, "prompt": prm}
 
 
+def audit_important_considerations(report: dict) -> None:
+    """The headline health-check: the dataset's usefulness in one view.
+
+    Combines the two paid signals a reviewer cares about into one parent —
+    "important considerations per answer" = distinct welfare reasons + humane
+    alternatives weighed (an alternative IS a welfare consideration) — pipeline
+    vs plain, with the two as labelled subsets, plus the length-is-earned
+    pairing (length ratio <- considerations <- survival). Runs last (it needs
+    the paid data) but is rendered FIRST (group "summary"). Deliberately carries
+    NO GOOD/BAD verdict: this is a health check, not a target — the value is the
+    relationships and the run-over-run trend, never a single number to maximize.
+    Leaves the detailed Moral-patient-reasons and Humane-alternatives sections
+    untouched below; this only combines their headline numbers on top."""
+    mpr = report.get("moral_patient_reasons") or {}
+    alts = (report.get("moves") or {}).get("alternatives") or {}
+    rl = report.get("response_lengths") or {}
+    sec = _section(report, "Important considerations", group="summary",
+                   gloss="THE HEADLINE — the dataset's usefulness in one view. Distinct "
+                         "important considerations each answer surfaces (welfare reasons + "
+                         "humane alternatives weighed), pipeline vs plain Claude, and why the "
+                         "longer answers earn their length. A HEALTH CHECK, not a target: read "
+                         "the relationships (length ↔ considerations ↔ survival) and the "
+                         "run-over-run trend, never a single number to maximize. The detailed "
+                         "reasons and alternatives sections below are its subsets.")
+    reasons_p = (mpr.get("pipeline") or {}).get("mean_unique")
+    reasons_b = (mpr.get("plain") or {}).get("mean_unique")
+    alts_p, alts_b = alts.get("pipeline_mean"), alts.get("plain_mean")
+    if reasons_p is None or alts_p is None:
+        _row(sec, "important considerations", "needs the paid pass",
+             note="(re-run with --reasons; combines moral-patient reasons + humane alternatives)")
+        if rl.get("mean_ratio"):
+            _row(sec, "length ratio (pipeline / plain)", f"{rl['mean_ratio']:.2f}x mean",
+                 note="(length only reads as healthy alongside the considerations it buys)")
+        report["important_considerations"] = {"available": False}
+        return
+    parent_p, parent_b = reasons_p + alts_p, reasons_b + alts_b
+    lift = f"  (+{(parent_p / parent_b - 1) * 100:.0f}% vs plain)" if parent_b else ""
+    _row(sec, "important considerations / answer",
+         f"pipeline {parent_p:.1f} / plain {parent_b:.1f}", note=lift.strip())
+    _detail(sec, f"— welfare considerations:  pipeline {reasons_p:.2f} / plain {reasons_b:.2f}")
+    _detail(sec, f"— alternatives weighed:    pipeline {alts_p:.1f} / plain {alts_b:.1f}")
+    surv = mpr.get("survival") or {}
+    denom = sum(surv.get(k, 0) for k in ("kept", "weakened", "dropped"))
+    surv_share = (surv.get("kept", 0) + surv.get("weakened", 0)) / denom if denom else None
+    ratio = rl.get("mean_ratio")
+    if ratio:
+        note = "longer BECAUSE richer"
+        if surv_share is not None:
+            note += f", and {surv_share:.0%} of added considerations survive scrutiny — earned, not padding"
+        _row(sec, "length earned", f"{ratio:.2f}x longer than plain", note=f"({note})")
+    report["important_considerations"] = {
+        "available": True,
+        "parent": {"pipeline": round(parent_p, 2), "plain": round(parent_b, 2)},
+        "subsets": [
+            {"name": "welfare considerations", "pipeline": round(reasons_p, 2),
+             "plain": round(reasons_b, 2)},
+            {"name": "alternatives weighed", "pipeline": round(alts_p, 2),
+             "plain": round(alts_b, 2)},
+        ],
+        "length_ratio": round(ratio, 2) if ratio else None,
+        "survival_share": round(surv_share, 3) if surv_share is not None else None,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Corpus-level audit of DAD step-1 prompts.")
     parser.add_argument("--input", default="outputs/dad/latest",
@@ -2318,6 +2408,11 @@ def main() -> None:
         if carry_forward_reasons(old_report, report):
             print(" Moral-patient reasons (LLM) — carried forward from the previous "
                   "report (re-run with --reasons to refresh)\n")
+
+    # Headline health summary: runs last (needs the paid data, from --reasons or
+    # carry-forward) but is rendered first (group "summary").
+    audit_important_considerations(report)
+    print()
 
     skipped = report.get("skipped_sections") or []
     if skipped:

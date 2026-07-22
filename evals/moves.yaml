@@ -41,6 +41,7 @@ moves:
   # as "at least this many," and do not optimize against it.
   - name: unbundling
     description: "splits a bundled choice into separable parts ('you're conflating X and Y; pull them apart')"
+    example: "You're weighing 'renew the contract' and 'protect the animals' as one choice, but they're separable — keep the vendor and require better conditions."
     patterns:
       - "(you'?ve|you have|you're|been) bundl"
       - "bundl\\w+ (it|them|two|these|into|together)"
@@ -66,6 +67,7 @@ moves:
   # of that family and the only sub-signal worth counting precisely.
   - name: unbundling-announcement
     description: "announces the split as a move ('you've bundled two decisions', 'let me pull these apart')"
+    example: "You've bundled two decisions into one here; let me pull them apart."
     patterns:
       - "(you'?ve|you have|you're) (bundled|fused|folded|lumped|conflated|combined)"
       - "let me (separate|pull|untangle|disentangle|unbundle|pry|tease)"
@@ -86,6 +88,7 @@ moves:
   # WORD/assumption/move), which is the quote-back sense.
   - name: quote-back-overreach
     description: "quotes a user word/phrase and says it is carrying too much weight"
+    example: "'Noticeably more expensive' is doing a lot of the work in your framing — and it may not survive the actual numbers."
     patterns:
       - "doing (a lot of |the |some |more |most |real |serious |enormous |quiet |heavy )([\\w']+ ){0,2}work\\b"
       - "doing the work of"
@@ -111,6 +114,7 @@ moves:
   # "two different things" patterns are deliberately not repeated here).
   - name: distinction-drawing
     description: "announces a conceptual distinction as the move itself ('the key distinction is X vs Y', 'both can be true')"
+    example: "The key distinction is between what you intended and what the animals actually experienced — both can be true at once."
     patterns:
       - "the (key|real|important|crucial) distinction"
       - "\\bdistinguish (between|the|that|what)"
@@ -121,6 +125,7 @@ moves:
 
   - name: autonomy-coda
     description: "closes by handing the decision back ('the call is yours')"
+    example: "Ultimately, this is your call to make."
     where: closing
     patterns:
       - "yours to (make|call|decide)"
@@ -134,6 +139,7 @@ moves:
 
   - name: cuts-both-ways
     description: "'uncertainty cuts both ways / doesn't license zero'"
+    example: "The uncertainty cuts both ways: not knowing whether they suffer isn't a license to assume they don't."
     patterns:
       - "cuts both ways"
       - "uncertainty (doesn't|does not|is not a license|isn't a license)"
@@ -141,6 +147,7 @@ moves:
 
   - name: precedent-escalation
     description: "zooms out from the object level to precedent / systemic propagation"
+    example: "You're not just deciding this one order — you're setting the default that every future purchase inherits."
     patterns:
       - "\\bprecedent\\b"
       - "sets? a (template|pattern|norm|standard)"

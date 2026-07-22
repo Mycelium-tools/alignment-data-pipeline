@@ -498,6 +498,62 @@ def test_quote_back_precision_spares_substantive_load_bearing():
         assert not _exhibits("quote-back-overreach", neg), neg
 
 
+def test_moves_carry_curated_examples():
+    # every move ships a plain-language example so "what is a precedent-escalation /
+    # cuts-both-ways?" is answerable from the report/data alone
+    moves = audit_dad.load_moves()
+    assert all(m["example"] for m in moves), \
+        [m["name"] for m in moves if not m["example"]]
+
+
+def test_rhetorical_moves_surface_example_and_live_snippet(tmp_path):
+    # the section records the curated example AND a real matched snippet from
+    # this corpus for a move that fired
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", "You've bundled two decisions into one here; let me pull them apart. " * 3,
+         "plain response with no moves at all here."),
+    ])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    ann = report["rhetorical_moves"]["moves"]["unbundling-announcement"]
+    assert ann["example"]                       # curated (moves.yaml)
+    assert "bundled two decisions" in ann["example_live"]  # real instance from this run
+    # a move that did NOT fire still carries its curated example, no live one
+    cb = report["rhetorical_moves"]["moves"]["cuts-both-ways"]
+    assert cb["example"] and cb["example_live"] == ""
+
+
+def test_important_considerations_combines_reasons_and_alternatives():
+    # the headline summary sums welfare reasons + alternatives into one parent,
+    # keeps them as subsets, and carries NO verdict (health check, not a target)
+    report = {
+        "moral_patient_reasons": {
+            "pipeline": {"mean_unique": 9.0}, "plain": {"mean_unique": 6.0},
+            "survival": {"kept": 90, "weakened": 6, "dropped": 4},
+        },
+        "moves": {"alternatives": {"pipeline_mean": 8.0, "plain_mean": 5.0}},
+        "response_lengths": {"mean_ratio": 1.5},
+    }
+    audit_dad.audit_important_considerations(report)
+    ic = report["important_considerations"]
+    assert ic["available"] is True
+    assert ic["parent"] == {"pipeline": 17.0, "plain": 11.0}   # 9+8 vs 6+5
+    names = {s["name"] for s in ic["subsets"]}
+    assert names == {"welfare considerations", "alternatives weighed"}
+    assert ic["survival_share"] == round(96 / 100, 3)
+    assert ic["length_ratio"] == 1.5
+    # rendered first (summary group) and purely informational — no verdicts
+    sec = next(s for s in report["sections"] if s["title"] == "Important considerations")
+    assert sec["group"] == "summary"
+    assert all(r.get("verdict") is None for r in sec["rows"])
+
+
+def test_important_considerations_degrades_without_paid_data():
+    report = {"response_lengths": {"mean_ratio": 1.4}}  # no reasons/alternatives
+    audit_dad.audit_important_considerations(report)
+    assert report["important_considerations"] == {"available": False}
+
+
 def test_unbundling_announcement_is_subset_of_the_move():
     # the announcement fires on the performed-move phrasing; the substantive
     # split without announcement does not

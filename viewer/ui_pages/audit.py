@@ -150,6 +150,46 @@ if not sections:
 st.caption(f"{report.get('n_prompts', '?')} prompts audited · "
            f"`{Path(run.run_dir) / 'audit' / 'audit_report.json'}`")
 
+# --- Headline: important considerations (the dataset's usefulness, up top) ---
+# Combines the two paid signals — welfare reasons + humane alternatives weighed —
+# into one parent metric with the two as subsets. A health check, not a target;
+# the detailed reasons/alternatives sections render lower down unchanged.
+_ic = report.get("important_considerations") or {}
+if _ic.get("available"):
+    st.header("Important considerations")
+    st.caption("The dataset's usefulness in one view: distinct important considerations each "
+               "answer surfaces — welfare reasons plus humane alternatives weighed (an "
+               "alternative IS a welfare consideration) — pipeline vs plain Claude. A health "
+               "check, not a target.")
+    _rows = [{"metric": "All important considerations",
+              "plain Claude": _ic["parent"]["plain"], "pipeline": _ic["parent"]["pipeline"]}]
+    for _s in _ic["subsets"]:
+        _rows.append({"metric": "— " + _s["name"],
+                      "plain Claude": _s["plain"], "pipeline": _s["pipeline"]})
+    _df = pd.DataFrame(_rows).melt(id_vars="metric", var_name="arm", value_name="per answer")
+    _chart = alt.Chart(_df).mark_bar().encode(
+        y=alt.Y("metric:N", title="", sort=[r["metric"] for r in _rows]),
+        x=alt.X("per answer:Q", title="mean per answer"),
+        yOffset=alt.YOffset("arm:N", sort=list(rendering.AUDIT_ARM_COLUMNS)),
+        color=alt.Color("arm:N", title="",
+                        scale=alt.Scale(domain=list(rendering.AUDIT_ARM_COLUMNS),
+                                        range=list(rendering.AUDIT_ARM_COLORS))),
+        tooltip=["metric", "arm", alt.Tooltip("per answer:Q", format=".2f")],
+    ).properties(height=180)
+    st.altair_chart(_chart, use_container_width=True)
+    _bits = []
+    if _ic.get("length_ratio"):
+        _bits.append(f"**{_ic['length_ratio']:.2f}× longer** than plain")
+    if _ic.get("survival_share") is not None:
+        _bits.append(f"**{_ic['survival_share']:.0%}** of added considerations survive scrutiny")
+    if _bits:
+        st.markdown("Length is earned — " + " · ".join(_bits)
+                    + ". Read these together; none is a target to maximize.")
+    st.divider()
+elif _ic.get("available") is False:
+    st.info("Run the audit with `--reasons` to populate the important-considerations "
+            "summary (welfare reasons + humane alternatives weighed).")
+
 # Run cost — the pipeline calls that produced this run (from its own
 # cost_log.jsonl). The paid --reasons eval isn't billed here; its cost shows
 # inside the Moral-patient reasons section (it logs to the global eval log).
@@ -551,7 +591,7 @@ for section in sections:
 # --- The remaining audit sections, bucketed prompt / response / library ---
 # The paid LLM trio is rendered above; _NOT_DISPLAYED sections are
 # deliberately hidden (still measured — report JSON and terminal keep them).
-_SKIP_SECTIONS = ("Moral-patient reasons",) + _PAID_COMPANIONS + _NOT_DISPLAYED
+_SKIP_SECTIONS = ("Important considerations", "Moral-patient reasons") + _PAID_COMPANIONS + _NOT_DISPLAYED
 _GROUP_HEADERS = {
     "prompt": "Prompt side — the shipped user messages",
     "response": "Response side — final replies vs the plain-Claude control",
