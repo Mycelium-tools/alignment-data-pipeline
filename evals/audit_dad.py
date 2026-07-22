@@ -129,6 +129,70 @@ def resolve_input(input_arg: str) -> tuple[list[dict], Path, Path | None]:
     return utils.load_jsonl(path), path.parent / "audit", None
 
 
+# ---------------------------------------------------------------- stable gids
+# The audit joins its data by per-run prompt_id (AW-####), but every id shown to
+# a human — terminal lines, the report JSON's per-case entries, the viewer, and
+# anyone reading the report in chat — should be the STABLE gid: R-#### for a
+# response, E-#### for the finished example, P-####/S-#### for the prompt and
+# scenario. resolve_gids builds that bridge once (from the run's step files) and
+# stores it at report["gid_map"]; _disp_id / _tag_gids apply it so no downstream
+# reader has to translate AW-#### by hand.
+
+
+def _gid_map(run_dir: Path | None) -> dict:
+    """{prompt_id: {"response","example","prompt","scenario"}} for the run, from
+    step3/rewrites.jsonl (response + example gids) merged with step1/dilemmas.jsonl
+    (prompt + scenario gids). Missing gids are omitted; empty for a bare file."""
+    if run_dir is None:
+        return {}
+    out: dict = {}
+    for r in utils.load_jsonl(run_dir / "step1" / "dilemmas.jsonl"):
+        pid = r.get("prompt_id")
+        if not pid:
+            continue
+        entry = {}
+        if r.get("prompt_gid"):
+            entry["prompt"] = r["prompt_gid"]
+        if r.get("scenario_gid"):
+            entry["scenario"] = r["scenario_gid"]
+        out[pid] = entry
+    for r in utils.load_jsonl(run_dir / "step3" / "rewrites.jsonl"):
+        pid = r.get("prompt_id")
+        if not pid:
+            continue
+        entry = out.setdefault(pid, {})
+        if r.get("response_gid"):
+            entry["response"] = r["response_gid"]
+        if r.get("example_gid"):
+            entry["example"] = r["example_gid"]
+    return out
+
+
+def resolve_gids(run_dir: Path | None, report: dict) -> dict:
+    """Populate report["gid_map"] (prompt_id -> stable gids) once, up front, so
+    every section can tag its per-case data and label its output in gids."""
+    report["gid_map"] = _gid_map(run_dir)
+    return report["gid_map"]
+
+
+def _disp_id(report: dict, pid: str, kind: str = "response") -> str:
+    """The stable id to SHOW for a prompt_id: the requested kind's gid, falling
+    back to response then example gid, then the raw prompt_id (pre-gid runs)."""
+    m = (report.get("gid_map") or {}).get(pid) or {}
+    return m.get(kind) or m.get("response") or m.get("example") or pid
+
+
+def _tag_gids(report: dict, pid: str, entry: dict) -> dict:
+    """Stamp a per-case entry with its response/example gids inline, so the JSON
+    reads in stable ids without a separate lookup. No-op on pre-gid runs."""
+    m = (report.get("gid_map") or {}).get(pid) or {}
+    if m.get("response"):
+        entry["response_gid"] = m["response"]
+    if m.get("example"):
+        entry["example_gid"] = m["example"]
+    return entry
+
+
 def _messages(records: list[dict]) -> list[str]:
     return [str(r.get("user_message") or "").strip() for r in records
             if str(r.get("user_message") or "").strip()]
@@ -614,7 +678,7 @@ def audit_response_lengths(run_dir: Path | None, report: dict) -> None:
         report["response_lengths"] = {"n": 0}
         return
     plain = {pid: len(text) for pid, text in _baseline_by_prompt_id(run_dir).items()}
-    per_case = {pid: {"pipeline": len(text), "plain": plain.get(pid)}
+    per_case = {pid: _tag_gids(report, pid, {"pipeline": len(text), "plain": plain.get(pid)})
                 for pid, text in sorted(pipe.items())}
     p_median = statistics.median(v["pipeline"] for v in per_case.values())
     _row(sec, "responses measured", str(len(per_case)))
@@ -1307,6 +1371,8 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
     cost_usd = round(api.get_total_cost() - cost_before, 4)
     _row(sec, "pass cost (LLM calls)", f"${cost_usd:.4f}",
          note=f"(model {config.get('model')})")
+    for pid, entry in per_case.items():
+        _tag_gids(report, pid, entry)
     report["moral_patient_reasons"] = {
         "n": len(per_case), "failures": failures, "model": config.get("model"),
         "cost_usd": cost_usd,
@@ -1350,7 +1416,7 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
         if m is None:
             moves_failures += 1
         else:
-            moves[pid] = m
+            moves[pid] = _tag_gids(report, pid, m)
 
     if moves:
         n = len(moves)
@@ -1420,6 +1486,13 @@ def carry_forward_reasons(old_report: dict, report: dict) -> bool:
     report["moral_patient_reasons"] = old
     if old_report.get("moves"):
         report["moves"] = old_report["moves"]
+    # Re-stamp the carried per-case data with THIS run's gid map, so an offline
+    # re-run gives the paid sections stable gids without re-paying the LLM pass
+    # (reports written before gid tagging carry none otherwise).
+    for block in (report["moral_patient_reasons"], report.get("moves")):
+        for pid, entry in ((block or {}).get("per_case") or {}).items():
+            if isinstance(entry, dict):
+                _tag_gids(report, pid, entry)
     carried_titles = ("Moral-patient reasons (LLM)", "Humane alternatives (LLM)",
                       "Response stance (LLM)")
     for s in old_report.get("sections") or []:
@@ -1732,6 +1805,9 @@ def main() -> None:
 
     print(f"=== DAD prompt audit: {args.input} ({len(records)} prompts) ===\n")
     report: dict = {"input": str(args.input), "n_prompts": len(records)}
+    # Resolve the prompt_id -> stable-gid bridge once, before any section runs,
+    # so per-case data and display all speak R-/E-/P-/S- ids (report["gid_map"]).
+    resolve_gids(run_dir, report)
     # Sections run grouped — prompt side, then response side, then the
     # reasoning library, then the paid pass — so terminal, JSON, and the
     # viewer's grouping all agree.

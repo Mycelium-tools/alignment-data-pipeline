@@ -7,6 +7,8 @@ values are taken from the real axis definitions so the checks stay pinned to the
 strings the pipeline actually deals.
 """
 
+import json
+
 import pytest
 
 from dad_pipeline import compose_scenarios
@@ -180,6 +182,77 @@ def test_resolve_input_run_dir_vs_bare_file(tmp_path):
     bare = run / "step1" / "dilemmas.jsonl"
     recs2, report_dir2, run_dir2 = audit_dad.resolve_input(str(bare))
     assert len(recs2) == 1 and report_dir2 == bare.parent / "audit" and run_dir2 is None
+
+
+def _write_gid_run(tmp_path):
+    """Run dir whose step1 dilemmas carry prompt/scenario gids and step3
+    rewrites carry response/example gids — the two sources _gid_map merges."""
+    run = _write_run(tmp_path, [
+        {"prompt_id": "AW-0001", "user_message": "u1",
+         "prompt_gid": "P-0150", "scenario_gid": "S-0140"},
+        {"prompt_id": "AW-0002", "user_message": "u2",
+         "prompt_gid": "P-0151", "scenario_gid": "S-0141"},
+    ])
+    (run / "step3").mkdir()
+    for pid, rgid, egid in [("AW-0001", "R-0203", "E-0174"),
+                            ("AW-0002", "R-0204", "E-0175")]:
+        utils.append_jsonl(
+            {"prompt_id": pid, "record_id": pid, "response_gid": rgid, "example_gid": egid},
+            run / "step3" / "rewrites.jsonl")
+    return run
+
+
+def test_gid_map_bridges_prompt_id_to_stable_gids(tmp_path):
+    run = _write_gid_run(tmp_path)
+    m = audit_dad._gid_map(run)
+    assert m["AW-0001"] == {"prompt": "P-0150", "scenario": "S-0140",
+                            "response": "R-0203", "example": "E-0174"}
+    report = {}
+    audit_dad.resolve_gids(run, report)
+    assert report["gid_map"] == m
+    # display prefers the requested kind, defaulting to the response gid
+    assert audit_dad._disp_id(report, "AW-0002") == "R-0204"
+    assert audit_dad._disp_id(report, "AW-0002", "example") == "E-0175"
+    assert audit_dad._disp_id(report, "AW-0002", "prompt") == "P-0151"
+
+
+def test_gid_map_empty_and_disp_id_falls_back_for_pre_gid_runs(tmp_path):
+    assert audit_dad._gid_map(None) == {}
+    # a run with dilemmas but no gids anywhere: _disp_id returns the prompt_id
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0009", "user_message": "u"}])
+    report = {}
+    audit_dad.resolve_gids(run, report)
+    assert report["gid_map"] == {"AW-0009": {}}
+    assert audit_dad._disp_id(report, "AW-0009") == "AW-0009"
+
+
+def test_response_lengths_tag_gids_inline(tmp_path):
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "x" * 300, "y" * 100)])
+    # give the rewrite record its stable gids (the base helper omits them)
+    (run / "step3" / "rewrites.jsonl").write_text(
+        json.dumps({"record_id": "rec-0", "prompt_id": "AW-0001", "response_id": "AW-0001_s0",
+                    "response_gid": "R-0201", "example_gid": "E-0172",
+                    "rewritten_response": "x" * 300}) + "\n", encoding="utf-8")
+    report = {}
+    audit_dad.resolve_gids(run, report)
+    audit_dad.audit_response_lengths(run, report)
+    entry = report["response_lengths"]["per_case"]["AW-0001"]
+    assert entry["response_gid"] == "R-0201" and entry["example_gid"] == "E-0172"
+    # keyed by prompt_id still (the downstream join key), gids ride inline
+    assert entry["pipeline"] == 300 and entry["plain"] == 100
+
+
+def test_carry_forward_retags_paid_per_case_with_current_gids(tmp_path):
+    run = _write_gid_run(tmp_path)
+    report = {}
+    audit_dad.resolve_gids(run, report)
+    # a prior report whose paid per-case data predates gid tagging
+    old = {"moral_patient_reasons": {"per_case": {"AW-0001": {"pipeline": {"reasons": []}}}},
+           "moves": {"per_case": {"AW-0002": {"stance": {}}}},
+           "sections": []}
+    assert audit_dad.carry_forward_reasons(old, report) is True
+    assert report["moral_patient_reasons"]["per_case"]["AW-0001"]["response_gid"] == "R-0203"
+    assert report["moves"]["per_case"]["AW-0002"]["example_gid"] == "E-0175"
 
 
 def test_library_selection_reports_sizes_and_fallbacks(tmp_path):
