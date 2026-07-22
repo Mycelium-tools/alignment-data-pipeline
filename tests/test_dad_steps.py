@@ -1011,6 +1011,23 @@ class TestStep2Run:
         assert resumed == []
         assert len(utils.load_jsonl(tmp_path / "scope_rejects.jsonl")) == 1
 
+    def test_empty_scope_logs_stop_reason_for_diagnosis(
+        self, tiny_config, prompts_dad, tmp_path, stub_claude
+    ):
+        # An empty scope reply (refusal / content filter) must be DIAGNOSABLE:
+        # the failure records and the reject carry the stop_reason and an
+        # all_empty flag, not just a blank raw — otherwise the pipeline sheds
+        # its hardest cases silently (the AW-0012 shed-hardest-case gap).
+        stub_claude(lambda user_message, **kw: ("", "refusal"))
+        results = step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])
+
+        assert results == []
+        failures = utils.load_jsonl(tmp_path / "scope_failures.jsonl")
+        assert len(failures) == step2_responses.MAX_SCOPE_ATTEMPTS
+        assert all(f["stop_reason"] == "refusal" and f["raw"] == "" for f in failures)
+        reject = utils.load_jsonl(tmp_path / "scope_rejects.jsonl")[0]
+        assert reject["last_stop_reason"] == "refusal" and reject["all_empty"] is True
+
     def test_resume_makes_no_calls(self, tiny_config, prompts_dad, tmp_path, stub_claude):
         stub_claude(_dad_step2_dispatch)
         step2_responses.run(tiny_config, prompts_dad, tmp_path, [_dilemma()])

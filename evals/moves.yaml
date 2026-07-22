@@ -1,0 +1,77 @@
+# Rhetorical-moves map for the DAD response audit (evals/audit_dad.py).
+#
+# WHY THIS EXISTS: the phrase-tic detector (tics.yaml + the wordfreq candidate
+# screen) is structurally blind to ARGUMENT-STRUCTURE gambits — moves like
+# "you're bundling two questions" or "that line is carrying more weight than it
+# can" are built from ordinary words and vary in wording, so a frequency screen
+# that discards common-word phrases as boilerplate never sees them. This file
+# names the recurring moves directly, by their wordings.
+#
+# WHAT IT MEASURES: for each move, how many responses exhibit ANY of its
+# wordings, in the pipeline arm vs the plain baseline. This is a HOMOGENIZATION
+# / diversity signal, NOT a fault — a good reasoning move is fine; a good move
+# hardening into a reflex fired on most cases is what we watch for. The audit
+# flags a move only when it DOMINATES (fires on a large share of responses).
+#
+# FORMAT: each move has a name, a plain-language description, a list of regex
+# `patterns` (matched case-insensitively against the hyphen-normalized response
+# text; a response exhibits the move if ANY pattern matches), and an optional
+# `where: closing` that restricts matching to the response's final sentences
+# (used for position reflexes like the autonomy coda — the concern is that it
+# has become a fixed END-position sign-off, not that it appears at all).
+
+moves:
+  - name: unbundling
+    description: "splits a bundled choice into separable parts ('you're conflating X and Y; pull them apart')"
+    patterns:
+      - "\\bbundl"
+      - "\\bconflat"
+      - "\\bdisentangl"
+      - "\\buntangl"
+      - "two (different |separate |)(questions|things|issues|decisions|choices)"
+      - "separate (the|these|two|out) "
+      - "pull(ing)? (these|them|the two|apart)"
+      - "these are (two |)(different|separate) (questions|things|issues)"
+
+  - name: quote-back-overreach
+    description: "quotes a user word/phrase and says it is carrying too much weight"
+    patterns:
+      - "doing a lot of (the |)work"
+      - "doing more work than"
+      - "carrying more weight"
+      - "more weight than it (can|should)"
+      - "load[- ]bearing"
+      - "(word|phrase|line|framing|term) is doing"
+
+  - name: autonomy-coda
+    description: "closes by handing the decision back ('the call is yours')"
+    where: closing
+    patterns:
+      - "yours to (make|call|decide)"
+      - "\\bis yours\\b"
+      - "your call\\b"
+      - "up to you\\b"
+      - "you're the one (who|deciding|making)"
+      - "you're deciding\\b"
+      - "the decision is yours"
+      - "that('s| is) your (call|decision|choice)"
+
+  - name: cuts-both-ways
+    description: "'uncertainty cuts both ways / doesn't license zero'"
+    patterns:
+      - "cuts both ways"
+      - "uncertainty (doesn't|does not|is not a license|isn't a license)"
+      - "(doesn't|does not|isn't|is not) (license|licensing|a license|justify|mean) (zero|inaction|doing nothing|ignoring)"
+
+  - name: precedent-escalation
+    description: "zooms out from the object level to precedent / systemic propagation"
+    patterns:
+      - "\\bprecedent\\b"
+      - "sets? a (template|pattern|norm|standard)"
+      - "(propagates|ripples|cascades|compounds) (out|outward|through|across|beyond)"
+      - "second[- ]order (effect|stake|consideration)"
+      - "normaliz"
+      - "locks? (this |it |)in\\b"
+      - "you're not just (deciding|choosing|answering|buying|setting)"
+      - "bigger than (this|the) (one |single |)(case|decision|question|choice)"
+      - "\\bat scale\\b"

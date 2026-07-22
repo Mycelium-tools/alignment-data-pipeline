@@ -399,9 +399,14 @@ def test_response_lengths_compare_to_baseline(tmp_path):
     # true median (statistics.median), not the old upper-median
     assert rl["pipeline_median"] == 400 and rl["plain_median"] == 150
     assert rl["median_ratio"] == pytest.approx(400 / 150)
+    # mean is now the headline (ratio of mean lengths); median rides as secondary
+    assert rl["pipeline_mean"] == 400 and rl["plain_mean"] == 150
+    assert rl["mean_ratio"] == pytest.approx(400 / 150)
     rows = {r["label"]: r for r in report["sections"][0]["rows"]}
-    assert rows["median length ratio (pipeline/plain)"]["verdict"] == \
+    assert rows["mean length ratio (pipeline/plain)"]["verdict"] == \
         audit_dad._verdict(400 / 150, 1.5, 2.5)
+    # the median ratio is shown but carries no verdict now (secondary read)
+    assert rows["median length ratio (pipeline/plain)"]["verdict"] is None
     # batch totals: 800 pipeline vs 300 plain -> +500, +166.7%
     assert rows["total chars (batch)"]["value"] == \
         "pipeline 800 / plain 300 (+500 / +166.7%)"
@@ -423,9 +428,79 @@ def test_response_lengths_floor_flags_suspiciously_short_pipeline(tmp_path):
     report = {}
     audit_dad.audit_response_lengths(run, report)
     rows = {r["label"]: r for r in report["sections"][0]["rows"]}
-    row = rows["median length ratio (pipeline/plain)"]
+    row = rows["mean length ratio (pipeline/plain)"]
     assert row["verdict"] == "OK"
     assert "shorter than plain" in row["note"]
+
+
+def test_load_moves_compiles_patterns():
+    moves = audit_dad.load_moves()
+    assert moves and all(m["patterns"] for m in moves)
+    names = {m["name"] for m in moves}
+    assert {"unbundling", "autonomy-coda", "quote-back-overreach"} <= names
+    # the coda is position-scoped to the response close
+    assert next(m for m in moves if m["name"] == "autonomy-coda")["where"] == "closing"
+
+
+def test_rhetorical_moves_counts_and_flags_dominant(tmp_path):
+    # 3 of 4 pipeline responses close on the autonomy coda -> 75% -> flagged
+    coda = " In the end, the decision is yours."
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", "Here is the analysis of your situation. " * 6 + coda, "plain a"),
+        ("AW-0002", "Weighing the considerations at length here. " * 6 + coda, "plain b"),
+        ("AW-0003", "A careful look at the tradeoffs involved here. " * 6 + coda, "plain c"),
+        ("AW-0004", "Just a straightforward answer with no sign-off flourish at all.", "plain d"),
+    ])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    rm = report["rhetorical_moves"]
+    assert rm["n_pipeline"] == 4
+    coda_stats = rm["moves"]["autonomy-coda"]
+    assert coda_stats["pipeline"] == 3 and coda_stats["pipeline_share"] == 0.75
+    rows = {r["label"]: r for r in report["sections"][0]["rows"]}
+    assert rows["autonomy-coda"]["verdict"] == "BAD"          # dominates -> flagged
+    # flagged cases recorded for the viewer click-through (prompt_id pre-gid)
+    assert set(coda_stats["flagged_pipeline"]) == {"AW-0001", "AW-0002", "AW-0003"}
+
+
+def test_rhetorical_moves_coda_only_counts_at_the_close(tmp_path):
+    # the coda phrase in the OPENING of a long response must NOT count — the
+    # autonomy-coda move is position-scoped to the closing
+    opener = "The choice is yours to make. " + "Now the substantive analysis follows. " * 15
+    run = _write_run_with_responses(tmp_path, [("AW-0001", opener, "plain")])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    assert report["rhetorical_moves"]["moves"]["autonomy-coda"]["pipeline"] == 0
+
+
+def test_rhetorical_moves_calm_without_final_corpus(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "u"}])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    assert report["rhetorical_moves"] == {"n_pipeline": 0}
+
+
+def test_move_candidates_surfaces_new_moves(tmp_path, stub_claude):
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "resp one", "plain one")])
+    # the offline pass runs first in main(); seed rhetorical_moves so the paid
+    # candidates attach to it the way they do in a real run
+    report = {"rhetorical_moves": {"n_pipeline": 1, "moves": {}}}
+    stub_claude([
+        '[{"name": "false-humility-hedge", "description": "opens by disclaiming expertise",'
+        ' "example": "I am not a vet, but", "approx_count": 5}]'])
+    audit_dad.audit_move_candidates(run, {"model": "m"}, report)
+    cands = report["rhetorical_moves"]["llm_candidates"]
+    assert len(cands) == 1 and cands[0]["name"] == "false-humility-hedge"
+    rows = {r["label"]: r for s in report["sections"] for r in s["rows"]}
+    assert rows["candidate new moves"]["value"] == "1"
+
+
+def test_move_candidates_calm_on_bad_json(tmp_path, stub_claude):
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "resp one", "plain one")])
+    report = {}
+    stub_claude(["not json at all"])
+    audit_dad.audit_move_candidates(run, {"model": "m"}, report)
+    assert report["rhetorical_moves"]["llm_candidates"] == []
 
 
 def _reasons_dispatch(consolidation='["fish distress", "worker livelihoods"]',

@@ -278,11 +278,17 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
                         "triggered_entries": reasoning_library.get_entries(library, ids),
                     }
                     break
-                # Keep the raw output — it cost a call and shows why parsing failed.
-                out["scope_failures"].append({"prompt_id": pid, "attempt": attempt, "raw": raw})
+                # Keep the raw output AND the stop_reason — an empty raw with
+                # stop_reason "end_turn"/"stop" is a refusal or content filter,
+                # not truncation, and that distinction is the difference between
+                # a noise blip and the pipeline quietly shedding its hardest
+                # cases. Logging it is what makes the next empty scope diagnosable.
+                out["scope_failures"].append({"prompt_id": pid, "attempt": attempt,
+                                              "raw": raw, "stop_reason": stop_reason})
+                empty = " (empty output — likely refusal or content filter)" if not raw.strip() else ""
                 more = " — retrying with a fresh call" if attempt < MAX_SCOPE_ATTEMPTS else ""
                 print(f"    {pid}: scope attempt {attempt}/{MAX_SCOPE_ATTEMPTS} unusable "
-                      f"(unparseable or missing axes){more}.")
+                      f"(stop_reason={stop_reason}){empty}{more}.")
             if out["scope_record"] is None:
                 out["scope_failed"] = True
                 return out  # never generate over an empty scope
@@ -354,10 +360,18 @@ def run(config: dict, prompts_dir: Path, output_dir: Path, dilemmas: list[dict],
             # A persistently unusable scope (empty/refused replies across
             # MAX_SCOPE_ATTEMPTS) rejects this one prompt rather than aborting
             # the run: checkpointed, skipped on resume, no response generated
-            # over an empty scope.
+            # over an empty scope. Record the last stop_reason and whether the
+            # raws were empty, so the reject itself says refusal-vs-truncation
+            # rather than forcing a dig through scope_failures.jsonl.
+            last_stop = (out["scope_failures"][-1].get("stop_reason")
+                         if out["scope_failures"] else None)
+            all_empty = bool(out["scope_failures"]) and all(
+                not (f.get("raw") or "").strip() for f in out["scope_failures"])
             utils.append_jsonl({"prompt_id": pid,
                                 "attempts": MAX_SCOPE_ATTEMPTS,
-                                "reason": "scope unusable"},
+                                "reason": "scope unusable",
+                                "last_stop_reason": last_stop,
+                                "all_empty": all_empty},
                                scope_rejects_path)
             scope_rejected.add(pid)
             print(f"    {pid}: scope unusable after {MAX_SCOPE_ATTEMPTS} attempts "
