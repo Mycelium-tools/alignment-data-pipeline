@@ -480,6 +480,28 @@ def test_rhetorical_moves_calm_without_final_corpus(tmp_path):
     assert report["rhetorical_moves"] == {"n_pipeline": 0}
 
 
+def test_rhetorical_moves_row_note_carries_the_move_description(tmp_path):
+    # each move's row note is its moves.yaml description, so a reader always sees
+    # what e.g. "autonomy-coda" MEANS — self-documenting from the data file
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "resp", "plain")])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    coda_desc = next(m["description"] for m in audit_dad.load_moves()
+                     if m["name"] == "autonomy-coda")
+    rows = {r["label"]: r for r in report["sections"][0]["rows"]}
+    assert coda_desc in rows["autonomy-coda"]["note"]
+    assert "closing only" in rows["autonomy-coda"]["note"]     # position-scoped marker
+
+
+def test_reason_type_taxonomy_is_single_source():
+    # the judge prompt and the label tuple are both built from REASON_TYPE_GLOSS,
+    # so editing a meaning updates the prompt, the histogram, and the viewer
+    # legend together — no drift
+    assert audit_dad.REASON_TYPES == tuple(audit_dad.REASON_TYPE_GLOSS)
+    for t, gloss in audit_dad.REASON_TYPE_GLOSS.items():
+        assert f"- {t}: {gloss}" in audit_dad._REASON_TYPE_PROMPT
+
+
 def test_move_candidates_surfaces_new_moves(tmp_path, stub_claude):
     run = _write_run_with_responses(tmp_path, [("AW-0001", "resp one", "plain one")])
     # the offline pass runs first in main(); seed rhetorical_moves so the paid
@@ -563,6 +585,16 @@ def test_reasons_scan_counts_density_and_corpus_distinct(tmp_path, stub_claude):
     # 2 extractions + 2 check-backs + 2 consolidations + 2 reason-typing
     # + 1 survival judge + 1 moves judge
     assert len(calls) == 10
+    # explanations surface: the reason-type legend (single-source gloss) is a
+    # detail line, and each stance dimension carries its plain-language gloss
+    reasons_sec = next(s for s in report["sections"]
+                       if s["title"].startswith("Moral-patient reasons"))
+    assert any(f"direct: {audit_dad.REASON_TYPE_GLOSS['direct']}" in d
+               for d in reasons_sec.get("detail", []))
+    stance_sec = next(s for s in report["sections"]
+                      if s["title"].startswith("Response stance"))
+    defers = next(r for r in stance_sec["rows"] if r["label"] == "defers")
+    assert defers["note"] == audit_dad._STANCE_GLOSS["defers"]
 
 
 def test_reasons_scan_counts_extraction_failures(tmp_path, stub_claude):

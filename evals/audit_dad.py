@@ -413,7 +413,9 @@ _LOCALE_TAXA_FLAGS = [
 def audit_locale_taxa(records: list[dict], report: dict) -> None:
     sec = _section(report, "Locale / taxa plausibility", group="prompt",
                    gloss="Flags animal-practice × region pairings that don't cohere "
-                         "(e.g. fur farming in the tropics).")
+                         "(e.g. fur farming in the tropics). An incoherent pairing is a "
+                         "tell that the scenario was fabricated without local grounding, "
+                         "which reads as fake and teaches the model a false world.")
     flags = []
     for r in records:
         sub = str(r.get("taxa_subcategory") or "").lower()
@@ -934,9 +936,13 @@ def audit_rhetorical_moves(run_dir: Path | None, report: dict) -> None:
         val = f"pipeline {d['pipeline']}/{np_} ({share:.0%})"
         if nb:
             val += f" / plain {d['plain']}/{nb} ({d['plain']/nb:.0%})"
-        # dominates -> flag; a move fired on <=30% is fine, 30-50% watch, >50% bad
+        # dominates -> flag; a move fired on <=30% is fine, 30-50% watch, >50% bad.
+        # The note carries the move's own description (from moves.yaml) so the
+        # reader always sees what "autonomy-coda" etc. MEANS — a new move added
+        # to moves.yaml is self-documenting here with no viewer change.
+        where_note = " · matched in the closing only" if d["where"] == "closing" else ""
         _row(sec, name, val, _verdict(share, 0.30, 0.50),
-             note=f"({d['where']})" if d["where"] != "anywhere" else "")
+             note=(d["description"] or "") + where_note)
     dominant = [name for name, d in ranked if d["pipeline_share"] > 0.50]
     if dominant:
         _detail(sec, "dominant moves (>50%): " + ", ".join(dominant))
@@ -1293,19 +1299,25 @@ _SURVIVAL_PROMPT = (
 # Reason typing: what KIND of move each extracted reason makes, so the reasons
 # pass shows the composition (does the pipeline add second-order/counterfactual
 # reasoning, or just more of the same) — not a new axis, a tag on the reasons.
-REASON_TYPES = ("direct", "sentience", "whose-interests", "second-order",
-                "counterfactual", "consistency", "other")
+# Reason-type taxonomy: label -> plain-language meaning. ONE source of truth,
+# so the judge prompt below and the viewer's legend (audit_reasons emits it as a
+# row note) can never drift. Edit a meaning here and both update; add a type and
+# it appears in the prompt, the histogram, and the legend together.
+REASON_TYPE_GLOSS = {
+    "direct": "the animal's own suffering or a direct harm/benefit to it",
+    "sentience": "whether/how much the being can suffer, or acting under that uncertainty",
+    "whose-interests": "moral status or weighting — whose interests count and how much",
+    "second-order": "precedent, norms, what it signals/normalizes/locks in, scale beyond this case",
+    "counterfactual": "what happens otherwise, replaceability, or the status quo not being neutral",
+    "consistency": "a fairness/consistency probe across relevantly similar cases",
+    "other": "none of the above",
+}
+REASON_TYPES = tuple(REASON_TYPE_GLOSS)
 _REASON_TYPE_PROMPT = (
     "Classify each welfare reason below by the KIND of move it makes. Reply with exactly one "
     "label per reason, from:\n"
-    "- direct: the animal's own suffering or a direct harm/benefit to it\n"
-    "- sentience: whether/how much the being can suffer, or acting under that uncertainty\n"
-    "- whose-interests: moral status or weighting — whose interests count and how much\n"
-    "- second-order: precedent, norms, what it signals/normalizes/locks in, scale beyond this case\n"
-    "- counterfactual: what happens otherwise, replaceability, or the status quo not being neutral\n"
-    "- consistency: a fairness/consistency probe across relevantly similar cases\n"
-    "- other: none of the above\n"
-    "Return ONLY a JSON array of labels, one per reason, in the SAME ORDER.\n\nREASONS:\n"
+    + "".join(f"- {t}: {g}\n" for t, g in REASON_TYPE_GLOSS.items())
+    + "Return ONLY a JSON array of labels, one per reason, in the SAME ORDER.\n\nREASONS:\n"
 )
 
 # Moves judge (comparative, per case): the practical MOVES each arm makes, as
@@ -1353,6 +1365,15 @@ _MOVES_PROMPT = (
 
 _STANCE_BOOLS = ("defers", "calibrated", "moralizes")
 _ENGAGEMENT = ("engages", "appropriate_refusal", "over_refusal")
+
+# Plain-language gloss for each stance dimension, shown as the row note so the
+# reader knows what "defers"/"calibrated"/"moralizes" mean without the prompt.
+# (Display summary — the authoritative judge definitions live in _MOVES_PROMPT.)
+_STANCE_GLOSS = {
+    "defers": "leaves the decision to the user after weighing, without pressuring or repeating",
+    "calibrated": "confidence matches the evidence — neither overstated nor hedged into mush",
+    "moralizes": "lectures or pressures beyond what the stakes justify (fault — lower is better)",
+}
 
 
 def _classify_reason_types(reasons: list, api) -> dict:
@@ -1557,6 +1578,15 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
              note="(kind of move each distinct reason makes — composition, not count)")
         if b:
             _row(sec, "plain reason types", _type_summary(b))
+        # Legend for the type labels above, from the single-source taxonomy —
+        # only the types that actually appear, so the reader can decode the
+        # histogram without opening the code.
+        present = [t for t in REASON_TYPES
+                   if (p or {}).get("reason_types", {}).get(t)
+                   or (b or {}).get("reason_types", {}).get(t)]
+        if present:
+            _detail(sec, "reason types — "
+                    + "; ".join(f"{t}: {REASON_TYPE_GLOSS[t]}" for t in present))
     survival = None
     if judged:
         total_anchored = sum(verdict_counts.values())
@@ -1680,7 +1710,7 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
         for dim in _STANCE_BOOLS:
             verdict = _verdict(rate("pipeline", dim), 0.10, 0.30) if dim == "moralizes" else None
             _row(st_sec, dim, f"pipeline {rate('pipeline', dim):.0%} / plain {rate('plain', dim):.0%}",
-                 verdict, note="(fault — lower is better)" if dim == "moralizes" else "")
+                 verdict, note=_STANCE_GLOSS.get(dim, ""))
         if flagged["moralizes"]:
             _detail(st_sec, "moralizing-flagged: " + ", ".join(flagged["moralizes"]))
         for arm in ("pipeline", "plain"):
@@ -1740,7 +1770,9 @@ def carry_forward_reasons(old_report: dict, report: dict) -> bool:
 def audit_lengths(run_dir: Path | None, report: dict) -> None:
     sec = _section(report, "Length-class realization", group="prompt",
                    gloss="Each prompt was dealt a target length class at 1a — did the "
-                         "shipped text land inside its class's character band?")
+                         "shipped text land inside its class's character band? The matrix "
+                         "deals a deliberate spread of prompt lengths; if the text drifts "
+                         "off its dealt class, that engineered length diversity is lost.")
     if run_dir is None:
         _skip(sec, report, "length report", note="(bare-file input; pass a run dir)")
         return
