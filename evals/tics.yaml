@@ -26,6 +26,12 @@
 
 watch:
   pipeline-origin:
+    # Kept as verbatim engrams even though the autonomy-coda / cuts-both-ways
+    # moves cover the concept: these exact phrases stand out on their own and
+    # are worth watching as strings (the move tracks the wider gambit; the tic
+    # tracks this specific wording).
+    - {phrase: "genuinely yours", family: agency-ownership}
+    - {phrase: "cuts both ways", family: idiom-structure}
     - {phrase: "straight with you", family: performed-candor}
     - {phrase: "be honest about", family: performed-candor}
     - {phrase: "gut check", family: performed-candor}
@@ -47,17 +53,15 @@ ignore:
   - {phrase: "of suffering", reason: "welfare subject vocabulary, not a tic"}
   - {phrase: "the animals", reason: "welfare subject vocabulary, not a tic"}
   - {phrase: "an animal", reason: "welfare subject vocabulary, not a tic"}
-  # Autonomy coda — now tracked as the `autonomy-coda` rhetorical move
-  # (evals/moves.yaml). Phrase-level tracking is redundant with the move.
-  - {phrase: "genuinely yours", reason: "autonomy coda — tracked as a rhetorical move"}
+  # Autonomy coda — the wider gambit is now the `autonomy-coda` rhetorical move
+  # (evals/moves.yaml), so these generic phrasings are redundant. ("genuinely
+  # yours" is kept on the watchlist above as a standout verbatim engram.)
   - {phrase: "yours to", reason: "autonomy coda — tracked as a rhetorical move"}
   - {phrase: "is yours", reason: "autonomy coda — tracked as a rhetorical move"}
   - {phrase: "you're deciding", reason: "autonomy coda — tracked as a rhetorical move"}
   - {phrase: "you're the one", reason: "autonomy coda — tracked as a rhetorical move"}
   - {phrase: "the one who", reason: "autonomy coda — tracked as a rhetorical move"}
   - {phrase: "is your call", reason: "autonomy coda — tracked as a rhetorical move"}
-  # Now tracked as the `cuts-both-ways` rhetorical move.
-  - {phrase: "cuts both ways", reason: "tracked as a rhetorical move"}
   # Common English phrasing, not a distinctive engram — flagging it just made
   # the corpus look worse for no signal.
   - {phrase: "on the table", reason: "common English phrasing, not a distinctive tic"}

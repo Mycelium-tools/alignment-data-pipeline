@@ -877,10 +877,14 @@ def test_load_tic_lists_reads_watch_and_ignore():
     assert "the welfare question" in watch["pipeline-origin"]
     assert "push back on" in watch["plain-origin"]          # kept plain-origin tic
     assert isinstance(ignore, set)
-    # autonomy-coda phrasings + "cuts both ways" were demoted to ignore once
-    # they became tracked rhetorical moves, so the phrase audit stops double-
-    # counting them and the candidate queue won't re-surface them.
-    assert {"you're the one", "yours to", "cuts both ways"} <= ignore
+    # generic autonomy-coda phrasings were demoted to ignore once the coda
+    # became a tracked rhetorical move, so the phrase audit stops double-counting
+    # them and the candidate queue won't re-surface them...
+    assert {"you're the one", "yours to", "is your call"} <= ignore
+    # ...but the two standout verbatim engrams are deliberately kept on watch
+    # even though a move also covers the concept.
+    assert "genuinely yours" in watch["pipeline-origin"]
+    assert "cuts both ways" in watch["pipeline-origin"]
 
 
 def test_tic_candidates_surfaces_rare_over_represented_phrase(tmp_path):
