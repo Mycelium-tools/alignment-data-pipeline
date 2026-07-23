@@ -1603,12 +1603,13 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
     1,000 response characters."""
     from shared import api
 
-    sec = _section(report, "Moral-patient reasons (LLM)", group="paid",
-                   gloss="INTERNAL DEV SIGNAL (paid LLM pass — not reviewer-facing). Does "
-                         "the pipeline widen the moral reasoning or just lengthen replies? "
-                         "Counts distinct reasons appealing to someone's interests in both "
-                         "arms; 'survival' asks which of plain Claude's reasons the pipeline "
-                         "kept, weakened, or dropped, judged against the full pipeline text.")
+    sec = _section(report, "Welfare considerations (LLM)", group="paid",
+                   gloss="A subset of the Important considerations headline. Does the pipeline "
+                         "widen the welfare reasoning or just lengthen replies? Counts distinct "
+                         "considerations appealing to a being's interests in both arms; "
+                         "'retention' asks which of plain Claude's considerations the pipeline "
+                         "kept, weakened, or dropped (a no-regression check on plain's points), "
+                         "and how many it added — judged against the full pipeline text.")
     if run_dir is None:
         _skip(sec, report, "reason scan", note="(bare-file input; pass a run dir)")
         return
@@ -1977,8 +1978,9 @@ def carry_forward_reasons(old_report: dict, report: dict) -> bool:
     old_cands = (old_report.get("rhetorical_moves") or {}).get("llm_candidates")
     if old_cands is not None:
         report.setdefault("rhetorical_moves", {})["llm_candidates"] = old_cands
-    carried_titles = ("Moral-patient reasons (LLM)", "Humane alternatives (LLM)",
-                      "Response stance (LLM)", "Rhetorical-move candidates (LLM)",
+    carried_titles = ("Welfare considerations (LLM)", "Moral-patient reasons (LLM)",
+                      "Humane alternatives (LLM)", "Response stance (LLM)",
+                      "Rhetorical-move candidates (LLM)",
                       "Reasoning-composition diversity (LLM)")
     for s in old_report.get("sections") or []:
         if s.get("title") in carried_titles:
@@ -2325,14 +2327,23 @@ def audit_important_considerations(report: dict) -> None:
          f"pipeline {parent_p:.1f} / plain {parent_b:.1f}", note=lift.strip())
     _detail(sec, f"— welfare considerations:  pipeline {reasons_p:.2f} / plain {reasons_b:.2f}")
     _detail(sec, f"— alternatives weighed:    pipeline {alts_p:.1f} / plain {alts_b:.1f}")
+    # "Length earned" = the extra length is ADDITIVE, not dropping plain's points.
+    # The survival judge anchors on PLAIN's reasons: kept/weakened = plain points
+    # the pipeline retained, dropped = plain points it didn't echo, added = new
+    # points beyond plain. So (kept+weakened)/total is a RETENTION/no-regression
+    # rate, NOT "the pipeline's own additions survived scrutiny" (nothing audits
+    # the additions' validity). Word it as retention + net-add, never "scrutiny".
     surv = mpr.get("survival") or {}
     denom = sum(surv.get(k, 0) for k in ("kept", "weakened", "dropped"))
-    surv_share = (surv.get("kept", 0) + surv.get("weakened", 0)) / denom if denom else None
+    retained_share = (surv.get("kept", 0) + surv.get("weakened", 0)) / denom if denom else None
+    added_total = surv.get("added_total")
     ratio = rl.get("mean_ratio")
     if ratio:
-        note = "longer BECAUSE richer"
-        if surv_share is not None:
-            note += f", and {surv_share:.0%} of added considerations survive scrutiny — earned, not padding"
+        note = "longer because ADDITIVE"
+        if retained_share is not None:
+            note += (f": keeps {retained_share:.0%} of the considerations plain raised"
+                     + (f" and adds {added_total} more" if added_total else "")
+                     + " — not dropping plain's points")
         _row(sec, "length earned", f"{ratio:.2f}x longer than plain", note=f"({note})")
     report["important_considerations"] = {
         "available": True,
@@ -2344,7 +2355,9 @@ def audit_important_considerations(report: dict) -> None:
              "plain": round(alts_b, 2)},
         ],
         "length_ratio": round(ratio, 2) if ratio else None,
-        "survival_share": round(surv_share, 3) if surv_share is not None else None,
+        # retention of PLAIN's considerations (+ net added), NOT a scrutiny check
+        "retained_share": round(retained_share, 3) if retained_share is not None else None,
+        "added_total": added_total,
     }
 
 
@@ -2423,7 +2436,7 @@ def main() -> None:
         except (OSError, json.JSONDecodeError):
             old_report = {}
         if carry_forward_reasons(old_report, report):
-            print(" Moral-patient reasons (LLM) — carried forward from the previous "
+            print(" Welfare considerations (LLM) — carried forward from the previous "
                   "report (re-run with --reasons to refresh)\n")
 
     # Headline health summary: runs last (needs the paid data, from --reasons or

@@ -157,34 +157,46 @@ st.caption(f"{report.get('n_prompts', '?')} prompts audited · "
 _ic = report.get("important_considerations") or {}
 if _ic.get("available"):
     st.header("Important considerations")
-    st.caption("The dataset's usefulness in one view: distinct important considerations each "
-               "answer surfaces — welfare reasons plus humane alternatives weighed (an "
-               "alternative IS a welfare consideration) — pipeline vs plain Claude. A health "
-               "check, not a target.")
-    _rows = [{"metric": "All important considerations",
-              "plain Claude": _ic["parent"]["plain"], "pipeline": _ic["parent"]["pipeline"]}]
-    for _s in _ic["subsets"]:
-        _rows.append({"metric": "— " + _s["name"],
-                      "plain Claude": _s["plain"], "pipeline": _s["pipeline"]})
-    _df = pd.DataFrame(_rows).melt(id_vars="metric", var_name="arm", value_name="per answer")
-    _chart = alt.Chart(_df).mark_bar().encode(
-        y=alt.Y("metric:N", title="", sort=[r["metric"] for r in _rows]),
-        x=alt.X("per answer:Q", title="mean per answer"),
-        yOffset=alt.YOffset("arm:N", sort=list(rendering.AUDIT_ARM_COLUMNS)),
-        color=alt.Color("arm:N", title="",
-                        scale=alt.Scale(domain=list(rendering.AUDIT_ARM_COLUMNS),
-                                        range=list(rendering.AUDIT_ARM_COLORS))),
-        tooltip=["metric", "arm", alt.Tooltip("per answer:Q", format=".2f")],
-    ).properties(height=180)
-    st.altair_chart(_chart, use_container_width=True)
+    st.caption("The dataset's usefulness in one view. Each bar is one arm; its two segments — "
+               "**welfare considerations** + **alternatives weighed** (an alternative IS a "
+               "welfare consideration) — stack to that arm's total distinct considerations per "
+               "answer. A health check, not a target.")
+    # Stacked bar so the parent reads as the SUM of its two parts (not three
+    # independent measurements): one bar per arm, segments = the two subsets,
+    # total labelled at the end.
+    _subs = _ic["subsets"]
+    _rows = [{"arm": arm_col, "component": s["name"], "value": s[arm_key]}
+             for s in _subs
+             for arm_key, arm_col in (("plain", "plain Claude"), ("pipeline", "pipeline"))]
+    _arms = ["plain Claude", "pipeline"]
+    _comp_domain = [s["name"] for s in _subs]
+    _comp_range = ["#2a78d6", "#8256b8"][:len(_comp_domain)]  # not the arm terracotta/green
+    _bars = alt.Chart(pd.DataFrame(_rows)).mark_bar().encode(
+        y=alt.Y("arm:N", title="", sort=_arms),
+        x=alt.X("value:Q", title="distinct considerations per answer (stacked)", stack="zero"),
+        color=alt.Color("component:N", title="",
+                        scale=alt.Scale(domain=_comp_domain, range=_comp_range)),
+        order=alt.Order("component:N"),
+        tooltip=["arm", "component", alt.Tooltip("value:Q", title="per answer", format=".2f")],
+    )
+    _totals = pd.DataFrame([{"arm": "plain Claude", "total": _ic["parent"]["plain"]},
+                            {"arm": "pipeline", "total": _ic["parent"]["pipeline"]}])
+    _labels = alt.Chart(_totals).mark_text(align="left", dx=5, fontWeight="bold").encode(
+        y=alt.Y("arm:N", sort=_arms), x=alt.X("total:Q"),
+        text=alt.Text("total:Q", format=".1f"))
+    st.altair_chart((_bars + _labels).properties(height=150), use_container_width=True)
     _bits = []
     if _ic.get("length_ratio"):
         _bits.append(f"**{_ic['length_ratio']:.2f}× longer** than plain")
-    if _ic.get("survival_share") is not None:
-        _bits.append(f"**{_ic['survival_share']:.0%}** of added considerations survive scrutiny")
+    if _ic.get("retained_share") is not None:
+        _frag = f"keeps **{_ic['retained_share']:.0%}** of the considerations plain raised"
+        if _ic.get("added_total"):
+            _frag += f" and adds **{_ic['added_total']}** more"
+        _bits.append(_frag)
     if _bits:
         st.markdown("Length is earned — " + " · ".join(_bits)
-                    + ". Read these together; none is a target to maximize.")
+                    + ". The extra length is *additive* (it doesn't drop plain's points), not "
+                    "padding. Read these together; none is a target to maximize.")
     st.divider()
 elif _ic.get("available") is False:
     st.info("Run the audit with `--reasons` to populate the important-considerations "
@@ -246,32 +258,35 @@ _PAID_COMPANIONS = ("Humane alternatives", "Response stance", "Reasoning-composi
 # legacy pre-tics name; old reports keep it.
 _CUSTOM_DETAIL = ("Tracked tics", "Stock phrases")
 
-summary = rendering.audit_verdict_summary(report)
-if summary:
-    def _summary_line(row: dict) -> str:
-        title = row["section"]
-        shown = not title.startswith(_NOT_DISPLAYED)
-        cell = f"[{title}](#{_slug(title)})" if shown else f"{title} *(not displayed)*"
-        if row["skipped"]:
-            verdict = "— skipped"
-        elif row["worst"] is None:
-            verdict = "— informational"
-        else:
-            badge = {"GOOD": "🟢", "OK": "🟠", "BAD": "🔴"}[row["worst"]]
-            verdict = f"{badge} {row['worst']}"
-        counts = " ".join(f"{n} {b}" for v, b in (("GOOD", "🟢"), ("OK", "🟠"), ("BAD", "🔴"))
-                          if (n := row["counts"][v]))
-        return f"| {cell} | {row['group']} | {verdict} | {counts} |"
+def _render_health_overview() -> None:
+    """Verdict overview table + batch totals. A health-check summary, so it
+    renders in the health-check tail below the dataset-usefulness sections."""
+    summary = rendering.audit_verdict_summary(report)
+    if summary:
+        def _summary_line(row: dict) -> str:
+            title = row["section"]
+            shown = not title.startswith(_NOT_DISPLAYED)
+            cell = f"[{title}](#{_slug(title)})" if shown else f"{title} *(not displayed)*"
+            if row["skipped"]:
+                verdict = "— skipped"
+            elif row["worst"] is None:
+                verdict = "— informational"
+            else:
+                badge = {"GOOD": "🟢", "OK": "🟠", "BAD": "🔴"}[row["worst"]]
+                verdict = f"{badge} {row['worst']}"
+            counts = " ".join(f"{n} {b}" for v, b in (("GOOD", "🟢"), ("OK", "🟠"), ("BAD", "🔴"))
+                              if (n := row["counts"][v]))
+            return f"| {cell} | {row['group']} | {verdict} | {counts} |"
 
-    st.markdown("\n".join(
-        ["| section | group | worst verdict | checks |", "|---|---|---|---|"]
-        + [_summary_line(r) for r in summary]))
+        st.markdown("\n".join(
+            ["| section | group | worst verdict | checks |", "|---|---|---|---|"]
+            + [_summary_line(r) for r in summary]))
 
-batch_totals = rendering.audit_batch_totals(report)
-if batch_totals:
-    st.subheader("Batch totals — plain Claude vs pipeline")
-    st.caption("Summed over records where both arms exist; Δ % is relative to plain Claude.")
-    st.dataframe(pd.DataFrame(batch_totals), width="stretch", hide_index=True)
+    batch_totals = rendering.audit_batch_totals(report)
+    if batch_totals:
+        st.subheader("Batch totals — plain Claude vs pipeline")
+        st.caption("Summed over records where both arms exist; Δ % is relative to plain Claude.")
+        st.dataframe(pd.DataFrame(batch_totals), width="stretch", hide_index=True)
 
 # The reasoning-library retrieval picture (per-record 2a.5 pulls, all entry
 # ids, id -> transferable move) — rides the reasons chart, the per-record
@@ -293,12 +308,46 @@ def _render_reasons_section(section: dict) -> None:
     if cost is not None:
         st.caption(f"Paid pass cost: ${cost:.4f} · model `{mpr.get('model') or '?'}`")
 
+    # Cumulative first (the headline for this subset), then the per-response
+    # detail — so the summary reads before the 40-bar breakdown.
+    p_mean = (mpr.get("pipeline") or {}).get("mean_unique")
+    b_mean = (mpr.get("plain") or {}).get("mean_unique")
+    if p_mean is not None and b_mean is not None:
+        st.markdown("**Cumulative** — mean distinct welfare considerations per answer")
+        _cum = pd.DataFrame([{"arm": "plain Claude", "mean": b_mean},
+                             {"arm": "pipeline", "mean": p_mean}])
+        st.altair_chart(alt.Chart(_cum).mark_bar().encode(
+            x=alt.X("mean:Q", title="mean per answer"),
+            y=alt.Y("arm:N", title="", sort=list(rendering.AUDIT_ARM_COLUMNS)),
+            color=alt.Color("arm:N", title="", scale=alt.Scale(
+                domain=list(rendering.AUDIT_ARM_COLUMNS),
+                range=list(rendering.AUDIT_ARM_COLORS))),
+            tooltip=["arm", alt.Tooltip("mean:Q", format=".2f")]).properties(height=110),
+            use_container_width=True)
+        added = (mpr.get("survival") or {}).get("added_total")
+        n_pipe = (mpr.get("pipeline") or {}).get("n")
+        n_plain = (mpr.get("plain") or {}).get("n")
+        bits = []
+        if added:
+            bits.append(f"the pipeline adds **{added}** considerations beyond plain (net, across the corpus)")
+        if n_pipe is not None and n_plain is not None:
+            bits.append(f"means over pipeline {n_pipe} / plain {n_plain} answers extracted")
+        if bits:
+            st.caption(" · ".join(bits) + ".")
+
     chart_rows = _label_responses(rendering.audit_reason_chart_rows(per_case))
     if chart_rows:
+        st.markdown("**Per response** — pipeline vs plain, one pair per record "
+                    "(spot a specific answer that runs lean, or an extraction gap where a bar "
+                    "is missing).")
         st.altair_chart(_grouped_arm_chart(chart_rows, "unique reasons"),
                         use_container_width=True)
     surv_rows = _label_responses(rendering.audit_survival_chart_rows(per_case))
     if surv_rows:
+        st.caption("**Retention of plain's considerations** — *dropped* means a consideration "
+                   "**plain Claude** raised that this pipeline answer didn't echo (a "
+                   "no-regression check on plain's points), NOT a lost pipeline reason. "
+                   "*added* = new considerations the pipeline brought.")
         # Stacked survival chart — hover a segment to see WHICH reasons
         # sit in it. Bottom three segments sum to the plain arm's count.
         st.altair_chart(
@@ -568,30 +617,44 @@ def _render_section(section: dict) -> None:
             st.caption(line)
 
 
-# --- The paid LLM trio first: Moral-patient reasons, then its companion
-# judgments (alternatives + stance ride the same --reasons pass) ---
+# --- Dataset usefulness cluster (top): Important considerations (above) →
+# Reasoning-composition diversity → its detailed subsets (welfare considerations
+# = the reasons pass, and humane alternatives). Section renamed 2026-07-23;
+# match both the new and legacy titles so old reports still render richly. ---
+_REASONS_TITLES = ("Welfare considerations", "Moral-patient reasons")
+
+composition_section = next((s for s in sections
+                            if s.get("title", "").startswith("Reasoning-composition")), None)
+if composition_section:
+    _render_section(composition_section)
+
 reasons_section = next((s for s in sections
-                        if s.get("title", "").startswith("Moral-patient reasons")), None)
+                        if s.get("title", "").startswith(_REASONS_TITLES)), None)
 if reasons_section:
     _render_reasons_section(reasons_section)
 elif "moral_patient_reasons" not in report:
-    st.caption("Moral-patient reason extraction hasn't run for this report — add it "
+    st.caption("Welfare-consideration extraction hasn't run for this report — add it "
                "(costs API calls) with:")
     st.code(f"{cmd} --reasons", language="bash")
 
 for section in sections:
-    title = section.get("title", "")
-    if title.startswith("Humane alternatives"):
+    if section.get("title", "").startswith("Humane alternatives"):
         _render_alternatives_section(section)
-    elif title.startswith("Response stance"):
-        _render_section(section)
-    elif title.startswith("Reasoning-composition"):
+
+# --- Health check (everything else): the overview table, batch totals, the
+# stance/moralizing tripwire, then the bucketed prompt/response/library checks.
+# These catch drift; they are not the dataset's usefulness story above. ---
+st.header("Health check")
+st.caption("Drift and quality tripwires — read for regressions across runs, not as targets.")
+_render_health_overview()
+for section in sections:
+    if section.get("title", "").startswith("Response stance"):
         _render_section(section)
 
-# --- The remaining audit sections, bucketed prompt / response / library ---
-# The paid LLM trio is rendered above; _NOT_DISPLAYED sections are
-# deliberately hidden (still measured — report JSON and terminal keep them).
-_SKIP_SECTIONS = ("Important considerations", "Moral-patient reasons") + _PAID_COMPANIONS + _NOT_DISPLAYED
+# _NOT_DISPLAYED sections are deliberately hidden (still measured — report JSON
+# and terminal keep them). The usefulness cluster + stance are rendered above.
+_SKIP_SECTIONS = (("Important considerations",) + _REASONS_TITLES
+                  + _PAID_COMPANIONS + _NOT_DISPLAYED)
 _GROUP_HEADERS = {
     "prompt": "Prompt side — the shipped user messages",
     "response": "Response side — final replies vs the plain-Claude control",

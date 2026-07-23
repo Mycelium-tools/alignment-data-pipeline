@@ -281,6 +281,12 @@ AUDIT_SECTION_META = {
                                     "fallback should be rare."),
     "Reasoning-library coverage": ("library", "Which library entries this corpus ever "
                                    "pulled. Never-selected entries are starved moves."),
+    # "Welfare considerations" is the current title; "Moral-patient reasons" is
+    # the pre-2026-07-23 name kept so old reports still resolve via the fallback.
+    "Welfare considerations": ("paid", "Paid LLM pass: does the pipeline widen the welfare "
+                               "reasoning or just lengthen replies? 'Retention' = which of "
+                               "plain Claude's considerations the pipeline kept, plus how "
+                               "many it added."),
     "Moral-patient reasons": ("paid", "Paid LLM pass: does the pipeline widen the moral "
                               "reasoning or just lengthen replies? 'Survival' = which of "
                               "plain Claude's reasons the pipeline kept."),
