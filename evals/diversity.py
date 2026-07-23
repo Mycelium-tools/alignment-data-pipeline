@@ -136,6 +136,36 @@ def record_id(rec: dict, index: int) -> str:
             or rec.get("record_id") or f"row{index}")
 
 
+def scope_id(rec: dict, scope: str, fallback: str, prompt_gids: dict) -> str:
+    """The stable id to LABEL a record with in a given scope, so the cloud hover
+    names what the dot actually is: the response gid (R-) for the responses
+    scope, the prompt gid (P-) for the prompts scope, the example gid (E-, the
+    `fallback`) for the combined/document scope. Falls back to `fallback` when
+    the scope's own gid is unavailable (e.g. non-DAD records)."""
+    if scope == "responses":
+        return rec.get("response_gid") or fallback
+    if scope == "prompts":
+        return prompt_gids.get(rec.get("record_id")) or fallback
+    return fallback
+
+
+def dad_prompt_gids(run_dir: Path) -> dict:
+    """record_id -> prompt gid (P-), joined final→step3 (record_id→prompt_id)
+    →step1 (prompt_id→prompt_gid); {} for non-DAD runs or missing stages. The
+    final corpus carries example_gid/response_gid but not the prompt gid, so the
+    prompts-scope cloud needs this two-hop lookup to label dots P- not E-."""
+    try:
+        pid_by_rec = {r["record_id"]: r["prompt_id"]
+                      for r in utils.load_jsonl(run_dir / "step3" / "rewrites.jsonl")
+                      if r.get("record_id") and r.get("prompt_id")}
+        pgid_by_pid = {d["prompt_id"]: d["prompt_gid"]
+                       for d in utils.load_jsonl(run_dir / "step1" / "dilemmas.jsonl")
+                       if d.get("prompt_id") and d.get("prompt_gid")}
+    except (OSError, KeyError):
+        return {}
+    return {rec: pgid_by_pid[pid] for rec, pid in pid_by_rec.items() if pid in pgid_by_pid}
+
+
 def stride_sample(items: list, cap: int) -> list:
     """Deterministic stride sample (same scheme as audit_sdf's --dup-sample)."""
     if len(items) <= cap:
@@ -498,6 +528,9 @@ def main() -> None:
     ids = [rid for rid, _, _ in sampled]
     texts = [text[: args.max_chars] for _, text, _ in sampled]
     recs = [r for _, _, r in sampled]
+    # record_id -> prompt gid (P-), so the prompts-scope cloud labels dots P-
+    # not the example gid E- (the final corpus lacks the prompt gid).
+    prompt_gids = dad_prompt_gids(report_dir.parent)
     if len(texts) < 2:
         raise SystemExit("Need at least 2 non-empty documents for diversity metrics.")
 
@@ -609,7 +642,10 @@ def main() -> None:
     scopes = {"combined": _scope_block(ids, texts, X)}
     if any(isinstance(r.get("messages"), list) and r.get("messages") for r in recs):
         for scope, label in (("prompts", "user messages"), ("responses", "assistant messages")):
-            kept = [(rid, scope_text(r, scope)) for rid, r in zip(ids, recs)]
+            # label each dot with the scope's own gid (P- / R-), not the E- used
+            # for the combined scope
+            kept = [(scope_id(r, scope, rid, prompt_gids), scope_text(r, scope))
+                    for rid, r in zip(ids, recs)]
             kept = [(rid, t) for rid, t in kept if t.strip()]
             if len(kept) < 2:
                 continue

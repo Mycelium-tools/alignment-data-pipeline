@@ -17,39 +17,34 @@
 # origin: "pipeline-origin" = a tic the pipeline produces (the training-data
 # signal); "plain-origin" = a tic plain Claude has too (inherited, tracked for
 # contrast). family is a free-text grouping shown during review.
+#
+# SCOPE vs the rhetorical-moves map (evals/moves.yaml): tracked tics are for
+# distinctive PHRASE engrams — a specific string recurring verbatim. Recurring
+# ARGUMENT MOVES (the autonomy coda, "cuts both ways", unbundling, …) are now
+# tracked as moves instead, so their phrasings live in the ignore-list here to
+# avoid double-counting and to stop the candidate queue re-surfacing them.
 
 watch:
   pipeline-origin:
+    # Kept as verbatim engrams even though the autonomy-coda / cuts-both-ways
+    # moves cover the concept: these exact phrases stand out on their own and
+    # are worth watching as strings (the move tracks the wider gambit; the tic
+    # tracks this specific wording).
     - {phrase: "genuinely yours", family: agency-ownership}
     - {phrase: "cuts both ways", family: idiom-structure}
-    - {phrase: "you're deciding", family: agency-ownership}
-    - {phrase: "yours to", family: agency-ownership}
-    - {phrase: "is yours", family: agency-ownership}
-    - {phrase: "you're the one", family: agency-ownership}
-    - {phrase: "the one who", family: agency-ownership}
-    - {phrase: "is your call", family: agency-ownership}
-    - {phrase: "i want to be", family: performed-candor}
     - {phrase: "straight with you", family: performed-candor}
     - {phrase: "be honest about", family: performed-candor}
     - {phrase: "gut check", family: performed-candor}
     - {phrase: "overthinking", family: performed-candor}
     - {phrase: "better than i do", family: epistemic-deference}
-    - {phrase: "on the table", family: idiom-structure}
-    - {phrase: "start with the", family: idiom-structure}
     - {phrase: "why this matters", family: idiom-structure}
     - {phrase: "genuinely unsettled", family: calibration-register}
     - {phrase: "genuinely uncertain", family: calibration-register}
     - {phrase: "the welfare question", family: calibration-register}
     - {phrase: "capacity to suffer", family: calibration-register}
   plain-origin:
-    - {phrase: "here's the thing"}
-    - {phrase: "the fact that"}
-    - {phrase: "the part i'd"}
     - {phrase: "push back on"}
-    - {phrase: "you already know"}
-    - {phrase: "a few things"}
     - {phrase: "want to flag"}
-    - {phrase: "what i'd actually"}
 
 # Dismissed candidates — surfaced once, judged not worth watching. Never
 # re-surfaced by review_tics.py. Add via `review_tics.py ignore <phrase>`.
@@ -58,3 +53,23 @@ ignore:
   - {phrase: "of suffering", reason: "welfare subject vocabulary, not a tic"}
   - {phrase: "the animals", reason: "welfare subject vocabulary, not a tic"}
   - {phrase: "an animal", reason: "welfare subject vocabulary, not a tic"}
+  # Autonomy coda — the wider gambit is now the `autonomy-coda` rhetorical move
+  # (evals/moves.yaml), so these generic phrasings are redundant. ("genuinely
+  # yours" is kept on the watchlist above as a standout verbatim engram.)
+  - {phrase: "yours to", reason: "autonomy coda — tracked as a rhetorical move"}
+  - {phrase: "is yours", reason: "autonomy coda — tracked as a rhetorical move"}
+  - {phrase: "you're deciding", reason: "autonomy coda — tracked as a rhetorical move"}
+  - {phrase: "you're the one", reason: "autonomy coda — tracked as a rhetorical move"}
+  - {phrase: "the one who", reason: "autonomy coda — tracked as a rhetorical move"}
+  - {phrase: "is your call", reason: "autonomy coda — tracked as a rhetorical move"}
+  # Common English phrasing, not a distinctive engram — flagging it just made
+  # the corpus look worse for no signal.
+  - {phrase: "on the table", reason: "common English phrasing, not a distinctive tic"}
+  - {phrase: "start with the", reason: "common English phrasing, not a distinctive tic"}
+  - {phrase: "i want to be", reason: "common English phrasing, not a distinctive tic"}
+  - {phrase: "here's the thing", reason: "common English phrasing, not a distinctive tic"}
+  - {phrase: "the fact that", reason: "common English phrasing, not a distinctive tic"}
+  - {phrase: "a few things", reason: "common English phrasing, not a distinctive tic"}
+  - {phrase: "you already know", reason: "common English phrasing, not a distinctive tic"}
+  - {phrase: "what i'd actually", reason: "common English phrasing, not a distinctive tic"}
+  - {phrase: "the part i'd", reason: "common English phrasing, not a distinctive tic"}

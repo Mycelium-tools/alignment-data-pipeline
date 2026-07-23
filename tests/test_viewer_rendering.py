@@ -292,7 +292,7 @@ class TestAuditSectionMeta:
         "Lexical diversity (responses)", "Structural variation (responses)",
         "Response openings (drafts)", "Response openings (finals)",
         "Reasoning-library selection (2a.5)", "Reasoning-library coverage",
-        "Moral-patient reasons (LLM)",
+        "Welfare reasoning (LLM)",
     ]
 
     def test_field_wins_over_title_fallback(self):

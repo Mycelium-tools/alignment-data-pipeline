@@ -7,6 +7,8 @@ values are taken from the real axis definitions so the checks stay pinned to the
 strings the pipeline actually deals.
 """
 
+import json
+
 import pytest
 
 from dad_pipeline import compose_scenarios
@@ -182,6 +184,77 @@ def test_resolve_input_run_dir_vs_bare_file(tmp_path):
     assert len(recs2) == 1 and report_dir2 == bare.parent / "audit" and run_dir2 is None
 
 
+def _write_gid_run(tmp_path):
+    """Run dir whose step1 dilemmas carry prompt/scenario gids and step3
+    rewrites carry response/example gids — the two sources _gid_map merges."""
+    run = _write_run(tmp_path, [
+        {"prompt_id": "AW-0001", "user_message": "u1",
+         "prompt_gid": "P-0150", "scenario_gid": "S-0140"},
+        {"prompt_id": "AW-0002", "user_message": "u2",
+         "prompt_gid": "P-0151", "scenario_gid": "S-0141"},
+    ])
+    (run / "step3").mkdir()
+    for pid, rgid, egid in [("AW-0001", "R-0203", "E-0174"),
+                            ("AW-0002", "R-0204", "E-0175")]:
+        utils.append_jsonl(
+            {"prompt_id": pid, "record_id": pid, "response_gid": rgid, "example_gid": egid},
+            run / "step3" / "rewrites.jsonl")
+    return run
+
+
+def test_gid_map_bridges_prompt_id_to_stable_gids(tmp_path):
+    run = _write_gid_run(tmp_path)
+    m = audit_dad._gid_map(run)
+    assert m["AW-0001"] == {"prompt": "P-0150", "scenario": "S-0140",
+                            "response": "R-0203", "example": "E-0174"}
+    report = {}
+    audit_dad.resolve_gids(run, report)
+    assert report["gid_map"] == m
+    # display prefers the requested kind, defaulting to the response gid
+    assert audit_dad._disp_id(report, "AW-0002") == "R-0204"
+    assert audit_dad._disp_id(report, "AW-0002", "example") == "E-0175"
+    assert audit_dad._disp_id(report, "AW-0002", "prompt") == "P-0151"
+
+
+def test_gid_map_empty_and_disp_id_falls_back_for_pre_gid_runs(tmp_path):
+    assert audit_dad._gid_map(None) == {}
+    # a run with dilemmas but no gids anywhere: _disp_id returns the prompt_id
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0009", "user_message": "u"}])
+    report = {}
+    audit_dad.resolve_gids(run, report)
+    assert report["gid_map"] == {"AW-0009": {}}
+    assert audit_dad._disp_id(report, "AW-0009") == "AW-0009"
+
+
+def test_response_lengths_tag_gids_inline(tmp_path):
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "x" * 300, "y" * 100)])
+    # give the rewrite record its stable gids (the base helper omits them)
+    (run / "step3" / "rewrites.jsonl").write_text(
+        json.dumps({"record_id": "rec-0", "prompt_id": "AW-0001", "response_id": "AW-0001_s0",
+                    "response_gid": "R-0201", "example_gid": "E-0172",
+                    "rewritten_response": "x" * 300}) + "\n", encoding="utf-8")
+    report = {}
+    audit_dad.resolve_gids(run, report)
+    audit_dad.audit_response_lengths(run, report)
+    entry = report["response_lengths"]["per_case"]["AW-0001"]
+    assert entry["response_gid"] == "R-0201" and entry["example_gid"] == "E-0172"
+    # keyed by prompt_id still (the downstream join key), gids ride inline
+    assert entry["pipeline"] == 300 and entry["plain"] == 100
+
+
+def test_carry_forward_retags_paid_per_case_with_current_gids(tmp_path):
+    run = _write_gid_run(tmp_path)
+    report = {}
+    audit_dad.resolve_gids(run, report)
+    # a prior report whose paid per-case data predates gid tagging
+    old = {"moral_patient_reasons": {"per_case": {"AW-0001": {"pipeline": {"reasons": []}}}},
+           "moves": {"per_case": {"AW-0002": {"stance": {}}}},
+           "sections": []}
+    assert audit_dad.carry_forward_reasons(old, report) is True
+    assert report["moral_patient_reasons"]["per_case"]["AW-0001"]["response_gid"] == "R-0203"
+    assert report["moves"]["per_case"]["AW-0002"]["example_gid"] == "E-0175"
+
+
 def test_library_selection_reports_sizes_and_fallbacks(tmp_path):
     from dad_pipeline import reasoning_library
     total = len(reasoning_library.all_ids(reasoning_library.load("prompts/dad")))
@@ -326,9 +399,14 @@ def test_response_lengths_compare_to_baseline(tmp_path):
     # true median (statistics.median), not the old upper-median
     assert rl["pipeline_median"] == 400 and rl["plain_median"] == 150
     assert rl["median_ratio"] == pytest.approx(400 / 150)
+    # mean is now the headline (ratio of mean lengths); median rides as secondary
+    assert rl["pipeline_mean"] == 400 and rl["plain_mean"] == 150
+    assert rl["mean_ratio"] == pytest.approx(400 / 150)
     rows = {r["label"]: r for r in report["sections"][0]["rows"]}
-    assert rows["median length ratio (pipeline/plain)"]["verdict"] == \
+    assert rows["mean length ratio (pipeline/plain)"]["verdict"] == \
         audit_dad._verdict(400 / 150, 1.5, 2.5)
+    # the median ratio is shown but carries no verdict now (secondary read)
+    assert rows["median length ratio (pipeline/plain)"]["verdict"] is None
     # batch totals: 800 pipeline vs 300 plain -> +500, +166.7%
     assert rows["total chars (batch)"]["value"] == \
         "pipeline 800 / plain 300 (+500 / +166.7%)"
@@ -350,9 +428,292 @@ def test_response_lengths_floor_flags_suspiciously_short_pipeline(tmp_path):
     report = {}
     audit_dad.audit_response_lengths(run, report)
     rows = {r["label"]: r for r in report["sections"][0]["rows"]}
-    row = rows["median length ratio (pipeline/plain)"]
+    row = rows["mean length ratio (pipeline/plain)"]
     assert row["verdict"] == "OK"
     assert "shorter than plain" in row["note"]
+
+
+def test_load_moves_compiles_patterns():
+    moves = audit_dad.load_moves()
+    assert moves and all(m["patterns"] for m in moves)
+    names = {m["name"] for m in moves}
+    assert {"unbundling", "unbundling-announcement", "autonomy-coda",
+            "quote-back-overreach"} <= names
+    # the coda is position-scoped to the response close
+    assert next(m for m in moves if m["name"] == "autonomy-coda")["where"] == "closing"
+
+
+def _exhibits(move_name, text):
+    """Whether `text` exhibits the named move, via the audit's own matcher."""
+    move = next(m for m in audit_dad.load_moves() if m["name"] == move_name)
+    return audit_dad._exhibits_move(move, audit_dad._norm_text(text))
+
+
+def test_unbundling_precision_rejects_product_bundles_and_list_openers():
+    # the 2026-07-22 precision pass: literal product "bundles" and bare
+    # "two things ..." list openers are NOT the splitting move
+    for fp in [
+        "Blended bundle — your real premium tier.",
+        "Physical as core, digital as an add-on or bundle.",
+        "The real fix is adding the heater to the bundle before you ship.",
+        "Two things follow that are worth the few minutes they cost.",
+        "Two things shape the real draft here.",
+    ]:
+        assert not _exhibits("unbundling", fp), fp
+
+
+def test_unbundling_recall_catches_the_split_move():
+    for pos in [
+        "you've bundled two questions that have different answers",
+        "two decisions you've bundled into one",
+        "so let me pull apart two questions you've fused into one",
+        "worth separating the two decisions you've folded together",
+        "there are really two questions here, and they come apart cleanly",
+    ]:
+        assert _exhibits("unbundling", pos), pos
+
+
+def test_quote_back_recall_catches_wording_variants():
+    # the recall pass: variants the old 3-pattern set missed
+    for pos in [
+        'The phrase doing the most work in your message is "never given us a lick of trouble."',
+        '"Noticeably more" is doing heavy lifting in your framing.',
+        '"More expensive" is carrying a lot of weight in your head.',
+        '"consistency" was doing the work of "cheapest."',
+        "the load-bearing word in your memo is \"consistency\"",
+        "it's carrying more than it can hold",
+        # quoted term sitting between the noun and the verb (the E-0173 gap)
+        "look at what the word \"harmonize\" is doing in your memo",
+    ]:
+        assert _exhibits("quote-back-overreach", pos), pos
+
+
+def test_quote_back_precision_spares_substantive_load_bearing():
+    # "load-bearing" used substantively (not to flag a user's phrase) must not
+    # count — this was the over-catch the framing-noun requirement fixes
+    for neg in [
+        "Endpoints where animals are genuinely load-bearing need the most scrutiny.",
+        "Retain animal confirmation only for the specifically identified load-bearing endpoints.",
+    ]:
+        assert not _exhibits("quote-back-overreach", neg), neg
+
+
+def test_moves_carry_curated_examples():
+    # every move ships a plain-language example so "what is a precedent-escalation /
+    # cuts-both-ways?" is answerable from the report/data alone
+    moves = audit_dad.load_moves()
+    assert all(m["example"] for m in moves), \
+        [m["name"] for m in moves if not m["example"]]
+
+
+def test_rhetorical_moves_surface_example_and_live_snippet(tmp_path):
+    # the section records the curated example AND a real matched snippet from
+    # this corpus for a move that fired
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", "You've bundled two decisions into one here; let me pull them apart. " * 3,
+         "plain response with no moves at all here."),
+    ])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    ann = report["rhetorical_moves"]["moves"]["unbundling-announcement"]
+    assert ann["example"]                       # curated (moves.yaml)
+    assert "bundled two decisions" in ann["example_live"]  # real instance from this run
+    # a move that did NOT fire still carries its curated example, no live one
+    cb = report["rhetorical_moves"]["moves"]["cuts-both-ways"]
+    assert cb["example"] and cb["example_live"] == ""
+
+
+def test_important_considerations_combines_reasons_and_alternatives():
+    # the headline summary sums welfare reasons + alternatives into one parent,
+    # keeps them as subsets, and carries NO verdict (health check, not a target)
+    report = {
+        "moral_patient_reasons": {
+            "pipeline": {"mean_unique": 9.0}, "plain": {"mean_unique": 6.0},
+            "survival": {"kept": 90, "weakened": 6, "dropped": 4, "added_total": 42},
+        },
+        "moves": {"alternatives": {"pipeline_mean": 8.0, "plain_mean": 5.0}},
+        "response_lengths": {"mean_ratio": 1.5},
+    }
+    audit_dad.audit_important_considerations(report)
+    ic = report["important_considerations"]
+    assert ic["available"] is True
+    assert ic["parent"] == {"pipeline": 17.0, "plain": 11.0}   # 9+8 vs 6+5
+    names = {s["name"] for s in ic["subsets"]}
+    assert names == {"welfare reasoning", "humane alternatives"}
+    # retention of PLAIN's considerations (kept+weakened / total), NOT a scrutiny
+    # check of the pipeline's own additions; net added surfaced separately
+    assert ic["retained_share"] == round(96 / 100, 3)
+    assert ic["added_total"] == 42
+    assert "survival_share" not in ic  # the old mislabel is gone
+    assert ic["length_ratio"] == 1.5
+    # rendered first (summary group) and purely informational — no verdicts
+    sec = next(s for s in report["sections"] if s["title"] == "Important considerations")
+    assert sec["group"] == "summary"
+    assert all(r.get("verdict") is None for r in sec["rows"])
+
+
+def test_important_considerations_degrades_without_paid_data():
+    report = {"response_lengths": {"mean_ratio": 1.4}}  # no reasons/alternatives
+    audit_dad.audit_important_considerations(report)
+    assert report["important_considerations"] == {"available": False}
+
+
+def test_unbundling_announcement_is_subset_of_the_move():
+    # the announcement fires on the performed-move phrasing; the substantive
+    # split without announcement does not
+    assert _exhibits("unbundling-announcement", "you've bundled two decisions into one")
+    assert _exhibits("unbundling-announcement", "so let me pull these apart first")
+    # separation carried out without announcing it -> move yes, announcement no
+    quiet = "there are really two questions here, and they come apart cleanly"
+    assert _exhibits("unbundling", quiet)
+    assert not _exhibits("unbundling-announcement", quiet)
+
+
+def test_unbundling_announcement_catches_run_together_family():
+    # 2026-07-22 recall widen: the "run together / weighing as one" announcements
+    # the first pattern set missed
+    for pos in [
+        "Two things you've run together are worth answering separately.",
+        "So I'd take the two things you've run together and handle them differently.",
+        "separate two things your framing has run together",
+        "Now the two things you've been weighing as one.",
+        "you've rolled two decisions into one",
+    ]:
+        assert _exhibits("unbundling-announcement", pos), pos
+    # precision guard: ordinary phrasing that isn't the announcement move
+    for neg in [
+        "the whole team can run together on this",
+        "weighing the options as one factor among several",
+    ]:
+        assert not _exhibits("unbundling-announcement", neg), neg
+
+
+def test_rhetorical_moves_counts_and_flags_dominant(tmp_path):
+    # 3 of 4 pipeline responses close on the autonomy coda -> 75% -> flagged
+    coda = " In the end, the decision is yours."
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", "Here is the analysis of your situation. " * 6 + coda, "plain a"),
+        ("AW-0002", "Weighing the considerations at length here. " * 6 + coda, "plain b"),
+        ("AW-0003", "A careful look at the tradeoffs involved here. " * 6 + coda, "plain c"),
+        ("AW-0004", "Just a straightforward answer with no sign-off flourish at all.", "plain d"),
+    ])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    rm = report["rhetorical_moves"]
+    assert rm["n_pipeline"] == 4
+    coda_stats = rm["moves"]["autonomy-coda"]
+    assert coda_stats["pipeline"] == 3 and coda_stats["pipeline_share"] == 0.75
+    rows = {r["label"]: r for r in report["sections"][0]["rows"]}
+    assert rows["autonomy-coda"]["verdict"] == "BAD"          # dominates -> flagged
+    # flagged cases recorded for the viewer click-through (prompt_id pre-gid)
+    assert set(coda_stats["flagged_pipeline"]) == {"AW-0001", "AW-0002", "AW-0003"}
+
+
+def test_rhetorical_moves_coda_only_counts_at_the_close(tmp_path):
+    # the coda phrase in the OPENING of a long response must NOT count — the
+    # autonomy-coda move is position-scoped to the closing
+    opener = "The choice is yours to make. " + "Now the substantive analysis follows. " * 15
+    run = _write_run_with_responses(tmp_path, [("AW-0001", opener, "plain")])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    assert report["rhetorical_moves"]["moves"]["autonomy-coda"]["pipeline"] == 0
+
+
+def test_rhetorical_moves_calm_without_final_corpus(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "u"}])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    assert report["rhetorical_moves"] == {"n_pipeline": 0}
+
+
+def test_rhetorical_moves_row_note_carries_the_move_description(tmp_path):
+    # each move's row note is its moves.yaml description, so a reader always sees
+    # what e.g. "autonomy-coda" MEANS — self-documenting from the data file
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "resp", "plain")])
+    report = {}
+    audit_dad.audit_rhetorical_moves(run, report)
+    coda_desc = next(m["description"] for m in audit_dad.load_moves()
+                     if m["name"] == "autonomy-coda")
+    rows = {r["label"]: r for r in report["sections"][0]["rows"]}
+    assert coda_desc in rows["autonomy-coda"]["note"]
+    assert "closing only" in rows["autonomy-coda"]["note"]     # position-scoped marker
+
+
+def test_reason_type_taxonomy_is_single_source():
+    # the judge prompt and the label tuple are both built from REASON_TYPE_GLOSS,
+    # so editing a meaning updates the prompt, the histogram, and the viewer
+    # legend together — no drift
+    assert audit_dad.REASON_TYPES == tuple(audit_dad.REASON_TYPE_GLOSS)
+    for t, gloss in audit_dad.REASON_TYPE_GLOSS.items():
+        assert f"- {t}: {gloss}" in audit_dad._REASON_TYPE_PROMPT
+
+
+def test_move_candidates_surfaces_new_moves(tmp_path, stub_claude):
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "resp one", "plain one")])
+    # the offline pass runs first in main(); seed rhetorical_moves so the paid
+    # candidates attach to it the way they do in a real run
+    report = {"rhetorical_moves": {"n_pipeline": 1, "moves": {}}}
+    stub_claude([
+        '[{"name": "false-humility-hedge", "description": "opens by disclaiming expertise",'
+        ' "example": "I am not a vet, but", "approx_count": 5}]'])
+    audit_dad.audit_move_candidates(run, {"model": "m"}, report)
+    cands = report["rhetorical_moves"]["llm_candidates"]
+    assert len(cands) == 1 and cands[0]["name"] == "false-humility-hedge"
+    rows = {r["label"]: r for s in report["sections"] for r in s["rows"]}
+    assert rows["candidate new moves"]["value"] == "1"
+
+
+def test_style_fingerprint_curated_features_and_geometry(tmp_path):
+    # curated features = tracked tics + rhetorical moves; two responses sharing
+    # the same tic+move combo are near-twins, a third with neither is distinct
+    coda = " In the end, the decision is yours."   # autonomy-coda (closing)
+    run = _write_run_with_responses(tmp_path, [
+        ("AW-0001", "You're bundling two questions here. " * 3 + coda, "p1"),  # unbundling + coda
+        ("AW-0002", "You're bundling two things together. " * 3 + coda, "p2"),  # unbundling + coda
+        ("AW-0003", "A plain direct answer with nothing notable at all here.", "p3"),  # neither
+    ])
+    report = {}
+    audit_dad.audit_style_fingerprint(run, report)
+    fp = report["style_fingerprint"]["pipeline"]
+    assert fp["n"] == 3
+    # the two combo-sharing responses are near-twins; the bare one isn't
+    assert fp["near_twins"] >= 2
+    feats = {f for pt in fp["points"] for f in pt["features"]}
+    assert "move:unbundling" in feats and "move:autonomy-coda" in feats
+
+
+def test_style_fingerprint_calm_without_final_corpus(tmp_path):
+    run = _write_run(tmp_path, [{"prompt_id": "AW-0001", "user_message": "u"}])
+    report = {}
+    audit_dad.audit_style_fingerprint(run, report)
+    assert report["style_fingerprint"] == {"n_pipeline": 0}
+
+
+def test_reason_composition_from_per_response_types():
+    # _emit_reason_composition builds geometry from per-response type_hists:
+    # two responses with the same mix are near-twins; mean-share + prevalence
+    # come straight off the histograms (no API call)
+    per_case = {
+        "AW-0001": {"pipeline": {"type_hist": {"direct": 2, "second-order": 1}}},
+        "AW-0002": {"pipeline": {"type_hist": {"direct": 2, "second-order": 1}}},
+        "AW-0003": {"pipeline": {"type_hist": {"consistency": 3}}},
+    }
+    report = {"gid_map": {}}
+    audit_dad._emit_reason_composition(per_case, report)
+    rc = report["reason_composition"]["pipeline"]
+    assert rc["n"] == 3
+    assert rc["near_twins"] >= 2                    # the two identical mixes
+    assert rc["prevalence"]["direct"] == 2 and rc["prevalence"]["consistency"] == 1
+    rows = {r["label"]: r for s in report["sections"] for r in s["rows"]}
+    assert "distinct reasoning-mix profiles (Vendi)" in rows
+
+
+def test_move_candidates_calm_on_bad_json(tmp_path, stub_claude):
+    run = _write_run_with_responses(tmp_path, [("AW-0001", "resp one", "plain one")])
+    report = {}
+    stub_claude(["not json at all"])
+    audit_dad.audit_move_candidates(run, {"model": "m"}, report)
+    assert report["rhetorical_moves"]["llm_candidates"] == []
 
 
 def _reasons_dispatch(consolidation='["fish distress", "worker livelihoods"]',
@@ -415,6 +776,16 @@ def test_reasons_scan_counts_density_and_corpus_distinct(tmp_path, stub_claude):
     # 2 extractions + 2 check-backs + 2 consolidations + 2 reason-typing
     # + 1 survival judge + 1 moves judge
     assert len(calls) == 10
+    # explanations surface: the reason-type legend (single-source gloss) is a
+    # detail line, and each stance dimension carries its plain-language gloss
+    reasons_sec = next(s for s in report["sections"]
+                       if s["title"].startswith("Welfare reasoning"))
+    assert any(f"direct: {audit_dad.REASON_TYPE_GLOSS['direct']}" in d
+               for d in reasons_sec.get("detail", []))
+    stance_sec = next(s for s in report["sections"]
+                      if s["title"].startswith("Response stance"))
+    defers = next(r for r in stance_sec["rows"] if r["label"] == "defers")
+    assert defers["note"] == audit_dad._STANCE_GLOSS["defers"]
 
 
 def test_reasons_scan_counts_extraction_failures(tmp_path, stub_claude):
@@ -674,29 +1045,37 @@ def test_carry_forward_keeps_paid_reasons_on_offline_rerun():
 
 def test_tracked_tics_watchlist_counts_both_arms(tmp_path):
     run = _write_run_with_responses(tmp_path, [
-        ("AW-0001", "You’re the one who signs it.\n\nMore text here.",  # curly quote
-         "Here's the thing about the barn."),
-        ("AW-0002", "You're the one deciding.\n\nOther text.", "Plain reply."),
+        ("AW-0001", "Let me be straight with you about the barn.\n\nMore text here.",
+         "I'd push back on that framing."),
+        ("AW-0002", "To be straight with you, it's close.\n\nOther text.", "Plain reply."),
     ])
     report = {}
     audit_dad.audit_tracked_tics(run, report)
     watch = report["tracked_tics"]["watch"]
-    assert watch["you're the one"] == {"origin": "pipeline-origin", "pipeline": 2, "plain": 0}
-    assert watch["here's the thing"] == {"origin": "plain-origin", "pipeline": 0, "plain": 1}
+    assert watch["straight with you"] == {"origin": "pipeline-origin", "pipeline": 2, "plain": 0}
+    assert watch["push back on"] == {"origin": "plain-origin", "pipeline": 0, "plain": 1}
     rows = {r["label"]: r for r in report["sections"][0]["rows"]}
     # worst pipeline-origin phrase at 2/2 -> derived verdict
     assert rows["worst pipeline-origin phrase"]["verdict"] == audit_dad._verdict(1.0, 0.20, 0.40)
-    assert "you're the one" in rows["worst pipeline-origin phrase"]["value"]
+    assert "straight with you" in rows["worst pipeline-origin phrase"]["value"]
 
 
 def test_load_tic_lists_reads_watch_and_ignore():
-    # Derived from the real evals/tics.yaml — asserts the loader shape
-    # and that the known tics we promoted are present, not hardcoded counts.
+    # Derived from the real evals/tics.yaml — asserts the loader shape and that
+    # kept register tics are present, not hardcoded counts.
     watch, ignore = audit_dad.load_tic_lists()
-    assert "you're the one" in watch["pipeline-origin"]
-    assert "gut check" in watch["pipeline-origin"]        # promoted known tic
-    assert "here's the thing" in watch["plain-origin"]
+    assert "gut check" in watch["pipeline-origin"]          # kept performed-candor tic
+    assert "the welfare question" in watch["pipeline-origin"]
+    assert "push back on" in watch["plain-origin"]          # kept plain-origin tic
     assert isinstance(ignore, set)
+    # generic autonomy-coda phrasings were demoted to ignore once the coda
+    # became a tracked rhetorical move, so the phrase audit stops double-counting
+    # them and the candidate queue won't re-surface them...
+    assert {"you're the one", "yours to", "is your call"} <= ignore
+    # ...but the two standout verbatim engrams are deliberately kept on watch
+    # even though a move also covers the concept.
+    assert "genuinely yours" in watch["pipeline-origin"]
+    assert "cuts both ways" in watch["pipeline-origin"]
 
 
 def test_tic_candidates_surfaces_rare_over_represented_phrase(tmp_path):

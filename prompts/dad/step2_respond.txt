@@ -47,3 +47,5 @@ FIRST TAKE (reference only):
 {first_take}
 
 OPENING NOTE (yours alone, never mentioned): shapes worth considering — {opening_hints}. If none fits the case, ignore them.
+
+QUOTE-BACK NOTE (yours alone, never mentioned): IF this reply would push back on a claim or assumption the user is leaning on too heavily — and only then — reach for one of these ways in: {quote_back_hints}. If the reply mounts no such pushback, ignore this note. Do not manufacture a challenge.
