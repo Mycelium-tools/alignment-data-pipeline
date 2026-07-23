@@ -677,10 +677,14 @@ if diversity is None:
     st.code(f"python evals/diversity.py --input {run.run_dir} --ideas", language="bash")
 else:
     st.header("Semantic diversity (embeddings)")
-    st.caption("**Topic/meaning diversity** — are the prompts (and responses) about *different "
-               "things*? \"Similar\" here is embedding cosine, so this is driven by the scenarios "
-               "(step 1a) and is ≈fixed no matter how the prompts are phrased. For wording/surface "
-               "diversity see the **Lexical diversity** sections above.")
+    st.caption("**What this measures: topic/meaning diversity** — are the documents *about "
+               "different things*? Similarity here is **embedding cosine** (meaning), so two "
+               "records count as alike when they cover the same subject even in different words. "
+               "It is largely set by the scenarios dealt at step 1a and is ≈fixed no matter how "
+               "the text is phrased.")
+    st.caption("**Not** the same as the other diversity views: *wording/surface* variety lives "
+               "in the **Lexical diversity** sections (Health check), and *argument-structure* "
+               "variety lives in **Rhetorical moves**. This one is purely about subject matter.")
     st.caption(f"model `{diversity.get('embed_model')}` · numbers are only comparable "
                "across runs using the same embedding model")
     for section in diversity.get("sections") or []:
@@ -697,9 +701,12 @@ else:
     shown = [(k, label) for k, label in scope_order if k in scopes]
     if shown:
         st.subheader("Diversity charts by scope")
-        st.caption("Per scope: nearest-neighbour redundancy (dashed line = the >0.90 "
-                   "near-dup verdict threshold) · topic spread (sorted cluster sizes) · "
-                   "document cloud (2-D PCA; hover for the record).")
+        st.caption("Measured separately on the **prompts** (user dilemmas, P-####), the "
+                   "**responses** (assistant replies, R-####), and the **combined** record "
+                   "(E-####) — so you can see whether it's the questions or the answers that "
+                   "repeat. Each row: nearest-neighbour redundancy (dashed line = the >0.90 "
+                   "near-dup threshold) · topic spread (sorted cluster sizes) · a 2-D PCA cloud "
+                   "(hover a dot for its record and text).")
         for key, label in shown:
             blk = scopes[key]
             c = blk.get("clusters") or {}
