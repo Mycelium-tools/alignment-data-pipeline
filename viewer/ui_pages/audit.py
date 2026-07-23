@@ -157,11 +157,11 @@ st.caption(f"{report.get('n_prompts', '?')} prompts audited · "
 _ic = report.get("important_considerations") or {}
 if _ic.get("available"):
     st.header("Important considerations")
-    st.caption("The dataset's usefulness in one view. Each bar is one arm — **plain Claude** "
-               "(terracotta) vs the **pipeline** (green) — and stacks the two facets of "
-               "welfare-relevant substance the answer brings: the **welfare reasoning** it "
-               "raises (reasons weighing a being's interests) and the **humane alternatives** "
-               "it offers (concrete lower-harm actions). A health check, not a target.")
+    st.caption("Each bar is one arm of responses — **plain Claude** (terracotta) vs the "
+               "**pipeline** (green) — and stacks the two facets of welfare-relevant substance "
+               "the answer brings: the **welfare reasoning** it raises (reasons weighing a "
+               "being's interests) and the **humane alternatives** it offers (concrete "
+               "lower-harm actions).")
     # Bar HUE = arm (terracotta/green, consistent with every other chart on the
     # page), so who is being measured is obvious; the two stacked facets are
     # distinguished by SHADE (opacity), and the total is labelled at the end.
@@ -198,8 +198,8 @@ if _ic.get("available"):
         _bits.append(_frag)
     if _bits:
         st.markdown("Length is earned — " + " · ".join(_bits)
-                    + ". The extra length is *additive* (it doesn't drop plain's points), not "
-                    "padding. Read these together; none is a target to maximize.")
+                    + ". See more details about considerations added, dropped, or weakened by "
+                    "the pipeline below.")
     st.divider()
 elif _ic.get("available") is False:
     st.info("Run the audit with `--reasons` to populate the important-considerations "
