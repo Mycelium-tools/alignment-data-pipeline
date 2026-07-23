@@ -387,23 +387,9 @@ def _render_reasons_section(section: dict) -> None:
             ),
             use_container_width=True)
 
-    # Third chart: library rows pulled per record, right under the two reason
-    # charts so per-record retrieval width reads in the same glance.
-    pull_rows = _label_responses(rendering.audit_pull_count_rows(pulls))
-    if pull_rows:
-        st.caption("Library rows pulled at 2a.5 per record — hover a bar for "
-                   "which entries.")
-        st.altair_chart(
-            alt.Chart(pd.DataFrame(pull_rows)).mark_bar(
-                color=rendering.AUDIT_PULL_COLOR).encode(
-                x=alt.X("record:N", title="record"),
-                y=alt.Y("count:Q", title="rows pulled"),
-                tooltip=[alt.Tooltip("record", title="record"),
-                         alt.Tooltip("count", title="rows pulled"),
-                         alt.Tooltip("entries", title="which entries")],
-            ),
-            use_container_width=True)
-
+    # (The per-record "library rows pulled" chart used to sit here; it moved to
+    # the Reasoning-library section under the Health check, with the rest of the
+    # retrieval picture — this section is the dataset-usefulness view.)
     _section_table(section)
     for line in section.get("detail", []):
         st.caption(line)
@@ -488,9 +474,27 @@ def _render_section(section: dict) -> None:
     suppress_detail = title.startswith(_CUSTOM_DETAIL)
 
     if title.startswith("Reasoning-library selection"):
+        if pulls:
+            # Per-record retrieval width — how many library rows 2a.5 pulled for
+            # each response. Lives here (under the Health check) with the rest of
+            # the library picture, not up in the dataset-usefulness detail.
+            pull_rows = _label_responses(rendering.audit_pull_count_rows(pulls))
+            if pull_rows:
+                st.caption("Library rows pulled at 2a.5 per record — hover a bar for "
+                           "which entries.")
+                st.altair_chart(
+                    alt.Chart(pd.DataFrame(pull_rows)).mark_bar(
+                        color=rendering.AUDIT_PULL_COLOR).encode(
+                        x=alt.X("record:N", title="record"),
+                        y=alt.Y("count:Q", title="rows pulled"),
+                        tooltip=[alt.Tooltip("record", title="record"),
+                                 alt.Tooltip("count", title="rows pulled"),
+                                 alt.Tooltip("entries", title="which entries")],
+                    ),
+                    use_container_width=True)
         if pulls and library_ids:
             # Corpus-level trigger counts, behind a toggle so the page stays
-            # compact; the per-record pull chart lives under the reasons block.
+            # compact.
             if st.toggle("Reasoning-library trigger counts — every entry across "
                          "this corpus", value=False, key="lib_trigger_counts"):
                 trigger_rows = rendering.audit_trigger_count_rows(pulls, library_ids,
@@ -510,7 +514,7 @@ def _render_section(section: dict) -> None:
                     ),
                     use_container_width=True)
         if pulls:
-            suppress_detail = True  # the per-record chart (reasons block) replaces the dump
+            suppress_detail = True  # the per-record chart above replaces the raw dump
 
     if title.startswith("Reasoning-library coverage"):
         # Retrieval width vs added reasoning — the correlation view: does
