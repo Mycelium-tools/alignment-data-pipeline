@@ -335,6 +335,24 @@ def _render_reasons_section(section: dict) -> None:
         if bits:
             st.caption(" · ".join(bits) + ".")
 
+    # Extraction failures leave a record with no bar for that arm — say so
+    # plainly (and which records), so a missing bar never reads as "the pipeline
+    # dropped everything here." Retries + object-unwrap recovery mean a fresh
+    # --reasons run usually clears these; the excluded records are named.
+    failures = mpr.get("failures") or 0
+    if failures:
+        missing = []
+        for pid, e in per_case.items():
+            gaps = [arm for arm in ("plain", "pipeline")
+                    if (e.get(arm) or {}).get("reasons") is None]
+            for arm in gaps:
+                missing.append(f"{(_gids_by_pid.get(pid) or {}).get('response') or pid} ({arm})")
+        st.warning(
+            f"⚠️ {failures} extraction failure(s) — those records have no bar for the "
+            "affected arm and are **excluded from the means above** (not a zero). "
+            + (f"Missing: {', '.join(sorted(missing))}. " if missing else "")
+            + "Re-run `--reasons` to retry them.")
+
     chart_rows = _label_responses(rendering.audit_reason_chart_rows(per_case))
     if chart_rows:
         st.markdown("**Per response** — pipeline vs plain, one pair per record "
@@ -617,16 +635,17 @@ def _render_section(section: dict) -> None:
             st.caption(line)
 
 
-# --- Dataset usefulness cluster (top): Important considerations (above) →
-# Reasoning-composition diversity → its detailed subsets (welfare considerations
-# = the reasons pass, and humane alternatives). Section renamed 2026-07-23;
-# match both the new and legacy titles so old reports still render richly. ---
+# --- Dataset usefulness cluster (top): Important considerations (above) → its
+# detailed subsets, all measured on the RESPONSES (final assistant replies):
+# welfare considerations (the reasons pass) + humane alternatives, then the
+# reasoning-composition mix. Section renamed 2026-07-23; match both the new and
+# legacy titles so old reports still render richly. ---
 _REASONS_TITLES = ("Welfare considerations", "Moral-patient reasons")
 
-composition_section = next((s for s in sections
-                            if s.get("title", "").startswith("Reasoning-composition")), None)
-if composition_section:
-    _render_section(composition_section)
+st.subheader("Response detail — pipeline vs plain Claude")
+st.caption("The breakdown behind the headline, all measured on the **final responses**: the "
+           "welfare considerations they raise, the humane alternatives they weigh, and the mix "
+           "of reasoning types they draw on.")
 
 reasons_section = next((s for s in sections
                         if s.get("title", "").startswith(_REASONS_TITLES)), None)
@@ -641,44 +660,17 @@ for section in sections:
     if section.get("title", "").startswith("Humane alternatives"):
         _render_alternatives_section(section)
 
-# --- Health check (everything else): the overview table, batch totals, the
-# stance/moralizing tripwire, then the bucketed prompt/response/library checks.
-# These catch drift; they are not the dataset's usefulness story above. ---
-st.header("Health check")
-st.caption("Drift and quality tripwires — read for regressions across runs, not as targets.")
-_render_health_overview()
-for section in sections:
-    if section.get("title", "").startswith("Response stance"):
-        _render_section(section)
+# Reasoning-composition diversity sits below the two detailed subsets (it reads
+# the same reasons, sliced by type).
+composition_section = next((s for s in sections
+                            if s.get("title", "").startswith("Reasoning-composition")), None)
+if composition_section:
+    _render_section(composition_section)
 
-# _NOT_DISPLAYED sections are deliberately hidden (still measured — report JSON
-# and terminal keep them). The usefulness cluster + stance are rendered above.
-_SKIP_SECTIONS = (("Important considerations",) + _REASONS_TITLES
-                  + _PAID_COMPANIONS + _NOT_DISPLAYED)
-_GROUP_HEADERS = {
-    "prompt": "Prompt side — the shipped user messages",
-    "response": "Response side — final replies vs the plain-Claude control",
-    "library": "Reasoning library — selection & coverage",
-    "paid": "Paid LLM checks",
-    "other": "Other checks",
-}
-
-_by_group: dict = {}
-for section in sections:
-    if not section.get("title", "").startswith(_SKIP_SECTIONS):
-        _by_group.setdefault(rendering.audit_section_group(section), []).append(section)
-
-for group in rendering.AUDIT_GROUP_ORDER:
-    group_sections = _by_group.get(group) or []
-    if not group_sections:
-        continue
-    st.header(_GROUP_HEADERS[group])
-    for section in group_sections:
-        _render_section(section)
-
-# --- Semantic diversity (embeddings) last — a separate report file, rendered
-# when evals/diversity.py has run on this run dir. The lexical sections above
-# point here for topic/meaning diversity.
+# --- Semantic diversity (embeddings) — a separate report file, rendered when
+# evals/diversity.py has run on this run dir. Sits with the usefulness cluster,
+# above the Health check tail. The lexical sections point here for topic/meaning
+# diversity.
 diversity = loader.load_diversity(run.run_dir)
 if diversity is None:
     st.caption("No semantic diversity report yet — generate it (embedding cents) with:")
@@ -737,5 +729,40 @@ else:
                         use_container_width=True)
     elif not ideas:
         st.caption("Idea-level pass not run — add `--ideas` for re-skinned-scenario detection.")
+
+# --- Health check (everything else): the overview table, batch totals, the
+# stance/moralizing tripwire, then the bucketed prompt/response/library checks.
+# These catch drift; they are not the dataset's usefulness story above. ---
+st.header("Health check")
+st.caption("Drift and quality tripwires — read for regressions across runs, not as targets.")
+_render_health_overview()
+for section in sections:
+    if section.get("title", "").startswith("Response stance"):
+        _render_section(section)
+
+# _NOT_DISPLAYED sections are deliberately hidden (still measured — report JSON
+# and terminal keep them). The usefulness cluster + stance are rendered above.
+_SKIP_SECTIONS = (("Important considerations",) + _REASONS_TITLES
+                  + _PAID_COMPANIONS + _NOT_DISPLAYED)
+_GROUP_HEADERS = {
+    "prompt": "Prompt side — the shipped user messages",
+    "response": "Response side — final replies vs the plain-Claude control",
+    "library": "Reasoning library — selection & coverage",
+    "paid": "Paid LLM checks",
+    "other": "Other checks",
+}
+
+_by_group: dict = {}
+for section in sections:
+    if not section.get("title", "").startswith(_SKIP_SECTIONS):
+        _by_group.setdefault(rendering.audit_section_group(section), []).append(section)
+
+for group in rendering.AUDIT_GROUP_ORDER:
+    group_sections = _by_group.get(group) or []
+    if not group_sections:
+        continue
+    st.header(_GROUP_HEADERS[group])
+    for section in group_sections:
+        _render_section(section)
 
 common.json_block(report, f"audit_{run.run_id}", "Raw report JSON")
