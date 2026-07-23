@@ -1603,13 +1603,14 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
     1,000 response characters."""
     from shared import api
 
-    sec = _section(report, "Welfare considerations (LLM)", group="paid",
-                   gloss="A subset of the Important considerations headline. Does the pipeline "
-                         "widen the welfare reasoning or just lengthen replies? Counts distinct "
-                         "considerations appealing to a being's interests in both arms; "
-                         "'retention' asks which of plain Claude's considerations the pipeline "
-                         "kept, weakened, or dropped (a no-regression check on plain's points), "
-                         "and how many it added — judged against the full pipeline text.")
+    sec = _section(report, "Welfare reasoning (LLM)", group="paid",
+                   gloss="One facet of the Important considerations headline (the other is "
+                         "Humane alternatives). Does the pipeline widen the welfare reasoning or "
+                         "just lengthen replies? Counts distinct reasons appealing to a being's "
+                         "interests in both arms; 'retention' asks which of plain Claude's "
+                         "reasons the pipeline kept, weakened, or dropped (a no-regression check "
+                         "on plain's points), and how many it added — judged against the full "
+                         "pipeline text.")
     if run_dir is None:
         _skip(sec, report, "reason scan", note="(bare-file input; pass a run dir)")
         return
@@ -1978,9 +1979,9 @@ def carry_forward_reasons(old_report: dict, report: dict) -> bool:
     old_cands = (old_report.get("rhetorical_moves") or {}).get("llm_candidates")
     if old_cands is not None:
         report.setdefault("rhetorical_moves", {})["llm_candidates"] = old_cands
-    carried_titles = ("Welfare considerations (LLM)", "Moral-patient reasons (LLM)",
-                      "Humane alternatives (LLM)", "Response stance (LLM)",
-                      "Rhetorical-move candidates (LLM)",
+    carried_titles = ("Welfare reasoning (LLM)", "Welfare considerations (LLM)",
+                      "Moral-patient reasons (LLM)", "Humane alternatives (LLM)",
+                      "Response stance (LLM)", "Rhetorical-move candidates (LLM)",
                       "Reasoning-composition diversity (LLM)")
     for s in old_report.get("sections") or []:
         if s.get("title") in carried_titles:
@@ -2303,13 +2304,15 @@ def audit_important_considerations(report: dict) -> None:
     alts = (report.get("moves") or {}).get("alternatives") or {}
     rl = report.get("response_lengths") or {}
     sec = _section(report, "Important considerations", group="summary",
-                   gloss="THE HEADLINE — the dataset's usefulness in one view. Distinct "
-                         "important considerations each answer surfaces (welfare reasons + "
-                         "humane alternatives weighed), pipeline vs plain Claude, and why the "
-                         "longer answers earn their length. A HEALTH CHECK, not a target: read "
-                         "the relationships (length ↔ considerations ↔ survival) and the "
-                         "run-over-run trend, never a single number to maximize. The detailed "
-                         "reasons and alternatives sections below are its subsets.")
+                   gloss="THE HEADLINE — the dataset's usefulness in one view. The welfare-"
+                         "relevant substance each answer brings, in two facets: the welfare "
+                         "REASONING it raises (reasons weighing a being's interests) and the "
+                         "humane ALTERNATIVES it offers (concrete lower-harm actions) — pipeline "
+                         "vs plain Claude, and why the longer answers earn their length. A "
+                         "HEALTH CHECK, not a target: read the relationships (length ↔ substance "
+                         "↔ retention) and the run-over-run trend, never a single number to "
+                         "maximize. The detailed reasoning and alternatives sections are its "
+                         "facets.")
     reasons_p = (mpr.get("pipeline") or {}).get("mean_unique")
     reasons_b = (mpr.get("plain") or {}).get("mean_unique")
     alts_p, alts_b = alts.get("pipeline_mean"), alts.get("plain_mean")
@@ -2325,8 +2328,8 @@ def audit_important_considerations(report: dict) -> None:
     lift = f"  (+{(parent_p / parent_b - 1) * 100:.0f}% vs plain)" if parent_b else ""
     _row(sec, "important considerations / answer",
          f"pipeline {parent_p:.1f} / plain {parent_b:.1f}", note=lift.strip())
-    _detail(sec, f"— welfare considerations:  pipeline {reasons_p:.2f} / plain {reasons_b:.2f}")
-    _detail(sec, f"— alternatives weighed:    pipeline {alts_p:.1f} / plain {alts_b:.1f}")
+    _detail(sec, f"— welfare reasoning (reasons):     pipeline {reasons_p:.2f} / plain {reasons_b:.2f}")
+    _detail(sec, f"— humane alternatives (actions):   pipeline {alts_p:.1f} / plain {alts_b:.1f}")
     # "Length earned" = the extra length is ADDITIVE, not dropping plain's points.
     # The survival judge anchors on PLAIN's reasons: kept/weakened = plain points
     # the pipeline retained, dropped = plain points it didn't echo, added = new
@@ -2349,9 +2352,9 @@ def audit_important_considerations(report: dict) -> None:
         "available": True,
         "parent": {"pipeline": round(parent_p, 2), "plain": round(parent_b, 2)},
         "subsets": [
-            {"name": "welfare considerations", "pipeline": round(reasons_p, 2),
+            {"name": "welfare reasoning", "pipeline": round(reasons_p, 2),
              "plain": round(reasons_b, 2)},
-            {"name": "alternatives weighed", "pipeline": round(alts_p, 2),
+            {"name": "humane alternatives", "pipeline": round(alts_p, 2),
              "plain": round(alts_b, 2)},
         ],
         "length_ratio": round(ratio, 2) if ratio else None,
@@ -2436,7 +2439,7 @@ def main() -> None:
         except (OSError, json.JSONDecodeError):
             old_report = {}
         if carry_forward_reasons(old_report, report):
-            print(" Welfare considerations (LLM) — carried forward from the previous "
+            print(" Welfare reasoning (LLM) — carried forward from the previous "
                   "report (re-run with --reasons to refresh)\n")
 
     # Headline health summary: runs last (needs the paid data, from --reasons or

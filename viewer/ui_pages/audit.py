@@ -157,27 +157,29 @@ st.caption(f"{report.get('n_prompts', '?')} prompts audited · "
 _ic = report.get("important_considerations") or {}
 if _ic.get("available"):
     st.header("Important considerations")
-    st.caption("The dataset's usefulness in one view. Each bar is one arm; its two segments — "
-               "**welfare considerations** + **alternatives weighed** (an alternative IS a "
-               "welfare consideration) — stack to that arm's total distinct considerations per "
-               "answer. A health check, not a target.")
-    # Stacked bar so the parent reads as the SUM of its two parts (not three
-    # independent measurements): one bar per arm, segments = the two subsets,
-    # total labelled at the end.
+    st.caption("The dataset's usefulness in one view. Each bar is one arm — **plain Claude** "
+               "(terracotta) vs the **pipeline** (green) — and stacks the two facets of "
+               "welfare-relevant substance the answer brings: the **welfare reasoning** it "
+               "raises (reasons weighing a being's interests) and the **humane alternatives** "
+               "it offers (concrete lower-harm actions). A health check, not a target.")
+    # Bar HUE = arm (terracotta/green, consistent with every other chart on the
+    # page), so who is being measured is obvious; the two stacked facets are
+    # distinguished by SHADE (opacity), and the total is labelled at the end.
     _subs = _ic["subsets"]
-    _rows = [{"arm": arm_col, "component": s["name"], "value": s[arm_key]}
+    _rows = [{"arm": arm_col, "facet": s["name"], "value": s[arm_key]}
              for s in _subs
              for arm_key, arm_col in (("plain", "plain Claude"), ("pipeline", "pipeline"))]
     _arms = ["plain Claude", "pipeline"]
-    _comp_domain = [s["name"] for s in _subs]
-    _comp_range = ["#2a78d6", "#8256b8"][:len(_comp_domain)]  # not the arm terracotta/green
-    _bars = alt.Chart(pd.DataFrame(_rows)).mark_bar().encode(
+    _facets = [s["name"] for s in _subs]  # order: welfare reasoning, humane alternatives
+    _bars = alt.Chart(pd.DataFrame(_rows)).mark_bar(stroke="white", strokeWidth=1.5).encode(
         y=alt.Y("arm:N", title="", sort=_arms),
         x=alt.X("value:Q", title="distinct considerations per answer (stacked)", stack="zero"),
-        color=alt.Color("component:N", title="",
-                        scale=alt.Scale(domain=_comp_domain, range=_comp_range)),
-        order=alt.Order("component:N"),
-        tooltip=["arm", "component", alt.Tooltip("value:Q", title="per answer", format=".2f")],
+        color=alt.Color("arm:N", title="arm", scale=alt.Scale(
+            domain=list(rendering.AUDIT_ARM_COLUMNS), range=list(rendering.AUDIT_ARM_COLORS))),
+        opacity=alt.Opacity("facet:N", title="facet", sort=_facets,
+                            scale=alt.Scale(domain=_facets, range=[1.0, 0.5])),
+        order=alt.Order("facet:N"),
+        tooltip=["arm", "facet", alt.Tooltip("value:Q", title="per answer", format=".2f")],
     )
     _totals = pd.DataFrame([{"arm": "plain Claude", "total": _ic["parent"]["plain"]},
                             {"arm": "pipeline", "total": _ic["parent"]["pipeline"]}])
@@ -185,6 +187,7 @@ if _ic.get("available"):
         y=alt.Y("arm:N", sort=_arms), x=alt.X("total:Q"),
         text=alt.Text("total:Q", format=".1f"))
     st.altair_chart((_bars + _labels).properties(height=150), use_container_width=True)
+    st.caption("Shade = facet: **solid** = welfare reasoning, **lighter** = humane alternatives.")
     _bits = []
     if _ic.get("length_ratio"):
         _bits.append(f"**{_ic['length_ratio']:.2f}× longer** than plain")
@@ -313,7 +316,7 @@ def _render_reasons_section(section: dict) -> None:
     p_mean = (mpr.get("pipeline") or {}).get("mean_unique")
     b_mean = (mpr.get("plain") or {}).get("mean_unique")
     if p_mean is not None and b_mean is not None:
-        st.markdown("**Cumulative** — mean distinct welfare considerations per answer")
+        st.markdown("**Cumulative** — mean distinct welfare-reasoning points per answer")
         _cum = pd.DataFrame([{"arm": "plain Claude", "mean": b_mean},
                              {"arm": "pipeline", "mean": p_mean}])
         st.altair_chart(alt.Chart(_cum).mark_bar().encode(
@@ -640,11 +643,11 @@ def _render_section(section: dict) -> None:
 # welfare considerations (the reasons pass) + humane alternatives, then the
 # reasoning-composition mix. Section renamed 2026-07-23; match both the new and
 # legacy titles so old reports still render richly. ---
-_REASONS_TITLES = ("Welfare considerations", "Moral-patient reasons")
+_REASONS_TITLES = ("Welfare reasoning", "Welfare considerations", "Moral-patient reasons")
 
 st.subheader("Response detail — pipeline vs plain Claude")
 st.caption("The breakdown behind the headline, all measured on the **final responses**: the "
-           "welfare considerations they raise, the humane alternatives they weigh, and the mix "
+           "welfare reasoning they raise, the humane alternatives they offer, and the mix "
            "of reasoning types they draw on.")
 
 reasons_section = next((s for s in sections

@@ -539,7 +539,7 @@ def test_important_considerations_combines_reasons_and_alternatives():
     assert ic["available"] is True
     assert ic["parent"] == {"pipeline": 17.0, "plain": 11.0}   # 9+8 vs 6+5
     names = {s["name"] for s in ic["subsets"]}
-    assert names == {"welfare considerations", "alternatives weighed"}
+    assert names == {"welfare reasoning", "humane alternatives"}
     # retention of PLAIN's considerations (kept+weakened / total), NOT a scrutiny
     # check of the pipeline's own additions; net added surfaced separately
     assert ic["retained_share"] == round(96 / 100, 3)
@@ -779,7 +779,7 @@ def test_reasons_scan_counts_density_and_corpus_distinct(tmp_path, stub_claude):
     # explanations surface: the reason-type legend (single-source gloss) is a
     # detail line, and each stance dimension carries its plain-language gloss
     reasons_sec = next(s for s in report["sections"]
-                       if s["title"].startswith("Welfare considerations"))
+                       if s["title"].startswith("Welfare reasoning"))
     assert any(f"direct: {audit_dad.REASON_TYPE_GLOSS['direct']}" in d
                for d in reasons_sec.get("detail", []))
     stance_sec = next(s for s in report["sections"]
