@@ -610,9 +610,12 @@ def audit_jargon(run_dir: Path | None, report: dict) -> None:
     plain Claude (the real signal: terms present in the pipeline but not the
     plain answer are scaffolding bleed, not model style)."""
     sec = _section(report, "Insider-vocabulary leak (responses)", group="response",
-                   gloss="Academic/EA vocabulary leaking into user-facing replies. "
-                         "What the pipeline ADDS over plain Claude is scaffolding "
-                         "bleed, not model style — that's the verdict-carrying number.")
+                   gloss="WHY: the pipeline's scaffolding (reasoning library, constitution) is "
+                         "written in academic/EA vocabulary that must NOT leak into user-facing "
+                         "replies — a model shouldn't learn to talk like an insider. WHAT: "
+                         "jargon terms in the replies, and specifically what the pipeline ADDS "
+                         "over plain Claude — that delta is scaffolding bleed and carries the "
+                         "verdict. Low here means the stripping is doing its job.")
     if run_dir is None:
         _skip(sec, report, "jargon report", note="(bare-file input; pass a run dir)")
         return
@@ -695,11 +698,14 @@ def audit_response_lengths(run_dir: Path | None, report: dict) -> None:
     pipeline/plain ratio carries the verdict (ratio of mean lengths; the median
     ratio is kept as a secondary, outlier-robust read)."""
     sec = _section(report, "Response lengths (vs plain baseline)", group="response",
-                   gloss="Are pipeline replies much longer than plain Claude's to the "
-                         "same prompts? Long replies stop getting read, so the MEAN "
-                         "ratio carries the verdict — in both directions (a much "
-                         "shorter pipeline suggests truncation or over-compression). "
-                         "Median ratio is shown alongside as an outlier-robust check.")
+                   gloss="WHY: length is the most visible thing this data would teach a "
+                         "model, and length WITHOUT added substance is the failure mode to "
+                         "rule out. WHAT: how much longer pipeline replies run than plain "
+                         "Claude's to the same prompt — the MEAN ratio carries the verdict in "
+                         "both directions (a much SHORTER pipeline would suggest truncation). "
+                         "Expect ~1.5-1.6x; it is earned by the added reasoning in Important "
+                         "considerations above, not padding. The worry is only length climbing "
+                         "while that substance stays flat.")
     if run_dir is None:
         _skip(sec, report, "length comparison", note="(bare-file input; pass a run dir)")
         return
@@ -788,10 +794,14 @@ def audit_tracked_tics(run_dir: Path | None, report: dict) -> None:
     audit_tic_candidates (wordfreq distinctiveness); this section just counts
     the confirmed tics we already track."""
     sec = _section(report, "Tracked tics (responses)", group="response",
-                   gloss="Counts for the curated tracked-tic watchlist (evals/tics.yaml) "
-                         "across responses, in both arms. The pipeline-vs-plain gap is "
-                         "the training-data signal; discovery of NEW phrases lives in "
-                         "the tic-candidates review queue.")
+                   gloss="WHY: a model learns the verbal habits of its training data, so "
+                         "recurring pet phrases are the clearest stylistic footprint to be "
+                         "transparent about. WHAT: how often each watchlisted phrase "
+                         "(evals/tics.yaml) appears, pipeline vs plain Claude — the GAP is the "
+                         "signal, since plain Claude has its own tics and the pipeline often "
+                         "just TRADES one for another rather than adding many. New phrases are "
+                         "triaged separately in the tic-candidates queue. Not a fault unless a "
+                         "phrase comes to dominate.")
     if run_dir is None:
         _skip(sec, report, "tic report", note="(bare-file input; pass a run dir)")
         return
@@ -898,12 +908,15 @@ def audit_rhetorical_moves(run_dir: Path | None, report: dict) -> None:
     A homogenization signal, not a fault: a good move is fine, a good move
     hardened into a reflex fired on most responses is what the verdict flags."""
     sec = _section(report, "Rhetorical moves (responses)", group="response",
-                   gloss="Argument-structure gambits (bundling, quote-back overreach, the "
-                         "autonomy coda, …) the phrase-tic detector can't see — they use "
-                         "ordinary words and vary in wording. Counted in both arms as a "
-                         "HOMOGENIZATION signal, not a fault: flagged only when one move "
-                         "DOMINATES (fires on a large share of responses). Completes the "
-                         "ladder: word tics → openers → structure → argument moves.")
+                   gloss="WHY: beyond single phrases, a model can learn to always reach for the "
+                         "same ARGUMENT move — split a bundled question, quote a line back as "
+                         "carrying too much weight, hand the decision back at the close. These "
+                         "are the habits hardest to see (they use ordinary words and vary in "
+                         "wording), so naming them is where transparency matters most. WHAT: how "
+                         "often each move fires, pipeline vs plain Claude. A good move is "
+                         "healthy; the concern is one HARDENING into a reflex — flagged only "
+                         "when it dominates (>50%). Most sit well under that, and shifts are "
+                         "usually TRADING one move for another, not new harm.")
     if run_dir is None:
         _skip(sec, report, "moves scan", note="(bare-file input; pass a run dir)")
         return
@@ -1179,10 +1192,13 @@ def audit_lexical(run_dir: Path | None, report: dict) -> None:
     (higher = the corpus echoes itself). Informational — the arm differential
     and the run-over-run trend are the signal, not the absolute values."""
     sec = _section(report, "Lexical diversity (responses)", group="response",
-                   gloss="How varied the wording is across the corpus. Distinct-n = "
-                         "share of n-word runs used only once (higher = more varied); "
-                         "Self-BLEU = how much the corpus echoes itself (lower is "
-                         "better). Compare arms and runs, never absolute values.")
+                   gloss="WHY: if the corpus keeps reusing the same wording, a model trained on "
+                         "it inherits that narrowness — so wording variety is a direct "
+                         "data-quality signal. WHAT: distinct-n (share of word-runs used only "
+                         "once; higher = more varied) and Self-BLEU (how much the corpus echoes "
+                         "itself; lower = better), pipeline vs plain Claude. The worry is the "
+                         "pipeline reading LESS varied than plain (shared scaffolding "
+                         "homogenizing it). Compare arms and runs, never absolute values.")
     if run_dir is None:
         _skip(sec, report, "lexical report", note="(bare-file input; pass a run dir)")
         return
@@ -1319,10 +1335,14 @@ def audit_response_openings(run_dir: Path | None, report: dict) -> None:
         if i:
             print()
         sec = _section(report, f"Response openings ({stage})", group="response",
-                       gloss="Do responses keep opening with the same move? Families "
-                             "are known tics; 'other' is the healthy bucket. Hint-echo "
-                             "= a response parroting its opening-hint card's wording "
-                             "(drafts only — that's where the hints ride).")
+                       gloss="WHY: the first sentence is the most copyable template — a model "
+                             "that opens every answer the same way ('Here's the thing...') is an "
+                             "obvious tell. WHAT: which opening MOVE each reply uses, pipeline vs "
+                             "plain Claude — named families are known tics, 'other' is the "
+                             "healthy varied bucket. Hint-echo flags a draft parroting its "
+                             "sampled opening-hint wording (drafts only — that's where the hints "
+                             "ride). The pipeline uses code-sampled hints precisely to keep this "
+                             "varied.")
         if run_dir is None:
             _skip(sec, report, "openings report", note="(bare-file input; pass a run dir)")
             continue
@@ -1910,12 +1930,15 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
              note="(concrete lower-harm actions the pipeline offers that plain does not)")
 
         st_sec = _section(report, "Response stance (LLM)", group="paid",
-                          gloss="INTERNAL DEV SIGNAL (an LLM judge we tune — not a "
-                                "reviewer-facing metric; trust the deterministic sections "
-                                "for that). How each arm carries itself: moralizing (fault — "
-                                "graded proportionally to the case stakes), hedging, and "
-                                "whether the response engages the decision or refuses "
-                                "appropriately. Moralizing flags link to their cases below.")
+                          gloss="WHY: a model that lectures, hedges, or refuses reasonable "
+                                "requests is a real harm to rule out — this checks the MANNER "
+                                "of the replies, not just their content. WHAT: how each arm "
+                                "carries itself — moralizing (a fault, graded against the "
+                                "case's actual stakes so ordinary firmness isn't flagged), "
+                                "hedging, and whether it engages the decision or refuses "
+                                "appropriately. This is an LLM judge we tune, so read it as a "
+                                "tripwire and trust the deterministic checks for hard numbers; "
+                                "moralizing flags link to their cases below.")
 
         def rate(arm, dim):  # boolean-dim rate
             return sum(m["stance"][arm][dim] for m in moves.values()) / n

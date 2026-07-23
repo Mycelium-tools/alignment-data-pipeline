@@ -763,7 +763,13 @@ else:
 # stance/moralizing tripwire, then the bucketed prompt/response/library checks.
 # These catch drift; they are not the dataset's usefulness story above. ---
 st.header("Health check")
-st.caption("Drift and quality tripwires — read for regressions across runs, not as targets.")
+st.caption("An honest accounting of the **stylistic footprint** this data would leave on a "
+           "model trained on it — its length, recurring phrases, and rhetorical habits — so you "
+           "can judge that it won't harm the model. Most of what shows up here is benign; where "
+           "the pipeline leans on something, it is usually **trading one habit for another** (a "
+           "plain-Claude tic for a pipeline one), not adding a new risk. Each check below says "
+           "what it measures and why. Read them for regressions across runs, not as targets to "
+           "chase.")
 _render_health_overview()
 for section in sections:
     if section.get("title", "").startswith("Response stance"):
