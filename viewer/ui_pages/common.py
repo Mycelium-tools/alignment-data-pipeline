@@ -56,8 +56,8 @@ def pick_run(sidebar: bool = True) -> loader.RunInfo | None:
 
 
 def show_reason_comparison(case: dict) -> None:
-    """One record's plain-vs-pipeline moral-patient-reason comparison (from the
-    corpus audit's --reasons data). Survival-grouped — kept / weakened /
+    """One record's plain-vs-pipeline welfare-reasoning comparison (from the
+    corpus audit's --reasons data). Retention-grouped — kept / weakened /
     dropped / added — when the judge ran; plain two-column lists otherwise."""
     from viewer import rendering
 

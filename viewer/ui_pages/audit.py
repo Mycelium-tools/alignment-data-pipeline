@@ -552,6 +552,40 @@ def _render_section(section: dict) -> None:
             st.altair_chart(_grouped_arm_chart(chart_rows, "chars"),
                             use_container_width=True)
 
+    if title.startswith("Rhetorical moves"):
+        rm = report.get("rhetorical_moves") or {}
+        moves = rm.get("moves") or {}
+        if moves:
+            # share of responses exhibiting each move, pipeline vs plain, with a
+            # dashed FLAG LINE at 50%: a move is only a problem when it DOMINATES,
+            # and the bars sitting well under the line shows at a glance that none do.
+            mv_rows = []
+            for name, d in moves.items():
+                mv_rows.append({"move": name, "arm": "pipeline",
+                                "share": d.get("pipeline_share") or 0})
+                mv_rows.append({"move": name, "arm": "plain Claude",
+                                "share": d.get("plain_share") or 0})
+            order = sorted(moves, key=lambda m: -(moves[m].get("pipeline_share") or 0))
+            bars = alt.Chart(pd.DataFrame(mv_rows)).mark_bar().encode(
+                y=alt.Y("move:N", title="", sort=order),
+                yOffset=alt.YOffset("arm:N", sort=list(rendering.AUDIT_ARM_COLUMNS)),
+                x=alt.X("share:Q", title="share of responses", axis=alt.Axis(format="%"),
+                        scale=alt.Scale(domain=[0, 1])),
+                color=alt.Color("arm:N", title="", scale=alt.Scale(
+                    domain=list(rendering.AUDIT_ARM_COLUMNS),
+                    range=list(rendering.AUDIT_ARM_COLORS))),
+                tooltip=["move", "arm", alt.Tooltip("share:Q", format=".0%")])
+            flag = alt.Chart(pd.DataFrame({"x": [0.5]})).mark_rule(
+                strokeDash=[5, 3], color="#B0721E").encode(x="x:Q")
+            flag_txt = alt.Chart(pd.DataFrame({"x": [0.5], "t": ["flag line · 50%"]})).mark_text(
+                align="left", dx=4, dy=-6, color="#B0721E").encode(x="x:Q", text="t:N")
+            st.altair_chart((bars + flag + flag_txt).properties(height=max(180, 34 * len(moves))),
+                            use_container_width=True)
+            st.caption("A move is flagged only when it **dominates** — fires on more than half of "
+                       "responses (past the dashed line). Everything here sits well under it: "
+                       "these are habits the answers reach for sometimes, not reflexes. The "
+                       "pipeline-vs-plain gap is the training-data signal.")
+
     if title.startswith(_CUSTOM_DETAIL):
         sp = report.get("tracked_tics") or report.get("stock_phrases") or {}
         phrase_rows = rendering.audit_tracked_tic_rows(sp)
@@ -777,8 +811,11 @@ for section in sections:
 
 # _NOT_DISPLAYED sections are deliberately hidden (still measured — report JSON
 # and terminal keep them). The usefulness cluster + stance are rendered above.
+# Insider-vocabulary leak is bucketed "response" but rendered LAST (after the
+# group loop) — scaffolding-bleed is the closing note of the health check.
+_RENDER_LAST = ("Insider-vocabulary leak",)
 _SKIP_SECTIONS = (("Important considerations",) + _REASONS_TITLES
-                  + _PAID_COMPANIONS + _NOT_DISPLAYED)
+                  + _PAID_COMPANIONS + _NOT_DISPLAYED + _RENDER_LAST)
 _GROUP_HEADERS = {
     "prompt": "Prompt side — the shipped user messages",
     "response": "Response side — final replies vs the plain-Claude control",
@@ -798,6 +835,11 @@ for group in rendering.AUDIT_GROUP_ORDER:
         continue
     st.header(_GROUP_HEADERS[group])
     for section in group_sections:
+        _render_section(section)
+
+# Rendered last: scaffolding-vocabulary bleed — the closing check.
+for section in sections:
+    if section.get("title", "").startswith(_RENDER_LAST):
         _render_section(section)
 
 common.json_block(report, f"audit_{run.run_id}", "Raw report JSON")

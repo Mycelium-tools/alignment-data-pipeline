@@ -290,8 +290,8 @@ AUDIT_SECTION_META = {
                                "reasoning or just lengthen replies? 'Retention' = which of "
                                "plain Claude's considerations the pipeline kept, plus how "
                                "many it added."),
-    "Moral-patient reasons": ("paid", "Paid LLM pass: does the pipeline widen the moral "
-                              "reasoning or just lengthen replies? 'Survival' = which of "
+    "Moral-patient reasons": ("paid", "Paid LLM pass: does the pipeline widen the welfare "
+                              "reasoning or just lengthen replies? 'Retention' = which of "
                               "plain Claude's reasons the pipeline kept."),
 }
 

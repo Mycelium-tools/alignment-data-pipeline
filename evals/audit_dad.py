@@ -2321,7 +2321,7 @@ def audit_important_considerations(report: dict) -> None:
     the paid data) but is rendered FIRST (group "summary"). Deliberately carries
     NO GOOD/BAD verdict: this is a health check, not a target — the value is the
     relationships and the run-over-run trend, never a single number to maximize.
-    Leaves the detailed Moral-patient-reasons and Humane-alternatives sections
+    Leaves the detailed Welfare-reasoning and Humane-alternatives sections
     untouched below; this only combines their headline numbers on top."""
     mpr = report.get("moral_patient_reasons") or {}
     alts = (report.get("moves") or {}).get("alternatives") or {}
@@ -2341,7 +2341,7 @@ def audit_important_considerations(report: dict) -> None:
     alts_p, alts_b = alts.get("pipeline_mean"), alts.get("plain_mean")
     if reasons_p is None or alts_p is None:
         _row(sec, "important considerations", "needs the paid pass",
-             note="(re-run with --reasons; combines moral-patient reasons + humane alternatives)")
+             note="(re-run with --reasons; combines welfare reasoning + humane alternatives)")
         if rl.get("mean_ratio"):
             _row(sec, "length ratio (pipeline / plain)", f"{rl['mean_ratio']:.2f}x mean",
                  note="(length only reads as healthy alongside the considerations it buys)")
@@ -2393,7 +2393,7 @@ def main() -> None:
                         help="Run directory or step1/dilemmas.jsonl path")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--reasons", action="store_true",
-                        help="LLM pass: distinct moral-patient reasons per response, "
+                        help="LLM pass: distinct welfare reasoning per response, "
                              "pipeline vs plain baseline (costs API calls)")
     parser.add_argument("--config", default="config.yaml",
                         help="Config for --reasons (model/workers)")
