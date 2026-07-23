@@ -687,11 +687,6 @@ else:
                "variety lives in **Rhetorical moves**. This one is purely about subject matter.")
     st.caption(f"model `{diversity.get('embed_model')}` · numbers are only comparable "
                "across runs using the same embedding model")
-    for section in diversity.get("sections") or []:
-        st.subheader(section.get("title", ""))
-        _section_table(section)
-        for line in section.get("detail", []):
-            st.caption(line)
 
     scopes = diversity.get("scopes") or {}
     scope_order = [("prompts", "Prompts (user messages)"),
@@ -704,27 +699,47 @@ else:
         st.caption("Measured separately on the **prompts** (user dilemmas, P-####), the "
                    "**responses** (assistant replies, R-####), and the **combined** record "
                    "(E-####) — so you can see whether it's the questions or the answers that "
-                   "repeat. Each row: nearest-neighbour redundancy (dashed line = the >0.90 "
-                   "near-dup threshold) · topic spread (sorted cluster sizes) · a 2-D PCA cloud "
-                   "(hover a dot for its record and text).")
+                   "repeat.")
+        st.caption("Each row has three views. **Redundancy** — a histogram of how close each "
+                   "record sits to its nearest neighbour; bars past the dashed >0.90 line are "
+                   "near-duplicates (lower = more varied). **Topic spread** — records grouped "
+                   "into meaning-clusters, bar heights = cluster sizes; many even bars mean many "
+                   "distinct topics, one tall bar means everything clumps onto one. **Cloud** — "
+                   "every record placed in 2-D by meaning (PCA); tight blobs are alike, spread "
+                   "is varied. Hover a dot for its record and text.")
         for key, label in shown:
             blk = scopes[key]
             c = blk.get("clusters") or {}
-            st.markdown(f"**{label}** — near-dup>0.90 {blk['over']['0.90']:.0%} · "
-                        f"topic evenness {c.get('evenness', 0):.3f} "
-                        f"(largest {c.get('largest_share', 0):.0%}) · "
-                        f"Vendi ratio {blk.get('vendi_ratio', 0):.2f}")
+            n = blk.get("n") or 0
+            over = blk.get("over") or {}
+            k_clusters = c.get("k") or len(c.get("sizes") or [])
+            vr = blk.get("vendi_ratio", 0)
+            st.markdown(f"**{label}**")
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.altair_chart(_nn_hist(blk.get("nn_sims") or [], 0.90,
                                          "nearest-neighbour cosine"),
                                 use_container_width=True)
+                st.caption(f"**Redundancy** — {over.get('0.90', 0):.0%} near-duplicate (>0.90), "
+                           f"{over.get('0.80', 0):.0%} similar (>0.80). Lower is more varied.")
             with col2:
                 st.altair_chart(_cluster_bars(c.get("sizes") or []),
                                 use_container_width=True)
+                st.caption(f"**Topic spread** — evenness {c.get('evenness', 0):.3f} across "
+                           f"{k_clusters} clusters (largest {c.get('largest_share', 0):.0%}). "
+                           "Higher evenness = more distinct topics.")
             with col3:
                 st.altair_chart(_cloud_scatter(blk.get("cloud") or []),
                                 use_container_width=True)
+                st.caption(f"**Cloud** — {vr * n:.1f} effectively-distinct of {n} records "
+                           f"(Vendi ratio {vr:.2f}).")
+
+        with st.expander("Full diversity tables (corpus totals + per-scope)", expanded=False):
+            for section in diversity.get("sections") or []:
+                st.markdown(f"**{section.get('title', '')}**")
+                _section_table(section)
+                for line in section.get("detail", []):
+                    st.caption(line)
 
     ideas = diversity.get("ideas") or {}
     if ideas.get("nn_sims"):
