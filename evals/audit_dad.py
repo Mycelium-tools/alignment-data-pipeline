@@ -1098,7 +1098,7 @@ def audit_move_candidates(run_dir: Path | None, config: dict, report: dict) -> N
               + "\n\n---\n\n".join(sample))
     try:
         raw = utils.extract_json_array(
-            api.call_claude(user_message=prompt, stage="eval_audit_dad"))
+            api.call_claude(user_message=prompt, stage="eval_audit_dad"), recover=True)
     except Exception:
         raw = []
     clean = [{"name": str(c.get("name")).strip(),
@@ -1507,7 +1507,7 @@ def _classify_reason_types(reasons: list, api) -> dict:
     try:
         labels = utils.extract_json_array(api.call_claude(
             user_message=_REASON_TYPE_PROMPT + json.dumps(reasons, ensure_ascii=False),
-            stage="eval_audit_dad"))
+            stage="eval_audit_dad"), recover=True)
     except Exception:
         return {}
     hist: dict = {}
@@ -1588,6 +1588,12 @@ def _emit_reason_composition(per_case: dict, report: dict) -> None:
     report["reason_composition"] = {"types": list(REASON_TYPES), "pipeline": p, "plain": b}
 
 
+# Fresh retries when a reason-extraction reply is unparseable (transient temp-1
+# malformation); recover=True on the parse handles the object-wrapped-array slip
+# without a retry. Mirrors the pipeline's MAX_SCOPE_ATTEMPTS loop.
+MAX_REASON_ATTEMPTS = 2
+
+
 def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
     """LLM pass (--reasons): distinct reasons appealing to a moral patient's
     interests (animal or not), per response, for the pipeline arm and the plain
@@ -1628,10 +1634,21 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
         pid, arm, text = item
         prompt = utils.load_prompt(prompts_dir / "reason_extraction.txt",
                                    user_message=dilemmas.get(pid, ""), response=text)
-        try:
-            reasons = utils.extract_json_array(
-                api.call_claude(user_message=prompt, stage="eval_audit_dad"))
-        except Exception:
+        # A judge's JSON output occasionally slips shape (an object-wrapped
+        # array, {"reasons": [...]}) or comes back malformed one-off at temp 1.
+        # recover=True unwraps/salvages the first; a bounded retry (like the
+        # pipeline's scope loop) catches the second — together they turn the
+        # silent extraction failures observed on live runs into usable counts.
+        reasons = None
+        for _ in range(MAX_REASON_ATTEMPTS):
+            try:
+                reasons = utils.extract_json_array(
+                    api.call_claude(user_message=prompt, stage="eval_audit_dad"),
+                    recover=True)
+                break
+            except Exception:
+                continue  # transient malformed output — a fresh call usually parses
+        if reasons is None:
             return pid, arm, None, 0, {}
         uniq = list(dict.fromkeys(_reason_str(r) for r in reasons if _reason_str(r)))
         try:
@@ -1639,7 +1656,7 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
                 user_message=_REASON_CHECKBACK_PROMPT
                 .replace("{reasons}", json.dumps(uniq, ensure_ascii=False))
                 .replace("{response}", text),
-                stage="eval_audit_dad"))
+                stage="eval_audit_dad"), recover=True)
         except Exception:
             extra = []  # check-back is best-effort; the extraction still counts
         missed = [_reason_str(r) for r in extra
@@ -1679,7 +1696,7 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
                   .replace("{pipeline_response}", pipe[pid]))
         try:
             obj = utils.extract_json_object(
-                api.call_claude(user_message=prompt, stage="eval_audit_dad"))
+                api.call_claude(user_message=prompt, stage="eval_audit_dad"), recover=True)
             anchored = [{"reason": _reason_str(a.get("reason")), "verdict": a.get("verdict")}
                         for a in obj.get("anchored") or []
                         if a.get("verdict") in ("kept", "weakened", "dropped")]
@@ -1711,7 +1728,7 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
             distinct = [_reason_str(r) for r in utils.extract_json_array(api.call_claude(
                 user_message=_REASON_CONSOLIDATE_PROMPT
                 + json.dumps(all_reasons, ensure_ascii=False),
-                stage="eval_audit_dad"))]
+                stage="eval_audit_dad"), recover=True)]
         except Exception:
             distinct = sorted(set(all_reasons))  # exact-match fallback
         # Corpus-level type histogram is summed from the per-response typing
@@ -1835,7 +1852,7 @@ def audit_reasons(run_dir: Path | None, config: dict, report: dict) -> None:
                   .replace("{pipeline_response}", pipe[pid]))
         try:
             obj = utils.extract_json_object(
-                api.call_claude(user_message=prompt, stage="eval_audit_dad"))
+                api.call_claude(user_message=prompt, stage="eval_audit_dad"), recover=True)
             alt = obj.get("alternatives") or {}
             st = obj.get("stance") or {}
             return pid, {
